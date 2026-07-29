@@ -6,6 +6,7 @@ import "./index.css";
 import { Toaster } from "@/components/ui/toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { DesignSystemPage } from "@/dev/design-system/design-system-page";
+import { PipelineMockPage } from "./dev/pipeline/pipeline-mock-page";
 import { StylePage } from "@/dev/overlays/style-page";
 import { EditorPage } from "@/routes/editor/editor-page";
 import { ProjectsPage } from "@/routes/projects/projects-page";
@@ -38,6 +39,8 @@ createRoot(document.getElementById("root")!).render(
                 element={<DesignSystemPage />}
               />
               {/* Tên cũ giữ lại vì tôi đã đưa đường dẫn này cho người dùng. */}
+              {/* Bản thử màn "Máy đang làm" — chưa nối dữ liệu thật. */}
+              <Route path="/_dev/tien-trinh" element={<PipelineMockPage />} />
               <Route path="/_dev/overlays" element={<StylePage />} />
               <Route path="/_dev/style" element={<StylePage />} />
               {/* MỘT đường dẫn với đoạn cuối không bắt buộc, không phải hai
