@@ -1,0 +1,40 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Dữ liệu chạy thật của máy chủ — CSDL, video người dùng tải lên, bản dựng tạm.
+# 2,1GB và là video riêng tư; git không phải chỗ của chúng.
+server/data/
+
+# Tư liệu tham khảo và bản xuất thử — 50MB video, không phải mã nguồn.
+examples/
+
+# Ảnh chụp màn hình rơi ở gốc dự án lúc bàn giao diện.
+/*.png
+/*.jpg
+/*.jpeg
+
+# Thư viện Python cài kèm cho mlx-whisper — dựng lại được bằng install script,
+# không phải mã nguồn của dự án.
+server/asr/pylibs/

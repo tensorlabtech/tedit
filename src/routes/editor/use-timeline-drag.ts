@@ -1,0 +1,133 @@
+import { useEffect, useRef, useState } from "react";
+
+import { zoomFactorFromWheel, type EditorState } from "./use-editor";
+import { datCoKeo } from "./use-editor-guards";
+
+/** Kéo bao nhiêu px mới tính là KÉO chứ không phải bấm. */
+const DRAG_THRESHOLD = 3;
+
+/**
+ * Mọi thao tác kéo trên dải: chạy dải, lăn để tua, phóng, và gọt mép khối.
+ *
+ * Tách khỏi `timeline.tsx` vì nó là phần duy nhất đụng thẳng vào sự kiện chuột
+ * ở mức thấp — gắn listener tay, tự quản cờ kéo — còn phần kia chỉ là dựng hình.
+ */
+export function useTimelineDrag({
+  editor,
+  viewportRef,
+  timeAtClientX,
+}: {
+  editor: EditorState;
+  viewportRef: React.RefObject<HTMLDivElement | null>;
+  timeAtClientX: (clientX: number) => number;
+}) {
+  const { time, pxPerSecond, seek, scrubByPixels, zoomBy } = editor;
+  const { toOutput, toSource } = editor;
+  const drag = useRef({ active: false, moved: false, x: 0, time: 0 });
+  const [dragging, setDragging] = useState(false);
+  const [trimming, setTrimming] = useState<{
+    kind: "clip" | "music" | "insert" | "text" | "effect";
+    id: string;
+    edge: "start" | "end";
+  } | null>(null);
+
+  // Con lăn: lăn thường thì chạy dải, Ctrl+lăn thì phóng to. Phải nghe thủ công vì
+  // React gắn wheel ở chế độ passive nên preventDefault trong onWheel vô hiệu.
+  //
+  // `preventDefault` ở đây còn gánh một việc thứ hai: chặn cử chỉ vuốt hai ngón
+  // sang ngang của trình duyệt (lùi/tiến trang). CSS `overscroll-behavior` một
+  // mình không đủ trên mọi máy, mà lùi trang lúc đang trượt dải là mất trắng
+  // chỗ đang làm.
+  useEffect(() => {
+    const node = viewportRef.current;
+    if (!node) return;
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      if (event.ctrlKey || event.metaKey) {
+        zoomBy(zoomFactorFromWheel(event.deltaY));
+        return;
+      }
+      const delta =
+        Math.abs(event.deltaX) > Math.abs(event.deltaY)
+          ? event.deltaX
+          : event.deltaY;
+      scrubByPixels(-delta);
+    };
+    node.addEventListener("wheel", onWheel, { passive: false });
+    return () => node.removeEventListener("wheel", onWheel);
+  }, [scrubByPixels, zoomBy]);
+
+  // Kéo tay nắm để gọt mép. Tách riêng khỏi kéo-chạy-dải vì `trimming` là state
+  // nên effect chạy lại đúng lúc, còn cờ kéo dải nằm trong ref (xem `startScrub`).
+  useEffect(() => {
+    if (!trimming) return;
+    datCoKeo(true);
+    const onMove = (event: PointerEvent) =>
+      editor.trim(
+        trimming.kind,
+        trimming.id,
+        trimming.edge,
+        timeAtClientX(event.clientX),
+      );
+    const onUp = () => {
+      void editor.commitTrim();
+      setTrimming(null);
+      // Nhả cờ sau một nhịp để cú click sinh ra lúc thả tay bị bỏ qua.
+      window.setTimeout(() => (drag.current.moved = false), 0);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return () => {
+      datCoKeo(false);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+  }, [trimming, editor, timeAtClientX]);
+
+  // Kéo bất kỳ đâu trên dải để chạy dải. Gắn listener ngay tại pointerdown —
+  // KHÔNG qua useEffect, vì cờ kéo nằm trong ref nên không có lượt render nào
+  // để effect kịp chạy lại. Cũng không dùng setPointerCapture: nó nuốt mất sự
+  // kiện click của các khối bên trong, mà khối cần click để chọn.
+  const startScrub = (event: React.PointerEvent) => {
+    if (trimming) return;
+    // Nút giữa mở chế độ tự cuộn của Windows/Linux — con trỏ thành hình la bàn
+    // và trang tự trôi. Ở đây nó chỉ phá.
+    if (event.button === 1) event.preventDefault();
+    if (event.button !== 0) return;
+    const startX = event.clientX;
+    // Mốc bắt đầu tính bằng giờ XUẤT RA, không phải giờ gốc.
+    //
+    // Dải vẽ theo giờ xuất ra, nên kéo đi `dx` pixel phải là đi `dx` giây xuất
+    // ra. Cộng thẳng vào giờ GỐC thì vạch đi xuyên qua những quãng đã bỏ — mà
+    // vạch không được đứng trong đó (§22), nên nó bị đẩy ra ngay lập tức, rồi
+    // nhịp kéo sau lại đẩy vào: vạch nhấp nháy qua lại ở mọi chỗ cắt.
+    const startOut = toOutput(time);
+    drag.current = { active: true, moved: false, x: startX, time };
+    const onMove = (moveEvent: PointerEvent) => {
+      const dx = moveEvent.clientX - startX;
+      if (Math.abs(dx) > DRAG_THRESHOLD) {
+        drag.current.moved = true;
+        // Cờ kéo phải là STATE, không chỉ là ref: ref không sinh lượt dựng nào nên
+        // cái nhãn giây ở vạch sẽ không bao giờ hiện ra.
+        setDragging(true);
+        // Chuột đi ra khỏi dải lúc kéo thì trình duyệt quét chọn chữ ở bản chép
+        // lời phía trên — cờ này tắt bôi đen trên cả trang.
+        datCoKeo(true);
+      }
+      if (drag.current.moved) seek(toSource(startOut - dx / pxPerSecond));
+    };
+    const onUp = () => {
+      drag.current.active = false;
+      setDragging(false);
+      datCoKeo(false);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      // Nhả sau một nhịp để cú click ngay sau đó biết vừa có kéo mà bỏ qua.
+      window.setTimeout(() => (drag.current.moved = false), 0);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  return { drag, dragging, trimming, setTrimming, startScrub };
+}

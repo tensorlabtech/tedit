@@ -1,0 +1,2675 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import { toast } from "@/components/ui/toast";
+import {
+  api,
+  type ApiMusicTrack,
+  type ApiProject,
+  type ApiSegment,
+} from "@/lib/api";
+
+import { fromLegacyLayout } from "@/dev/overlays/overlay-legacy";
+
+import { nhanImLang, shortMediaLabel } from "./editor-data";
+import type { AudioEnvelope } from "./timeline-audio-lane";
+
+import type {
+  Clip,
+  Insert,
+  MusicTrack,
+  Sentence,
+  TextElement,
+  TextElementPosition,
+  Word,
+} from "./editor-data";
+import type { AlignId, EmphasisId, RevealId, ShapeId } from "./editor-data";
+import {
+  bandsOverlap,
+  effectPeak,
+  effectSpan,
+  junctionHalves,
+  type JunctionId,
+} from "@/dev/overlays/overlay-model";
+
+/** Một bước hoàn tác được — chỉ chứa dữ liệu để còn cất vào localStorage. */
+type UndoEntry =
+  // Bỏ một quãng giờ là bỏ ĐOẠN (có thể vài đoạn), không còn bảng cắt riêng.
+  | { type: "cut"; label: string; segmentIds: string[] }
+  | {
+      type: "trim";
+      label: string;
+      segmentId: string;
+      edge: "start" | "end";
+      /** Mốc TRƯỚC khi gọt — hoàn tác là đặt mép về đúng chỗ này */
+      at: number;
+    }
+  | { type: "split"; label: string; segmentId: string }
+  | {
+      type: "segment";
+      label: string;
+      segmentId: string;
+      wasRemoved: boolean;
+    }
+  | { type: "sentence"; label: string; sentenceId: string; wasRemoved: boolean }
+  | {
+      type: "music-trim";
+      label: string;
+      trackId: string;
+      edge: "start" | "end";
+      /** Mốc TRƯỚC khi kéo */
+      at: number;
+    }
+  // Gỡ một bài nhạc: giữ đủ dữ liệu để đặt lại. Tệp nhạc là thứ người dùng phải
+  // đi tìm và tải lên, mất nó thì "hoàn tác" chỉ là lời hứa suông.
+  | {
+      type: "music-restore";
+      label: string;
+      track: {
+        id: string;
+        position: number;
+        name: string;
+        storedPath: string;
+        start: number;
+        end: number;
+        volume: number;
+      };
+    }
+  | { type: "element"; label: string; elementId: string }
+  // MỘT mục cho mọi thao tác trên hiệu ứng — thêm, xoá, đổi kiểu, kéo quãng.
+  // Cả bốn đều là "hàng này trước đó trông ra sao", nên một mục là đủ; tách bốn
+  // loại thì bốn nhánh hoàn tác viết y hệt nhau.
+  | {
+      type: "effect";
+      label: string;
+      effectId: string;
+      /** Trạng thái TRƯỚC — `null` là lúc đó chưa có hàng nào (thao tác thêm) */
+      was: { start: number; end: number; kind: JunctionId } | null;
+    }
+  | {
+      type: "insert-trim";
+      label: string;
+      elementId: string;
+      edge: "start" | "end";
+      /** Mã TỪ mà mép đang neo TRƯỚC khi kéo */
+      wordId: string;
+    }
+  // Chữ TỰ DO neo theo giờ, nên hoàn tác trả lại một con GIÂY chứ không phải
+  // một mã từ như `insert-trim`.
+  | {
+      type: "text-trim";
+      label: string;
+      elementId: string;
+      edge: "start" | "end";
+      at: number;
+    }
+  // Tạo chữ từ lời sinh ra hàng chục phần tử một lúc — hoàn tác phải gỡ cả loạt,
+  // không thì người dùng phải xoá tay 58 cái.
+  | { type: "captions"; label: string; elementIds: string[] }
+  // Xoá một chữ hay một tư liệu: giữ đủ dữ liệu để DỰNG LẠI nó. Xoá là việc
+  // huỷ hoại nhất trên bàn dựng — người dùng mất công đặt chỗ, chọn kiểu, đánh
+  // dấu từ khoá, rồi một cú bấm nhầm là mất sạch mà không có đường lùi.
+  | {
+      type: "restore";
+      label: string;
+      element: {
+        kind: "text" | "insert";
+        fromWordId: string;
+        toWordId: string;
+        /** Chữ TỰ DO dựng lại bằng cặp giây này, vì nó không có mã từ nào */
+        start?: number;
+        end?: number;
+        content?: string;
+        band?: string;
+        mediaFileId?: string;
+        align?: string;
+        emphasis?: string;
+        reveal?: string;
+        shape?: string;
+        keywords?: string[];
+      };
+    };
+
+export type Selection =
+  | { kind: "clip"; id: string }
+  | { kind: "insert"; id: string }
+  | { kind: "text"; id: string }
+  | { kind: "music"; id: string }
+  // Chỗ nối không có mã riêng — nó LÀ một mốc. Dùng chính giây bản gốc làm mã.
+  | { kind: "junction"; id: string }
+  | null;
+
+/** Thang phóng: desktop mặc định 200px/giây (xem docs/editor-interaction-spec.md §3) */
+export const DEFAULT_PX_PER_SECOND = 200;
+const MIN_PX_PER_SECOND = 60;
+const MAX_PX_PER_SECOND = 600;
+
+/**
+ * Bước phóng của NÚT và PHÍM.
+ *
+ * Cả thang chỉ rộng 10 lần (60→600), nên bước 1,4 chia ra chưa tới bảy nấc —
+ * bấm một cái là nhảy qua đúng mức mình cần. 1,25 cho mười nấc, canh được.
+ */
+export const ZOOM_STEP = 1.25;
+
+/**
+ * Mỗi nửa của một đoạn phải còn ít nhất chừng này thì mới tách được.
+ *
+ * Khớp `MIN_LENGTH` của `server/segments.ts` — máy chủ là nơi chốt, đây chỉ là
+ * bản sao để khoá nút trước khi người dùng bấm vào chỗ không tách được.
+ */
+export const MIN_SEGMENT = 0.3;
+
+/**
+ * Đổi độ lăn thành hệ số phóng — theo ĐỘ LỚN cú lăn, không phải mỗi cú một nấc.
+ *
+ * Chụm hai ngón bắn ra hàng chục sự kiện nhỏ trong một cử chỉ; nhân 1,15 mỗi sự
+ * kiện thì mới nhích ngón đã phóng gấp mấy lần, đó là chỗ "zoom nhạy quá". Hàm
+ * mũ làm cú lăn nhỏ ra hệ số nhỏ, và vẫn cho con lăn chuột (mỗi nấc ~100) một
+ * bước rõ ràng. Chặn hai đầu để một cú lăn dữ dội không nhảy hết cả thang.
+ */
+export function zoomFactorFromWheel(deltaY: number) {
+  return Math.min(1.5, Math.max(1 / 1.5, Math.exp(-deltaY * 0.0035)));
+}
+
+/**
+ * Khoảng nhạc ngắn hơn hai giây không còn là nhạc nền, chỉ là một tiếng bụp.
+ * Máy chủ chặn cùng con số này — xem `music-tracks.ts`.
+ */
+const MIN_MUSIC_LENGTH = 2;
+
+/**
+ * Bắt lỗi của một lệnh GHI — và nói ra, thay vì nuốt im lặng.
+ *
+ * Bàn dựng đổi hình ngay khi bấm rồi mới ghi xuống máy chủ (lạc quan). Ghi hỏng
+ * mà không báo thì màn hình nói một đằng, dữ liệu một nẻo — người dùng chỉ biết
+ * ở lần mở sau, lúc đó công đã mất và không còn manh mối nào.
+ *
+ * Từng có 25 chỗ viết `.catch(boQuaLoi())`. Một hàm dùng chung thì chỗ nào cũng
+ * báo giống nhau, và không ai phải nhớ tự viết lấy.
+ */
+const boQuaLoi = () => (error: unknown) => {
+  toast.add({
+    title: "Không lưu được thay đổi",
+    description:
+      error instanceof Error && error.message
+        ? error.message
+        : "Máy chủ không trả lời — thử lại giúp mình",
+    type: "error",
+  });
+};
+
+/** Khối chữ tự do mới đặt dài bao lâu — đủ đọc một dòng tiêu đề. */
+const TEXT_DEFAULT_LENGTH = 2;
+/** Sàn khi kéo hai đầu khối chữ; máy chủ chặn cùng con số này. */
+const MIN_TEXT_LENGTH = 0.4;
+
+/**
+ * Hiệu ứng ngắn nhất — dưới mức này thì cú nhấn rơi gọn trong một hai khung
+ * hình, xem ra chỉ như một cái giật chứ không đọc được là chủ ý.
+ */
+const MIN_EFFECT_LENGTH = 0.15;
+
+/** Dựng dữ liệu màn Editor từ dữ liệu máy chủ trả về. */
+/**
+ * Đếm chữ và tư liệu neo vào một khoảng thời gian.
+ *
+ * Phần tử neo vào TỪ, nên bỏ câu hay bỏ đoạn chứa nó thì lúc dựng nó không còn chỗ
+ * nào để hiện và bị bỏ im lặng. Hàm này để nói trước con số đó.
+ */
+export function demElement(
+  data: {
+    textElements: TextElement[];
+    inserts: Insert[];
+    wordsById: Map<string, Word>;
+  },
+  from: number,
+  to: number,
+) {
+  const dinh = (start: number, end: number) =>
+    start >= from - 0.01 && end <= to + 0.01;
+  // Đếm theo MỐC của phần tử, không tra ngược ra hai đầu từ: chữ tự do không có
+  // mã từ nào, mà bỏ đoạn chứa nó thì nó cũng không vào video như mọi thứ khác.
+  // Tra theo mã từ là nó không được đếm, và lời cảnh báo trước khi bỏ đoạn nói
+  // thiếu đúng những thứ người dùng vừa đặt tay.
+  const chu = data.textElements.filter((item) =>
+    dinh(item.start, item.end),
+  ).length;
+  const tu = data.inserts.filter((item) => dinh(item.start, item.end)).length;
+  return chu + tu;
+}
+
+/** Thứ tự của một tệp trong danh sách tư liệu chèn — dùng để đặt tên phân biệt. */
+function thuTuTuLieu(data: ApiProject, fileId: string) {
+  const dsach = data.files
+    .filter((item) => item.role === "insert")
+    .sort((a, b) => a.position - b.position);
+  const i = dsach.findIndex((item) => item.id === fileId);
+  return i === -1 ? undefined : i;
+}
+
+/**
+ * Nhãn của một đoạn: LỜI nó đang chứa, không phải số thứ tự.
+ *
+ * Từ khi đoạn cắt theo cụm chữ thì một video một phút có bảy chục đoạn — "Đoạn
+ * 47" không nói được gì và cũng không ai đếm tới đó. Lấy chính cụm chữ nằm
+ * trong đoạn thì dải phim đọc ra như bản chép lời; đoạn không có lời nào là
+ * khoảng lặng, nói thẳng nó dài bao nhiêu.
+ */
+function nhanDoan(
+  start: number,
+  end: number,
+  texts: Array<{
+    start: number;
+    end: number;
+    content: string;
+    theoGio?: boolean;
+  }>,
+) {
+  const giua = (start + end) / 2;
+  // Chỉ lấy nhãn từ chữ CHÉP LỜI. Đoạn là một khúc người ta NÓI, nên nhãn của
+  // nó phải là lời nói ở đó; một cái tiêu đề vắt ngang sẽ cướp nhãn của cụm lời
+  // thật và khối trên dải đọc ra một thứ chẳng ai nói.
+  const trong = texts.find(
+    (item) => !item.theoGio && giua >= item.start && giua < item.end,
+  );
+  if (trong?.content.trim()) {
+    const chu = trong.content.trim();
+    return chu.length > 28 ? `${chu.slice(0, 27)}…` : chu;
+  }
+  return nhanImLang(end - start);
+}
+
+/** Đổi một hàng nhạc của máy chủ sang kiểu của bàn dựng. */
+function toMusicTrack(row: ApiMusicTrack): MusicTrack {
+  return {
+    id: row.id,
+    name: row.name,
+    start: row.start_sec,
+    end: row.end_sec,
+    volume: row.volume,
+    storedPath: row.stored_path,
+    position: row.position,
+    url: api.fileUrl(row.stored_path),
+  };
+}
+
+function shape(data: ApiProject) {
+  const sentences: Sentence[] = data.sentences.map((row) => ({
+    id: row.id,
+    text: row.text,
+    start: row.start_sec,
+    end: row.end_sec,
+    removed: row.removed === 1,
+  }));
+
+  const words: Word[] = data.words.map((row) => ({
+    id: row.id,
+    text: row.text,
+    start: row.start_sec,
+    end: row.end_sec,
+    sentenceId: row.sentence_id,
+    // Whisper trả xác suất từng từ; dưới 0,6 là chỗ đáng soát lại.
+    unsure: (row.confidence ?? 1) < 0.6 || undefined,
+  }));
+
+  const wordsById = new Map(words.map((word) => [word.id, word]));
+
+  const textElements: TextElement[] = data.elements
+    .filter((element) => element.kind === "text")
+    .map((element) => ({
+      id: element.id,
+      fromWordId: element.from_word_id ?? "",
+      toWordId: element.to_word_id ?? "",
+      // Chữ TỰ DO neo theo giờ: hai mã từ để rỗng, mốc lấy thẳng từ dữ liệu.
+      // Chữ chép lời neo vào KHOẢNG TỪ; mốc giây chỉ là hình chiếu để vẽ lên dải.
+      theoGio: element.from_word_id === null,
+      start:
+        element.from_word_id === null
+          ? (element.start_sec ?? 0)
+          : (wordsById.get(element.from_word_id)?.start ?? 0),
+      end:
+        element.from_word_id === null
+          ? (element.end_sec ?? 0)
+          : (wordsById.get(element.to_word_id ?? "")?.end ?? 0),
+      content: element.content ?? "",
+      position: (element.position_band ?? "top") as TextElementPosition,
+      // MỖI TRỤC đọc độc lập, chỉ trục nào còn trống mới lấy từ `layout` gộp cũ.
+      // Buộc hai trục vào một điều kiện thì chọn căn mà chưa đụng ô nhấn sẽ mất
+      // luôn lựa chọn căn — cùng lỗi phải sửa ở `server/pipeline.ts`.
+      ...(() => {
+        const cu = fromLegacyLayout(element.layout);
+        return {
+          align: (element.align ?? cu.align) as AlignId,
+          emphasis: (element.emphasis ?? cu.emphasis) as EmphasisId,
+        };
+      })(),
+      keywords: element.keywords ? element.keywords.split("|") : [],
+    }));
+
+  const inserts: Insert[] = data.elements
+    .filter((element) => element.kind === "insert")
+    .map((element) => {
+      // Tư liệu chèn LUÔN neo theo từ — chỉ chữ tự do mới bỏ trống hai mã này.
+      const from = wordsById.get(element.from_word_id ?? "");
+      const to = wordsById.get(element.to_word_id ?? "");
+      const file = data.files.find((item) => item.id === element.media_file_id);
+      // Số thứ tự trong THƯ VIỆN, không phải trên dải: cùng một tệp chèn hai
+      // lần thì hai khối phải mang cùng tên, không thì tưởng là hai tệp khác.
+      const thuTu = file ? thuTuTuLieu(data, file.id) : undefined;
+      return {
+        id: element.id,
+        start: from?.start ?? 0,
+        end: to?.end ?? 0,
+        fromWordId: element.from_word_id ?? "",
+        toWordId: element.to_word_id ?? "",
+        mediaFileId: element.media_file_id ?? undefined,
+        label: file ? shortMediaLabel(file.name, thuTu) : "Tư liệu",
+        fullName: file?.name,
+        // Giá trị cũ (`zoom`, `slide`, `ken`) đổi về kiểu gần nhất còn lại.
+        reveal: (["none", "fade", "fade-up"].includes(element.reveal ?? "")
+          ? element.reveal
+          : element.reveal
+            ? "fade-up"
+            : "none") as RevealId,
+        shape: (element.shape ?? "full") as ShapeId,
+        // Xem trước phải là TỆP THẬT, không phải ô màu có tên: ô màu không cho
+        // biết tư liệu có che mặt người nói hay không.
+        url: file ? api.mediaUrl(file.id) : undefined,
+        ...(() => {
+          const isVideo = /\.(mp4|mov|m4v|webm|mkv|avi)$/i.test(
+            file?.name ?? "",
+          );
+          return {
+            isVideo,
+            // Mặt của khối trên dải: ảnh thu nhỏ do máy chủ dựng sẵn lúc tải
+            // tệp lên. Với VIDEO thì bắt buộc phải là ảnh thu nhỏ — tải cả tệp
+            // 200MB về chỉ để lấy một khung cho ô 32px là quá đắt. Với ẢNH thì
+            // lấy thẳng tệp gốc khi chưa có ảnh thu nhỏ: tệp tải lên bằng bản
+            // cũ không có ảnh thu nhỏ nào để mà lấy.
+            thumbUrl: file?.thumb_path
+              ? api.fileUrl(file.thumb_path)
+              : !isVideo && file
+                ? api.mediaUrl(file.id)
+                : undefined,
+          };
+        })(),
+      };
+    })
+    .filter((item) => item.end > item.start);
+
+  // Khối trên dải giờ là ĐOẠN do máy chủ dựng, không phải từng tệp: đoạn mới là
+  // đơn vị người dùng cắt, bỏ và (sau này) gắn effect.
+  const segments: Clip[] = (data.segments ?? []).map((row) => ({
+    id: row.id,
+    start: row.start_sec,
+    end: row.end_sec,
+    // Nhãn mặc định sinh TẠI ĐÂY — máy chủ không lưu nó, vì mỗi lần tách/gộp/
+    // gọt là nó đổi. Cột `label` chỉ còn giữ tên người dùng tự đặt.
+    label: row.label ?? nhanDoan(row.start_sec, row.end_sec, textElements),
+    removed: row.removed === 1,
+  }));
+
+  let cursor = 0;
+  const clips: Clip[] = data.files
+    .filter((file) => file.role === "main")
+    .sort((a, b) => a.position - b.position)
+    .map((file, index) => {
+      const start = cursor;
+      cursor += file.duration ?? 0;
+      return {
+        id: file.id,
+        start,
+        end: cursor,
+        label: shortMediaLabel(file.name, index),
+      };
+    });
+
+  const music: MusicTrack[] = (data.music ?? []).map(toMusicTrack);
+
+  return {
+    segments,
+    sentences,
+    words,
+    wordsById,
+    textElements,
+    inserts,
+    music,
+    // Kho tư liệu đã tải lên: nguồn để chọn khi chèn, khác với `inserts` là
+    // những lần đã đặt lên dải.
+    insertLibrary: data.files.filter((file) => file.role === "insert"),
+    clips,
+    duration: cursor || (sentences.at(-1)?.end ?? 0),
+    title: data.project.title,
+    /** Mã những lời nhắc đã bỏ qua — hàng soát lọc theo danh sách này */
+    dismissed: data.dismissed ?? [],
+    /** Hiệu ứng người dùng đặt tay — quãng theo giây bản gốc */
+    manualEffects: (data.effects ?? []).map((row) => ({
+      id: row.id,
+      start: row.start_sec,
+      end: row.end_sec,
+      kind: row.kind as JunctionId,
+    })),
+  };
+}
+
+export function useEditor(projectId: string | undefined) {
+  const [data, setData] = useState<ReturnType<typeof shape> | null>(null);
+  // Bản mới nhất của `data` để đọc trong các hàm callback: đọc từ closure thì có
+  // thể là bản của lượt dựng trước.
+  const dataRef = useRef<ReturnType<typeof shape> | null>(null);
+  dataRef.current = data;
+  const [error, setError] = useState<string | null>(null);
+  const [time, setTime] = useState(0);
+  /**
+   * Vạch chạy, đọc được từ trong các hàm gọi lại mà không phải cho `time` vào
+   * danh sách phụ thuộc — cho vào thì mọi hàm ấy dựng lại mỗi khung hình lúc
+   * đang phát.
+   */
+  const timeRef = useRef(time);
+  timeRef.current = time;
+  /** Cầu nối tới `toOutput`/`toSource` cho những hàm khai TRƯỚC chúng. */
+  const doiGioRef = useRef({
+    toOutput: (at: number) => at,
+    toSource: (at: number) => at,
+  });
+  const [pxPerSecond, setPxPerSecond] = useState(DEFAULT_PX_PER_SECOND);
+  const [selection, setSelection] = useState<Selection>(null);
+  const [exportJob, setExportJob] = useState<{
+    status: string;
+    message: string;
+  } | null>(null);
+  const durationRef = useRef(0);
+  /**
+   * Số giây dải ảnh biểu diễn — thang để vẽ nó lên dải thời gian.
+   *
+   * Trước đây chỗ vẽ ghi cứng 1000 giây, trong khi ảnh chỉ dài bằng video: dải
+   * bị kéo giãn hàng chục lần nên khung hình nào cũng nhoè. Con số này phải lấy
+   * từ đúng lần dựng ảnh, không đoán.
+   */
+  const [strip, setStrip] = useState<{
+    seconds: number;
+    native: number;
+  } | null>(null);
+  /** Đường bao âm lượng để vẽ dải sóng; `null` khi chưa lấy được. */
+  const [envelope, setEnvelope] = useState<AudioEnvelope | null>(null);
+
+  /**
+   * Đường bao âm lượng — lấy một lần cho mỗi dự án.
+   *
+   * Hỏng thì im lặng bỏ qua: dải sóng là thứ đọc thêm, mất nó thì bàn dựng vẫn
+   * làm việc được, mà một lời báo lỗi đỏ cho chuyện này chỉ là tiếng ồn.
+   */
+  useEffect(() => {
+    if (!projectId) return;
+    let alive = true;
+    api
+      .getEnvelope(projectId)
+      .then((data) => alive && setEnvelope(data))
+      .catch(() => alive && setEnvelope(null));
+    return () => {
+      alive = false;
+    };
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!projectId) return;
+    let alive = true;
+    api
+      .getProject(projectId)
+      .then((project) => {
+        if (!alive) return;
+        const shaped = shape(project);
+        durationRef.current = shaped.duration;
+        setData(shaped);
+        // Dự án dựng bằng bản cũ không ghi lại thang của dải ảnh. Dựng lại một
+        // lần ngay tại đây: vừa có con số đúng, vừa lên được bản 2× cho màn
+        // Retina. Hỏng thì thôi — bên dưới còn cách suy ra từ thời lượng.
+        if (project.project.strip_seconds) {
+          setStrip({
+            seconds: project.project.strip_seconds,
+            native:
+              project.project.strip_native_second_width ??
+              DEFAULT_PX_PER_SECOND,
+          });
+        } else if (
+          // Chỉ dựng lại khi dự án ĐÃ ghép — dải ảnh cắt từ `base.mp4`, mà tệp
+          // đó chỉ có sau bước chép lời. Dự án còn dở dang thì máy chủ trả 409
+          // và người dùng nhận một lời báo lỗi đỏ ngay khi vừa mở màn, cho một
+          // việc họ không hề làm.
+          project.project.status === "ready" &&
+          project.files.some((file) => file.role === "main")
+        ) {
+          void api
+            .rebuildFilmstrip(project.project.id)
+            .then(
+              (moi) =>
+                alive &&
+                setStrip({
+                  seconds: moi.seconds,
+                  native: moi.nativeSecondWidth,
+                }),
+            )
+            .catch(boQuaLoi());
+        }
+        // Giá trị cũ vẫn đọc được: 1 và "in" đều là nhấn zoom vào.
+        const raw = project.project.zoom_punch;
+        setZoomPunchState(
+          raw === "in" || raw === 1 || raw === "1"
+            ? "zoom-in"
+            : raw === "out"
+              ? "zoom-out"
+              : ["zoom-in", "zoom-out", "flash", "dip"].includes(String(raw))
+                ? (raw as JunctionId)
+                : "none",
+        );
+      })
+      .catch((cause: Error) => alive && setError(cause.message));
+    return () => {
+      alive = false;
+    };
+  }, [projectId]);
+
+  const seek = useCallback(
+    (next: number) =>
+      setTime(Math.min(Math.max(next, 0), durationRef.current || 0)),
+    [],
+  );
+
+  /**
+   * Lăn chuột chạy dải — đi theo giờ XUẤT RA, không phải giờ gốc.
+   *
+   * Cùng lý do với kéo tay (`use-timeline-drag.ts`): dải vẽ theo giờ xuất ra,
+   * nên lăn `deltaX` pixel là đi `deltaX` giây xuất ra. Cộng vào giờ gốc thì
+   * vạch chui vào những quãng đã bỏ rồi bị đẩy ra, và nó nhấp nháy ở mọi chỗ cắt.
+   *
+   * Qua ref vì `toOutput`/`toSource` khai sau chỗ này.
+   */
+  const scrubByPixels = useCallback(
+    (deltaX: number) =>
+      setTime((current) => {
+        const doi = doiGioRef.current;
+        const next = doi.toSource(doi.toOutput(current) - deltaX / pxPerSecond);
+        return Math.min(Math.max(next, 0), durationRef.current || 0);
+      }),
+    [pxPerSecond],
+  );
+
+  /** Về thang gốc — lối thoát khi phóng quá đà, thay cho Cmd+0 của trình duyệt. */
+  const resetZoom = useCallback(
+    () => setPxPerSecond(DEFAULT_PX_PER_SECOND),
+    [],
+  );
+
+  const zoomBy = useCallback((factor: number) => {
+    setPxPerSecond((current) =>
+      Math.min(
+        Math.max(current * factor, MIN_PX_PER_SECOND),
+        MAX_PX_PER_SECOND,
+      ),
+    );
+  }, []);
+
+  /**
+   * Ngăn hoàn tác lưu DỮ LIỆU, không lưu hàm.
+   *
+   * Đóng tab rồi mở lại mà mất hết hoàn tác là thứ người dùng không tha — họ
+   * vừa gạch nhầm mười câu. Hàm thì không cất vào `localStorage` được, nên mỗi
+   * mục chỉ ghi "đã làm gì với cái gì", còn cách đảo ngược tra ở `undo`.
+   */
+  const [undoStack, setUndoStack] = useState<UndoEntry[]>([]);
+  const undoLabel = undoStack.at(-1)?.label ?? null;
+  const storageKey = projectId ? `teddit-undo-${projectId}` : null;
+
+  useEffect(() => {
+    if (!storageKey) return;
+    try {
+      const saved = window.localStorage.getItem(storageKey);
+      if (saved) setUndoStack(JSON.parse(saved) as UndoEntry[]);
+    } catch {
+      /* dữ liệu cũ hỏng thì bỏ, đừng để nó chặn cả màn hình */
+    }
+  }, [storageKey]);
+
+  const persist = useCallback(
+    (next: UndoEntry[]) => {
+      if (!storageKey) return;
+      try {
+        window.localStorage.setItem(storageKey, JSON.stringify(next));
+      } catch {
+        /* hết chỗ lưu thì thôi, hoàn tác trong phiên vẫn chạy */
+      }
+    },
+    [storageKey],
+  );
+
+  const pushUndo = useCallback(
+    (entry: UndoEntry) => {
+      setUndoStack((current) => {
+        // Giữ 50 bước gần nhất: đủ xa để yên tâm, đủ nhỏ để không phình bộ nhớ.
+        const next = [...current, entry].slice(-50);
+        persist(next);
+        return next;
+      });
+    },
+    [persist],
+  );
+
+  // `undo` khai báo trước `applySegments`, mà const không hoisted — lấy qua ref.
+  const applySegmentsRef = useRef<(rows: ApiSegment[]) => void>(() => {});
+
+  const undo = useCallback(async () => {
+    const last = undoStack.at(-1);
+    if (!last) return;
+    const next = undoStack.slice(0, -1);
+    setUndoStack(next);
+    persist(next);
+
+    if (last.type === "cut") {
+      for (const id of last.segmentIds) {
+        await api.updateSegment(id, { removed: false }).catch(boQuaLoi());
+      }
+      const rows = await api.listSegments(projectId ?? "").catch(() => null);
+      if (rows) applySegmentsRef.current(rows);
+      return;
+    }
+    if (last.type === "segment") {
+      await api.updateSegment(last.segmentId, { removed: last.wasRemoved });
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              segments: current.segments.map((item) =>
+                item.id === last.segmentId
+                  ? { ...item, removed: last.wasRemoved }
+                  : item,
+              ),
+            }
+          : current,
+      );
+      return;
+    }
+    if (last.type === "trim") {
+      await api
+        .updateSegment(last.segmentId, { edge: last.edge, at: last.at })
+        .catch(boQuaLoi());
+      const rows = await api.listSegments(projectId ?? "").catch(() => null);
+      if (rows) applySegmentsRef.current(rows);
+      return;
+    }
+    if (last.type === "split") {
+      const rows = await api.mergeSegment(last.segmentId).catch(() => null);
+      if (rows) applySegmentsRef.current(rows);
+      return;
+    }
+    if (last.type === "sentence") {
+      await api.setSentenceRemoved(last.sentenceId, last.wasRemoved);
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              sentences: current.sentences.map((item) =>
+                item.id === last.sentenceId
+                  ? { ...item, removed: last.wasRemoved }
+                  : item,
+              ),
+            }
+          : current,
+      );
+      return;
+    }
+    if (last.type === "captions") {
+      for (const id of last.elementIds) {
+        await api.deleteElement(id).catch(boQuaLoi());
+      }
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              textElements: current.textElements.filter(
+                (item) => !last.elementIds.includes(item.id),
+              ),
+            }
+          : current,
+      );
+      setSelection(null);
+      return;
+    }
+    if (last.type === "effect") {
+      // Một nhánh cho cả thêm / xoá / đổi kiểu / kéo quãng: cả bốn đều là
+      // "hàng này trước đó trông ra sao", và `was === null` là "chưa có gì".
+      if (last.was) {
+        await api
+          .setEffect(projectId ?? "", last.effectId, last.was)
+          .catch(boQuaLoi());
+      } else {
+        await api
+          .deleteEffect(projectId ?? "", last.effectId)
+          .catch(boQuaLoi());
+      }
+      setData((current) => {
+        if (!current) return current;
+        const con = current.manualEffects.filter(
+          (item) => item.id !== last.effectId,
+        );
+        return {
+          ...current,
+          manualEffects: last.was
+            ? [...con, { id: last.effectId, ...last.was }]
+            : con,
+        };
+      });
+      return;
+    }
+    if (last.type === "text-trim") {
+      await api
+        .updateElement(
+          last.elementId,
+          last.edge === "start" ? { start: last.at } : { end: last.at },
+        )
+        .catch(boQuaLoi());
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              textElements: current.textElements.map((item) =>
+                item.id === last.elementId
+                  ? last.edge === "start"
+                    ? { ...item, start: last.at }
+                    : { ...item, end: last.at }
+                  : item,
+              ),
+            }
+          : current,
+      );
+      return;
+    }
+    if (last.type === "insert-trim") {
+      await api
+        .updateElement(
+          last.elementId,
+          last.edge === "start"
+            ? { fromWordId: last.wordId }
+            : { toWordId: last.wordId },
+        )
+        .catch(boQuaLoi());
+      const fresh = await api.getProject(projectId ?? "").catch(() => null);
+      if (fresh) {
+        const shaped = shape(fresh);
+        durationRef.current = shaped.duration;
+        setData(shaped);
+      }
+      return;
+    }
+    if (last.type === "music-trim") {
+      const row = await api
+        .updateMusic(
+          last.trackId,
+          last.edge === "start" ? { start: last.at } : { end: last.at },
+        )
+        .catch(() => null);
+      if (row) {
+        setData((current) =>
+          current
+            ? {
+                ...current,
+                music: current.music.map((item) =>
+                  item.id === row.id ? toMusicTrack(row) : item,
+                ),
+              }
+            : current,
+        );
+      }
+      return;
+    }
+    if (last.type === "music-restore") {
+      const row = await api
+        .restoreMusic(projectId ?? "", last.track)
+        .catch(() => null);
+      if (row) {
+        setData((current) =>
+          current
+            ? { ...current, music: [...current.music, toMusicTrack(row)] }
+            : current,
+        );
+      }
+      return;
+    }
+    if (last.type === "restore") {
+      const goc = last.element;
+      const tao = await api
+        .createElement(projectId ?? "", {
+          kind: goc.kind,
+          // Neo theo TỪ hay theo GIỜ — gửi đúng một kiểu, máy chủ từ chối nếu
+          // thiếu cả hai.
+          ...(goc.fromWordId
+            ? { fromWordId: goc.fromWordId, toWordId: goc.toWordId }
+            : { start: goc.start, end: goc.end }),
+          content: goc.content,
+          band: goc.band,
+          mediaFileId: goc.mediaFileId,
+        })
+        .catch(() => null);
+      if (tao) {
+        // Kiểu dáng nằm ở lệnh sửa riêng, không nhét được vào lệnh tạo.
+        await api
+          .updateElement(tao.id, {
+            align: goc.align,
+            emphasis: goc.emphasis,
+            reveal: goc.reveal,
+            shape: goc.shape,
+            keywords: goc.keywords,
+          })
+          .catch(boQuaLoi());
+        const fresh = await api.getProject(projectId ?? "").catch(() => null);
+        if (fresh) {
+          const shaped = shape(fresh);
+          durationRef.current = shaped.duration;
+          setData(shaped);
+        }
+      }
+      return;
+    }
+    await api.deleteElement(last.elementId).catch(boQuaLoi());
+    setData((current) =>
+      current
+        ? {
+            ...current,
+            textElements: current.textElements.filter(
+              (item) => item.id !== last.elementId,
+            ),
+            inserts: current.inserts.filter(
+              (item) => item.id !== last.elementId,
+            ),
+          }
+        : current,
+    );
+  }, [undoStack, persist]);
+
+  /**
+   * Bỏ một quãng theo giây, không theo câu.
+   *
+   * Cần riêng vì bản chép lời không với tới chỗ KHÔNG có từ nào — hít thở, im
+   * lặng, tiếng ồn nền đều nằm giữa hai từ. Nhưng làm bằng ĐOẠN: máy chủ tách hai
+   * đầu rồi bỏ đoạn giữa, nên chỉ có một cơ chế để hiểu và một chỗ để lấy lại.
+   */
+  const cutRange = useCallback(
+    async (start: number, end: number) => {
+      if (!projectId || !(end > start)) return;
+      const truoc = new Set(
+        (dataRef.current?.segments ?? [])
+          .filter((item) => item.removed)
+          .map((item) => item.id),
+      );
+      const rows = await api.removeRange(projectId, start, end);
+      applySegmentsRef.current(rows);
+      const moi = rows
+        .filter((row) => row.removed === 1 && !truoc.has(row.id))
+        .map((row) => row.id);
+      pushUndo({ type: "cut", label: "Bỏ một quãng", segmentIds: moi });
+    },
+    [projectId, pushUndo],
+  );
+
+  /**
+   * Đặt một bài nhạc mới TẠI VẠCH, rồi chọn nó luôn để sửa được ngay.
+   *
+   * Trước đây bài mới phủ cả video. Đúng cho bài đầu tiên, sai cho mọi bài sau:
+   * muốn mỗi đoạn một bài khác nhau thì bài nào cũng bắt đầu ở giây 0 rồi đè lên
+   * nhau. Máy chủ lo phần không cho chồng (xem `addMusic`).
+   */
+  const attachMusic = useCallback(
+    async (file: File) => {
+      if (!projectId) return;
+      const row = await api.uploadMusic(projectId, file, timeRef.current);
+      setData((current) =>
+        current
+          ? { ...current, music: [...current.music, toMusicTrack(row)] }
+          : current,
+      );
+      setSelection({ kind: "music", id: row.id });
+    },
+    [projectId],
+  );
+
+  const setMusicVolume = useCallback((id: string, volume: number) => {
+    // Đổi trên màn NGAY: kéo thanh âm lượng mà phải chờ mạng từng nấc thì không
+    // canh được, mà việc này gần như không bao giờ hỏng.
+    setData((current) =>
+      current
+        ? {
+            ...current,
+            music: current.music.map((item) =>
+              item.id === id ? { ...item, volume } : item,
+            ),
+          }
+        : current,
+    );
+    void api.updateMusic(id, { volume }).catch(boQuaLoi());
+  }, []);
+
+  const removeMusic = useCallback(async (id: string) => {
+    const track = dataRef.current?.music.find((item) => item.id === id);
+    setData((current) =>
+      current
+        ? { ...current, music: current.music.filter((item) => item.id !== id) }
+        : current,
+    );
+    setSelection(null);
+    await api.deleteMusic(id).catch(boQuaLoi());
+    if (track) {
+      pushUndoRef.current({
+        type: "music-restore",
+        label: "Gỡ nhạc nền",
+        track: {
+          id: track.id,
+          position: track.position,
+          name: track.name,
+          storedPath: track.storedPath,
+          start: track.start,
+          end: track.end,
+          volume: track.volume,
+        },
+      });
+    }
+  }, []);
+
+  /** Cập nhật màn hình NGAY rồi mới gọi máy chủ: chờ mạng cho một cú gạch chữ
+   *  làm giao diện có cảm giác đơ, mà việc này gần như không bao giờ hỏng. */
+  // `toggleSentence` không phụ thuộc gì để khỏi dựng lại mỗi lần gõ, nên lấy
+  // `pushUndo` qua ref để luôn gọi bản mới nhất.
+  const pushUndoRef = useRef(pushUndo);
+  pushUndoRef.current = pushUndo;
+
+  /**
+   * Đếm chữ và tư liệu neo vào khoảng thời gian này.
+   *
+   * Dùng cho lời cảnh báo trước/sau khi bỏ: phần tử neo vào TỪ, nên bỏ câu hay bỏ
+   * đoạn chứa nó thì nó không còn chỗ nào để hiện và bị bỏ luôn lúc dựng.
+   */
+  const toggleSentence = useCallback((id: string) => {
+    setData((current) => {
+      if (!current) return current;
+      const sentences = current.sentences.map((item) =>
+        item.id === id ? { ...item, removed: !item.removed } : item,
+      );
+      const target = sentences.find((item) => item.id === id);
+      if (target) {
+        const nowRemoved = Boolean(target.removed);
+        void api.setSentenceRemoved(id, nowRemoved).catch(boQuaLoi());
+        // Chữ và tư liệu NEO VÀO TỪ của câu, nên bỏ câu là chúng cũng biến mất.
+        // Im lặng thì người dùng tưởng mình vừa mất công đặt chữ vô ích: nói ngay,
+        // và nói bao nhiêu cái.
+        if (nowRemoved) {
+          const beo = demElement(current, target.start, target.end);
+          if (beo > 0) {
+            toast.add({
+              title: `Đã bỏ câu — ${beo} thứ neo vào đây cũng mất`,
+              description: "Hoàn tác thì chúng quay lại",
+              type: "info",
+            });
+          }
+        }
+        pushUndoRef.current({
+          type: "sentence",
+          label: nowRemoved ? "Bỏ một câu" : "Giữ lại một câu",
+          sentenceId: id,
+          wasRemoved: !nowRemoved,
+        });
+      }
+      return { ...current, sentences };
+    });
+  }, []);
+
+  /**
+   * Sửa lời chép sai.
+   *
+   * CHỈ đổi chữ, không đụng vào mốc thời gian của câu hay của từng từ: máy nghe
+   * nhầm "chạm" thành "chọn" thì chữ sai chứ mốc vẫn đúng, sửa mốc theo là làm
+   * trôi mọi phần tử neo vào đó.
+   */
+  const updateSentenceText = useCallback((id: string, text: string) => {
+    setData((current) =>
+      current
+        ? {
+            ...current,
+            sentences: current.sentences.map((item) =>
+              item.id === id ? { ...item, text } : item,
+            ),
+          }
+        : current,
+    );
+    void api.setSentenceText(id, text).catch(boQuaLoi());
+  }, []);
+
+  /**
+   * Dời một phần tử sang câu liền trước hoặc liền sau.
+   *
+   * Đặt nhầm câu là lỗi thao tác thường gặp nhất — vạch đang ở đâu thì chữ gắn
+   * vào đó, mà vạch lệch một câu là chuyện dễ xảy ra. Không có đường dời thì cách
+   * duy nhất là xoá rồi làm lại, mất luôn kiểu căn, kiểu nhấn và từ khoá.
+   */
+  const moveElement = useCallback(
+    async (id: string, huong: -1 | 1) => {
+      const hienTai = dataRef.current;
+      if (!hienTai || !projectId) return;
+      const chu = hienTai.textElements.find((item) => item.id === id);
+      const tu = hienTai.inserts.find((item) => item.id === id);
+      const neo = chu?.fromWordId ?? tu?.fromWordId;
+      if (!neo) return;
+      const cauId = hienTai.wordsById.get(neo)?.sentenceId;
+      const i = hienTai.sentences.findIndex((item) => item.id === cauId);
+      const dich = hienTai.sentences[i + huong];
+      if (!dich) return;
+      await api.updateElement(id, { sentenceId: dich.id }).catch(boQuaLoi());
+      const fresh = await api.getProject(projectId).catch(() => null);
+      if (fresh) {
+        const shaped = shape(fresh);
+        durationRef.current = shaped.duration;
+        setData(shaped);
+      }
+    },
+    [projectId],
+  );
+
+  /**
+   * Đổi KIỂU DÁNG một chữ — ghi thẳng, mỗi lần bấm là một lựa chọn dứt khoát.
+   *
+   * Nội dung KHÔNG đi đường này (xem `draftTextContent` / `commitTextContent`):
+   * ghi nội dung là ghi ngược cả vào lời chép, mà gõ dở nửa chừng thì lời chép
+   * sẽ nhận đúng cái nửa chừng đó.
+   */
+  const updateTextElement = useCallback(
+    (id: string, patch: Partial<TextElement>) => {
+      setData((current) => {
+        if (!current) return current;
+        void api
+          .updateElement(id, {
+            band: patch.position,
+            align: patch.align,
+            emphasis: patch.emphasis,
+            keywords: patch.keywords,
+          })
+          .catch(boQuaLoi());
+        return {
+          ...current,
+          textElements: current.textElements.map((item) =>
+            item.id === id ? { ...item, ...patch } : item,
+          ),
+        };
+      });
+    },
+    [],
+  );
+
+  /** Gõ tới đâu thấy tới đó — chỉ đổi trên màn, chưa ghi xuống máy chủ. */
+  const draftTextContent = useCallback((id: string, content: string) => {
+    setData((current) =>
+      current
+        ? {
+            ...current,
+            textElements: current.textElements.map((item) =>
+              item.id === id ? { ...item, content } : item,
+            ),
+          }
+        : current,
+    );
+  }, []);
+
+  /**
+   * Chốt nội dung một chữ: ghi xuống máy chủ rồi NẠP LẠI dự án.
+   *
+   * Phải nạp lại vì máy chủ có thể sửa cả lời chép theo (khi số tiếng khớp) —
+   * không nạp thì bảng từ trên màn còn giữ lời cũ, và mọi thứ suy từ nó (gạch
+   * chấm "nghe không chắc", nhịp từng tiếng, lần sinh chữ sau) đều nói ngược.
+   */
+  const commitTextContent = useCallback(
+    async (id: string, content: string) => {
+      if (!projectId) return;
+      await api.updateElement(id, { content }).catch(boQuaLoi());
+      const fresh = await api.getProject(projectId).catch(() => null);
+      if (fresh) {
+        const shaped = shape(fresh);
+        durationRef.current = shaped.duration;
+        setData(shaped);
+      }
+    },
+    [projectId],
+  );
+
+  /**
+   * Nhập cụm chữ này với cụm NGAY SAU nó thành một.
+   *
+   * Vì sao cần: máy chép lời cắt cụm theo nhịp nói, mà một cái tên nước ngoài
+   * thường bị nghe thành hai ba tiếng rời — "TensorLab" ra "Tenso" rồi "Lab",
+   * và hai tiếng đó rơi vào HAI cụm khác nhau. Sửa từng cụm thì không bao giờ
+   * ghép chúng lại được: cụm trước thành "…tên là TensorLab", cụm sau vẫn còn
+   * một chữ "Lab" trơ ra trên màn. Không có việc này thì lối duy nhất là sửa
+   * cụm trước rồi XOÁ cụm sau — hai thao tác cho một ý, và người dùng phải tự
+   * nghĩ ra.
+   *
+   * Gộp là: cụm này nới mép cuối tới hết cụm sau, nội dung nối lại, cụm sau
+   * biến mất. Lời chép bên dưới KHÔNG đụng tới — số tiếng vẫn khớp nên nó vẫn
+   * là thứ người ta đã nói.
+   */
+  /**
+   * Đổi tên dự án.
+   *
+   * Đổi ngay trên màn rồi mới ghi xuống — như mọi thao tác khác của bàn dựng.
+   * Tên rỗng thì để máy chủ quyết (nó trả về "Dự án mới"), đừng tự bịa ở đây:
+   * hai nơi cùng đặt một giá trị mặc định là hai chỗ để chúng lệch nhau.
+   */
+  const renameProject = useCallback(
+    async (title: string) => {
+      if (!projectId) return;
+      setData((current) => (current ? { ...current, title } : current));
+      const saved = await api
+        .renameProject(projectId, title)
+        .catch(boQuaLoi());
+      if (saved) {
+        setData((current) =>
+          current ? { ...current, title: saved.title } : current,
+        );
+      }
+    },
+    [projectId],
+  );
+
+  const mergeTextWithNext = useCallback(
+    async (id: string) => {
+      const current = dataRef.current;
+      if (!projectId || !current) return;
+      const chu = current.textElements.find((item) => item.id === id);
+      if (!chu || chu.theoGio) return;
+      // Cụm KẾ TIẾP theo thời gian, và phải là chữ chạy theo lời như nó: chữ tự
+      // do neo theo giây, gộp vào đây là trộn hai loại neo khác nhau.
+      const sau = current.textElements
+        .filter((item) => !item.theoGio && item.start >= chu.end - 0.001)
+        .sort((a, b) => a.start - b.start)[0];
+      if (!sau) return;
+
+      const noiDung = `${chu.content} ${sau.content}`.replace(/\s+/g, " ").trim();
+      pushUndoRef.current({
+        type: "restore",
+        label: "Gộp chữ",
+        element: {
+          kind: "text",
+          fromWordId: sau.fromWordId,
+          toWordId: sau.toWordId,
+          content: sau.content,
+          band: sau.position,
+          align: sau.align,
+          emphasis: sau.emphasis,
+          keywords: sau.keywords,
+        },
+      });
+
+      await api.deleteElement(sau.id).catch(boQuaLoi());
+      await api
+        .updateElement(id, { toWordId: sau.toWordId, content: noiDung })
+        .catch(boQuaLoi());
+
+      // Nạp lại: mép mới của cụm kéo theo cả nhịp hiện từng tiếng lẫn ranh giới
+      // đoạn mà chữ được phép nằm trên.
+      const fresh = await api.getProject(projectId).catch(() => null);
+      if (fresh) {
+        const shaped = shape(fresh);
+        durationRef.current = shaped.duration;
+        setData(shaped);
+      }
+      setSelection({ kind: "text", id });
+    },
+    [projectId],
+  );
+
+  /**
+   * Thêm chữ cho câu đang ở vạch giữa.
+   *
+   * Neo vào KHOẢNG TỪ của chính câu đó chứ không neo vào giây hiện tại: gạch bỏ
+   * một câu phía trước thì chữ này vẫn dính đúng chỗ mà không phải tính lại.
+   */
+  /**
+   * Đặt một khối CHỮ TỰ DO ngay tại vạch — tiêu đề, con số, nhãn.
+   *
+   * Neo theo GIỜ, không theo từ. Nó không chép lời ai cả, nên bắt nó chọn một
+   * câu là bịa ra một quan hệ không có thật — mà bản cũ làm đúng thế: tìm câu ở
+   * vạch, ôm cả câu, mồi nội dung bằng chính lời câu đó rồi kéo vạch về đầu câu.
+   * Bốn bước ấy chỉ để trả lời một câu hỏi mà chữ tự do không hề đặt ra.
+   *
+   * Nội dung để RỖNG. Mồi sẵn lời của câu thì nút này chỉ nhân đôi câu đang
+   * đứng — thêm vào mà không khác gì, đúng như người dùng đã kêu.
+   *
+   * Vạch KHÔNG nhúc nhích: bạn đặt chữ ở đâu thì đứng nguyên ở đó mà gõ.
+   */
+  const addTextAtPlayhead = useCallback(async () => {
+    if (!projectId || !data) return;
+    const end = Math.min(time + TEXT_DEFAULT_LENGTH, data.duration);
+    if (end - time < MIN_TEXT_LENGTH) return;
+
+    const created = await api.createElement(projectId, {
+      kind: "text",
+      start: time,
+      end,
+      content: "",
+      band: "top",
+    });
+
+    setData((current) =>
+      current
+        ? {
+            ...current,
+            textElements: [
+              ...current.textElements,
+              {
+                id: created.id,
+                fromWordId: "",
+                toWordId: "",
+                theoGio: true,
+                start: created.start_sec ?? time,
+                end: created.end_sec ?? end,
+                content: "",
+                position: (created.position_band ??
+                  "top") as TextElementPosition,
+                // Chữ mới: căn giữa, cỡ đều — dáng an toàn nhất, đổi sau bằng
+                // hai hộp chọn ở khung bên phải.
+                align: "center",
+                emphasis: "deu",
+                keywords: [],
+              },
+            ],
+          }
+        : current,
+    );
+    setSelection({ kind: "text", id: created.id });
+  }, [projectId, data, time]);
+
+  /** Chèn tư liệu vào câu đang ở vạch giữa. */
+  const addInsertAtPlayhead = useCallback(
+    async (mediaFileId: string) => {
+      if (!projectId || !data) return;
+      const sentence =
+        data.sentences.find((item) => time >= item.start && time < item.end) ??
+        data.sentences[0];
+      if (!sentence) return;
+      const words = data.words.filter(
+        (word) => word.sentenceId === sentence.id,
+      );
+      if (words.length === 0) return;
+
+      const created = await api.createElement(projectId, {
+        kind: "insert",
+        fromWordId: words[0].id,
+        toWordId: words[words.length - 1].id,
+        mediaFileId,
+      });
+      const file = data.insertLibrary.find((item) => item.id === mediaFileId);
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              inserts: [
+                ...current.inserts,
+                {
+                  id: created.id,
+                  start: words[0].start,
+                  end: words[words.length - 1].end,
+                  fromWordId: words[0].id,
+                  toWordId: words[words.length - 1].id,
+                  mediaFileId,
+                  label: file
+                    ? shortMediaLabel(
+                        file.name,
+                        current.insertLibrary.findIndex(
+                          (item) => item.id === file.id,
+                        ),
+                      )
+                    : "Tư liệu",
+                  fullName: file?.name,
+                  url: file ? api.mediaUrl(file.id) : undefined,
+                  thumbUrl: file?.thumb_path
+                    ? api.fileUrl(file.thumb_path)
+                    : undefined,
+                  isVideo: /\.(mp4|mov|m4v|webm|mkv|avi)$/i.test(
+                    file?.name ?? "",
+                  ),
+                  // Tư liệu mới: cắt thẳng. Hiệu ứng là lựa chọn có ý thức.
+                  reveal: "none",
+                  // Tư liệu mới đè kín khung — dáng an toàn nhất, đổi sau ở khung
+                  // bên phải.
+                  shape: "full",
+                },
+              ],
+            }
+          : current,
+      );
+      setSelection({ kind: "insert", id: created.id });
+    },
+    [projectId, data, time],
+  );
+
+  const deleteElement = useCallback(async (id: string) => {
+    // Chụp lại phần tử TRƯỚC khi xoá — sau khi xoá thì không còn gì để chụp.
+    const truoc = dataRef.current;
+    const chu = truoc?.textElements.find((item) => item.id === id);
+    const tu = truoc?.inserts.find((item) => item.id === id);
+    if (chu) {
+      pushUndoRef.current({
+        type: "restore",
+        label: "Xoá chữ",
+        element: {
+          kind: "text",
+          fromWordId: chu.fromWordId,
+          toWordId: chu.toWordId,
+          // Chữ tự do không có mã từ; thiếu cặp giây này thì lệnh dựng lại
+          // thiếu cả hai kiểu neo, máy chủ trả 400 và cú hoàn tác im lặng
+          // không làm gì — xoá nhầm một tiêu đề là mất hẳn.
+          ...(chu.theoGio ? { start: chu.start, end: chu.end } : {}),
+          content: chu.content,
+          band: chu.position,
+          align: chu.align,
+          emphasis: chu.emphasis,
+          keywords: chu.keywords,
+        },
+      });
+    } else if (tu) {
+      pushUndoRef.current({
+        type: "restore",
+        label: "Gỡ tư liệu",
+        element: {
+          kind: "insert",
+          fromWordId: tu.fromWordId,
+          toWordId: tu.toWordId,
+          mediaFileId: tu.mediaFileId,
+          reveal: tu.reveal,
+          shape: tu.shape,
+        },
+      });
+    }
+    await api.deleteElement(id);
+    setData((current) =>
+      current
+        ? {
+            ...current,
+            textElements: current.textElements.filter((item) => item.id !== id),
+            inserts: current.inserts.filter((item) => item.id !== id),
+          }
+        : current,
+    );
+    setSelection(null);
+  }, []);
+
+  /** Tách đoạn tại vạch giữa — thay cho việc cắt bỏ cứng nửa giây. */
+  const splitAtPlayhead = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      const rows = await api.splitSegment(projectId, time);
+      applySegments(rows);
+      // Ghi id đoạn MỚI để hoàn tác biết gộp cái nào trả lại: đoạn mới luôn là
+      // cái nằm ngay sau mốc vừa tách.
+      const created = rows.find((row) => Math.abs(row.start_sec - time) < 0.05);
+      if (created) {
+        pushUndo({ type: "split", label: "Tách đoạn", segmentId: created.id });
+      }
+    } catch {
+      // Im lặng là sai: người dùng bấm mà không thấy gì thì tưởng nút hỏng.
+      toast.add({
+        title: "Chỗ này không tách được",
+        description:
+          "Vạch đang ở sát mép đoạn — kéo dải sang giữa đoạn rồi thử lại",
+        type: "error",
+      });
+    }
+  }, [projectId, time, pushUndo]);
+
+  const toggleSegment = useCallback(
+    async (id: string) => {
+      if (!data) return;
+      const target = data.segments.find((item) => item.id === id);
+      if (!target) return;
+      const next = !target.removed;
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              segments: current.segments.map((item) =>
+                item.id === id ? { ...item, removed: next } : item,
+              ),
+            }
+          : current,
+      );
+      await api.updateSegment(id, { removed: next });
+      pushUndo({
+        type: "segment",
+        label: next ? "Bỏ một đoạn" : "Giữ lại một đoạn",
+        segmentId: id,
+        wasRemoved: !next,
+      });
+    },
+    [data, pushUndo],
+  );
+
+  const applySegments = useCallback((rows: ApiSegment[]) => {
+    setData((current) =>
+      current
+        ? {
+            ...current,
+            segments: rows.map((row) => ({
+              id: row.id,
+              start: row.start_sec,
+              end: row.end_sec,
+              label:
+                row.label ??
+                nhanDoan(row.start_sec, row.end_sec, current.textElements),
+              removed: row.removed === 1,
+            })),
+          }
+        : current,
+    );
+  }, []);
+
+  applySegmentsRef.current = applySegments;
+
+  /**
+   * Gọt mép khối. Kéo thì chỉ đổi hình cho thấy ngay; ghi xuống máy chủ ở
+   * `commitTrim` lúc thả tay — mỗi lần kéo bắn hàng chục sự kiện, ghi từng cái
+   * là đẻ ra hàng chục đoạn cắt vụn.
+   */
+  const dragTrim = useRef<{
+    /** Mỗi loại một đường ghi khác nhau */
+    kind: "clip" | "music" | "insert" | "text" | "effect";
+    id: string;
+    edge: "start" | "end";
+    /** Mốc mới của mép, chốt lúc thả tay */
+    at: number;
+    /** Mốc cũ, để hoàn tác */
+    was: number;
+    /** Tư liệu chèn neo vào TỪ, nên mép của nó là một mã từ chứ không phải giây */
+    wordId?: string;
+    wasWordId?: string;
+    /**
+     * Có mặt khi lần kéo này BIẾN một hiệu ứng tự suy thành hàng thật. Hoàn tác
+     * lúc ấy phải XOÁ hàng đi chứ không phải trả mép về chỗ cũ — trả mép thì còn
+     * lại một hàng thật trùng khít cái tự suy, nhìn không ra khác biệt mà lần
+     * sau đổi mặc định dự án thì chỗ này trơ ra.
+     */
+    wasKind?: JunctionId;
+  } | null>(null);
+
+  const trim = useCallback(
+    (
+      kind: "clip" | "music" | "insert" | "text" | "effect",
+      id: string,
+      edge: "start" | "end",
+      nextTime: number,
+    ) => {
+      setData((current) => {
+        if (!current) return current;
+        // Hiệu ứng kéo theo GIÂY như chữ tự do. Cái đang TỰ SUY ở vết cắt thì
+        // lần kéo đầu tiên hoá nó thành hàng thật — không thì kéo xong buông
+        // tay là nó về chỗ cũ, mà chẳng có gì giải thích.
+        if (kind === "effect") {
+          const dat = current.manualEffects.find((item) => item.id === id);
+          const goc =
+            dat ?? effectsRef.current.find((item) => item.id === id) ?? null;
+          if (!goc) return current;
+          const bounded =
+            edge === "start"
+              ? Math.min(Math.max(nextTime, 0), goc.end - MIN_EFFECT_LENGTH)
+              : Math.max(nextTime, goc.start + MIN_EFFECT_LENGTH);
+          dragTrim.current = {
+            kind: "effect",
+            id,
+            edge,
+            at: bounded,
+            was:
+              dragTrim.current?.was ??
+              (edge === "start" ? goc.start : goc.end),
+            wasKind: dragTrim.current?.wasKind ?? (dat ? undefined : goc.kind),
+          };
+          const next =
+            edge === "start"
+              ? { start: bounded, end: goc.end }
+              : { start: goc.start, end: bounded };
+          return {
+            ...current,
+            manualEffects: dat
+              ? current.manualEffects.map((item) =>
+                  item.id === id ? { ...item, ...next } : item,
+                )
+              : [...current.manualEffects, { id, ...next, kind: goc.kind }],
+          };
+        }
+        // Chữ TỰ DO kéo theo GIÂY, y như nhạc — nó không neo vào tiếng nào để
+        // mà bám ranh giới từ. Chữ chép lời thì không có tay nắm (khoảng của nó
+        // là khoảng của cụm lời), nên nhánh này chỉ chạy cho chữ tự do.
+        if (kind === "text") {
+          const element = current.textElements.find((item) => item.id === id);
+          if (!element) return current;
+          const bounded =
+            edge === "start"
+              ? Math.min(Math.max(nextTime, 0), element.end - MIN_TEXT_LENGTH)
+              : Math.max(nextTime, element.start + MIN_TEXT_LENGTH);
+          dragTrim.current = {
+            kind: "text",
+            id,
+            edge,
+            at: bounded,
+            was:
+              dragTrim.current?.was ??
+              (edge === "start" ? element.start : element.end),
+          };
+          return {
+            ...current,
+            textElements: current.textElements.map((item) =>
+              item.id === id
+                ? edge === "start"
+                  ? { ...item, start: bounded }
+                  : { ...item, end: bounded }
+                : item,
+            ),
+          };
+        }
+        if (kind === "insert") {
+          const insert = current.inserts.find((item) => item.id === id);
+          if (!insert) return current;
+          const words = current.words;
+          const dau = words.findIndex((w) => w.id === insert.fromWordId);
+          const cuoi = words.findIndex((w) => w.id === insert.toWordId);
+          if (dau === -1 || cuoi === -1) return current;
+          // Mép BÁM RANH GIỚI TỪ, không bám giây: tư liệu chèn neo vào khoảng
+          // từ (đặc tả §1), nên "kéo dài thêm" nghĩa là phủ thêm một tiếng nữa.
+          // Giữ ít nhất một tiếng — hai mép trùng nhau là khối rộng 0.
+          const gan = (from: number, to: number, lay: (w: Word) => number) => {
+            let best = from;
+            for (let i = from; i <= to; i += 1) {
+              if (
+                Math.abs(lay(words[i]) - nextTime) <
+                Math.abs(lay(words[best]) - nextTime)
+              ) {
+                best = i;
+              }
+            }
+            return best;
+          };
+          const chon =
+            edge === "start"
+              ? gan(0, cuoi, (w) => w.start)
+              : gan(dau, words.length - 1, (w) => w.end);
+          const word = words[chon];
+          dragTrim.current = {
+            kind: "insert",
+            id,
+            edge,
+            at: edge === "start" ? word.start : word.end,
+            was:
+              dragTrim.current?.was ??
+              (edge === "start" ? insert.start : insert.end),
+            wordId: word.id,
+            wasWordId:
+              dragTrim.current?.wasWordId ??
+              (edge === "start" ? insert.fromWordId : insert.toWordId),
+          };
+          return {
+            ...current,
+            inserts: current.inserts.map((item) =>
+              item.id === id
+                ? edge === "start"
+                  ? { ...item, start: word.start, fromWordId: word.id }
+                  : { ...item, end: word.end, toWordId: word.id }
+                : item,
+            ),
+          };
+        }
+        if (kind === "music") {
+          const track = current.music.find((item) => item.id === id);
+          if (!track) return current;
+          const bounded =
+            edge === "start"
+              ? Math.min(Math.max(nextTime, 0), track.end - MIN_MUSIC_LENGTH)
+              : Math.max(nextTime, track.start + MIN_MUSIC_LENGTH);
+          dragTrim.current = {
+            kind: "music",
+            id,
+            edge,
+            at: bounded,
+            was:
+              dragTrim.current?.was ??
+              (edge === "start" ? track.start : track.end),
+          };
+          return {
+            ...current,
+            music: current.music.map((item) =>
+              item.id === id
+                ? edge === "start"
+                  ? { ...item, start: bounded }
+                  : { ...item, end: bounded }
+                : item,
+            ),
+          };
+        }
+        // Tay nắm nằm trên ĐOẠN, nên phải sửa `segments`. Bản trước tìm trong
+        // `clips` (dải tệp) — không bao giờ khớp id, nên kéo không thấy gì động
+        // và lúc thả tay cũng không ghi được gì. Sai im lặng suốt.
+        const segment = current.segments.find((item) => item.id === id);
+        if (!segment) return current;
+        // Chặn LẤN sang đoạn bên cạnh ngay khi đang kéo, đúng luật máy chủ.
+        //
+        // Thiếu chặn ở đây thì màn hình vẽ khối lấn qua hàng xóm suốt lúc kéo,
+        // thả tay xong máy chủ kéo về — người dùng thấy khối giật ngược một cái
+        // mà không hiểu vì sao. Chặn ở cả hai nơi thì cái nhìn thấy đúng bằng
+        // cái sẽ được ghi.
+        const truoc = current.segments
+          .filter((item) => item.end <= segment.start + 0.001)
+          .reduce((max, item) => Math.max(max, item.end), 0);
+        const sau = current.segments
+          .filter((item) => item.start >= segment.end - 0.001)
+          .reduce(
+            (min, item) => Math.min(min, item.start),
+            Number.POSITIVE_INFINITY,
+          );
+        const bounded =
+          edge === "start"
+            ? Math.min(Math.max(nextTime, truoc), segment.end - MIN_SEGMENT)
+            : Math.min(
+                Math.max(nextTime, segment.start + MIN_SEGMENT),
+                sau,
+              );
+        dragTrim.current = {
+          kind: "clip",
+          id,
+          edge,
+          at: bounded,
+          was:
+            dragTrim.current?.was ??
+            (edge === "start" ? segment.start : segment.end),
+        };
+        return {
+          ...current,
+          segments: current.segments.map((item) =>
+            item.id === id
+              ? edge === "start"
+                ? { ...item, start: bounded }
+                : { ...item, end: bounded }
+              : item,
+          ),
+        };
+      });
+    },
+    [],
+  );
+
+  /**
+   * Chốt việc gọt mép: dịch MÉP CỦA ĐOẠN, không tạo một "vết cắt" riêng.
+   *
+   * Phần bị gọt thành hở giữa hai đoạn, mà hở không thuộc đoạn nào nên không vào
+   * video — cùng một kết quả với cách cũ, nhưng không cần cơ chế thứ hai.
+   */
+  const commitTrim = useCallback(async () => {
+    const pending = dragTrim.current;
+    dragTrim.current = null;
+    if (!projectId || !pending) return;
+
+    if (pending.kind === "insert") {
+      if (pending.wordId) {
+        await api
+          .updateElement(
+            pending.id,
+            pending.edge === "start"
+              ? { fromWordId: pending.wordId }
+              : { toWordId: pending.wordId },
+          )
+          .catch(boQuaLoi());
+      }
+      if (pending.wasWordId) {
+        pushUndo({
+          type: "insert-trim",
+          label: "Đổi khoảng tư liệu",
+          elementId: pending.id,
+          edge: pending.edge,
+          wordId: pending.wasWordId,
+        });
+      }
+      return;
+    }
+    if (pending.kind === "effect") {
+      const item = effectsRef.current.find((row) => row.id === pending.id);
+      if (item) {
+        await api
+          .setEffect(projectId, pending.id, {
+            start: item.start,
+            end: item.end,
+            kind: item.kind,
+          })
+          .catch(boQuaLoi());
+      }
+      pushUndo({
+        type: "effect",
+        label: "Đổi quãng hiệu ứng",
+        effectId: pending.id,
+        was: pending.wasKind
+          ? null
+          : {
+              start: pending.edge === "start" ? pending.was : (item?.start ?? 0),
+              end: pending.edge === "end" ? pending.was : (item?.end ?? 0),
+              kind: item?.kind ?? "zoom-in",
+            },
+      });
+      return;
+    }
+    if (pending.kind === "text") {
+      await api
+        .updateElement(
+          pending.id,
+          pending.edge === "start"
+            ? { start: pending.at }
+            : { end: pending.at },
+        )
+        .catch(boQuaLoi());
+      pushUndo({
+        type: "text-trim",
+        label: "Đổi khoảng chữ",
+        elementId: pending.id,
+        edge: pending.edge,
+        at: pending.was,
+      });
+      return;
+    }
+    if (pending.kind === "music") {
+      const row = await api
+        .updateMusic(
+          pending.id,
+          pending.edge === "start"
+            ? { start: pending.at }
+            : { end: pending.at },
+        )
+        .catch(() => null);
+      // Máy chủ mới là nơi chốt mốc (nó chặn hai mép vào nhau), nên lấy lại số
+      // của nó chứ không giữ số vừa vẽ trên màn.
+      if (row) {
+        setData((current) =>
+          current
+            ? {
+                ...current,
+                music: current.music.map((item) =>
+                  item.id === row.id ? toMusicTrack(row) : item,
+                ),
+              }
+            : current,
+        );
+      }
+      pushUndo({
+        type: "music-trim",
+        label: "Đổi khoảng nhạc",
+        trackId: pending.id,
+        edge: pending.edge,
+        at: pending.was,
+      });
+      return;
+    }
+
+    await api
+      .updateSegment(pending.id, { edge: pending.edge, at: pending.at })
+      .catch(boQuaLoi());
+    const rows = await api.listSegments(projectId).catch(() => null);
+    if (rows) applySegmentsRef.current(rows);
+    pushUndo({
+      type: "trim",
+      label: "Gọt mép đoạn",
+      segmentId: pending.id,
+      edge: pending.edge,
+      at: pending.was,
+    });
+  }, [projectId, pushUndo]);
+
+  /**
+   * Những chỗ KHÔNG vào video, suy ra từ ĐOẠN — không có danh sách riêng nào nữa.
+   *
+   * Ba nguồn, cùng một ý: đoạn bị bỏ, hở giữa hai đoạn (do gọt mép), câu bị gạch.
+   * Trước đây "cắt tay" là bảng thứ tư song song với đoạn, nên cùng một chuyện có
+   * hai chỗ lưu và hai cách hiện trên dải.
+   */
+  const cuts = useMemo(() => {
+    const segments = [...(data?.segments ?? [])].sort(
+      (a, b) => a.start - b.start,
+    );
+    const out: Array<{
+      id: string;
+      start: number;
+      end: number;
+      kind: "segment" | "gap";
+      label: string;
+    }> = [];
+    let cursor = 0;
+    for (const segment of segments) {
+      if (segment.start > cursor + 0.05) {
+        out.push({
+          id: `gap-${segment.id}`,
+          start: cursor,
+          end: segment.start,
+          kind: "gap",
+          label: "Mép đã gọt",
+        });
+      }
+      if (segment.removed) {
+        out.push({
+          id: segment.id,
+          start: segment.start,
+          end: segment.end,
+          kind: "segment",
+          label: segment.label,
+        });
+      }
+      cursor = Math.max(cursor, segment.end);
+    }
+    return out;
+  }, [data?.segments]);
+
+  const skipRanges = useMemo(() => {
+    const raw = [
+      ...(data?.sentences ?? [])
+        .filter((item) => item.removed)
+        .map((item) => ({ start: item.start, end: item.end })),
+      ...cuts.map((item) => ({ start: item.start, end: item.end })),
+    ].sort((a, b) => a.start - b.start);
+
+    const merged: Array<{ start: number; end: number }> = [];
+    for (const span of raw) {
+      const last = merged[merged.length - 1];
+      if (last && span.start <= last.end) {
+        last.end = Math.max(last.end, span.end);
+        continue;
+      }
+      merged.push({ ...span });
+    }
+    return merged;
+  }, [data?.sentences, cuts]);
+
+  /**
+   * Bao nhiêu giây được GIỮ LẠI trong khoảng này.
+   *
+   * Khung xem trước cần nó để đặt kim nhạc: nhạc chạy trên bản ĐÃ CẮT, nên bỏ
+   * một quãng ở giữa thì đoạn nhạc sau đó cũng phải kêu sớm lên bấy nhiêu. Cùng
+   * một phép tính với `keptBefore` của máy chủ — nếu hai bên lệch nhau thì khung
+   * xem đang nói dối.
+   */
+  const keptSpan = useCallback(
+    (from: number, to: number) => {
+      let bo = 0;
+      for (const span of skipRanges) {
+        const giao = Math.min(to, span.end) - Math.max(from, span.start);
+        if (giao > 0) bo += giao;
+      }
+      return Math.max(0, to - from - bo);
+    },
+    [skipRanges],
+  );
+
+  /**
+   * Đổi mốc NGUỒN sang mốc trên video sẽ xuất ra, và ngược lại.
+   *
+   * Dải thời gian vẽ theo mốc XUẤT RA: bỏ một quãng thì mọi thứ phía sau dồn
+   * lên đúng bấy nhiêu và quãng đó biến mất khỏi dải — cái nhìn thấy đúng bằng
+   * cái sẽ tải về. Trước đây dải vẽ theo mốc nguồn và để lại một mảng xám, nên
+   * bàn dựng nói hai điều khác nhau về cùng một video: lúc phát thì vạch nhảy
+   * qua chỗ đó, mà dải thì vẫn vẽ nó ra.
+   *
+   * Còn MỌI THỨ KHÁC vẫn tính theo mốc nguồn — từ, chữ, tư liệu, nhạc, dải ảnh
+   * phim. Chỉ lúc VẼ mới quy đổi. Đổi cả kho dữ liệu sang mốc xuất ra thì mỗi
+   * lần bỏ một quãng là phải tính lại toàn bộ.
+   */
+  const toOutput = useCallback((at: number) => keptSpan(0, at), [keptSpan]);
+
+  /** Ngược lại: một mốc trên dải là giây nào của bản gốc. */
+  const toSource = useCallback(
+    (out: number) => {
+      let con = Math.max(0, out);
+      let cursor = 0;
+      for (const span of skipRanges) {
+        const giu = span.start - cursor;
+        if (con < giu) return cursor + con;
+        con -= giu;
+        cursor = span.end;
+      }
+      return cursor + con;
+    },
+    [skipRanges],
+  );
+
+  // Cắm hai hàm quy đổi vào ref để `scrubByPixels` (khai trước) dùng được.
+  doiGioRef.current = { toOutput, toSource };
+
+  /** Mốc kế tiếp còn giữ lại; trả chính nó nếu đang ở chỗ không bị bỏ. */
+  const nextKeptTime = useCallback(
+    (at: number) => {
+      for (const span of skipRanges) {
+        if (at >= span.start && at < span.end) return span.end;
+      }
+      return at;
+    },
+    [skipRanges],
+  );
+
+  /**
+   * Vạch KHÔNG BAO GIỜ đứng trong một quãng đã bỏ.
+   *
+   * Dải vẽ theo mốc xuất ra nên mốc xuất ra không bao giờ trỏ vào quãng đã bỏ —
+   * bấm hay kéo ở đâu cũng rơi vào chỗ còn giữ. Nhưng vạch đang đứng yên một
+   * chỗ mà chỗ đó VỪA BỊ BỎ thì nó kẹt lại bên trong.
+   *
+   * Đo thật: bỏ khoảng lặng đầu video (0 → 0,86s) trong khi vạch ở 0. Dải vẽ vạch
+   * ở mốc xuất ra 0 — tức ngay đầu đoạn đầu tiên còn giữ — nên nhìn thì thấy
+   * "đang ở đầu video", còn khung xem lại phủ kín chữ "Đoạn này đã bỏ". Hai cửa
+   * nói hai điều về cùng một khoảnh khắc.
+   *
+   * Đẩy vạch tới chỗ còn giữ gần nhất là xong, và làm ở ĐÂY thì mọi đường cắt
+   * đều được lo: bỏ đoạn, bỏ khoảng, gọt mép, hoàn tác.
+   */
+  useEffect(() => {
+    const ra = nextKeptTime(time);
+    if (ra !== time) setTime(Math.min(ra, durationRef.current));
+  }, [skipRanges, time, nextKeptTime]);
+
+  const [transcribeJob, setTranscribeJob] = useState<{
+    status: string;
+    message: string;
+  } | null>(null);
+
+  /** Chép lời ngay từ bàn dựng — người dùng vào đây rồi mới thấy chưa có lời. */
+  const startTranscribe = useCallback(async () => {
+    if (!projectId) return;
+    await api.startTranscribe(projectId);
+    setTranscribeJob({ status: "running", message: "Đang xếp hàng" });
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!projectId || transcribeJob?.status !== "running") return;
+    const timer = window.setInterval(async () => {
+      try {
+        const job = await api.getJob(projectId, "transcribe");
+        setTranscribeJob({ status: job.status, message: job.message ?? "" });
+        // Chép lời HỎNG thì phải nói ra. Trước đây chỉ ghi vào state rồi thôi:
+        // nút quay về chữ "Chép lời" như chưa có gì xảy ra, người dùng bấm mà
+        // không thấy động tĩnh gì thì tưởng nút hỏng. Đo thật: dự án chưa có
+        // video, máy chủ trả "Chưa có video chính", màn hình im lặng hoàn toàn.
+        if (job.status === "error") {
+          toast.add({
+            title: "Chép lời không xong",
+            description: job.message ?? "Máy chủ không nói lý do",
+            type: "error",
+          });
+        }
+        // Chép xong thì nạp lại cả dự án để bản chép lời hiện ra ngay.
+        if (job.status === "done") {
+          const fresh = await api.getProject(projectId);
+          const shaped = shape(fresh);
+          durationRef.current = shaped.duration;
+          setData(shaped);
+        }
+      } catch {
+        /* việc chưa kịp tạo — hỏi lại nhịp sau */
+      }
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [projectId, transcribeJob?.status]);
+
+  const [uploading, setUploading] = useState(false);
+
+  /**
+   * Thêm tư liệu vào dự án ĐANG mở.
+   *
+   * Không bắt quay về màn upload: màn đó luôn tạo dự án MỚI, nên người dùng
+   * muốn chèn thêm một cái ảnh là mất cả buổi sửa.
+   */
+  const addMedia = useCallback(
+    async (files: File[]) => {
+      if (!projectId || files.length === 0) return;
+      setUploading(true);
+      try {
+        const result = await api.uploadFiles(projectId, files, () => {});
+        for (const item of result.rejected) {
+          toast.add({
+            title: item.name,
+            description: item.reason,
+            type: "error",
+          });
+        }
+        if (result.saved.length > 0) {
+          toast.add({
+            title: `Đã thêm ${result.saved.length} tư liệu`,
+            type: "success",
+          });
+          // Nạp lại cả dự án: tệp mới phải vào kho tư liệu để chèn được ngay.
+          const fresh = await api.getProject(projectId);
+          const shaped = shape(fresh);
+          durationRef.current = shaped.duration;
+          setData(shaped);
+        }
+      } catch (error) {
+        toast.add({
+          title: "Không thêm được tư liệu",
+          description: (error as Error).message.slice(0, 100),
+          type: "error",
+        });
+      } finally {
+        setUploading(false);
+      }
+    },
+    [projectId],
+  );
+
+  /** Sửa một từ máy nghe sai — giữ mốc, hạ cờ "không chắc". */
+  /**
+   * "Máy nghe đúng rồi" — hạ cờ ngờ vực mà không đổi một chữ nào.
+   *
+   * Trước đây không có đường này. Cờ `confidence` chỉ hạ khi người dùng SỬA từ,
+   * nên lúc máy nghe đúng thì không có cách nào nói với nó điều đó: gạch chấm
+   * dưới chữ nằm lại vĩnh viễn, và hàng soát nhắc lại mỗi lần mở dự án. "Bỏ
+   * qua" thì chỉ giấu dòng nhắc, gạch chấm vẫn còn — hai chỗ nói hai điều khác
+   * nhau về cùng một chữ.
+   *
+   * Ghi lại chính chữ cũ là đủ: máy chủ luôn hạ cờ khi có người ghi vào từ, vì
+   * "người đã nghe lại rồi thì máy không còn quyền nghi ngờ nữa".
+   */
+  const updateWordRef = useRef<(id: string, text: string) => Promise<void>>(
+    async () => {},
+  );
+  const xacNhanTu = useCallback(async (id: string) => {
+    const word = dataRef.current?.wordsById.get(id);
+    if (!word) return;
+    await updateWordRef.current(id, word.text);
+  }, []);
+
+  const updateWord = useCallback(async (id: string, text: string) => {
+    if (!text.trim()) return;
+    setData((current) => {
+      if (!current) return current;
+      const words = current.words.map((item) =>
+        item.id === id
+          ? { ...item, text: text.trim(), unsure: undefined }
+          : item,
+      );
+      const target = words.find((item) => item.id === id);
+      const sentences = current.sentences.map((sentence) =>
+        sentence.id === target?.sentenceId
+          ? {
+              ...sentence,
+              text: words
+                .filter((item) => item.sentenceId === sentence.id)
+                .map((item) => item.text)
+                .join(" "),
+            }
+          : sentence,
+      );
+      return {
+        ...current,
+        words,
+        wordsById: new Map(words.map((item) => [item.id, item])),
+        sentences,
+      };
+    });
+    await api.setWordText(id, text.trim()).catch(boQuaLoi());
+  }, []);
+
+  // `xacNhanTu` khai báo trước `updateWord` nên phải đi qua ref — nó cần chính
+  // đường ghi đó, chỉ khác là ghi lại đúng chữ cũ.
+  updateWordRef.current = updateWord;
+
+  /**
+   * Trả một chỗ đã bỏ về lại video.
+   *
+   * Đoạn bị bỏ thì bật lại cờ. Hở do gọt mép thì kéo mép đoạn LIỀN TRƯỚC trở về
+   * đúng chỗ hở bắt đầu — hở không phải một thực thể, nó là chỗ trống giữa hai
+   * đoạn, nên lấp nó nghĩa là nới đoạn bên cạnh.
+   */
+  const removeCut = useCallback(
+    async (id: string) => {
+      if (!projectId) return;
+      const span = cuts.find((item) => item.id === id);
+      if (!span) return;
+      if (span.kind === "segment") {
+        await api.updateSegment(id, { removed: false }).catch(boQuaLoi());
+      } else {
+        const before = [...(dataRef.current?.segments ?? [])]
+          .filter((item) => item.end <= span.start + 0.01)
+          .sort((a, b) => b.end - a.end)[0];
+        const after = [...(dataRef.current?.segments ?? [])]
+          .filter((item) => item.start >= span.end - 0.01)
+          .sort((a, b) => a.start - b.start)[0];
+        if (before) {
+          await api
+            .updateSegment(before.id, { edge: "end", at: span.end })
+            .catch(boQuaLoi());
+        } else if (after) {
+          await api
+            .updateSegment(after.id, { edge: "start", at: span.start })
+            .catch(boQuaLoi());
+        }
+      }
+      const rows = await api.listSegments(projectId).catch(() => null);
+      if (rows) applySegmentsRef.current(rows);
+    },
+    [projectId, cuts],
+  );
+
+  /**
+   * Trả lại quãng chứa mốc này.
+   *
+   * Bấm "giữ lại" ở một dòng chữ thì người dùng chỉ ra MỘT MỐC, còn thứ phải
+   * gỡ là cả quãng đang phủ mốc đó — có thể do bỏ đoạn, do gọt mép, hay do bỏ
+   * cả một câu. Tra ngược từ mốc ra quãng, để chỗ gọi không phải biết ba đường
+   * cắt khác nhau.
+   */
+  const restoreRange = useCallback(
+    async (at: number) => {
+      const span = cuts.find((item) => at >= item.start && at < item.end);
+      if (span) {
+        await removeCut(span.id);
+        return;
+      }
+      // Không phải quãng cắt thì là câu bị bỏ bằng cách cũ (cờ riêng trên câu).
+      const cau = dataRef.current?.sentences.find(
+        (item) => item.removed && at >= item.start && at < item.end,
+      );
+      if (cau) toggleSentence(cau.id);
+    },
+    [cuts, removeCut, toggleSentence],
+  );
+
+  /**
+   * Nhấn zoom ở các chỗ nối đoạn — cờ của CẢ dự án, không của từng chỗ.
+   *
+   * Nó đổi dáng mọi chỗ nối nên phải là một lựa chọn có ý thức; để bật lặng lẽ
+   * trong CSDL mà giao diện không có nút nào là người dùng thấy video khác mà
+   * không hiểu vì sao.
+   */
+  const [zoomPunch, setZoomPunchState] = useState<JunctionId>("none");
+
+  /** Đổi cách một tư liệu hiện ra, hoặc hình dáng khung của nó. */
+  const setInsertStyle = useCallback(
+    (id: string, patch: { reveal?: RevealId; shape?: ShapeId }) => {
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              inserts: current.inserts.map((item) =>
+                item.id === id ? { ...item, ...patch } : item,
+              ),
+            }
+          : current,
+      );
+      void api.updateElement(id, patch).catch(boQuaLoi());
+    },
+    [],
+  );
+
+  const setZoomPunch = useCallback(
+    async (punch: JunctionId) => {
+      if (!projectId) return;
+      setZoomPunchState(punch);
+      await api.setZoomPunch(projectId, punch).catch(boQuaLoi());
+    },
+    [projectId],
+  );
+
+  /**
+   * Bỏ qua / lấy lại một lời nhắc ở hàng soát.
+   *
+   * Ghi thẳng xuống máy chủ. Hàng soát dựng lại từ dữ liệu mỗi lần mở dự án,
+   * nên nhớ trong bộ nhớ màn hình thì tải lại là lời nhắc mọc lại y nguyên và
+   * người dùng bị hỏi lại đúng câu mình vừa trả lời.
+   */
+  /**
+   * Chữ nào đang ĐÈ lên chữ này trên khung hình.
+   *
+   * Hai điều kiện: trùng THỜI GIAN, và hai dải chạm nhau theo chiều dọc. Phép
+   * thử dải suy từ hình học ở `bandsOverlap`, không chép tay thành bảng — bản
+   * đầu tôi chép tay và ghi nhầm rằng Sát trên không đụng ai: đúng với Sát đáy
+   * (34% hụt dưới 35%) nhưng sai với Trên mặt, dải đó bắt đầu ngay ở 30%.
+   */
+  const deLenNhau = useCallback((element: TextElement) => {
+    return (dataRef.current?.textElements ?? []).filter(
+      (item) =>
+        item.id !== element.id &&
+        bandsOverlap(element.position, item.position) &&
+        item.start < element.end - 0.02 &&
+        item.end > element.start + 0.02,
+    );
+  }, []);
+
+  const boQuaIssue = useCallback(
+    async (issueId: string, boQua = true) => {
+      if (!projectId) return;
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              dismissed: boQua
+                ? [...current.dismissed, issueId]
+                : current.dismissed.filter((item) => item !== issueId),
+            }
+          : current,
+      );
+      await (
+        boQua
+          ? api.dismissIssue(projectId, issueId)
+          : api.undismissIssue(projectId, issueId)
+      ).catch(boQuaLoi());
+    },
+    [projectId],
+  );
+
+  /**
+   * Những TỪ mà một chữ đang phủ — chỉ trả về khi chữ CÒN đúng bằng lời.
+   *
+   * Đây là phép thử "chữ này do máy sinh từ lời và chưa ai viết lại". Còn khớp
+   * thì mới ứng được tiếng nào với từ nào: để gạch chấm chỗ máy nghe không
+   * chắc, và để lấy mốc nói thật cho hiệu ứng hiện từng tiếng. Viết lại rồi thì
+   * số tiếng không còn khớp, mọi phép ứng đều là bịa.
+   *
+   * Máy chủ dùng ĐÚNG luật này (xem `nhipNoi` ở `server/pipeline.ts`) — hai bên
+   * lệch nhau thì khung xem đang nói dối.
+   */
+  const captionWords = useCallback((element: TextElement) => {
+    const all = dataRef.current?.words ?? [];
+    const from = all.findIndex((word) => word.id === element.fromWordId);
+    const to = all.findIndex((word) => word.id === element.toWordId);
+    if (from === -1 || to === -1 || to < from) return undefined;
+    const trong = all.slice(from, to + 1);
+    if (trong.map((word) => word.text).join(" ") !== element.content) {
+      return undefined;
+    }
+    return trong;
+  }, []);
+
+  /** Mốc nói ra của từng tiếng — chỉ có khi chữ còn khớp lời. */
+  const wordStarts = useCallback(
+    (element: TextElement) => captionWords(element)?.map((word) => word.start),
+    [captionWords],
+  );
+
+  /**
+   * Lấp chữ cho một câu đang trống.
+   *
+   * Không có nút "tạo chữ" toàn dự án nữa: chép lời xong là đã có chữ. Cửa này
+   * chỉ dùng khi người dùng xoá hết chữ của một câu rồi muốn lấy lại — hỏi ngay
+   * tại chính câu đó.
+   */
+  const createCaptionsForSentence = useCallback(
+    async (sentenceId: string) => {
+      if (!projectId) return;
+      const { created } = await api
+        .createCaptions(projectId, sentenceId)
+        .catch(() => ({ created: [] as string[] }));
+      if (created.length === 0) return;
+      const fresh = await api.getProject(projectId).catch(() => null);
+      if (fresh) {
+        const shaped = shape(fresh);
+        durationRef.current = shaped.duration;
+        setData(shaped);
+      }
+      pushUndoRef.current({
+        type: "captions",
+        label: `Tạo ${created.length} chữ`,
+        elementIds: created,
+      });
+    },
+    [projectId],
+  );
+
+  const startExport = useCallback(async () => {
+    if (!projectId) return;
+    await api.startExport(projectId);
+    setExportJob({ status: "running", message: "Đang xếp hàng" });
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!projectId || exportJob?.status !== "running") return;
+    const timer = window.setInterval(async () => {
+      try {
+        const job = await api.getJob(projectId, "export");
+        setExportJob({ status: job.status, message: job.message ?? "" });
+        // Xuất HỎNG cũng phải nói ra — cùng lý do với chép lời. Người dùng đợi
+        // vài phút rồi thấy nút quay về chữ "Xuất video" mà không biết vì sao.
+        if (job.status === "error") {
+          toast.add({
+            title: "Xuất video không xong",
+            description: job.message ?? "Máy chủ không nói lý do",
+            type: "error",
+          });
+        }
+      } catch {
+        /* việc chưa kịp tạo — hỏi lại nhịp sau */
+      }
+    }, 1500);
+    return () => window.clearInterval(timer);
+  }, [projectId, exportJob?.status]);
+
+  const empty = useMemo(
+    () => ({
+      sentences: [] as Sentence[],
+      words: [] as Word[],
+      wordsById: new Map<string, Word>(),
+      textElements: [] as TextElement[],
+      inserts: [] as Insert[],
+      music: [] as MusicTrack[],
+      insertLibrary: [] as ApiProject["files"],
+      segments: [] as Clip[],
+      clips: [] as Clip[],
+      duration: 0,
+      title: "",
+      dismissed: [] as string[],
+      manualEffects: [] as Array<{
+        id: string;
+        start: number;
+        end: number;
+        kind: JunctionId;
+      }>,
+    }),
+    [],
+  );
+
+  const current = data ?? empty;
+
+  /**
+   * Danh sách chỗ nối: mỗi chỗ hai đoạn kề nhau dán vào nhau vì có cắt ở giữa.
+   *
+   * Mốc lấy theo giây BẢN GỐC (chỗ quãng giữ lại phía trước kết thúc) — mốc trên
+   * dải đã cắt thì xê dịch mỗi lần bỏ thêm một quãng ở phía trước, mà bản sửa
+   * tay phải bám được vào đúng chỗ nối cũ.
+   */
+  /**
+   * Mỗi vết cắt: chỗ quãng giữ lại trước nó KẾT THÚC, và chỗ quãng sau nó BẮT
+   * ĐẦU. Cần cả hai vì phần ở giữa không vào video — một hiệu ứng vắt qua vết
+   * cắt phải nhảy qua phần đó, không thì nửa sau của nó rơi hết vào chỗ trống.
+   */
+  const mocCat = useMemo(() => {
+    const giu: Array<{ start: number; end: number }> = [];
+    let cursor = 0;
+    for (const span of skipRanges) {
+      if (span.start > cursor) giu.push({ start: cursor, end: span.start });
+      cursor = span.end;
+    }
+    if (current.duration > cursor)
+      giu.push({ start: cursor, end: current.duration });
+    return giu
+      .slice(0, -1)
+      .map((range, index) => ({ at: range.end, resume: giu[index + 1].start }));
+  }, [skipRanges, current.duration]);
+
+  /**
+   * Danh sách HIỆU ỨNG — mỗi cái một quãng, không phải một mốc.
+   *
+   * Hai nguồn gộp lại:
+   * · TỰ SUY ở mỗi vết cắt, theo kiểu mặc định của dự án. Không ghi xuống kho —
+   *   ghi thì cắt thêm một chỗ là phải nhớ gieo tiếp, quên một đường là chỗ đó
+   *   câm mà chẳng ai biết.
+   * · ĐẶT TAY, có hàng thật trong kho, quãng do người dùng định.
+   *
+   * Cái tự suy ở vết cắt mang mã suy ra từ chính mốc cắt (`eff_cut_3.500`). Nhờ
+   * thế lúc người dùng động vào nó, hàng ghi xuống kho mang ĐÚNG mã đó: chỗ đang
+   * chọn không nhảy đi đâu, và cái tự suy tự biến mất vì quãng của hàng mới phủ
+   * lên vết cắt.
+   */
+  const effects = useMemo(() => {
+    // ĐỈNH luôn tính trên thời gian ĐÃ CẮT, không trên thời gian gốc. Trên thời
+    // gian gốc, một quãng vắt qua vết cắt còn ôm cả phần bị bỏ — dài bao nhiêu
+    // tuỳ vào chỗ đó bỏ nhiều hay ít, nên đỉnh sẽ trôi lung tung. Máy chủ cũng
+    // tính đúng như vậy (xem `effectPeak` trong `server/render.ts`).
+    const doi = (item: {
+      id: string;
+      start: number;
+      end: number;
+      kind: JunctionId;
+      rieng: boolean;
+    }) => {
+      const outStart = toOutput(item.start);
+      const outEnd = toOutput(item.end);
+      const outPeak = effectPeak(outStart, outEnd, item.kind);
+      return {
+        ...item,
+        outStart,
+        outEnd,
+        outPeak,
+        taiCat: mocCat.some((cut) => {
+          const at = toOutput(cut.at);
+          return outStart <= at && at <= outEnd;
+        }),
+      };
+    };
+
+    const tay = current.manualEffects.map((item) => doi({ ...item, rieng: true }));
+    const tuSuy = mocCat
+      .filter(({ at }) => {
+        const out = toOutput(at);
+        return !tay.some((item) => item.outStart <= out && out <= item.outEnd);
+      })
+      .map(({ at, resume }) => {
+        const [truoc, sau] = junctionHalves(zoomPunch);
+        // Nửa sau đo từ chỗ quãng kế TIẾP bắt đầu: phần giữa hai mốc bị bỏ, nên
+        // trên video nó dán liền, còn trên giây gốc thì nó là một cái hố.
+        return doi({
+          id: `eff_cut_${at.toFixed(3)}`,
+          start: at - truoc,
+          end: resume + sau,
+          kind: zoomPunch,
+          rieng: false,
+        });
+      });
+    return [...tuSuy, ...tay].sort((a, b) => a.outPeak - b.outPeak);
+  }, [mocCat, current.manualEffects, zoomPunch, toOutput]);
+
+  // Đọc danh sách mới nhất từ trong các hàm gọi lại mà không phải cho nó vào
+  // danh sách phụ thuộc — cho vào thì mọi hàm dựng lại mỗi lần kéo một mép.
+  const effectsRef = useRef(effects);
+  effectsRef.current = effects;
+
+  /** Ghi một hiệu ứng xuống kho, có ghi vết hoàn tác. */
+  const luuHieuUng = useCallback(
+    async (
+      id: string,
+      next: { start: number; end: number; kind: JunctionId },
+      label: string,
+      ghiVet = true,
+    ) => {
+      if (!projectId) return;
+      const cu = current.manualEffects.find((item) => item.id === id) ?? null;
+      if (ghiVet) {
+        pushUndoRef.current({
+          type: "effect",
+          label,
+          effectId: id,
+          was: cu && { start: cu.start, end: cu.end, kind: cu.kind },
+        });
+      }
+      setData((cur) =>
+        cur
+          ? {
+              ...cur,
+              manualEffects: cur.manualEffects.some((item) => item.id === id)
+                ? cur.manualEffects.map((item) =>
+                    item.id === id ? { ...item, ...next } : item,
+                  )
+                : [...cur.manualEffects, { id, ...next }],
+            }
+          : cur,
+      );
+      await api.setEffect(projectId, id, next).catch(boQuaLoi());
+    },
+    [projectId, current.manualEffects],
+  );
+
+  /**
+   * Đổi kiểu cho một hiệu ứng.
+   *
+   * Cái CHƯA ai động vào thì lấy luôn quãng mặc định của kiểu mới — "nháy sáng"
+   * dài 0,65 giây là nhức mắt, mà đó là quãng mặc định của "zoom vào".
+   * Cái người dùng ĐÃ tự kéo thì giữ nguyên độ dài họ chọn, chỉ dời đỉnh theo
+   * nhịp của kiểu mới.
+   */
+  const setEffectKind = useCallback(
+    async (id: string, kind: JunctionId) => {
+      const item = effectsRef.current.find((row) => row.id === id);
+      if (!item) return;
+      // Cái tự suy thì lấy quãng mặc định của kiểu MỚI, đo từ chính vết cắt —
+      // giữ quãng cũ thì "nháy sáng" dài 0,65 giây, nhức mắt.
+      const next = item.rieng
+        ? { start: item.start, end: item.end, kind }
+        : (() => {
+            const [truoc, sau] = junctionHalves(kind);
+            const cu = junctionHalves(item.kind);
+            return {
+              start: item.start + cu[0] - truoc,
+              end: item.end - cu[1] + sau,
+              kind,
+            };
+          })();
+      await luuHieuUng(id, next, "Đổi kiểu hiệu ứng");
+    },
+    [luuHieuUng],
+  );
+
+  /**
+   * Thêm một hiệu ứng — vào LÁT đang chọn, hoặc tại CHỖ con trỏ đang đứng.
+   *
+   * Chọn một đoạn rồi thêm thì hiệu ứng phủ đúng đoạn ấy: đó là cách nói "cả
+   * khúc này nhấn lên" mà không phải kéo hai mép bằng tay.
+   */
+  const addEffectAtPlayhead = useCallback(async () => {
+    if (!projectId) return;
+    // Mặc định "cắt thẳng" nghĩa là không hiệu ứng — thêm một cái không làm gì
+    // thì người dùng bấm xong không thấy gì và tưởng nút hỏng.
+    const kind: JunctionId = zoomPunch === "none" ? "zoom-in" : zoomPunch;
+    const lat =
+      selection?.kind === "clip"
+        ? current.segments.find((item) => item.id === selection.id)
+        : undefined;
+    const span = lat
+      ? { start: lat.start, end: lat.end }
+      : effectSpan(time, kind);
+    // Sát đầu video thì DỜI cả quãng vào trong, không cắt cụt nửa đầu. Cắt cụt
+    // thì con trỏ đứng ở giây 0 sẽ đẻ ra một hiệu ứng dài 0,15 giây — đúng bằng
+    // mức tối thiểu — mà người dùng không xin cái đó, họ chỉ đứng ở đầu video.
+    const dich = Math.max(0, -span.start);
+    const start = span.start + dich;
+    const end = Math.max(start + MIN_EFFECT_LENGTH, span.end + dich);
+    const id = `eff_${Math.random().toString(36).slice(2, 10)}`;
+    await luuHieuUng(id, { start, end, kind }, "Thêm hiệu ứng");
+    setSelection({ kind: "junction", id });
+  }, [projectId, zoomPunch, selection, current.segments, time, luuHieuUng]);
+
+  /**
+   * Bỏ một hiệu ứng.
+   *
+   * Ở vết cắt thì không xoá được — vết cắt vẫn còn đó, chỉ là nó thôi được đánh
+   * dấu. Nên ghi một hàng "cắt thẳng" đè lên, để cái tự suy không mọc lại.
+   */
+  const deleteEffect = useCallback(
+    async (id: string) => {
+      if (!projectId) return;
+      const item = effectsRef.current.find((row) => row.id === id);
+      if (!item) return;
+      if (item.taiCat) {
+        await luuHieuUng(
+          id,
+          { start: item.start, end: item.end, kind: "none" },
+          "Bỏ đánh dấu chỗ nối",
+        );
+        return;
+      }
+      pushUndoRef.current({
+        type: "effect",
+        label: "Xoá hiệu ứng",
+        effectId: id,
+        was: { start: item.start, end: item.end, kind: item.kind },
+      });
+      setData((cur) =>
+        cur
+          ? {
+              ...cur,
+              manualEffects: cur.manualEffects.filter((row) => row.id !== id),
+            }
+          : cur,
+      );
+      setSelection(null);
+      await api.deleteEffect(projectId, id).catch(boQuaLoi());
+    },
+    [projectId, luuHieuUng],
+  );
+
+  return {
+    ...current,
+    loading: !data && !error,
+    error,
+    time,
+    pxPerSecond,
+    selection,
+    exportJob,
+    canZoomIn: pxPerSecond < MAX_PX_PER_SECOND - 1,
+    canZoomOut: pxPerSecond > MIN_PX_PER_SECOND + 1,
+    projectId,
+    seek,
+    scrubByPixels,
+    zoomBy,
+    resetZoom,
+    /** Thang dải ảnh; thiếu thì suy từ thời lượng — ảnh cũ dài đúng `ceil+1` giây */
+    stripSeconds: strip?.seconds ?? Math.ceil(current.duration) + 1,
+    /** Thang gốc của dải ảnh — mức phóng mà khung hình không bị bóp méo */
+    stripNativeSecondWidth: strip?.native ?? DEFAULT_PX_PER_SECOND,
+    /** Đã biết thang thật hay chưa — dùng để xả bộ nhớ đệm ảnh khi dựng lại */
+    stripVersion: strip?.seconds ?? null,
+    /** Đường bao âm lượng cho dải sóng; `null` là chưa có, dải tự ẩn đi */
+    envelope,
+    setSelection,
+    toggleSentence,
+    updateSentenceText,
+    updateTextElement,
+    addTextAtPlayhead,
+    addInsertAtPlayhead,
+    deleteElement,
+    moveElement,
+    cuts,
+    skipRanges,
+    keptSpan,
+    toOutput,
+    toSource,
+    /** Độ dài video SẼ XUẤT RA — bản gốc trừ đi mọi quãng đã bỏ */
+    outputDuration: keptSpan(0, current.duration),
+    nextKeptTime,
+    cutRange,
+    restoreRange,
+    zoomPunch,
+    setZoomPunch,
+    setInsertStyle,
+    removeCut,
+    undo,
+    undoLabel,
+    attachMusic,
+    setMusicVolume,
+    removeMusic,
+    startExport,
+    transcribeJob,
+    startTranscribe,
+    trim,
+    commitTrim,
+    splitAtPlayhead,
+    toggleSegment,
+    updateWord,
+    xacNhanTu,
+    createCaptionsForSentence,
+    draftTextContent,
+    commitTextContent,
+    mergeTextWithNext,
+    renameProject,
+    captionWords,
+    effects,
+    setEffectKind,
+    addEffectAtPlayhead,
+    deleteEffect,
+    deLenNhau,
+    boQuaIssue,
+    wordStarts,
+    addMedia,
+    uploadingMedia: uploading,
+  };
+}
+
+export type EditorState = ReturnType<typeof useEditor>;
