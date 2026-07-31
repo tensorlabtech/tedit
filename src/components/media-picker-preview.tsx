@@ -39,7 +39,7 @@ export function MediaPickerPreview({ item }: { item: PickerItem | null }) {
   // chọn một tệp lại co lại — cả bảng nhảy một cái.
   if (!item) {
     return (
-      <div className="grid aspect-[9/16] place-items-center rounded-lg bg-muted/50 p-3 text-center text-xs text-muted-foreground">
+      <div className="grid aspect-[9/16] place-items-center rounded-lg bg-muted p-3 text-center text-xs text-muted-foreground">
         Bấm một tệp để xem trước
       </div>
     );
