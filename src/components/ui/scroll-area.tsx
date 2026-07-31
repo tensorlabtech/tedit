@@ -36,6 +36,46 @@ function useOverflowing(ref: React.RefObject<HTMLElement | null>) {
   return overflowing;
 }
 
+/**
+ * Dải cuộn NGANG nhận cả cú lăn DỌC của chuột.
+ *
+ * Bàn di chuột vuốt ngang được nên trên máy Mac không ai thấy thiếu. Nhưng
+ * chuột thường chỉ có bánh xe dọc, và trình duyệt không tự chuyển nó thành cuộn
+ * ngang — nên với chuột, một dải ngang chỉ còn cách kéo cái thanh cuộn mảnh ở
+ * đáy. Đo được: lăn dọc trên dải phong cách để `scrollLeft` đứng nguyên ở 0.
+ *
+ * Chỉ nhận khi cú lăn là DỌC THUẦN (`deltaX === 0`): bàn di chuột vuốt chéo
+ * gửi cả hai trục, mà cộng thêm deltaY vào đó thì dải trượt nhanh gấp đôi ý
+ * người dùng.
+ *
+ * `passive: false` vì có `preventDefault` — không chặn thì trang phía sau cuộn
+ * theo, và dải trôi ngang trong lúc cả màn trôi dọc.
+ */
+function useWheelToHorizontal(
+  ref: React.RefObject<HTMLDivElement | null>,
+  enabled: boolean,
+) {
+  useEffect(() => {
+    const node = ref.current;
+    if (!node || !enabled) return;
+
+    const onWheel = (event: WheelEvent) => {
+      if (event.deltaX !== 0 || event.deltaY === 0) return;
+      // Hết dải rồi thì trả cú lăn về cho trang, đừng nuốt nó.
+      const limit = node.scrollWidth - node.clientWidth;
+      const next = node.scrollLeft + event.deltaY;
+      if ((next < 0 && node.scrollLeft <= 0) || (next > limit && node.scrollLeft >= limit)) {
+        return;
+      }
+      event.preventDefault();
+      node.scrollLeft = Math.max(0, Math.min(limit, next));
+    };
+
+    node.addEventListener("wheel", onWheel, { passive: false });
+    return () => node.removeEventListener("wheel", onWheel);
+  }, [ref, enabled]);
+}
+
 function ScrollArea({
   className,
   viewportClassName,
@@ -64,6 +104,7 @@ function ScrollArea({
 }) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const overflowing = useOverflowing(viewportRef);
+  useWheelToHorizontal(viewportRef, orientation === "horizontal");
 
   return (
     <ScrollAreaPrimitive.Root

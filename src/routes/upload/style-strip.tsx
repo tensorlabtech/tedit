@@ -68,8 +68,15 @@ export function StyleStrip({
           có mặt, vì mười ô không bao giờ vừa bề ngang và người dùng phải biết
           là còn nữa. `scroll-fade-r` mờ mép phải — phía "còn nữa" của một dải
           xếp từ trái sang. */}
-      <ScrollArea orientation="horizontal" className="min-h-0">
-        <div className="scroll-fade-r flex gap-2 pb-2">
+      {/* `scroll-fade-r` đặt ở VIEWPORT, không ở khối nội dung: đặt vào nội
+          dung thì vùng mờ trôi theo nó lúc cuộn, thay vì đứng yên ở mép phải
+          nơi "còn nữa". Cùng cách với dải cảnh và dải tư liệu. */}
+      <ScrollArea
+        orientation="horizontal"
+        className="min-h-0"
+        viewportClassName="scroll-fade-r"
+      >
+        <div className="flex gap-2 pb-2">
           {STYLE_PACKS.map((pack) => (
             <div
               key={pack.id}
@@ -90,6 +97,15 @@ export function StyleStrip({
           ))}
         </div>
       </ScrollArea>
+
+      {/* Nói thẳng ô mẫu KHÔNG diễn hết được.
+          Bộ dáng quyết định bốn thứ, mà một khung hình đứng yên chỉ cho thấy
+          được một: chữ. Không nói ra thì người dùng đọc cả dải này thành "chọn
+          phông chữ" — rồi ngạc nhiên khi nhịp cắt và nhạc cũng đổi theo. */}
+      <span className="text-xs text-muted-foreground">
+        Bộ dáng quyết định dáng chữ, nhịp cắt, tư liệu chèn và nhạc nền. Ô mẫu
+        chỉ cho thấy phần chữ.
+      </span>
     </div>
   );
 }
