@@ -18,7 +18,7 @@ function RadioGroupItem({ className, ...props }: RadioPrimitive.Root.Props) {
     <RadioPrimitive.Root
       data-slot="radio-group-item"
       className={cn(
-        "group/radio-group-item peer relative flex aspect-square size-5 shrink-0 rounded-full bg-input outline-none after:absolute after:-inset-x-3 after:-inset-y-2 focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:bg-destructive/25 aria-invalid:aria-checked:border-primary   data-checked:bg-primary data-checked:bg-primary data-checked:text-primary-foreground dark:data-checked:bg-primary",
+        "group/radio-group-item peer relative flex aspect-square size-5 shrink-0 rounded-full bg-input inset-ring-1 inset-ring-foreground/30 outline-none after:absolute after:-inset-x-3 after:-inset-y-2 focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:bg-destructive/25 aria-invalid:aria-checked:border-primary   data-checked:inset-ring-0 data-checked:bg-primary data-checked:inset-ring-0 data-checked:bg-primary data-checked:text-primary-foreground dark:data-checked:inset-ring-0 data-checked:bg-primary",
         className,
       )}
       {...props}
