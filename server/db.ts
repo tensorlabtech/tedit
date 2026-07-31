@@ -386,6 +386,65 @@ for (const [table, column, type] of [
   // Hình dáng khung tư liệu: square | portrait | wide | full
   ["elements", "shape", "TEXT DEFAULT 'full'"],
   ["projects", "subtitle_band", "TEXT DEFAULT 'bottom'"],
+  // BỘ DÁNG CHỮ của cả dự án — font, màu, viền, quầng, mật độ, nhịp.
+  //
+  // MỘT cột cho cả bộ dáng, và bảng `elements` không có cột nào của nó. Đó là
+  // điều làm việc đổi bộ dáng an toàn tuyệt đối: đổi = ghi một dòng, video vẽ
+  // lại theo, còn nội dung và bố cục người dùng đã chỉnh thì không đụng tới.
+  //
+  // `DEFAULT 'goc'` là đủ cho dự án cũ — vá cột dần nên chúng ra đúng như trước,
+  // không cần migration riêng. Tên rác thì `readStylePack` rơi về bộ gốc.
+  ["projects", "style_pack", "TEXT DEFAULT 'goc'"],
+  // BA TRỤC NHÃN của kho nhạc — vốn từ ĐÓNG, xem `server/music-tags.ts`.
+  //
+  // Tách khỏi cột `tags` tự do chứ không nhét chung: `tags` là chữ NGƯỜI đọc
+  // ("chiptune", "buồn"), ba cột này là thứ MÁY lọc. Trộn vào một cột thì bộ
+  // dáng không khai được thiên lệch, vì hai bên không nói cùng một ngôn ngữ.
+  //
+  // Để RỖNG là hợp lệ: thư mục mới là nguồn sự thật của kho, nên bài vừa thả
+  // vào chưa có hàng nào ở bảng này. Mọi phép lọc phải cho bài chưa gán nhãn đi
+  // qua, không thì bài mới biến mất khỏi kho cho tới khi có người gán.
+  // Bộ dáng ĐANG DÙNG lúc chặng hiệu ứng chạy lần cuối.
+  //
+  // Khác `style_pack` hiện tại nghĩa là người dùng đã đổi dáng SAU khi máy đặt
+  // hiệu ứng — hàng soát mời họ đặt lại. Không tự đặt lại: hiệu ứng và tư liệu
+  // chèn là những vật nằm trên dải, người dùng nhìn thấy và có thể đã sắp lại.
+  ["projects", "effects_style_pack", "TEXT"],
+  // TỰ CÂN HÌNH — bật sẵn.
+  //
+  // Người dùng quay bằng điện thoại trong phòng: đo 81 tệp thật trong
+  // `server/data` thì độ sáng trung bình quanh 40-50 trên thang 255 và bão hoà
+  // dưới 4. Để mặc thì bản xuất ra tối và bạc màu đúng như bản gốc, mà đó là
+  // thứ người không chuyên không biết cách sửa.
+  //
+  // Tắt được vì có người quay bằng máy tử tế và tự nắn màu rồi — với họ, chỉnh
+  // thêm một lần nữa là làm hỏng.
+  ["projects", "auto_grade", "INTEGER DEFAULT 1"],
+  // HAI TRỤC người dùng đè được cho RIÊNG một cụm. `NULL` = theo bộ dáng.
+  //
+  // Đây là cột ĐÈ, không phải cột giá trị: đổi bộ dáng KHÔNG BAO GIỜ ghi vào
+  // chúng. Nhờ vậy cụm chưa đè thì đổi theo dáng mới, còn cụm người dùng đã tự
+  // đặt thì giữ nguyên — lời hứa "đổi dáng an toàn" mạnh lên chứ không mất đi.
+  //
+  // Chép giá trị của bộ dáng vào đây lúc SINH chữ là hỏng hết: lúc đó mọi cụm
+  // đều thành "đã đặt tay" và đổi bộ dáng không còn tác dụng gì.
+  ["elements", "letter_case", "TEXT"],
+  ["elements", "key_color", "TEXT"],
+  /**
+   * Emoji bám vào cụm này. `NULL` là không có — và phần lớn cụm là `NULL`.
+   *
+   * Lưu KÝ TỰ chứ không lưu tên tệp: tên tệp là chuyện của kho ảnh đang dùng,
+   * mà kho ảnh thì đổi được (Noto hôm nay, hình tự vẽ ngày mai). Ký tự thì
+   * không đổi. `emojiFileName()` lo phần bắc cầu.
+   *
+   * Khác hai cột đè ở trên: đây là cột GIÁ TRỊ, do chặng `emoji` ghi. Đổi bộ
+   * dáng sang bộ không dùng emoji thì cột giữ nguyên và phần vẽ im lặng bỏ qua
+   * — đổi về bộ có emoji là nó hiện lại, không phải chạy lại lượt AI.
+   */
+  ["elements", "emoji", "TEXT"],
+  ["library_tracks", "energy", "TEXT"],
+  ["library_tracks", "density", "TEXT"],
+  ["library_tracks", "vocal", "TEXT"],
   // Chiều nhấn zoom ở mỗi chỗ nối đoạn: none | in | out. Mặc định TẮT — nó đổi dáng
   // cả video nên phải là lựa chọn có ý thức. Cột để TEXT vì nó là ba trạng thái, và
   // giá trị 0/1 cũ vẫn đọc được (`pipeline.ts` đổi khi dựng).

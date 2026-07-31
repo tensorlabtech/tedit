@@ -169,8 +169,8 @@ app.post("/api/projects", async (request) => {
   // chỉ dự án mới mới theo số mới.
   const setting = readSettings(request.viewer!.id);
   db.prepare(
-    `INSERT INTO projects (id, title, status, created_at, owner_id, profile, min_silence, want_captions, want_music, insert_source)
-     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO projects (id, title, status, created_at, owner_id, profile, min_silence, want_captions, want_music, insert_source, auto_grade)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
   ).run(
     id,
     body.title?.trim() || "Dự án mới",
@@ -182,6 +182,7 @@ app.post("/api/projects", async (request) => {
     setting.wantCaptions ? 1 : 0,
     setting.wantMusic ? 1 : 0,
     setting.insertSource,
+    setting.autoGrade ? 1 : 0,
   );
   return { id };
 });
@@ -200,6 +201,7 @@ app.patch("/api/projects/:id", async (request, reply) => {
     profile?: string;
     minSilence?: number;
     wantCaptions?: boolean;
+    autoGrade?: boolean;
     wantMusic?: boolean;
     insertSource?: string;
     stylePack?: string;
@@ -257,6 +259,10 @@ app.patch("/api/projects/:id", async (request, reply) => {
   // CSDL giữ một thứ khác, và người dùng chỉ biết lúc xem video xuất ra.
   //
   // Đổi bộ dáng KHÔNG đụng bảng `elements`: cả bộ dáng nằm trong một cột ở đây.
+  if (body.autoGrade !== undefined) {
+    sets.push("auto_grade=?");
+    values.push(body.autoGrade ? 1 : 0);
+  }
   if (body.stylePack !== undefined) {
     if (!STYLE_PACKS.some((pack) => pack.id === body.stylePack)) {
       return reply.code(400).send({ error: "Không có bộ dáng này" });
@@ -276,7 +282,7 @@ app.patch("/api/projects/:id", async (request, reply) => {
   }
   return db
     .prepare(
-      "SELECT id, title, profile, min_silence, want_captions, want_music, insert_source, style_pack FROM projects WHERE id=?",
+      "SELECT id, title, profile, min_silence, want_captions, want_music, insert_source, style_pack, auto_grade FROM projects WHERE id=?",
     )
     .get(id);
 });

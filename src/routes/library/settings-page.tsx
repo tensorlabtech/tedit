@@ -307,6 +307,20 @@ export function SettingsPage() {
               </Field>
 
               <Field orientation="horizontal">
+                <FieldLabel htmlFor="auto-grade">Tự chỉnh sáng và màu</FieldLabel>
+                <Switch
+                  id="auto-grade"
+                  checked={settings.autoGrade}
+                  onCheckedChange={(on) => doi({ autoGrade: Boolean(on) })}
+                />
+              </Field>
+              <FieldDescription>
+                Máy đo hình trước khi dựng: tối thì nâng sáng, bạc màu thì nâng
+                màu, thiếu sáng thì lọc bớt hạt nhiễu. Video quay đủ sáng thì nó
+                không đụng gì. Tắt nếu bạn đã tự nắn màu ở nơi khác.
+              </FieldDescription>
+
+              <Field orientation="horizontal">
                 <FieldLabel htmlFor="want-captions">
                   Tự sinh chữ từ lời
                 </FieldLabel>

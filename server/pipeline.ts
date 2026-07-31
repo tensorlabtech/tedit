@@ -1,3 +1,4 @@
+import { autoGradeOn, canHinh, doHinh } from "./auto-grade";
 import { join } from "node:path";
 
 import { buildEnvelope } from "./audio-envelope";
@@ -596,6 +597,23 @@ export async function runExport(projectId: string) {
     if (end > start) junctions.push({ start, end, kind: item.kind });
   }
 
+  /*
+   * ĐO TRÊN BẢN ĐÃ CẮT, không phải trên từng tệp gốc.
+   *
+   * Một dự án có thể ghép nhiều tệp quay ở nhiều chỗ; đo riêng từng tệp rồi
+   * chỉnh riêng thì đoạn nọ sáng hơn đoạn kia, và chỗ nối nào cũng thành một
+   * cú nhảy sáng. Đo bản đã ghép thì cả video đi theo một mức.
+   *
+   * Tốn hai giây quét — chấp nhận được ở chặng cuối, nơi ffmpeg vốn đã chạy
+   * hàng chục giây.
+   */
+  const canh = autoGradeOn(projectId)
+    ? canHinh(await doHinh(cut))
+    : null;
+  if (canh) {
+    console.log(`[render] tự cân hình: ${canh.lyDo.join(" · ")}`);
+  }
+
   const finalPath = await burnElements(
     projectId,
     cut,
@@ -604,6 +622,7 @@ export async function runExport(projectId: string) {
     // lượt sau — bản đang dựng dở không tự đổi dáng ở nửa sau video.
     readStylePack(projectId),
     junctions,
+    canh,
   );
 
   // Nhạc đặt theo thời gian NGUỒN trên dải, nên phải quy sang dải ĐÃ CẮT: bỏ

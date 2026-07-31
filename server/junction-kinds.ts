@@ -225,6 +225,35 @@ export const JUNCTION_SPECS: JunctionSpec[] = [
     drive: { xoay: 1.5, zoom: 0.55 },
   },
 
+  // ── Cả một đoạn ──────────────────────────────────────────────────────────
+  //
+  // Ba kiểu trên đây đều là cú NHẤN: quãng vài phần mười giây, đặt đúng vết
+  // cắt. Hai kiểu dưới đây trải trên CẢ MỘT ĐOẠN — phóng dần lên rồi hạ về,
+  // hoặc trôi ngang suốt câu nói.
+  //
+  // Không cần cơ chế mới: xung vốn là hình tam giác, nên chỉ việc cho hai nửa
+  // dài ra là nó thành một cú đẩy chậm. Người dùng kéo quãng dài thêm nữa thì
+  // cả hai nửa giãn theo cùng tỉ lệ.
+  //
+  // Phóng mạnh hơn cú nhấn (2,2 so với 1) vì đổi CHẬM thì mắt không bắt được:
+  // cùng 8% mà rải trên bốn giây thì đọc ra là không có gì.
+  {
+    id: "push-in",
+    group: "em",
+    label: "Đẩy vào",
+    note: "Phóng dần suốt cả đoạn rồi hạ về — dồn dần vào người nói",
+    halves: [2.2, 2.2],
+    drive: { zoom: 2.2 },
+  },
+  {
+    id: "drift",
+    group: "em",
+    label: "Trôi ngang",
+    note: "Khung trôi chậm sang ngang — làm một cảnh đứng yên đỡ tĩnh",
+    halves: [2.6, 2.6],
+    drive: { dichX: 5, zoom: 1.4 },
+  },
+
   // ── Màu ──────────────────────────────────────────────────────────────────
   {
     id: "saturate",

@@ -7,6 +7,9 @@
  * ở `5173`: trình duyệt không gửi cookie phiên kèm request, nên đăng nhập xong
  * mọi lệnh vẫn trả về 401.
  */
+import type { StylePackId } from "../../server/style-pack";
+import type { MusicTags } from "../../server/music-tags";
+
 const BASE = import.meta.env.VITE_API ?? "";
 
 export type ApiFile = {
@@ -65,6 +68,10 @@ export type ApiWord = {
 };
 
 export type ApiElement = {
+  /** Cụm này tự đè trục viết hoa; rỗng là theo bộ dáng của dự án */
+  letter_case?: string | null;
+  /** Cụm này tự đè màu nhấn; rỗng là theo bộ dáng của dự án */
+  key_color?: string | null;
   id: string;
   kind: "text" | "insert";
   /** Rỗng với chữ tự do — nó neo theo `start_sec`/`end_sec` */
@@ -87,6 +94,8 @@ export type ApiElement = {
   /** Giá trị gộp kiểu cũ, chỉ để đổi sang hai trục khi đọc */
   layout: string | null;
   keywords: string | null;
+  /** Emoji bám vào cụm; `null` là không có */
+  emoji: string | null;
 };
 
 export type ApiJob = {
@@ -154,6 +163,11 @@ export type ApiLibraryTrack = {
   file: string;
   title: string;
   tags: string[];
+  /**
+   * Ba trục nhãn CÓ KIỂM SOÁT — khác `tags` tự do ở chỗ máy lọc được theo chúng.
+   * Trường nào `null` là chưa gán; bài chưa gán vẫn hiện trong kho.
+   */
+  labels: MusicTags;
   seconds: number;
   /** Người đang đăng nhập tự tải lên, chứ không phải bài đi kèm sẵn */
   mine: boolean;
@@ -182,6 +196,7 @@ export type ApiSettings = {
   musicVolume: number;
   insertSource: "project" | "starred" | "library";
   wantCaptions: boolean;
+  autoGrade: boolean;
   wantMusic: boolean;
   profile: string;
 };
@@ -213,12 +228,21 @@ export type ApiProject = {
      * CHƯA có ô nào ở giao diện bật tắt nó, nên thực tế luôn là mặc định (bật).
      */
     want_captions?: number | null;
+    /** Tự cân sáng và lọc nhiễu cho hình gốc. Rỗng = bật. */
+    auto_grade?: number | null;
     /** Như `want_captions`, cho chặng `music`. Cũng chưa có ô nào bật tắt. */
     want_music?: number | null;
     /** Máy được lấy tư liệu ở đâu: project | starred | library */
     insert_source?: string | null;
     /** Chiều nhấn zoom ở các chỗ nối đoạn: none | in | out */
     zoom_punch?: string | number;
+    /**
+     * BỘ DÁNG CHỮ của cả dự án. Rỗng với dự án dựng trước khi có cột này — chỗ
+     * đọc phải rơi về bộ gốc, xem `findStylePack`.
+     */
+    style_pack?: string | null;
+    /** Bộ dáng đang dùng lúc chặng hiệu ứng chạy lần cuối; `null` là chưa chạy. */
+    effects_style_pack?: string | null;
     /**
      * Số giây dải ảnh biểu diễn — chia bề rộng ảnh cho nó ra thang vẽ.
      * `null` với dự án dựng bằng bản cũ; khi đó suy ra từ thời lượng.
@@ -339,8 +363,14 @@ export const api = {
       profile?: string;
       minSilence?: number;
       wantCaptions?: boolean;
+      autoGrade?: boolean;
       wantMusic?: boolean;
       insertSource?: ApiSettings["insertSource"];
+      /**
+       * Mã bộ dáng chữ. Tên không có trong danh sách thì máy chủ trả 400 chứ
+       * không lặng lẽ rơi về mặc định — màn chọn phải biết mình vừa lưu hụt.
+       */
+      stylePack?: StylePackId;
     },
   ) =>
     request<{
@@ -351,6 +381,7 @@ export const api = {
       want_captions: number | null;
       want_music: number | null;
       insert_source: string | null;
+      style_pack: string | null;
     }>(`/api/projects/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
 
   /** Chạy lại ĐÚNG MỘT chặng AI — không dựng lại cả mạch từ đầu. */
@@ -379,6 +410,16 @@ export const api = {
     request<{ ok: true }>(`/api/projects/${projectId}/effects/${effectId}`, {
       method: "DELETE",
     }),
+
+  /**
+   * Ba câu mở gợi ý cho "3 giây đầu". Mảng rỗng nghĩa là chưa có lời hoặc chưa
+   * có khoá mô hình — hai đường xử lý kia của màn đó vẫn chạy được.
+   */
+  suggestOpeningLines: (projectId: string) =>
+    request<{ lines: string[] }>(
+      `/api/projects/${projectId}/opening-lines`,
+      { method: "POST" },
+    ),
 
   /** Bỏ qua một lời nhắc ở hàng soát — ghi xuống máy chủ để tải lại không hỏi lại */
   dismissIssue: (projectId: string, issueId: string) =>
@@ -522,6 +563,12 @@ export const api = {
       start?: number;
       end?: number;
       keywords?: string[];
+      /**
+       * Hai trục cụm này TỰ ĐÈ. `null` = bỏ đè, quay về theo bộ dáng của dự án;
+       * bỏ trống trường = không đụng tới.
+       */
+      letterCase?: "as-typed" | "upper" | null;
+      keyColor?: string | null;
       /** Neo lại vào câu khác, giữ nguyên mọi thứ đã chỉnh */
       sentenceId?: string;
       /** Kéo mép: neo lại vào từ khác */
@@ -706,7 +753,7 @@ export const api = {
       method: "DELETE",
     }),
 
-  layoutText: (content: string, band: string) =>
+  layoutText: (content: string, band: string, projectId?: string) =>
     request<{
       lines: string[];
       truncated: boolean;
@@ -717,7 +764,7 @@ export const api = {
       lineHeightRatio: number;
     }>("/api/layout", {
       method: "POST",
-      body: JSON.stringify({ content, band }),
+      body: JSON.stringify({ content, band, projectId }),
     }),
 
   listSegments: (projectId: string) =>

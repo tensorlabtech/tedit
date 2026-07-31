@@ -1,3 +1,4 @@
+import { autoGradeFilter, type CanHinh } from "./auto-grade";
 import {
   findJunction,
   junctionHalves,
@@ -750,6 +751,8 @@ export async function burnElements(
   pack: StylePack,
   /** Hiệu ứng trên dải ĐÃ CẮT — mỗi cái mang kiểu và quãng của riêng nó */
   effects: Array<{ start: number; end: number; kind: JunctionId }> = [],
+  /** Bộ tự cân hình đã đo sẵn; `null` là không chỉnh gì. */
+  canh: CanHinh | null = null,
 ) {
   const fontPath = resolvePackFont(pack.font.file);
   const target = join(outDir(projectId), "final.mp4");
@@ -769,6 +772,19 @@ export async function burnElements(
    * Đặt sau thì nó nắn luôn cả chữ và tư liệu chèn: màu nhấn vàng của bộ dáng ra
    * một màu vàng khác, và cả bảng màu đã cân công phu thành vô nghĩa.
    */
+  /*
+   * TỰ CÂN HÌNH đứng TRƯỚC cả nắn màu của bộ dáng.
+   *
+   * Nắn màu của bộ dáng là một ý đồ thẩm mỹ — nó giả định khung hình đã phơi
+   * sáng đúng. Áp ý đồ ấy lên một khung tối thui thì ra một khung tối thui có
+   * ám màu. Sửa chỗ phơi sáng trước, rồi mới tô phong cách lên trên.
+   */
+  const autoChain = autoGradeFilter(canh);
+  if (autoChain) {
+    filters.push(`${stream}${autoChain}[canhinh]`);
+    stream = "[canhinh]";
+  }
+
   const grade = gradeFilter(pack.grade);
   if (grade) {
     filters.push(`${stream}${grade}[graded]`);
