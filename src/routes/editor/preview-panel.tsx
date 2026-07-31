@@ -24,6 +24,7 @@ import { packForElement } from "../../../server/style-pack";
 import { findStylePack } from "../../../server/style-pack-catalog";
 
 import { formatTime } from "./editor-data";
+import { findJunction } from "../../../server/junction-kinds";
 import { PreviewMusic } from "./preview-music";
 import { StyleSwitchDialog } from "./style-switch-dialog";
 import type { EditorState } from "./use-editor";
@@ -88,8 +89,20 @@ export function PreviewPanel({
    * phần bị bỏ ngay tại đó.
    */
   const junction = (() => {
-    let zoom = 0;
-    let sang = 0;
+    /*
+     * Cộng dồn theo TỪNG BIẾN HÌNH, không phải theo từng kiểu.
+     *
+     * Bản trước chỉ biết hai biến — phóng và sáng — nên mọi kiểu không thuộc hai
+     * trục ấy đều vẽ ra y hệt nhau ở khung xem. Nay mỗi kiểu khai nó lái những
+     * biến nào (`server/junction-kinds.ts`), và chỗ này chỉ việc cộng lại.
+     *
+     * Cộng chứ không lấy `max`: hai chỗ nối gần nhau thì tác dụng chồng lên
+     * nhau, đúng như chuỗi lọc ffmpeg — ở đó mỗi bộ lọc cũng nối tiếp bộ trước.
+     */
+    const acc = {
+      zoom: 0, sang: 0, bhoa: 0, xoay: 0,
+      dichX: 0, dichY: 0, nhoe: 0, vien: 0, sac: 0, tuongPhan: 0,
+    };
     const now = editor.toOutput(editor.time);
     for (const item of editor.effects) {
       if (item.kind === "none") continue;
@@ -105,12 +118,40 @@ export function PreviewPanel({
             ? 1 - da / after
             : 0;
       if (value <= 0) continue;
-      if (item.kind === "flash")
-        sang = Math.max(sang, value * projectPack.intensity.flashAmount);
-      else if (item.kind === "dip") sang = Math.min(sang, -value);
-      else zoom = Math.max(zoom, value);
+      const drive = findJunction(item.kind).drive;
+      for (const key of Object.keys(acc) as Array<keyof typeof acc>) {
+        acc[key] += (drive[key] ?? 0) * value;
+      }
     }
-    return { zoom, sang };
+    return acc;
+  })();
+
+  /** Chuỗi `transform` và `filter` dựng từ các biến vừa cộng. */
+  const junctionStyle = (() => {
+    const punch = projectPack.intensity.punchScale;
+    const flash = projectPack.intensity.flashAmount;
+    const transform = [
+      `scale(${(1 + punch * junction.zoom).toFixed(4)})`,
+      junction.dichX || junction.dichY
+        ? `translate(${junction.dichX.toFixed(2)}%, ${junction.dichY.toFixed(2)}%)`
+        : null,
+      junction.xoay ? `rotate(${junction.xoay.toFixed(2)}deg)` : null,
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const filter = [
+      projectPack.grade ? `url(#${gradeFilterId(projectPack)})` : null,
+      `brightness(${(1 + flash * junction.sang).toFixed(3)})`,
+      junction.tuongPhan
+        ? `contrast(${(1 + junction.tuongPhan * 0.6).toFixed(3)})`
+        : null,
+      junction.bhoa ? `saturate(${(1 + junction.bhoa).toFixed(3)})` : null,
+      junction.sac ? `hue-rotate(${junction.sac.toFixed(1)}deg)` : null,
+      junction.nhoe ? `blur(${junction.nhoe.toFixed(2)}px)` : null,
+    ]
+      .filter(Boolean)
+      .join(" ");
+    return { transform, filter };
   })();
 
   /**
@@ -236,23 +277,13 @@ export function PreviewPanel({
                 className="absolute inset-0 size-full object-cover"
                 // Nhấn zoom chỉ phóng HÌNH GỐC: chữ và tư liệu vẽ sau nên giữ
                 // nguyên cỡ, đúng như bản in ra.
-                style={{
-                  // Độ mạnh lấy từ BỘ DÁNG, không phải hằng dùng chung: bộ
-                  // "nhanh" và bộ "êm" chọn kiểu chuyển cảnh khác nhau mà cú
-                  // zoom vẫn đẩy bằng nhau thì xem video thật vẫn hao hao.
-                  transform: `scale(${1 + projectPack.intensity.punchScale * junction.zoom})`,
-                  // NẮN MÀU của phong cách đứng TRƯỚC cú nháy sáng của chỗ nối —
-                  // cùng thứ tự với chuỗi lọc ffmpeg, nơi nắn màu là bộ lọc đầu
-                  // tiên còn `eq` của chỗ nối nối vào sau.
-                  filter: [
-                    projectPack.grade
-                      ? `url(#${gradeFilterId(projectPack)})`
-                      : null,
-                    `brightness(${1 + junction.sang})`,
-                  ]
-                    .filter(Boolean)
-                    .join(" "),
-                }}
+                // Độ mạnh lấy từ BỘ DÁNG, không phải hằng dùng chung: bộ
+                // "nhanh" và bộ "êm" chọn kiểu chuyển cảnh khác nhau mà cú zoom
+                // vẫn đẩy bằng nhau thì xem video thật vẫn hao hao.
+                //
+                // NẮN MÀU của phong cách đứng TRƯỚC hiệu ứng chỗ nối — cùng thứ
+                // tự với chuỗi lọc ffmpeg, nơi nắn màu là bộ lọc đầu tiên.
+                style={junctionStyle}
                 muted={false}
                 playsInline
                 preload="auto"

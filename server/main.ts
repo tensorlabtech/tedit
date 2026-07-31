@@ -1,3 +1,4 @@
+import { normalizeJunction } from "./junction-kinds";
 import { createReadStream, createWriteStream, existsSync } from "node:fs";
 import { mkdir, rm, unlink } from "node:fs/promises";
 import { basename, extname, join, resolve } from "node:path";
@@ -11,7 +12,7 @@ import Fastify from "fastify";
 import { auth } from "./auth";
 import { authGuard } from "./auth-guard";
 import { PROJECT_ROOT, PUBLIC_URL } from "./env";
-import { assertInProject } from "./ownership";
+import { assertInProject, assertOwnerIs } from "./ownership";
 
 import { buildEnvelope, readEnvelope } from "./audio-envelope";
 import { db, newId } from "./db";
@@ -81,6 +82,10 @@ import {
   refreshCaptionsAfterWordEdit,
   splitVerbatimCaptions,
 } from "./caption-elements";
+import { suggestOpeningLines } from "./ai-opening";
+import { KEY_COLORS } from "./style-pack";
+import { GOC, STYLE_PACKS } from "./style-pack-catalog";
+import { readStylePack } from "./style-pack-store";
 import { layoutText, type Band } from "./text-layout";
 
 const app = Fastify({ bodyLimit: 4 * 1024 * 1024 * 1024 });
@@ -132,6 +137,25 @@ app.addHook("onRequest", authGuard);
 
 await app.register(fastifyStatic, { root: DATA_ROOT, prefix: "/files/" });
 
+/*
+ * Ảnh emoji — cùng bộ tệp mà bộ dựng dán vào video.
+ *
+ * Cùng MỘT tệp cho cả hai đường vẽ, không phải hai bộ hình na ná nhau. Đó là mức
+ * khớp mạnh nhất có thể có giữa trang xem và bản xuất, và nó có được chỉ vì
+ * emoji là ảnh chứ không phải chữ.
+ *
+ * Tiền tố `/emoji/` chứ không `/assets/emoji/`: `/assets/` là chỗ Vite đổ tệp
+ * bản dựng ra, đặt chung là hai bộ phục vụ tĩnh giẫm lên nhau ở đúng môi trường
+ * thật mà lúc chạy dev không thấy gì.
+ *
+ * `decorateReply: false`: `reply.sendFile` chỉ được gắn MỘT lần cho cả ứng dụng.
+ */
+await app.register(fastifyStatic, {
+  root: join(PROJECT_ROOT, "assets", "emoji"),
+  prefix: "/emoji/",
+  decorateReply: false,
+});
+
 const VIDEO = /\.(mp4|mov|m4v|webm|mkv|avi)$/i;
 const IMAGE = /\.(jpe?g|png|webp|heic)$/i;
 const AUDIO = /\.(mp3|m4a|aac|wav|ogg|flac)$/i;
@@ -178,6 +202,7 @@ app.patch("/api/projects/:id", async (request, reply) => {
     wantCaptions?: boolean;
     wantMusic?: boolean;
     insertSource?: string;
+    stylePack?: string;
   };
   const sets: string[] = [];
   const values: Array<string | number> = [];
@@ -227,6 +252,18 @@ app.patch("/api/projects/:id", async (request, reply) => {
     sets.push("insert_source=?");
     values.push(body.insertSource);
   }
+  // BỘ DÁNG CHỮ. Tên không có trong danh sách thì trả 400 chứ KHÔNG nhận rồi
+  // lặng lẽ rơi về mặc định: nhận rồi rơi thì màn chọn báo "đã lưu" trong khi
+  // CSDL giữ một thứ khác, và người dùng chỉ biết lúc xem video xuất ra.
+  //
+  // Đổi bộ dáng KHÔNG đụng bảng `elements`: cả bộ dáng nằm trong một cột ở đây.
+  if (body.stylePack !== undefined) {
+    if (!STYLE_PACKS.some((pack) => pack.id === body.stylePack)) {
+      return reply.code(400).send({ error: "Không có bộ dáng này" });
+    }
+    sets.push("style_pack=?");
+    values.push(body.stylePack);
+  }
   if (sets.length === 0) {
     return reply.code(400).send({ error: "Không có gì để đổi" });
   }
@@ -239,7 +276,7 @@ app.patch("/api/projects/:id", async (request, reply) => {
   }
   return db
     .prepare(
-      "SELECT id, title, profile, min_silence, want_captions, want_music, insert_source FROM projects WHERE id=?",
+      "SELECT id, title, profile, min_silence, want_captions, want_music, insert_source, style_pack FROM projects WHERE id=?",
     )
     .get(id);
 });
@@ -440,6 +477,7 @@ app.get("/api/projects/:id", async (request, reply) => {
     await createCaptionElements(
       id,
       (seeded?.subtitle_band ?? "bottom") as Band,
+      readStylePack(id),
     );
     db.prepare(
       "UPDATE projects SET captions_seeded=1, subtitles=0 WHERE id=?",
@@ -458,7 +496,7 @@ app.get("/api/projects/:id", async (request, reply) => {
   //   3 → chẻ trước những chữ chép nguyên lời mà dài hơn một cụm
   //   4 → phần nới mép theo tiếng thật không ăn sang cụm bên cạnh nữa
   if (idle && (seedState?.segments_by_caption ?? 0) < 4 && wordCount.n > 0) {
-    await splitVerbatimCaptions(id);
+    await splitVerbatimCaptions(id, readStylePack(id));
     const total = (
       db
         .prepare(
@@ -466,7 +504,7 @@ app.get("/api/projects/:id", async (request, reply) => {
         )
         .get(id) as { total: number }
     ).total;
-    await seedSegmentsByCaption(id, total);
+    await seedSegmentsByCaption(id, total, readStylePack(id));
     db.prepare("UPDATE projects SET segments_by_caption=4 WHERE id=?").run(id);
   }
 
@@ -519,6 +557,21 @@ app.get("/api/projects/:id", async (request, reply) => {
 //
 // Ghi xuống máy chủ chứ không giữ trong bộ nhớ màn hình: hàng soát dựng lại từ
 // dữ liệu mỗi lần mở dự án, nên nhớ trong bộ nhớ thì tải lại là hỏi lại.
+/**
+ * Ba câu mở gợi ý cho "3 giây đầu".
+ *
+ * `POST` chứ không `GET`: nó gọi mô hình ngôn ngữ, tức là tốn tiền thật mỗi lần.
+ * Một đường `GET` mời trình duyệt và mọi lớp đệm ở giữa gọi lại nó bất cứ lúc
+ * nào — mà ở đây gọi lại nghĩa là trả tiền lại.
+ */
+app.post("/api/projects/:id/opening-lines", async (request) => {
+  const { id } = request.params as { id: string };
+  // Không có khoá mô hình thì trả mảng rỗng, KHÔNG trả lỗi: hai đường xử lý kia
+  // của màn "3 giây đầu" không cần AI, nên một lỗi ở đây sẽ chặn cả ba.
+  const lines = await suggestOpeningLines(id).catch(() => []);
+  return { lines };
+});
+
 app.post("/api/projects/:id/dismissed", async (request, reply) => {
   const { id } = request.params as { id: string };
   const { issueId } = request.body as { issueId?: string };
@@ -544,6 +597,12 @@ app.put("/api/projects/:id/effects/:effectId", async (request, reply) => {
     return reply.code(400).send({ error: "Quãng hiệu ứng không hợp lệ" });
   }
   if (!kind) return reply.code(400).send({ error: "Thiếu kiểu hiệu ứng" });
+  // Chốt kiểu ở CỬA, không để chuỗi lạ nằm lại trong CSDL. Bản vẽ rơi về "cắt
+  // thẳng" khi gặp kiểu không biết, nên một lần gõ sai tên sẽ đi qua êm ru và
+  // chỉ lộ ra lúc người dùng thắc mắc sao chỗ nối này không có gì.
+  if (normalizeJunction(kind) === "none" && kind !== "none") {
+    return reply.code(400).send({ error: `Không có kiểu hiệu ứng "${kind}"` });
+  }
   db.prepare(
     `INSERT INTO effects (id, project_id, start_sec, end_sec, kind) VALUES (?,?,?,?,?)
      ON CONFLICT(id) DO UPDATE SET start_sec=excluded.start_sec, end_sec=excluded.end_sec, kind=excluded.kind`,
@@ -1096,12 +1155,27 @@ app.post("/api/projects/:id/music/restore", async (request, reply) => {
  * bằng đúng tệp font sẽ dùng để in, rồi trả số đo theo TỈ LỆ khung.
  */
 app.post("/api/layout", async (request) => {
-  const body = request.body as { content: string; band?: Band };
+  const body = request.body as {
+    content: string;
+    band?: Band;
+    projectId?: string;
+  };
+  // Bộ dáng đổi cả cỡ chữ lẫn chỗ bẻ dòng, nên khung xem trước phải hỏi bằng bộ
+  // dáng của ĐÚNG dự án đang mở. Thiếu `projectId` thì rơi về bộ gốc.
+  //
+  // KIỂM QUYỀN TẠI CHỖ, không trông vào cổng chung: `auth-guard` soi mã trên
+  // ĐƯỜNG DẪN, mà mã ở đây nằm trong THÂN request — đường dẫn `/api/layout`
+  // không khớp mẫu nào nên nó đi thẳng qua cổng. Đây là đúng cái bẫy mà ghi chú
+  // ở `ownership.ts` cảnh báo: cửa cứ mở, cho tới hôm có người đi qua.
+  if (body.projectId) {
+    assertOwnerIs(request.viewer!, "project", body.projectId);
+  }
   const layout = await layoutText(
     body.content ?? "",
     body.band ?? "top",
     OUT_WIDTH,
     OUT_HEIGHT,
+    body.projectId ? readStylePack(body.projectId) : GOC,
   );
   return {
     lines: layout.lines,
@@ -1388,6 +1462,9 @@ app.patch("/api/elements/:elementId", async (request, reply) => {
     reveal?: string;
     shape?: string;
     keywords?: string[];
+    /** `null` = bỏ đè, quay về theo bộ dáng của dự án */
+    letterCase?: string | null;
+    keyColor?: string | null;
     sentenceId?: string;
     fromWordId?: string;
     toWordId?: string;
@@ -1477,6 +1554,31 @@ app.patch("/api/elements/:elementId", async (request, reply) => {
       elementId,
     );
   }
+  // Hai cột ĐÈ ở cấp cụm. `null` là BỎ ĐÈ, quay về theo bộ dáng của dự án —
+  // nên phải phân biệt `null` với "không gửi trường này", và đó là lý do chỗ
+  // này kiểm `!== undefined` chứ không kiểm giá trị có thật hay không.
+  //
+  // Giá trị lạ bị gạt chứ không ghi: cột này đi thẳng vào lệnh vẽ, một chuỗi
+  // rác ở đây thành một màu ffmpeg không đọc được và cả lượt xuất video hỏng.
+  if (body.letterCase !== undefined) {
+    const next =
+      body.letterCase === "upper" || body.letterCase === "as-typed"
+        ? body.letterCase
+        : null;
+    db.prepare("UPDATE elements SET letter_case=? WHERE id=?").run(
+      next,
+      elementId,
+    );
+  }
+  if (body.keyColor !== undefined) {
+    const next = KEY_COLORS.some((item) => item.value === body.keyColor)
+      ? body.keyColor
+      : null;
+    db.prepare("UPDATE elements SET key_color=? WHERE id=?").run(
+      next,
+      elementId,
+    );
+  }
   // Kéo mép: neo lại vào TỪ khác. Mép b-roll bám ranh giới từ chứ không bám
   // giây — cùng lý do với mọi thứ khác trên bàn dựng (đặc tả §1): cắt bỏ một
   // câu phía trước thì nó vẫn dính đúng chỗ mà không phải tính lại mốc.
@@ -1541,6 +1643,7 @@ app.post("/api/projects/:id/captions", async (request, reply) => {
   const created = await createCaptionElements(
     id,
     band,
+    readStylePack(id),
     sentence ? { start: sentence.start_sec, end: sentence.end_sec } : undefined,
   );
   return { created };

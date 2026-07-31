@@ -1,10 +1,34 @@
+import {
+  findJunction,
+  junctionHalves,
+  type JunctionId,
+} from "./junction-kinds";
 import { existsSync } from "node:fs";
 import { rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { ffmpeg, probe, run } from "./media-tools";
-import { OVERLAY_FONT, outDir, workDir } from "./paths";
 import {
+  POP_HOLD,
+  POP_SNAP,
+  REVEALS,
+  REVEAL_RISE,
+  REVEAL_SECONDS,
+  SLIDE_SHIFT,
+} from "./insert-reveal";
+import { clampEmojiTop, emojiSpot } from "./emoji-layout";
+import { emojiFileName, isKnownEmoji } from "./emoji-vocab";
+import { ffmpeg, probe, run } from "./media-tools";
+import { PROJECT_ROOT, outDir, resolvePackFont, workDir } from "./paths";
+import {
+  boxBorderW,
+  ffmpegColor,
+  gradeFilter,
+  packForElement,
+  type StylePack,
+} from "./style-pack";
+import type { RevealId } from "./style-pack";
+import {
+  SAFE,
   textWidth,
   type AlignId,
   type Band,
@@ -19,23 +43,17 @@ import { alphaExpr, positionExpr } from "./reveal-expr";
  * Bán kính 10 cho độ lệch chuẩn ≈ 6px, đúng bằng `text-shadow` bán kính 12 mà
  * trang xem dùng (CSS lấy bán kính gấp đôi độ lệch chuẩn).
  */
-const GLOW_RADIUS = 10;
-const GLOW_OPACITY = 0.9;
-
 /**
- * Viền mảnh bám sát nét chữ, tính theo cỡ chữ.
+ * Quầng tối và viền mảnh nay nằm trong bộ dáng (`glow`, `edge`).
  *
- * Chỉ có quầng mờ thì chữ trắng đặt lên tư liệu sáng — ảnh chụp màn hình nền
- * trắng là ca hay gặp nhất — nhoè tới mức không đọc được, vì quầng đã loãng
+ * Viền: chỉ có quầng mờ thì chữ trắng đặt lên tư liệu sáng — ảnh chụp màn hình
+ * nền trắng là ca hay gặp nhất — nhoè tới mức không đọc được, vì quầng đã loãng
  * ngay tại mép nét. Cách đúng về mặt hình ảnh là thêm một lớp quầng bán kính
  * nhỏ, nhưng làm mờ ở cỡ đầy đủ trên cả khung tốn gấp ba thời gian xuất.
- * `drawtext` vẽ viền cùng lúc với chữ nên không tốn thêm gì, và ở độ dày này
- * (≈2% cỡ chữ) nó đọc như một quầng chặt chứ không ra "chữ dán".
- *
- * Bản trước dùng 5,5% — dày tới mức nhìn ra ngay là nhãn dán.
+ * `drawtext` vẽ viền cùng lúc với chữ nên không tốn thêm gì, và ở độ dày ≈2% cỡ
+ * chữ nó đọc như một quầng chặt chứ không ra "chữ dán". Bản trước dùng 5,5% —
+ * dày tới mức nhìn ra ngay là nhãn dán.
  */
-const EDGE_SHARE = 0.022;
-const EDGE_COLOR = "black@0.7";
 
 export const OUT_WIDTH = 1080;
 export const OUT_HEIGHT = 1920;
@@ -59,6 +77,12 @@ export type RenderElement = {
   isStill?: boolean;
   /** Cách tư liệu hiện ra */
   reveal?: RevealId;
+  /** Cụm này tự đè trục viết hoa; rỗng thì theo bộ dáng của dự án */
+  letterCase?: StylePack["letterCase"] | null;
+  /** Cụm này tự đè màu nhấn; rỗng thì theo bộ dáng của dự án */
+  keyColor?: string | null;
+  /** Emoji bám vào cụm; rỗng là không có. Bộ dáng tắt emoji thì bỏ qua. */
+  emoji?: string | null;
   /** Hình dáng khung tư liệu */
   shape?: InsertShape;
   /**
@@ -383,17 +407,12 @@ export async function mixMusic(
  * `fade-up` (mờ dần + trượt từ dưới lên) là kiểu chính; `fade` là bản nhẹ hơn cho
  * chỗ không muốn có chuyển động.
  */
-export type RevealId = "none" | "fade" | "fade-up";
+export type { RevealId } from "./style-pack";
 
-/** 0,8 giây — gấp đôi bản trước, để nhìn là thấy. */
-const REVEAL_SECONDS = 0.8;
-/** Trượt lên 10% chiều cao khung: 3% là không ai thấy, 20% là như bị quăng. */
-const REVEAL_RISE = 0.1;
-
-/** Giá trị cũ trong CSDL đổi về hai kiểu còn lại. */
+/** Giá trị cũ trong CSDL đổi về một kiểu còn dùng được. */
 export function normalizeReveal(value: string | null | undefined): RevealId {
-  if (value === "fade" || value === "none" || value === "fade-up") return value;
-  // `zoom`, `slide`, `ken` của bản trước: gần nhất là bản có chuyển động.
+  if (REVEALS.some((item) => item.id === value)) return value as RevealId;
+  // `zoom`, `ken` của bản trước: gần nhất là bản có chuyển động.
   if (value) return "fade-up";
   return "none";
 }
@@ -474,26 +493,53 @@ function roundCorners(box: { w: number; h: number }) {
   );
 }
 
-function insertFilter(insert: RenderElement, index: number, label: string) {
+function insertFilter(
+  insert: RenderElement,
+  index: number,
+  label: string,
+  pack: StylePack,
+) {
   const reveal = normalizeReveal(insert.reveal);
   const shape = insert.shape ?? "full";
   const box = shapeBox(shape);
+  // Tư liệu chèn nắn màu ĐÚNG như dải chính. Không nắn thì mỗi lần chèn là một
+  // lần màu nhảy: nền ấm, tư liệu lạnh — người xem đọc ra ngay là "dán vào".
+  const grade = gradeFilter(pack.grade);
   const base =
     `[${index + 1}:v]scale=${box.w}:${box.h}:force_original_aspect_ratio=increase,` +
-    `crop=${box.w}:${box.h},setsar=1,fps=${FPS}`;
+    `crop=${box.w}:${box.h},setsar=1,fps=${FPS}` +
+    (grade ? `,${grade}` : "");
   // Bo góc TRƯỚC khi dịch mốc và mờ dần: `fade` nhân vào kênh trong suốt sẵn có,
   // nên làm ngược thứ tự thì góc bo bị ghi đè lại thành vuông.
   // Dáng `full` không bo: nó phủ kín khung nên bo sẽ thành bốn góc đen.
   const round = shape === "full" ? "" : roundCorners(box);
   const shift = `,setpts=PTS-STARTPTS+${insert.start.toFixed(3)}/TB`;
-  const fade = `,format=yuva420p,fade=t=in:st=${insert.start.toFixed(3)}:d=${REVEAL_SECONDS}:alpha=1`;
-  if (reveal === "none") return `${base}${round}${shift}${label}`;
-  return `${base}${round}${shift}${fade}${label}`;
+  const at = insert.start.toFixed(3);
+  // `slide` KHÔNG mờ: cái đọc được ở kiểu đó là chuyển động, thêm mờ vào là nó
+  // lẫn với `fade-up`. `pop` thì đứng ngoài suốt quãng giữ rồi vào phắt — một
+  // lần `fade` rất ngắn, bắt đầu muộn.
+  const alpha =
+    reveal === "none" || reveal === "slide"
+      ? ""
+      : reveal === "pop"
+        ? `,format=yuva420p,fade=t=in:st=${(insert.start + POP_HOLD).toFixed(3)}:d=${POP_SNAP}:alpha=1`
+        : `,format=yuva420p,fade=t=in:st=${at}:d=${REVEAL_SECONDS}:alpha=1`;
+  return `${base}${round}${shift}${alpha}${label}`;
 }
 
-/** Toạ độ `x` của lớp chèn: mép trái của hộp dáng. */
+/**
+ * Toạ độ `x` của lớp chèn: mép trái của hộp dáng, cộng phần trượt của `slide`.
+ *
+ * Trượt bằng `overlay` chứ không bằng luồng phụ, cùng lý do với `insertY`:
+ * `overlay` nhận biểu thức có `t` nên cả chuyển động chỉ tốn một lần dán.
+ */
 function insertX(insert: RenderElement) {
-  return String(shapeBox(insert.shape ?? "full").x);
+  const box = shapeBox(insert.shape ?? "full");
+  if (normalizeReveal(insert.reveal) !== "slide") return String(box.x);
+  const st = insert.start.toFixed(3);
+  const shift = Math.round(box.w * SLIDE_SHIFT);
+  const p = `min(1,(t-${st})/${REVEAL_SECONDS})`;
+  return `'${box.x}-if(lt(t,${st}+${REVEAL_SECONDS}),${shift}*pow(1-${p},3),0)'`;
 }
 
 /**
@@ -537,33 +583,17 @@ function insertY(insert: RenderElement) {
  *
  * Giá trị cũ `in`/`out` vẫn đọc được (xem `normalizeJunction`).
  */
-export type JunctionId = "none" | "zoom-in" | "zoom-out" | "flash" | "dip";
-
-export function normalizeJunction(
-  value: string | number | null | undefined,
-): JunctionId {
-  if (value === "in" || value === 1 || value === "1") return "zoom-in";
-  if (value === "out") return "zoom-out";
-  if (
-    value === "zoom-in" ||
-    value === "zoom-out" ||
-    value === "flash" ||
-    value === "dip"
-  ) {
-    return value;
-  }
-  return "none";
-}
-
-const PUNCH_SECONDS = 0.5;
-/** Nửa NGẮN của một chỗ nối — đủ thấy là một cú giật, chưa thành một cú lắc. */
-const PUNCH_QUICK = 0.15;
-const PUNCH_SCALE = 0.08;
-/** Nháy sáng phải RẤT ngắn: 0,12 giây là thấy được mà chưa thành nhức mắt. */
-const FLASH_SECONDS = 0.12;
-const FLASH_AMOUNT = 0.7;
-/** Chìm đen dài hơn nháy sáng một chút, không thì đọc ra như lỗi khung. */
-const DIP_SECONDS = 0.18;
+/*
+ * Mức ĐẨY của cú zoom và mức SÁNG của cú nháy nay nằm trong bộ dáng
+ * (`intensity.punchScale` · `intensity.flashAmount`).
+ *
+ * Chúng từng là hằng dùng chung, nên bộ dáng chỉ chọn được KIỂU chuyển cảnh mà
+ * không chọn được độ mạnh: bộ "nhịp nhanh" và bộ "nhịp êm" đều đẩy 8% và đều
+ * sáng 0,7. Xem bảng giá trị thì hai bộ rất khác, xem video thật thì hao hao.
+ *
+ * Thời lượng thì vẫn là hằng — 0,12 giây là ngưỡng thấy-được-mà-chưa-nhức-mắt,
+ * không phải chuyện phong cách.
+ */
 
 /**
  * Xung tại mỗi chỗ nối, giá trị 0..1 — HAI PHÍA, hai nửa dài ngắn khác nhau.
@@ -594,12 +624,7 @@ const DIP_SECONDS = 0.18;
  * Phải khớp `junctionHalves` của `src/dev/overlays/overlay-model.ts` và bộ số
  * trong `doiChoNoiThanhHieuUng` của `server/db.ts`.
  */
-export function junctionHalves(kind: JunctionId): [number, number] {
-  if (kind === "flash") return [FLASH_SECONDS, FLASH_SECONDS];
-  if (kind === "dip") return [DIP_SECONDS, DIP_SECONDS];
-  if (kind === "zoom-out") return [PUNCH_QUICK, PUNCH_SECONDS];
-  return [PUNCH_SECONDS, PUNCH_QUICK];
-}
+
 
 /**
  * ĐỈNH của xung bên trong một quãng — giữ nguyên tỉ lệ nhịp của kiểu.
@@ -629,40 +654,91 @@ function pulseExpr(spans: Array<{ start: number; end: number; peak: number }>) {
   return spans.map(shape).reduce((a, b) => `max(${a},${b})`);
 }
 
-function junctionFilter(
+export function junctionFilter(
   spans: Array<{ start: number; end: number; peak: number }>,
   kind: JunctionId,
+  pack: StylePack,
 ) {
-  if (kind === "none" || spans.length === 0) return null;
-
-  if (kind === "flash" || kind === "dip") {
-    const amount = kind === "flash" ? FLASH_AMOUNT : -1;
-    const pulse = pulseExpr(spans);
-    return `eq=brightness='${amount}*(${pulse})':eval=frame`;
-  }
+  const drive = findJunction(kind).drive;
+  if (spans.length === 0 || Object.keys(drive).length === 0) return null;
 
   const pulse = pulseExpr(spans);
-  const z = `(1+${PUNCH_SCALE}*(${pulse}))`;
-  // `crop` phải được nói RÕ mép trái/trên, không dùng mặc định.
-  //
-  // Trong ffmpeg, `crop` tính `w`/`h` MỘT LẦN lúc dựng chuỗi lọc, còn `x`/`y`
-  // tính theo từng khung. Mặc định `x=(in_w-out_w)/2` dùng `in_w` của LIÊN KẾT
-  // — con số chốt từ đầu, tức 1080 — nên `x` luôn bằng 0. Ảnh phóng to ra thì
-  // phần bị cắt dồn hết sang phải: nhìn ra là hình TRƯỢT NGANG chứ không phải
-  // phóng từ tâm.
-  //
-  // Đo thật trên một hình có chữ thập ở giữa: tâm lệch +42px lúc đỉnh. Viết
-  // thẳng mép theo `t` (qua chính biểu thức phóng) thì tâm đứng yên trong ±0,8px
-  // mà mức phóng vẫn đủ.
-  //
-  // Không đảo thứ tự thành `crop` rồi `scale` được: `crop` chốt `w`/`h` một lần
-  // nên cửa sổ cắt không bao giờ đổi — đo ra là không phóng một chút nào.
-  return (
-    `scale=w='${OUT_WIDTH}*${z}':h='${OUT_HEIGHT}*${z}':eval=frame,` +
-    `crop=${OUT_WIDTH}:${OUT_HEIGHT}:` +
-    `x='(${OUT_WIDTH}*${z}-${OUT_WIDTH})/2':` +
-    `y='(${OUT_HEIGHT}*${z}-${OUT_HEIGHT})/2'`
-  );
+  const parts: string[] = [];
+
+  /*
+   * HÌNH HỌC gộp làm một chặng: phóng, dịch, xoay đều là phép biến khuôn hình,
+   * và làm rời từng cái thì mỗi lần đều phải phóng bù rồi cắt lại — ba vòng
+   * lấy mẫu chồng lên nhau, ảnh nhũn đi thấy rõ.
+   *
+   * Thứ tự BẮT BUỘC là phóng → xoay → cắt. Xoay trước khi phóng thì bốn góc
+   * trống lọt vào khung trước lúc có gì che; cắt trước khi phóng thì `crop`
+   * chốt cửa sổ một lần và không phóng được chút nào.
+   */
+  const zoomAmt = (drive.zoom ?? 0) * pack.intensity.punchScale;
+  const { dichX = 0, dichY = 0, xoay = 0 } = drive;
+  if (zoomAmt || dichX || dichY || xoay) {
+    const z = `(1+${zoomAmt.toFixed(4)}*(${pulse}))`;
+    const w = `${OUT_WIDTH}*${z}`;
+    const h = `${OUT_HEIGHT}*${z}`;
+    let chain = `scale=w='${w}':h='${h}':eval=frame`;
+    if (xoay) {
+      // `c=none` giữ nguyên nền: đã phóng bù nên bốn góc không lọt vào khung,
+      // mà tô đen thì chỗ nào hụt sẽ thành vệt đen thay vì lộ ảnh.
+      chain += `,rotate=a='${(xoay * Math.PI) / 180}*(${pulse})':ow=rotw(0):oh=roth(0):c=none`;
+    }
+    // Mép trái/trên phải nói RÕ. `crop` tính `w`/`h` một lần lúc dựng chuỗi,
+    // nên mặc định `x=(in_w-out_w)/2` dùng bề ngang CHỐT TỪ ĐẦU và luôn ra 0 —
+    // phần bị cắt dồn hết sang phải, nhìn ra là hình trượt ngang chứ không
+    // phải phóng từ tâm.
+    const cx = `(${w}-${OUT_WIDTH})/2${dichX ? `+${((dichX / 100) * OUT_WIDTH).toFixed(2)}*(${pulse})` : ""}`;
+    const cy = `(${h}-${OUT_HEIGHT})/2${dichY ? `+${((dichY / 100) * OUT_HEIGHT).toFixed(2)}*(${pulse})` : ""}`;
+    chain += `,crop=${OUT_WIDTH}:${OUT_HEIGHT}:x='${cx}':y='${cy}'`;
+    parts.push(chain);
+  }
+
+  // SÁNG và TƯƠNG PHẢN — một bộ lọc `eq` cho cả hai.
+  const sang = (drive.sang ?? 0) * pack.intensity.flashAmount;
+  const tuongPhan = drive.tuongPhan ?? 0;
+  if (sang || tuongPhan) {
+    const bits = [`eval=frame`];
+    if (sang) bits.unshift(`brightness='${sang.toFixed(3)}*(${pulse})'`);
+    if (tuongPhan) bits.unshift(`contrast='1+${(tuongPhan * 0.6).toFixed(3)}*(${pulse})'`);
+    parts.push(`eq=${bits.join(":")}`);
+  }
+
+  // MÀU — `hue` lo cả bão hoà lẫn lệch sắc, và nó nhận biểu thức theo `t`.
+  const { bhoa = 0, sac = 0 } = drive;
+  if (bhoa || sac) {
+    const bits: string[] = [];
+    if (bhoa) bits.push(`s='1+${bhoa.toFixed(3)}*(${pulse})'`);
+    if (sac) bits.push(`h='${sac.toFixed(1)}*(${pulse})'`);
+    parts.push(`hue=${bits.join(":")}`);
+  }
+
+  // TỐI VIỀN — `vignette` nhận biểu thức khi bật `eval=frame`.
+  if (drive.vien) {
+    parts.push(
+      `vignette=angle='${(drive.vien * 0.9).toFixed(3)}*(${pulse})':eval=frame`,
+    );
+  }
+
+  /*
+   * NHOÈ là kiểu DUY NHẤT không mượt được: `gblur` chốt `sigma` một lần lúc
+   * dựng chuỗi, không nhận biểu thức theo `t`. Nên nó chỉ bật/tắt trong cửa sổ
+   * quanh đỉnh — chấp nhận được vì cửa sổ ấy chỉ vài phần mười giây, và mắt
+   * đọc ra "một nhịp nhoè" chứ không đọc ra "nhoè dần".
+   */
+  if (drive.nhoe) {
+    const windows = spans
+      .map((span) => {
+        const half = Math.min(0.09, (span.end - span.start) / 3);
+        return `between(t,${(span.peak - half).toFixed(3)},${(span.peak + half).toFixed(3)})`;
+      })
+      .join("+");
+    parts.push(`gblur=sigma=${drive.nhoe}:enable='${windows}'`);
+  }
+
+  return parts.length > 0 ? parts.join(",") : null;
 }
 
 /** In chữ và đè tư liệu chèn lên dải đã cắt. */
@@ -670,9 +746,12 @@ export async function burnElements(
   projectId: string,
   cut: string,
   elements: RenderElement[],
+  /** Bộ dáng của dự án — quyết định font, màu, viền, quầng, nhịp */
+  pack: StylePack,
   /** Hiệu ứng trên dải ĐÃ CẮT — mỗi cái mang kiểu và quãng của riêng nó */
   effects: Array<{ start: number; end: number; kind: JunctionId }> = [],
 ) {
+  const fontPath = resolvePackFont(pack.font.file);
   const target = join(outDir(projectId), "final.mp4");
   const inserts = elements.filter(
     (item) =>
@@ -682,6 +761,19 @@ export async function burnElements(
 
   const filters: string[] = [];
   let stream = "[0:v]";
+
+  /*
+   * NẮN MÀU đứng ĐẦU CHUỖI — trước hiệu ứng chỗ nối, trước tư liệu chèn, trước chữ.
+   *
+   * Nắn màu là việc làm với KHUNG HÌNH GỐC, giống hệt cách một người dựng làm.
+   * Đặt sau thì nó nắn luôn cả chữ và tư liệu chèn: màu nhấn vàng của bộ dáng ra
+   * một màu vàng khác, và cả bảng màu đã cân công phu thành vô nghĩa.
+   */
+  const grade = gradeFilter(pack.grade);
+  if (grade) {
+    filters.push(`${stream}${grade}[graded]`);
+    stream = "[graded]";
+  }
 
   // Gom hiệu ứng THEO KIỂU rồi nối chuỗi lọc của từng kiểu.
   //
@@ -705,7 +797,7 @@ export async function burnElements(
   }
   let junctionIndex = 0;
   for (const [kind, spans] of byKind) {
-    const chain = junctionFilter(spans, kind);
+    const chain = junctionFilter(spans, kind, pack);
     if (!chain) continue;
     const label = `[junction${junctionIndex++}]`;
     filters.push(`${stream}${chain}${label}`);
@@ -716,7 +808,7 @@ export async function burnElements(
     const label = `[ins${index}]`;
     // `setpts` dịch mốc luồng chèn về đúng chỗ trên dải chính; không dịch thì nó
     // khớp theo thời gian của chính nó và luôn rơi về đầu video.
-    filters.push(insertFilter(insert, index, label));
+    filters.push(insertFilter(insert, index, label, pack));
 
     const next = `[ov${index}]`;
     filters.push(
@@ -730,9 +822,32 @@ export async function burnElements(
   // có biểu thức thời gian riêng. Trước đây kiểu "cỡ đều" đi đường bẻ dòng (một
   // lệnh mỗi DÒNG) cho nhẹ, nhưng vẽ cả dòng bằng một lệnh thì không cách nào
   // cho từng tiếng hiện lần lượt — mà đó lại là kiểu chữ của cả hệ này.
+  /**
+   * Emoji chờ dán — gom cả lượt rồi mới dựng đồ thị lọc.
+   *
+   * Không dán ngay trong vòng lặp vì mỗi hình là một LUỒNG VÀO của ffmpeg, mà
+   * luồng vào phải khai hết ở dòng lệnh trước khi có chuỗi lọc. Gom theo hình
+   * chứ không theo lần dùng: một video hay dùng lại vài hình, và mở cùng một
+   * tệp năm lần là năm luồng giải mã cho đúng một tấm ảnh.
+   */
+  const emojiUses: Array<{
+    char: string;
+    x: number;
+    y: number;
+    size: number;
+    start: number;
+    end: number;
+  }> = [];
+
   const draws: string[] = [];
   for (const text of texts) {
-    const placed = await placeWords(
+    // Bộ dáng HIỆU LỰC của riêng cụm này: bộ của dự án, cộng phần nó tự đè.
+    // Mọi phép đo và mọi biểu thức phía dưới đều chạy theo bộ này.
+    const shown = packForElement(pack, {
+      letterCase: text.letterCase ?? null,
+      keyColor: text.keyColor ?? null,
+    });
+    const { words: placed, box } = await placeWords(
       text.content!,
       text.keywords ?? [],
       text.align ?? "center",
@@ -740,42 +855,131 @@ export async function burnElements(
       text.band ?? "top",
       OUT_WIDTH,
       OUT_HEIGHT,
+      shown,
     );
-    for (const [flat, word] of placed.entries()) {
-      // Có mốc thật thì theo mốc thật; không thì RẢI ĐỀU số tiếng trong đúng
-      // khoảng của cụm. Thứ tự phẳng của `placed` giữ nguyên thứ tự tiếng trong
-      // câu ở mọi kiểu nhấn, nên chỉ số này khớp thẳng với mảng mốc.
-      //
-      // Nhịp cố định (0,07 giây một tiếng) là sai ở đây: cụm 2 giây thì chữ
-      // chạy hết trong nửa giây rồi đứng im, mà nói nhanh nói chậm gì cũng thế.
-      // Rải đều thì chữ vẫn bám theo nhịp của chính quãng nói đó — đây là luật
-      // của `OverlayTextBlock` ở khung xem, hai bên phải giống nhau.
+    /*
+     * Chỗ đứng của emoji — vật NỔI bên ngoài khối chữ.
+     *
+     * Ba cửa phải cùng mở: cụm có hình, bộ dáng cho phép, và hình nằm trong vốn
+     * từ. Cửa thứ ba không thừa: cột `emoji` là dữ liệu cũ có thể còn giữ một
+     * hình đã bị bỏ khỏi vốn từ, mà thiếu tệp ảnh thì ffmpeg chết cả lượt xuất
+     * chứ không phải mất mỗi cái emoji.
+     */
+    if (text.emoji && shown.emoji && isKnownEmoji(text.emoji) && placed.length) {
+      const largest = Math.max(...placed.map((word) => word.fontSize));
+      const spot = emojiSpot(text.band ?? "top", largest, shown)!;
+      const align = text.align ?? "center";
+      // Cùng luật với trang xem: `stair` và `stagger` bám lề TRÁI ở hàng đầu,
+      // nên emoji của chúng cũng bám trái.
+      const x =
+        align === "center"
+          ? Math.round(box.left + (box.width - spot.size) / 2)
+          : align === "right"
+            ? Math.round(box.left + box.width - spot.size)
+            : box.left;
+      emojiUses.push({
+        char: text.emoji,
+        x,
+        y: clampEmojiTop(
+          Math.round(
+            spot.side === "above"
+              ? box.top - spot.gap - spot.size
+              : box.bottom + spot.gap,
+          ),
+          Math.round(spot.size),
+          OUT_HEIGHT,
+          SAFE,
+        ),
+        size: Math.round(spot.size),
+        start: text.start,
+        end: text.end,
+      });
+    }
+
+    // Mốc bắt đầu của TỪNG tiếng, tính trước cả lượt: lớp tô sáng cần biết
+    // tiếng SAU bắt đầu lúc nào để tắt đúng chỗ, mà trong vòng lặp thì chưa có.
+    const startsAt = placed.map((_, flat) => {
       const spoken = text.wordStarts?.[flat];
-      const startAt =
-        spoken !== undefined
-          ? spoken
-          : placed.length > 1
-            ? text.start + ((text.end - text.start) * flat) / placed.length
-            : text.start;
-      const spot = positionExpr({
+      if (spoken !== undefined) return spoken;
+      // Không có mốc thật thì RẢI ĐỀU số tiếng trong đúng khoảng của cụm — nhịp
+      // cố định 0,07 giây/tiếng thì cụm 2 giây chạy hết trong nửa giây rồi đứng im.
+      return placed.length > 1
+        ? text.start + ((text.end - text.start) * flat) / placed.length
+        : text.start;
+    });
+
+    for (const [flat, word] of placed.entries()) {
+      // Thứ tự phẳng của `placed` giữ nguyên thứ tự tiếng trong câu ở mọi kiểu
+      // nhấn, nên chỉ số này khớp thẳng với mảng mốc.
+      const startAt = startsAt[flat];
+      const spot = positionExpr(shown, {
         x: word.x,
         y: word.y,
-        width: await textWidth(word.text, word.fontSize),
+        width: await textWidth(word.text, word.fontSize, shown),
         fontSize: word.fontSize,
         scale: word.fontSize / OUT_WIDTH,
         startAt,
       });
+      // Không viền thì BỎ HẲN hai tham số, đừng đặt `borderw=0`: `drawtext` vẫn
+      // chạy nhánh vẽ viền và nét chữ dày lên một chút so với lúc không khai.
+      const edge = shown.edge
+        ? `borderw=${Math.max(2, Math.round(word.fontSize * shown.edge.share))}:` +
+          `bordercolor=${ffmpegColor(shown.edge.tone)}:`
+        : "";
+      // Nền khối vẽ theo TỪNG TIẾNG vì mỗi tiếng là một lệnh `drawtext`.
+      // `boxborderw` là đệm quanh nét chữ, tính theo cỡ chữ như mọi số đo khác.
+      const box = shown.box
+        ? `box=1:boxcolor=${ffmpegColor(shown.box.tone)}:` +
+          `boxborderw=${boxBorderW(word.fontSize, shown)}:`
+        : "";
+      const body =
+        `fontfile='${fontPath}':text='${escapeDrawText(word.text)}':` +
+        `fontsize=${word.fontSize}:x='${spot.x}':y='${spot.y}':` +
+        edge +
+        box;
       draws.push(
-        `drawtext=fontfile='${OVERLAY_FONT}':text='${escapeDrawText(word.text)}':` +
+        `drawtext=${body}` +
           // Không có tham số nghiêng: nghiêng nằm trong chính tệp font
-          // (`OVERLAY_FONT` là bản Bold Italic). Cờ `italic` cũ ở đây không làm
-          // gì cả, nên video in ra đứng thẳng trong khi trang xem nghiêng.
-          `fontcolor=${word.color}:alpha='${alphaExpr(startAt, word.alpha)}':` +
-          `fontsize=${word.fontSize}:x='${spot.x}':y='${spot.y}':` +
-          `borderw=${Math.max(2, Math.round(word.fontSize * EDGE_SHARE))}:` +
-          `bordercolor=${EDGE_COLOR}:` +
+          // (bộ dáng khai `font.italic` cho trang xem biết). Cờ `italic` cũ ở
+          // đây không làm gì cả, nên video in ra đứng thẳng trong khi trang xem
+          // nghiêng.
+          `fontcolor=${word.color}:alpha='${alphaExpr(shown, startAt, word.alpha)}':` +
           enableRange(text.start, text.end),
       );
+
+      // TÔ SÁNG tiếng đang được nói: vẽ ĐÈ một bản thứ hai bằng màu sáng, chỉ
+      // hiện trong đúng quãng tiếng đó được nói.
+      //
+      // Phải vẽ hai lần vì `drawtext` KHÔNG đổi được `fontcolor` theo thời gian
+      // — chỉ `alpha`, `x`, `y` mới nhận biểu thức có `t`. Bản đè nằm ngay sau
+      // bản gốc trong cùng chuỗi lọc nên nó luôn ở trên, đúng chỗ, đúng cỡ.
+      //
+      // Chỉ chạy khi chữ CÒN KHỚP lời: `wordStarts` rỗng nghĩa là người dùng đã
+      // viết lại, không còn tiếng nào ứng với tiếng nào. Tô theo nhịp đều lúc đó
+      // là tô bừa.
+      if (shown.highlight && text.wordStarts) {
+        // Sáng cho tới khi tiếng SAU bắt đầu — đúng cách karaoke chạy. Tiếng
+        // cuối thì sáng tới hết cụm.
+        const until = startsAt[flat + 1] ?? text.end;
+        // Nền của tiếng đang nói: nếu bộ dáng khai `highlight.box` thì bản đè
+        // mang nền riêng, đè lên cả nền thường. Đây là dáng "ô sáng chạy theo
+        // lời" — khác hẳn dáng chỉ đổi màu chữ.
+        const litBox = shown.highlight.box
+          ? `box=1:boxcolor=${ffmpegColor(shown.highlight.box)}:` +
+            `boxborderw=${boxBorderW(word.fontSize, shown)}:`
+          : box;
+        const litBody =
+          `fontfile='${fontPath}':text='${escapeDrawText(word.text)}':` +
+          `fontsize=${word.fontSize}:x='${spot.x}':y='${spot.y}':` +
+          edge +
+          litBox;
+        draws.push(
+          `drawtext=${litBody}` +
+            `fontcolor=${shown.highlight.tone.color}:` +
+            `alpha='${shown.highlight.tone.alpha}*between(t,${startAt.toFixed(3)},${until.toFixed(3)})':` +
+            enableRange(text.start, text.end),
+        );
+      }
     }
   }
   if (draws.length > 0) {
@@ -791,21 +995,64 @@ export async function burnElements(
     // năm mươi cụm phụ đề là hơn hai trăm nhãn, đủ để đồ thị lọc dài quá mức.
     const layer = `[${1 + inserts.length}:v]`;
     filters.push(`${layer}${draws.join(",")}[txt]`);
-    filters.push(`[txt]split[glowsrc][txtmain]`);
-    // Bóp hết màu về đen nhưng GIỮ hình dạng (kênh trong), rồi làm mờ ở NỬA CỠ
-    // và phóng lại: kết quả vốn là một vệt mờ nên thu nhỏ trước không thấy khác,
-    // mà làm mờ thẳng ở cỡ đầy đủ tốn gấp đôi thời gian xuất.
-    filters.push(
-      `[glowsrc]colorchannelmixer=rr=0:rg=0:rb=0:gr=0:gg=0:gb=0:br=0:bg=0:bb=0:` +
-        `aa=${GLOW_OPACITY},scale=${OUT_WIDTH / 2}:${OUT_HEIGHT / 2},` +
-        `boxblur=luma_radius=${GLOW_RADIUS / 2}:alpha_radius=${GLOW_RADIUS / 2},` +
-        `scale=${OUT_WIDTH}:${OUT_HEIGHT}[glow]`,
-    );
-    // `format=rgb` khi chồng: để mặc định thì ffmpeg chồng trong không gian dải
-    // hẹp và chữ trắng mất độ sáng.
-    filters.push(`${stream}[glow]overlay=format=rgb[bg]`);
-    filters.push(`[bg][txtmain]overlay=format=rgb[out]`);
+    if (pack.glow) {
+      filters.push(`[txt]split[glowsrc][txtmain]`);
+      // Bóp hết màu về đen nhưng GIỮ hình dạng (kênh trong), rồi làm mờ ở NỬA CỠ
+      // và phóng lại: kết quả vốn là một vệt mờ nên thu nhỏ trước không thấy khác,
+      // mà làm mờ thẳng ở cỡ đầy đủ tốn gấp đôi thời gian xuất.
+      const blur = pack.glow.radiusPx / 2;
+      filters.push(
+        `[glowsrc]colorchannelmixer=rr=0:rg=0:rb=0:gr=0:gg=0:gb=0:br=0:bg=0:bb=0:` +
+          `aa=${pack.glow.opacity},scale=${OUT_WIDTH / 2}:${OUT_HEIGHT / 2},` +
+          `boxblur=luma_radius=${blur}:alpha_radius=${blur},` +
+          `scale=${OUT_WIDTH}:${OUT_HEIGHT}[glow]`,
+      );
+      // `format=rgb` khi chồng: để mặc định thì ffmpeg chồng trong không gian dải
+      // hẹp và chữ trắng mất độ sáng.
+      filters.push(`${stream}[glow]overlay=format=rgb[bg]`);
+      filters.push(`[bg][txtmain]overlay=format=rgb[out]`);
+    } else {
+      filters.push(`${stream}[txt]overlay=format=rgb[out]`);
+    }
     stream = "[out]";
+  }
+
+  /*
+   * EMOJI dán SAU lớp chữ.
+   *
+   * Sau chứ không trước, và không đi chung lớp chữ: lớp chữ có quầng tối phía
+   * sau, mà quầng đó dựng bằng cách bóp hết màu của cả lớp về đen. Emoji đi
+   * chung là nó thành một vệt đen. Đằng nào hai vật cũng không bao giờ chồng lên
+   * nhau — emoji luôn nằm ngoài mép khối chữ.
+   */
+  const emojiChars = [...new Set(emojiUses.map((use) => use.char))];
+  if (emojiUses.length > 0) {
+    const base = 1 + inserts.length + (draws.length > 0 ? 1 : 0);
+    let step = 0;
+    emojiChars.forEach((char, index) => {
+      const uses = emojiUses.filter((use) => use.char === char);
+      const parts = uses.map((_, at) => `[em${index}_${at}]`);
+      // `format=rgba` trước khi tách: ảnh PNG vào đã có kênh trong, nhưng chuỗi
+      // lọc phía sau chỉ giữ được nó khi định dạng đã chốt là có kênh trong.
+      filters.push(
+        `[${base + index}:v]format=rgba,split=${uses.length}${parts.join("")}`,
+      );
+      uses.forEach((use, at) => {
+        const sized = `[ems${index}_${at}]`;
+        // Hiện ra bằng cùng khoảng thời gian với chữ. Bật phắt thì nó lạc lõng
+        // giữa một khối chữ đang chạy vào từng tiếng.
+        filters.push(
+          `[em${index}_${at}]scale=${use.size}:${use.size},` +
+            `fade=t=in:st=${use.start.toFixed(3)}:d=${REVEAL_SECONDS}:alpha=1${sized}`,
+        );
+        const next = `[emo${step++}]`;
+        filters.push(
+          `${stream}${sized}overlay=x=${use.x}:y=${use.y}:format=rgb:` +
+            `${enableRange(use.start, use.end)}${next}`,
+        );
+        stream = next;
+      });
+    });
   }
 
   if (filters.length === 0) {
@@ -859,6 +1106,16 @@ export async function burnElements(
           `color=c=black@0.0:s=${OUT_WIDTH}x${OUT_HEIGHT}:r=${FPS}:d=${layerSeconds.toFixed(3)},format=rgba`,
         ]
       : []),
+    // Mỗi hình emoji một luồng ảnh tĩnh, lặp khung suốt dải — cùng lý do với tư
+    // liệu chèn dạng ảnh: một khung thì điều kiện thời gian không bao giờ khớp.
+    ...emojiChars.flatMap((char) => [
+      "-loop",
+      "1",
+      "-t",
+      layerSeconds.toFixed(3),
+      "-i",
+      join(PROJECT_ROOT, "assets", "emoji", emojiFileName(char)),
+    ]),
     "-filter_complex",
     (() => {
       const value = filters.join(";");

@@ -13,6 +13,7 @@ import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 import { JUNCTIONS, type JunctionId } from "@/dev/overlays/overlay-model";
+import { JUNCTION_GROUPS } from "../../../server/junction-kinds";
 import type { EditorState } from "./use-editor";
 
 /** Lùi trước khi chạy, để mắt kịp bắt nhịp trước khi hiệu ứng nổ ra. */
@@ -72,27 +73,56 @@ export function EffectPane({
       </CardHeader>
 
       <CardContent className="min-h-0 flex-1">
-        <Field>
-          <FieldLabel>Kiểu</FieldLabel>
-          <ToggleGroup
-            size="sm"
-            className="flex-wrap"
-            value={[effect.kind]}
-            onValueChange={(value) => {
-              const next = value[0] as JunctionId | undefined;
-              if (next) void editor.setEffectKind(effect.id, next);
-            }}
-          >
-            {JUNCTIONS.map((item) => (
-              <ToggleGroupItem key={item.id} value={item.id}>
-                {item.label}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
-          <FieldDescription>
-            {JUNCTIONS.find((item) => item.id === effect.kind)?.note}
-          </FieldDescription>
-        </Field>
+        {/* Mười sáu kiểu KHÔNG bày thành một dãy nút phẳng.
+            Một mảng mười sáu ô chữ bắt người dùng đọc hết rồi so từng cái với
+            mười lăm cái còn lại. Chia ba nhóm thì họ trả lời một câu dễ trước —
+            "chỗ này muốn gắt hay êm" — rồi mới so trong bốn năm ô. */}
+        <div className="grid gap-4">
+          {JUNCTION_GROUPS.map((group) => {
+            const items = JUNCTIONS.filter(
+              (item) => item.group === group.id && item.id !== "none",
+            );
+            if (items.length === 0) return null;
+            return (
+              <Field key={group.id}>
+                <FieldLabel>{group.label}</FieldLabel>
+                <ToggleGroup
+                  size="sm"
+                  className="flex-wrap"
+                  value={[effect.kind]}
+                  onValueChange={(value) => {
+                    const next = value[0] as JunctionId | undefined;
+                    if (next) void editor.setEffectKind(effect.id, next);
+                  }}
+                >
+                  {items.map((item) => (
+                    <ToggleGroupItem key={item.id} value={item.id}>
+                      {item.label}
+                    </ToggleGroupItem>
+                  ))}
+                </ToggleGroup>
+              </Field>
+            );
+          })}
+
+          {/* "Cắt thẳng" đứng riêng ở cuối: nó là chỗ để BỎ hiệu ứng, không
+              phải một kiểu ngang hàng với mười lăm kiểu kia. */}
+          <Field>
+            <ToggleGroup
+              size="sm"
+              value={[effect.kind]}
+              onValueChange={(value) => {
+                const next = value[0] as JunctionId | undefined;
+                if (next) void editor.setEffectKind(effect.id, next);
+              }}
+            >
+              <ToggleGroupItem value="none">Cắt thẳng</ToggleGroupItem>
+            </ToggleGroup>
+            <FieldDescription>
+              {JUNCTIONS.find((item) => item.id === effect.kind)?.note}
+            </FieldDescription>
+          </Field>
+        </div>
       </CardContent>
 
       <CardFooter className="gap-2">

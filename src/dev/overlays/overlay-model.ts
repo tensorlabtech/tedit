@@ -16,25 +16,22 @@
  * căn phải, "so le" chính là một cách căn) và làm mất những tổ hợp không gọi ra
  * được (căn giữa + từ khoá to hẳn). Hai trục: chín nút cho hai mươi dáng, không nút
  * nào lặp ý nút nào.
+ *
+ * Font, màu, viền, quầng, mật độ, nhịp KHÔNG còn là hằng ở đây: chúng nằm trong
+ * `server/style-pack.ts` và tệp này import thẳng từ đó. Hai bên cùng import MỘT
+ * khai báo thì không có bản thứ hai để lệch — chép sang là tự tạo ra đúng thứ
+ * `/_dev/overlays` sinh ra để bắt.
  */
+import { GOC } from "../../../server/style-pack-catalog";
+import { boxPadShare } from "../../../server/style-pack";
+import type { StylePack } from "../../../server/style-pack";
+
 
 /** Trần dòng: dài hơn thì TÁCH CỤM, không co chữ. Khớp `MAX_LINES` của máy chủ. */
 export const MAX_LINES = 3;
 
-/**
- * Họ chữ của lớp overlay — phải là ĐÚNG họ mà bản in ra dùng.
- *
- * Bản in dùng tệp `Arial Bold Italic`. Trước đây trang xem không đặt họ chữ nên
- * ăn theo font giao diện: hai bên xếp chữ theo hai bộ số đo khác nhau, cùng một
- * cụm ra hai cỡ và hai chỗ bẻ dòng.
- */
-export const OVERLAY_FONT_STACK = "Arial, Helvetica, sans-serif";
-
 /** Bề rộng trung bình một ký tự — chỉ dùng khi không đo được (không có DOM). */
 const CHAR_WIDTH = 0.6;
-
-/** Khoảng cách giữa hai tiếng, theo cỡ chữ. Khớp `WORD_GAP` của máy chủ và `marginRight` khi vẽ. */
-export const WORD_GAP = 0.12;
 
 const BASE_SIZE = 100;
 const widthCache = new Map<string, number>();
@@ -50,12 +47,15 @@ const measurer =
  * chục phần trăm: "IIIII" và "mmmmm" cùng năm ký tự mà rộng gấp đôi nhau. Sai số
  * đó đẩy cả cỡ chữ lẫn chỗ bẻ dòng lệch khỏi bản in ra.
  */
-function baseWidth(text: string) {
-  const hit = widthCache.get(text);
+function baseWidth(text: string, pack: StylePack) {
+  const { cssStack, cssWeight, italic } = pack.font;
+  // Khoá nhớ gồm cả font: hai bộ dáng khác font thì cùng một chữ ra hai bề rộng.
+  const key = `${cssStack}|${cssWeight}|${italic}|${text}`;
+  const hit = widthCache.get(key);
   if (hit !== undefined) return hit;
   let width: number;
   if (measurer) {
-    measurer.font = `italic 800 ${BASE_SIZE}px ${OVERLAY_FONT_STACK}`;
+    measurer.font = `${italic ? "italic " : ""}${cssWeight} ${BASE_SIZE}px ${cssStack}`;
     const metric = measurer.measureText(text);
     // Lấy bề rộng VẾT MỰC, không lấy bước tiến con trỏ. Chữ nghiêng có nét chìa
     // ra khỏi ô của nó, nên bước tiến hụt chừng 5% — đúng bằng mức làm cụm chữ
@@ -67,19 +67,16 @@ function baseWidth(text: string) {
     width = text.length * CHAR_WIDTH * BASE_SIZE;
   }
   if (widthCache.size > 5000) widthCache.clear();
-  widthCache.set(text, width);
+  widthCache.set(key, width);
   return width;
 }
 
-/** Cỡ lớn nhất và nhỏ nhất theo tỉ lệ bề rộng khung. */
-const MAX_SCALE = 0.15;
 /**
- * Bước dòng — phải KHỚP `LINE_HEIGHT` của `server/text-layout.ts`.
+ * SÀN cỡ chữ theo tỉ lệ bề rộng khung — khớp `MIN_SCALE` của máy chủ.
  *
- * Các dòng gần chạm nhau để cả khối đọc ra một mảng đặc. Không xuống dưới 1:
- * tiếng Việt có dấu chồng dấu (`Ắ`, `Ữ`, `ệ`), dưới 1 là dấu bị cắt cụt.
+ * Trần thì bộ dáng đổi được (`density.maxScale`); sàn là ngưỡng ĐỌC ĐƯỢC nên nằm
+ * ngoài bộ dáng.
  */
-export const LINE_HEIGHT = 1;
 const MIN_SCALE = 0.09;
 
 export type AlignId = "left" | "center" | "right" | "stair" | "stagger";
@@ -167,21 +164,30 @@ export function bandsOverlap(a: BandId, b: BandId) {
 }
 
 /** Bề rộng một chuỗi theo tỉ lệ khung, ở cỡ `size`. */
-export const widthOf = (text: string, size: number) =>
-  (baseWidth(text) / BASE_SIZE) * size;
+export const widthOf = (text: string, size: number, pack: StylePack = GOC) =>
+  (baseWidth(text, pack) / BASE_SIZE) * size;
 
 /**
  * Bẻ dòng kiểu tham lam: nhồi vào dòng hiện tại tới khi hết chỗ.
  *
- * Đo TỪNG TIẾNG rồi cộng `WORD_GAP`, không đo cả chuỗi đã nối bằng dấu cách:
- * lúc vẽ, khoảng giữa hai tiếng là `WORD_GAP` nhân cỡ chữ chứ không phải bề rộng
+ * Đo TỪNG TIẾNG rồi cộng `density.wordGap`, không đo cả chuỗi đã nối bằng dấu
+ * cách: lúc vẽ, khoảng giữa hai tiếng là `wordGap` nhân cỡ chữ chứ không phải bề rộng
  * dấu cách của font. Đo một đằng vẽ một nẻo thì khung xem và bản in ra chia dòng
  * khác nhau — mà đó là điều bảng dev này sinh ra để bắt.
  */
-function wrapAt(words: string[], size: number, avail: number) {
+function wrapAt(
+  words: string[],
+  size: number,
+  avail: number,
+  pack: StylePack,
+) {
+  // Nền khối nới MỖI tiếng ra hai bên — cộng vào đây, cùng con số với
+  // `wrapAtSize` của máy chủ. Thiếu nó thì bộ có nền khối chọn cỡ to hơn chỗ nó
+  // có và hàng tràn ra ngoài mép.
+  const pad = boxPadShare(pack) * 2 * size;
   const width = (list: string[]) =>
-    list.reduce((sum, item) => sum + widthOf(item, size), 0) +
-    Math.max(0, list.length - 1) * size * WORD_GAP;
+    list.reduce((sum, item) => sum + widthOf(item, size, pack) + pad, 0) +
+    Math.max(0, list.length - 1) * size * pack.density.wordGap;
   const lines: string[] = [];
   let current: string[] = [];
   for (const word of words) {
@@ -215,20 +221,29 @@ export type Fitted = {
  * ra ít dòng hơn thật. Bảng dev quên đúng chỗ đó và báo "LỆCH với khung xem"
  * trong khi khung xem không hề lệch — chính cái thước bị sai.
  */
-export function fitGroup(text: string, avail: number): Fitted {
+export function fitGroup(
+  text: string,
+  avail: number,
+  pack: StylePack = GOC,
+): Fitted {
+  const maxScale = pack.density.maxScale;
   const words = text.trim().split(/\s+/).filter(Boolean);
   if (words.length === 0)
-    return { lines: [], size: MAX_SCALE, needsSplit: false };
+    return { lines: [], size: maxScale, needsSplit: false };
 
-  // Chừa 3%: phép ước theo số ký tự có lúc hụt so với font thật, mà hụt là dòng
-  // chạm mép rồi bị bẻ thêm.
-  const room = avail * 0.97;
-  for (let size = MAX_SCALE; size >= MIN_SCALE; size -= 0.005) {
-    const lines = wrapAt(words, size, room);
+  // Chừa 2% — ĐÚNG bằng `fitLines` của máy chủ, vì đây là bản sinh đôi của nó.
+  //
+  // Trước đây chừa 3% với lý do "phép ước theo số ký tự có lúc hụt so với font
+  // thật". Lý do đó đã hết: từ khi trang xem dùng chung tệp font với bản in ra,
+  // nó ĐO bằng font thật chứ không ước theo số ký tự nữa. Giữ 3% chỉ còn là một
+  // con số lệch 1% so với máy chủ mà không đổi lấy gì.
+  const room = avail * 0.98;
+  for (let size = maxScale; size >= MIN_SCALE; size -= 0.005) {
+    const lines = wrapAt(words, size, room, pack);
     if (lines.length <= MAX_LINES) return { lines, size, needsSplit: false };
   }
   return {
-    lines: wrapAt(words, MIN_SCALE, room).slice(0, MAX_LINES),
+    lines: wrapAt(words, MIN_SCALE, room, pack).slice(0, MAX_LINES),
     size: MIN_SCALE,
     needsSplit: true,
   };
@@ -240,14 +255,19 @@ export function fitGroup(text: string, avail: number): Fitted {
  * Chia đôi rồi thử lại: chia theo TIẾNG nên không bao giờ cắt giữa một tiếng, và
  * hai nửa luôn còn nghĩa hơn là cắt phần đuôi đi.
  */
-export function splitGroup(text: string, avail = 0.9, depth = 0): string[] {
+export function splitGroup(
+  text: string,
+  avail = 0.9,
+  pack: StylePack = GOC,
+  depth = 0,
+): string[] {
   const words = text.trim().split(/\s+/).filter(Boolean);
   if (words.length < 2 || depth >= 3) return [words.join(" ")];
-  if (!fitGroup(text, avail).needsSplit) return [words.join(" ")];
+  if (!fitGroup(text, avail, pack).needsSplit) return [words.join(" ")];
   const mid = Math.ceil(words.length / 2);
   return [
-    ...splitGroup(words.slice(0, mid).join(" "), avail, depth + 1),
-    ...splitGroup(words.slice(mid).join(" "), avail, depth + 1),
+    ...splitGroup(words.slice(0, mid).join(" "), avail, pack, depth + 1),
+    ...splitGroup(words.slice(mid).join(" "), avail, pack, depth + 1),
   ];
 }
 
@@ -261,14 +281,29 @@ export function packRows(words: string[]) {
   return rows;
 }
 
-/** Cỡ chữ cho một hàng: lớn nhất mà hàng vẫn nằm trong bề rộng cho phép. */
-export function fitRow(text: string, avail: number, rows: number) {
+/**
+ * Cỡ chữ cho một hàng: lớn nhất mà hàng vẫn nằm trong bề rộng cho phép.
+ *
+ * **Bề rộng thắng SÀN cỡ chữ** — khớp `fitRow` của máy chủ. Hàng đã bị cấm bẻ
+ * dòng, nên sàn và bề rộng không thể cùng thoả; kéo lên sàn là chữ chạy ra ngoài
+ * khung, mà "không bao giờ tràn" là bảo đảm không được hy sinh.
+ */
+export function fitRow(
+  text: string,
+  avail: number,
+  rows: number,
+  pack: StylePack = GOC,
+) {
   // Chia theo số hàng để cả khối không cao quá nửa khung.
-  const byHeight = MAX_SCALE * (rows > 2 ? 0.7 : rows > 1 ? 0.85 : 1);
+  const byHeight = pack.density.maxScale * (rows > 2 ? 0.7 : rows > 1 ? 0.85 : 1);
   // Chừa 6%: ước theo số ký tự luôn hụt so với bản nghiêng nét 800, mà hàng đã bị
   // cấm bẻ dòng nên hụt là chữ chạm mép khung.
-  const byWidth = (avail * 0.94) / Math.max(0.001, widthOf(text, 1));
-  return Math.max(MIN_SCALE, Math.min(byHeight, byWidth));
+  //
+  // Cộng nền khối của TỪNG tiếng, cùng cách `fitRow` của máy chủ làm.
+  const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
+  const perUnit = widthOf(text, 1, pack) + wordCount * boxPadShare(pack) * 2;
+  const byWidth = (avail * 0.94) / Math.max(0.001, perUnit);
+  return Math.min(byHeight, byWidth);
 }
 
 /**
@@ -283,28 +318,19 @@ export function indentOf(align: AlignId, index: number, rowCount: number) {
   return Math.min(0.055, 0.11 / Math.max(1, rowCount - 1)) * index;
 }
 
-/**
- * Cách TƯ LIỆU CHÈN hiện ra — chỉ HAI kiểu.
+/*
+ * Cách TƯ LIỆU CHÈN hiện ra — khai ở `server/insert-reveal.ts`, re-export ở đây.
  *
- * Bản trước có năm kiểu, mỗi kiểu 0,4 giây với biên độ 6%: đo thì đúng, xem thì
- * không thấy — dưới ngưỡng nhận ra trên điện thoại. Thà hai kiểu rõ hơn năm kiểu
- * phải căng mắt tìm.
+ * Bản trước khai riêng ba kiểu ở tệp này và ba kiểu nữa ở `server/render.ts`:
+ * thêm một kiểu là phải nhớ sửa hai chỗ, mà chỗ quên sẽ im lặng vẽ ra kiểu cũ.
  */
-export type RevealId = "none" | "fade" | "fade-up";
-
-export const REVEALS: Array<{ id: RevealId; label: string; note: string }> = [
-  { id: "none", label: "Cắt thẳng", note: "Hiện ngay, không hiệu ứng" },
-  {
-    id: "fade-up",
-    label: "Mờ + lên",
-    note: "Mờ dần thành rõ, đồng thời trượt từ dưới lên — 0,8 giây",
-  },
-  { id: "fade", label: "Mờ dần", note: "Chỉ mờ thành rõ, không chuyển động" },
-];
-
-/** Khớp `REVEAL_SECONDS` và `REVEAL_RISE` của `server/render.ts`. */
-export const REVEAL_SECONDS = 0.8;
-export const REVEAL_RISE = 0.1;
+export {
+  REVEALS,
+  REVEAL_SECONDS,
+  REVEAL_RISE,
+  revealCss,
+} from "../../../server/insert-reveal";
+export type { RevealId } from "../../../server/style-pack";
 
 /**
  * Cách đánh dấu CHỖ NỐI giữa hai đoạn.
@@ -315,58 +341,35 @@ export const REVEAL_RISE = 0.1;
  * mờ chồng mà không tính lại hết thì mọi thứ trôi dần, bảy chỗ nối là lệch gần ba
  * giây ở cuối. Nên chưa làm — và chưa làm thì không bày.
  */
-export type JunctionId = "none" | "zoom-in" | "zoom-out" | "flash" | "dip";
+/*
+ * Vốn từ chuyển cảnh nay khai MỘT chỗ: `server/junction-kinds.ts`.
+ *
+ * Bản trước chép `JunctionId`, `JUNCTIONS` và `junctionHalves` sang đây cho
+ * client dùng — hai bản sao của cùng một bảng, mà thêm một kiểu là phải nhớ sửa
+ * cả hai. Quên một bên thì xem một đằng xuất một nẻo, đúng lỗi mà
+ * `scripts/overlay-parity/` sinh ra để bắt.
+ */
+export {
+  JUNCTION_SPECS as JUNCTIONS,
+  junctionHalves,
+  findJunction,
+  FLASH_SECONDS,
+  DIP_SECONDS,
+  type JunctionId,
+  type JunctionDrive,
+} from "../../../server/junction-kinds";
+import {
+  junctionHalves,
+  type JunctionId,
+} from "../../../server/junction-kinds";
 
-export const JUNCTIONS: Array<{
-  id: JunctionId;
-  label: string;
-  note: string;
-}> = [
-  { id: "none", label: "Cắt thẳng", note: "Chuyển ngay, không đánh dấu gì" },
-  {
-    id: "zoom-in",
-    label: "Zoom vào",
-    note: "Dồn dần vào rồi buông nhanh — cảnh cũ ập tới rồi cắt",
-  },
-  {
-    id: "zoom-out",
-    label: "Zoom ra",
-    note: "Giật một nhát rồi trôi ra chậm — cảnh mới từ từ mở ra",
-  },
-  {
-    id: "flash",
-    label: "Nháy sáng",
-    note: "Sáng bừng 0,12 giây rồi tắt — nhịp nhanh, hợp video ngắn",
-  },
-  {
-    id: "dip",
-    label: "Chìm đen",
-    note: "Tối đi rồi sáng lại trong 0,18 giây — ngắt ý rõ hơn",
-  },
-];
-
-/** Khớp bộ số của `server/render.ts`. */
-export const FLASH_SECONDS = 0.12;
+/** Khớp bộ số của `server/style-pack.ts` — mức mặc định khi chưa có bộ dáng. */
 export const FLASH_AMOUNT = 0.7;
-export const DIP_SECONDS = 0.18;
-
-export const PUNCH_SECONDS = 0.5;
 export const PUNCH_SCALE = 0.08;
-/** Nửa NGẮN của một chỗ nối — khớp `PUNCH_QUICK` của `server/render.ts`. */
+/** Nhịp mặc định của một cú phóng — thước ở trang thử dùng nó. */
+export const PUNCH_SECONDS = 0.5;
 export const PUNCH_QUICK = 0.15;
 
-/**
- * Nhịp hai nửa mặc định của từng kiểu: [trước đỉnh, sau đỉnh], tính bằng giây.
- * Khớp `junctionHalves` của `server/render.ts`.
- */
-export function junctionHalves(kind: JunctionId): [number, number] {
-  if (kind === "flash") return [FLASH_SECONDS, FLASH_SECONDS];
-  if (kind === "dip") return [DIP_SECONDS, DIP_SECONDS];
-  if (kind === "zoom-out") return [PUNCH_QUICK, PUNCH_SECONDS];
-  return [PUNCH_SECONDS, PUNCH_QUICK];
-}
-
-/** Quãng mặc định của một hiệu ứng đặt tại `at` — đỉnh rơi đúng vào `at`. */
 export function effectSpan(at: number, kind: JunctionId) {
   const [truoc, sau] = junctionHalves(kind);
   return { start: at - truoc, end: at + sau };

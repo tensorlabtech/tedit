@@ -8,20 +8,8 @@ import { thumbDir, workDir } from "./paths";
 import { existsSync } from "node:fs";
 
 import { listMusic } from "./music-tracks";
-import {
-  buildBase,
-  burnElements,
-  cutRanges,
-  keptBefore,
-  mixMusic,
-  mapToOutput,
-  type KeptRange,
-  junctionHalves,
-  normalizeJunction,
-  type JunctionId,
-  normalizeReveal,
-  type RenderElement,
-} from "./render";
+import {buildBase, burnElements, cutRanges, keptBefore, mixMusic, mapToOutput, type KeptRange, normalizeReveal, type RenderElement} from "./render";
+import {junctionHalves, normalizeJunction, type JunctionId} from "./junction-kinds";
 import { keptFromSegments, listSegments } from "./segments";
 import { seedSegmentsByCaption } from "./segment-seed";
 import { buildAsrPrompt } from "./asr-bias";
@@ -31,10 +19,12 @@ import { trimSilence } from "./auto-trim-silence";
 import { describeInserts } from "./ai-broll-describe";
 import { placeInserts } from "./ai-broll-place";
 import { pickEffects } from "./ai-effects";
+import { pickEmoji } from "./ai-emoji";
 import { pickKeywords } from "./ai-keywords";
 import { pickMusic } from "./ai-music";
 import { createCaptionElements } from "./caption-elements";
 import { hasModel } from "./llm";
+import { readStylePack } from "./style-pack-store";
 import { fromLegacyLayout, type Band } from "./text-layout";
 import { failStrandedSteps, resetSteps, setStep } from "./pipeline-steps";
 import { transcribeAudio } from "./transcribe";
@@ -340,7 +330,7 @@ export async function runTranscribe(projectId: string) {
   setStep(projectId, "captions", "running");
   const info = await probe(base);
   db.prepare("DELETE FROM segments WHERE project_id=?").run(projectId);
-  await seedSegmentsByCaption(projectId, info.duration);
+  await seedSegmentsByCaption(projectId, info.duration, readStylePack(projectId));
   db.prepare("UPDATE projects SET segments_by_caption=3 WHERE id=?").run(
     projectId,
   );
@@ -420,6 +410,7 @@ export async function runTranscribe(projectId: string) {
     await createCaptionElements(
       projectId,
       (captionState?.subtitle_band ?? "bottom") as Band,
+      readStylePack(projectId),
     );
     db.prepare(
       "UPDATE projects SET captions_seeded=1, subtitles=0 WHERE id=?",
@@ -605,7 +596,15 @@ export async function runExport(projectId: string) {
     if (end > start) junctions.push({ start, end, kind: item.kind });
   }
 
-  const finalPath = await burnElements(projectId, cut, elements, junctions);
+  const finalPath = await burnElements(
+    projectId,
+    cut,
+    elements,
+    // Đọc MỘT LẦN lúc bắt đầu chặng xuất. Đổi bộ dáng giữa chừng chỉ ảnh hưởng
+    // lượt sau — bản đang dựng dở không tự đổi dáng ở nửa sau video.
+    readStylePack(projectId),
+    junctions,
+  );
 
   // Nhạc đặt theo thời gian NGUỒN trên dải, nên phải quy sang dải ĐÃ CẮT: bỏ
   // một phút ở giữa thì bài nhạc đặt sau đó cũng phải lùi lên đúng một phút,
@@ -713,6 +712,15 @@ function resolveElements(
         };
       })(),
       keywords: row.keywords ? String(row.keywords).split("|") : [],
+      // Hai cột ĐÈ ở cấp cụm; rỗng là theo bộ dáng của dự án.
+      letterCase:
+        row.letter_case === "upper" || row.letter_case === "as-typed"
+          ? row.letter_case
+          : null,
+      keyColor: (row.key_color as string | null) ?? null,
+      // Cột GIÁ TRỊ, không phải cột đè: bộ dáng không dùng emoji thì khâu vẽ
+      // im lặng bỏ qua, cột vẫn còn nguyên cho lúc đổi về bộ có dùng.
+      emoji: (row.emoji as string | null) ?? null,
       reveal: normalizeReveal(row.reveal as string | null),
       shape: (row.shape as RenderElement["shape"]) ?? "full",
       mediaPath: (row.media_path as string) ?? undefined,
@@ -768,7 +776,7 @@ function aiStages(projectId: string): AiJob[][] {
   return [
     take("silence"),
     take("cuts"),
-    take("keywords", "place", "effects", "music"),
+    take("keywords", "emoji", "place", "effects", "music"),
   ];
 }
 
@@ -799,6 +807,18 @@ function aiJobs(projectId: string): AiJob[] {
         const { applied, rejected } = await pickKeywords(projectId);
         return (
           `nhấn ${applied} cụm` + (rejected > 0 ? ` · gạt ${rejected}` : "")
+        );
+      },
+    },
+    {
+      // Cùng chặng với `keywords` chứ không sau nó: emoji bám vào CỤM, từ khoá
+      // bám vào TIẾNG trong cụm — hai bên ghi hai cột khác nhau và không đọc kết
+      // quả của nhau.
+      key: "emoji",
+      run: async () => {
+        const { applied, rejected } = await pickEmoji(projectId);
+        return (
+          `gắn ${applied} hình` + (rejected > 0 ? ` · gạt ${rejected}` : "")
         );
       },
     },

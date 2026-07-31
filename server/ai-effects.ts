@@ -1,7 +1,10 @@
+import { JUNCTION_SPECS } from "./junction-kinds";
 import { db, newId } from "./db";
 import { ask, object } from "./llm";
-import { junctionHalves, normalizeJunction, type KeptRange } from "./render";
+import {type KeptRange} from "./render";
+import {junctionHalves, normalizeJunction} from "./junction-kinds";
 import { settingsForProject } from "./settings";
+import { readStylePack } from "./style-pack-store";
 
 /**
  * Chọn kiểu hiệu ứng cho từng chỗ nối.
@@ -40,7 +43,11 @@ const SCHEMA = object({
       index: { type: "integer" },
       kind: {
         type: "string",
-        enum: ["zoom-in", "zoom-out", "flash", "dip"],
+        // Vốn từ lấy thẳng từ bảng khai báo — thêm một kiểu ở đó là AI dùng
+        // được ngay, không phải nhớ sửa thêm chỗ này.
+        enum: JUNCTION_SPECS.filter((spec) => spec.id !== "none").map(
+          (spec) => spec.id,
+        ),
       },
     }),
   },
@@ -51,11 +58,31 @@ const INSTRUCTIONS = `Bạn chọn hiệu ứng cho các chỗ nối trong một
 Mỗi chỗ nối là nơi đã cắt mất một quãng, hai bên dán lại. Bạn được xem lời NGAY
 TRƯỚC và NGAY SAU chỗ nối đó.
 
-Chọn theo mạch chuyển:
+Chọn theo mạch chuyển. Mỗi kiểu có một CẢM GIÁC riêng:
+
+MẠNH — dùng cho chỗ đổi ý gắt, lên cao trào:
+- punch: nảy một cái rất ngắn, nhấn mà không kéo dài
+- zoom-blur: phóng kèm nhoè, cú nhấn mạnh nhất — dùng dè
+- flash-hard: loé và đanh cùng lúc, hợp nhịp nhạc mạnh
+- whip-left / whip-right / whip-up: khung lia một nhát, như máy quay hất đi
+
+VỪA — dùng cho đổi ý bình thường:
 - zoom-in: sau chỗ nối là ý mạnh hơn, dồn hơn, đáng chú ý hơn
 - zoom-out: sau chỗ nối là hạ nhịp, kết đoạn, lùi lại nhìn rộng
 - flash: chuyển ý đột ngột, tương phản hẳn với vế trước
+- shake: rung một nhịp, nhấn mà không đổi khuôn hình
+- tilt: nghiêng rồi thẳng lại, chệch nhịp một chút cho có duyên
+- saturate: màu bừng lên, nhấn mà không đụng sáng tối
+
+ÊM — dùng cho chuyển đoạn, hạ giọng, sang chương mới:
 - dip: chuyển hẳn sang chủ đề khác, như sang một chương mới
+- desaturate: xám đi một nhịp rồi có màu lại, hợp lúc hạ giọng
+- vignette: bốn góc sụp tối rồi mở, dồn mắt vào giữa khung
+- hue-shift: màu trượt sắc một nhát — cú nhiễu nhẹ, dùng rất dè
+
+ĐỪNG dùng một kiểu quá hai lần trong cùng một video, trừ zoom-in và zoom-out.
+Lặp một kiểu lạ ba bốn lần thì nó thành tật của video chứ không còn là điểm nhấn.
+Và ĐỪNG rải kiểu MẠNH liên tiếp — mạnh chỉ mạnh khi quanh nó có chỗ êm.
 
 Bạn được cho một SỐ LƯỢNG cần nhắm. Chọn đúng chừng ấy chỗ ĐỔI MẠCH RÕ NHẤT —
 không rải đều cho đủ số, cũng đừng dè dặt trả về một hai cái rồi thôi. Thiếu chỗ
@@ -123,15 +150,31 @@ export async function pickEffects(
   // Người dùng đặt lại được ở trang Cài đặt; thiếu thì rơi về con số mặc định.
   const nhip =
     settingsForProject(projectId).secondsPerEffect || SECONDS_PER_EFFECT;
+  const pack = readStylePack(projectId);
+  // Bộ dáng quyết định BAO NHIÊU PHẦN TRĂM chỗ nối được đánh dấu.
+  //
+  // Đây mới là thứ tách "nhanh" khỏi "êm", chứ không phải danh sách kiểu: một bộ
+  // chỉ nhặt `flash` + `zoom-in` mà vẫn đặt 3 giây một cái thì không nhanh, nó
+  // chỉ chói. Kẹp bằng chính số chỗ nối có thật, và luôn để lại ít nhất một chỗ.
+  const wantByTime = Math.round(outputSeconds / nhip);
+  const wantByShare = Math.round(joins.length * pack.rhythm.junctionShare);
   const want = Math.min(
     joins.length,
-    Math.max(1, Math.round(outputSeconds / nhip)),
+    Math.max(1, Math.min(wantByTime, wantByShare) || 1),
   );
+
+  // Kho ưu tiên của bộ dáng — THIÊN LỆCH, không phải hàng rào: mô hình vẫn được
+  // chọn kiểu ngoài kho khi mạch chuyển đòi thế, và bảng sửa vẫn bày đủ mọi kiểu.
+  const preferred = pack.effectBias.junction;
+  const biasLine =
+    preferred.length > 0
+      ? `\n\nDáng của video này thiên về: ${preferred.join(", ")}. Ưu tiên mấy kiểu đó khi hai lựa chọn ngang nhau, nhưng đừng ép nếu mạch chuyển đòi kiểu khác.`
+      : "";
 
   const proposal = await ask<Proposal>({
     instructions: INSTRUCTIONS,
     input:
-      `Phim dài ${outputSeconds.toFixed(0)} giây. Nhắm khoảng ${want} chỗ.\n\n` +
+      `Phim dài ${outputSeconds.toFixed(0)} giây. Nhắm khoảng ${want} chỗ.${biasLine}\n\n` +
       joins
         .map((join) => `${join.index}| …${join.before} ⟨CẮT⟩ ${join.after}…`)
         .join("\n"),
@@ -189,6 +232,13 @@ export async function pickEffects(
       applied += 1;
     }
   })();
+
+  // Ghi lại bộ dáng vừa dùng: hàng soát so nó với bộ dáng hiện tại để biết có
+  // nên mời người dùng đặt lại hay không.
+  db.prepare("UPDATE projects SET effects_style_pack=? WHERE id=?").run(
+    pack.id,
+    projectId,
+  );
 
   return { applied, rejected };
 }
