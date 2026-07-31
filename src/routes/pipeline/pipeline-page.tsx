@@ -29,9 +29,12 @@ import {
 } from "@/components/ui/item";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
+import { GradeFilterDefs, gradeStyle } from "@/dev/overlays/grade-filter";
 import { api, type ApiStep } from "@/lib/api";
+import { findStylePack } from "../../../server/style-pack-catalog";
 import { cn } from "@/lib/utils";
 
+import { StylePickerCard } from "./style-picker-card";
 import { usePipeline } from "./use-pipeline";
 
 /**
@@ -59,6 +62,7 @@ const STEP_LABELS: Record<string, string> = {
   silence: "Cắt chỗ im lặng",
   cuts: "Tìm chỗ nên bỏ",
   keywords: "Chọn từ khoá",
+  emoji: "Gắn emoji",
   describe: "Đọc tư liệu chèn",
   place: "Ghép tư liệu chèn",
   effects: "Chọn hiệu ứng",
@@ -239,9 +243,14 @@ export function PipelinePage() {
               // một ô cao 688 — tràn gấp đôi. `absolute inset-0` thì khung luôn
               // đúng bằng ô, còn `object-contain` lo phần thư giãn tỉ lệ.
               <div className="relative size-full">
+                {/* Khung xem này NẮN MÀU theo phong cách đang chọn. Nó đứng ngay
+                    cạnh chỗ chọn, nên chọn xong là thấy hình đổi — mà nắn màu
+                    lại đúng là trục người dùng khó hình dung nhất qua tên bộ. */}
+                <GradeFilterDefs pack={findStylePack(view.stylePack)} />
                 <video
                   className="absolute inset-0 size-full rounded-lg bg-neutral-900 object-contain"
                   src={api.baseVideoUrl(projectId)}
+                  style={gradeStyle(findStylePack(view.stylePack))}
                   controls
                   playsInline
                 />
@@ -261,7 +270,15 @@ export function PipelinePage() {
         {/* Cột phải: danh sách bước rồi tới lời trấn an. Bọc trong MỘT ô của lưới,
             không thả rời làm con thứ ba — lưới chỉ có hai cột nên con thứ ba xuống
             hàng mới và rơi về phía trái, xa hẳn danh sách nó đang nói về. */}
-        <div className="grid gap-2 lg:min-h-0 lg:grid-rows-[1fr_auto]">
+        {/* Ba hàng: danh sách chặng co giãn, thẻ chọn dáng và lời trấn an co
+            theo nội dung. Thẻ chọn dáng đặt DƯỚI danh sách chặng chứ không trên:
+            thứ người dùng mở màn này để xem là việc đang chạy tới đâu. */}
+        {/* Hàng chặng có SÀN chiều cao VÀ phần chia lớn hơn: thẻ chọn phong cách
+            cao hơn chỗ cột có, mà danh sách chặng mới là thứ người ta mở màn này
+            để xem. Bản đầu để `1fr` trần trụi thì chặng bị ép còn một vạch; bản
+            sau chia đều thì mới hiện được 6/12 chặng. 1,5fr cho khoảng 8 dòng,
+            phần còn lại cuộn — vệt mờ ở đáy vùng cuộn nói điều đó. */}
+        <div className="grid gap-2 lg:min-h-0 lg:grid-rows-[minmax(14rem,1.5fr)_minmax(17rem,1fr)_auto]">
           <Card className="lg:min-h-0">
             <CardHeader>
               <CardTitle>Tedit đang tự động</CardTitle>
@@ -292,6 +309,13 @@ export function PipelinePage() {
               </ScrollArea>
             </CardContent>
           </Card>
+
+          <StylePickerCard
+            value={view.stylePack}
+            onChange={(next) => void view.chooseStylePack(next)}
+            sampleText={view.sampleText}
+            posterUrl={view.posterUrl}
+          />
 
           {/* Lời trấn an nằm TRONG cột phải, ngay dưới danh sách bước — chỗ mắt đang
             đọc. Trước nó là một Card riêng chạy hết bề ngang ở đáy trang: xa danh

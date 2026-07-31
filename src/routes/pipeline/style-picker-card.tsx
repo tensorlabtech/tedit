@@ -1,6 +1,5 @@
 import { useState } from "react";
 
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Card,
   CardContent,
@@ -77,7 +76,7 @@ export function StylePickerCard({
       <CardHeader>
         <CardTitle>Phong cách video</CardTitle>
       </CardHeader>
-      <CardContent className="no-scrollbar grid min-h-0 gap-2 overflow-y-auto">
+      <CardContent className="no-scrollbar grid min-h-0 flex-1 gap-2 overflow-y-auto">
         {/* Chia theo NHÓM Ý ĐỒ, không đổ mười ô thành một lưới.
             Mười ô ngang hàng nhau bắt người dùng so từng cái với chín cái còn
             lại; ba nhóm thì họ trả lời một câu dễ trước ("video này thuộc loại
@@ -116,17 +115,22 @@ export function StylePickerCard({
             nào thì đọc ô đó, không rê thì đọc ô đang chọn — nên nó vừa là lời
             giải thích vừa là cách xem trước. */}
       </CardContent>
-      <CardFooter className="grid gap-2">
-        <p className="text-sm text-muted-foreground">
-          <span className="text-foreground">{shown.label}</span> ·{" "}
-          {describeStyleFeel(shown)}
+      {/* Chân thẻ phải GỌN: nó ăn thẳng vào chiều cao của lưới ô ngay trên.
+          Bản trước để cả một khối lời nhắn hai dòng ở đây, và nó bóp thân thẻ
+          xuống còn 29px trên màn cao 720 — đo được, nhìn thì tưởng chỉ hơi chật.
+
+          Câu trấn an không cần khung màu: nó không báo lỗi cũng không báo xong,
+          chỉ nói "không bắt buộc". Một dòng chữ mờ nói đúng chừng ấy. */}
+      <CardFooter className="grid gap-0.5">
+        <p className="text-sm">
+          {shown.label}
+          <span className="ml-2 text-muted-foreground">
+            {describeStyleFeel(shown)}
+          </span>
         </p>
-        <Alert variant="info">
-          <AlertDescription>
-            Không chọn cũng được — máy đang dùng “{current.label}”. Chọn ở đây thì
-            máy chọn nhạc và hiệu ứng theo phong cách đó luôn.
-          </AlertDescription>
-        </Alert>
+        <p className="text-xs text-muted-foreground">
+          Không chọn cũng được — máy đang dùng “{current.label}”.
+        </p>
       </CardFooter>
     </Card>
   );
