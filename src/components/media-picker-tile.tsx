@@ -1,3 +1,8 @@
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { CheckIcon, FilmIcon, ImageIcon, StarIcon } from "lucide-react";
 
 import { MediaThumb } from "@/components/media-thumb";
@@ -37,14 +42,18 @@ export function MediaPickerTile({
   onUseNow?: () => void;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      onDoubleClick={onUseNow}
-      title={item.name}
-      aria-pressed={active}
-      className="group/tile relative aspect-[9/16] cursor-pointer overflow-hidden rounded-lg bg-muted text-left"
-    >
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            onClick={onSelect}
+            onDoubleClick={onUseNow}
+            aria-pressed={active}
+            className="group/tile relative aspect-[9/16] w-full cursor-pointer overflow-hidden rounded-lg bg-muted text-left"
+          />
+        }
+      >
       {item.thumbUrl ? (
         <MediaThumb
           src={item.thumbUrl}
@@ -121,6 +130,8 @@ export function MediaPickerTile({
           </span>
         )}
       </span>
-    </button>
+      </TooltipTrigger>
+      <TooltipContent>{item.name}</TooltipContent>
+    </Tooltip>
   );
 }

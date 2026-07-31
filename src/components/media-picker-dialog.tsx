@@ -266,7 +266,7 @@ export function MediaPickerDialog({
             // chỗ đó là hàng ảnh dưới cùng, nên trông như ảnh bị lẹm mất một dải.
             // Che mờ chỉ hợp khi mép cắt ngang thân CHỮ.
             <ScrollArea className="max-h-[27rem] min-h-0">
-              <div className="grid grid-cols-3 gap-2 pr-3 sm:grid-cols-4">
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(7rem,1fr))] gap-2 pr-3">
                 {hien.map((item) => (
                   <MediaPickerTile
                     key={item.key}
