@@ -180,7 +180,7 @@ export function PreviewPanel({
             size="sm"
             onClick={() => setStyleOpen(true)}
           >
-            Đổi dáng chữ
+            Phong cách video
           </Button>
         </CardAction>
       </CardHeader>

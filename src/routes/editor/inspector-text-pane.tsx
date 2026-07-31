@@ -149,7 +149,7 @@ export function TextPane({
             dòng riêng dưới nhãn "Nội dung"; gộp lên tiêu đề thì bớt một dòng mà
             không mất chữ nào. */}
         <CardTitle>
-          Chữ trên màn
+          Chỉ cụm này
           <span className="ml-2 font-normal text-muted-foreground">
             {element.byTime
               ? `${formatTime(element.start)} → ${formatTime(element.end)}`
@@ -233,7 +233,7 @@ export function TextPane({
             )}
 
             <Field>
-              <FieldLabel>Dáng</FieldLabel>
+              <FieldLabel>Cách xếp chữ</FieldLabel>
               <TextShapeTiles
                 text={element.content}
                 align={element.align}
