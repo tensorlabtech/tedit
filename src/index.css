@@ -97,7 +97,7 @@
     --foreground: oklch(0.145 0 0);
     --card: oklch(0.99 0.004 310);
     --card-foreground: oklch(0.145 0 0);
-    --popover: oklch(0.99 0.004 310);
+    --popover: oklch(1 0 0);
     --popover-foreground: oklch(0.145 0 0);
     --primary: oklch(0.48 0.16 310);
     --primary-foreground: oklch(0.985 0.01 310);
@@ -115,7 +115,7 @@
      * thứ tranh nhau chỗ nhấn.
      */
     --success: oklch(0.55 0.13 155);
-    --border: oklch(0.9 0.005 310);
+    --border: oklch(0.915 0.005 310);
     --input: oklch(0.955 0.004 310);
     --ring: oklch(0.58 0.15 310);
     --chart-1: oklch(0.8 0.07 310);
@@ -172,7 +172,7 @@
     --foreground: oklch(0.985 0 0);
     --card: oklch(0.195 0 0);
     --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.195 0 0);
+    --popover: oklch(0.245 0 0);
     --popover-foreground: oklch(0.985 0 0);
     --primary: oklch(0.62 0.16 310);
     --primary-foreground: oklch(0.985 0.01 310);
@@ -189,7 +189,7 @@
     --destructive: oklch(0.704 0.191 22.216);
     /* Sáng hơn bản nền trắng: nền tối thì màu đậm tụt xuống gần như đen. */
     --success: oklch(0.72 0.15 155);
-    --border: oklch(1 0 0 / 8%);
+    --border: oklch(1 0 0 / 6%);
     --input: oklch(0.245 0 0);
     --ring: oklch(0.58 0.15 310);
     --chart-1: oklch(0.76 0.09 310);
