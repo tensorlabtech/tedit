@@ -1,10 +1,19 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
+import { StyleStrip } from "@/routes/upload/style-strip";
+
 
 import type { UploadState } from "./use-upload";
+
+/**
+ * Chữ vẽ trong ô mẫu khi chưa có lời chép.
+ *
+ * Bốn tiếng có dấu đủ loại — mũ, móc, thanh nặng — vì đó mới là chỗ một bộ dáng
+ * lộ ra nó đặt dấu khéo hay vụng.
+ */
+const SAMPLE_TEXT = "Mình muốn kể";
 
 /**
  * Khối KHAI BÁO DỰ ÁN: tên, ngưỡng rút lặng, lời dặn cho máy nghe.
@@ -25,6 +34,10 @@ export function SetupCard({
   upload: UploadState;
   className?: string;
 }) {
+  // Khung hình thật của cảnh chính đầu tiên — có ngay sau khi tệp tải xong, tức
+  // là trước cả lời chép. Đó là thứ làm ô mẫu đọc ra "phong cách video".
+  const poster =
+    upload.mainFiles.find((file) => file.thumbnail)?.thumbnail ?? null;
   // KHÔNG còn ẩn thẻ này nữa. Nó từng ẩn khi chưa có gì để nói, vì lúc đó nó chỉ
   // chứa một câu trạng thái trùng với thứ thẻ Mạch chính đã nói. Giờ nó là khối
   // KHAI BÁO DỰ ÁN — tên và cài đặt luôn có nghĩa, kể cả trước khi thả tệp đầu
@@ -72,49 +85,7 @@ export function SetupCard({
               />
             </Field>
 
-            {/* Ngưỡng THẬT, không phải chỗ dành sẵn: `auto-trim-silence.ts` đọc nó
-                để quyết quãng nào bị rút. Người kể chậm cần ngưỡng cao, video hướng
-                dẫn nhanh thì hạ xuống cắt được nhiều hơn.
-
-                Thanh kéo chứ không phải danh sách chọn: đây là một con số liên tục,
-                và cái người ta muốn biết khi kéo là "nhiều hơn hay ít hơn", không
-                phải "0,8 hay 1,2". Số cụ thể vẫn in ngay cạnh nhãn.
-
-                Ghi lúc THẢ TAY (`onValueCommitted`), không ghi từng nhịp kéo: kéo
-                một lượt là hàng chục lần gọi máy chủ. */}
-            <Field>
-              <FieldLabel htmlFor="min-silence">
-                Tự rút chỗ lặng
-                <span className="ml-auto font-normal text-muted-foreground">
-                  {upload.minSilence === 0
-                    ? "không rút"
-                    : `dài hơn ${upload.minSilence.toFixed(1).replace(".", ",")}s`}
-                </span>
-              </FieldLabel>
-              <Slider
-                id="min-silence"
-                min={0}
-                max={3}
-                step={0.1}
-                // MẢNG một phần tử, không phải một con số: `Slider` suy số tay kéo
-                // từ chính `value`, và với một số trơn nó rơi về `[min, max]` — dựng
-                // ra HAI tay kéo, không tay nào nhận phím mũi tên.
-                value={[upload.minSilence]}
-                onValueChange={(value) =>
-                  upload.setMinSilenceDraft(
-                    Array.isArray(value) ? value[0]! : value,
-                  )
-                }
-                onValueCommitted={(value) =>
-                  void upload.saveMinSilence(
-                    Array.isArray(value) ? value[0]! : value,
-                  )
-                }
-              />
-            </Field>
-          </div>
-
-          {/* Cột phải: LỜI DẶN — thứ ĐỔI ĐƯỢC MỘT QUYẾT ĐỊNH rõ nhất ở màn này.
+            {/* LỜI DẶN — thứ ĐỔI ĐƯỢC MỘT QUYẾT ĐỊNH rõ nhất ở màn này.
               Máy nghe lấy nó làm mồi từ vựng, chặng sửa lời tin nó hơn mọi suy đoán.
               Đo khi ô này còn rỗng: "TensorLab" chép ra "Tensolab" — không ngữ cảnh
               nào cho máy đoán ra tên một công ty chưa ai nghe.
@@ -128,8 +99,8 @@ export function SetupCard({
               Ẩn tới khi có cảnh đầu tiên là bỏ mất đúng quãng thời gian rảnh đó.
 
               Ghi lúc RỜI Ô, không ghi từng phím: người ta gõ liền một câu dài. */}
-          <Field className="min-h-0">
-            <FieldLabel htmlFor="project-brief">Video nói về gì</FieldLabel>
+            <Field className="min-h-0 flex-1">
+              <FieldLabel htmlFor="project-brief">Video nói về gì</FieldLabel>
             <Textarea
               id="project-brief"
               // Không ép `text-sm`: design system để `text-base md:text-sm` là có
@@ -148,7 +119,15 @@ export function SetupCard({
                 }
               }}
             />
-          </Field>
+            </Field>
+          </div>
+
+          <StyleStrip
+            value={upload.stylePack}
+            onChange={(next) => void upload.saveStylePack(next)}
+            sampleText={SAMPLE_TEXT}
+            posterUrl={poster}
+          />
         </div>
       </CardContent>
     </Card>
