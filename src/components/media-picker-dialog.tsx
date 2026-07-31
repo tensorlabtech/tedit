@@ -48,6 +48,7 @@ export function MediaPickerDialog({
   onUpload,
   uploading = false,
   defaultTab = "project",
+  tabs = true,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -78,6 +79,8 @@ export function MediaPickerDialog({
   onUpload?: (files: File[]) => void;
   uploading?: boolean;
   defaultTab?: Tab;
+  /** Giấu hàng tab — dùng khi nơi gọi đã chỉ rõ chỉ lấy từ một chỗ. */
+  tabs?: boolean;
 }) {
   const [tab, setTab] = useState<Tab>(defaultTab);
   const [tim, setTim] = useState("");
@@ -219,6 +222,7 @@ export function MediaPickerDialog({
         )}
 
         <MediaPickerToolbar
+          tabs={tabs}
           tab={tab}
           onTabChange={setTab}
           search={tim}

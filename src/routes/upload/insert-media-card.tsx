@@ -15,15 +15,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import type { ApiSettings } from "@/lib/api";
-import { INSERT_SOURCE_LABELS } from "@/lib/insert-source-options";
 import { useFileDrop } from "@/lib/use-file-drop";
 import { cn } from "@/lib/utils";
 
@@ -61,8 +52,6 @@ export function InsertMediaCard({
   onCancel,
   onRetry,
   selectedId,
-  insertSource,
-  onInsertSourceChange,
   className,
 }: {
   files: MediaFile[];
@@ -79,8 +68,6 @@ export function InsertMediaCard({
   /** Ô đang nằm trong khung xem trước */
   selectedId: string | null;
   /** Máy được lấy tư liệu ở đâu; `null` khi chưa nạp xong dự án */
-  insertSource: ApiSettings["insertSource"] | null;
-  onInsertSourceChange: (next: ApiSettings["insertSource"]) => void;
   className?: string;
 }) {
   const { over, dropProps } = useFileDrop(onDropFiles);
@@ -94,39 +81,6 @@ export function InsertMediaCard({
       <CardHeader>
         <CardTitle>Tư liệu chèn</CardTitle>
         <CardAction className="flex items-center gap-2">
-          {/* Ô chọn NGUỒN đứng ngay đây chứ không nằm ở trang Cài đặt: nó nói về
-              đúng cái kho ngay dưới nó, và mỗi video một khác — video này toàn
-              cảnh quay sẵn thì mở cả kho, video sau chỉ dùng mấy tệp vừa nạp.
-              Cài đặt chỉ quyết giá trị MẶC ĐỊNH lúc tạo dự án. */}
-          {insertSource && (
-            <Select
-              // `items` để ô hiện NHÃN chứ không hiện giá trị thô: thiếu nó thì
-              // trên nút đọc ra đúng chữ "library".
-              items={INSERT_SOURCE_LABELS}
-              value={insertSource}
-              onValueChange={(value) =>
-                onInsertSourceChange(value as ApiSettings["insertSource"])
-              }
-            >
-              {/* Ô này không có nhãn nhìn thấy được — chỗ trên tiêu đề thẻ chỉ
-                  đủ cho một hàng. Nên nhãn phải nằm ở `aria-label`, không thì
-                  trình đọc màn hình chỉ đọc ra "hộp chọn". */}
-              <SelectTrigger
-                size="sm"
-                className="w-52"
-                aria-label="Máy được lấy tư liệu ở đâu"
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {Object.entries(INSERT_SOURCE_LABELS).map(([value, nhan]) => (
-                  <SelectItem key={value} value={value}>
-                    {nhan}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
           {/* Hai đường vào, luôn hiện cả hai. "Từ kho" không nấp trong menu của
               nút kia: kho tư liệu là thứ người dùng phải BIẾT là có, mà một mục
               trong menu thả xuống thì chỉ ai đi mở ra mới thấy. */}

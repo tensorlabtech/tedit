@@ -16,6 +16,7 @@ import { MediaPickerDialog } from "@/components/media-picker-dialog";
 
 import { InsertMediaCard } from "./insert-media-card";
 import { MainTimelineCard } from "./main-timeline-card";
+import { findStylePack } from "../../../server/style-pack-catalog";
 import { SequencePreviewCard } from "./sequence-preview-card";
 import { SetupCard } from "./setup-card";
 import { hasSetupNotes, SetupNotes } from "./setup-notes";
@@ -187,8 +188,6 @@ export function UploadPage() {
             onCancel={upload.cancelUpload}
             onRetry={upload.retryUpload}
             selectedId={previewing?.id ?? null}
-            insertSource={upload.insertSource}
-            onInsertSourceChange={upload.saveInsertSource}
           />
         </div>
 
@@ -272,6 +271,8 @@ export function UploadPage() {
           </Card>
 
           <SequencePreviewCard
+            // Khung xem nắn màu theo phong cách đang chọn ở thẻ bên trái.
+            pack={findStylePack(upload.stylePack)}
             // Ô tải hỏng KHÔNG phải một cảnh: nó không lên tới máy chủ nên nó không
             // có trong video sẽ xuất ra. Đếm nó vào đây thì khung xem báo "Cảnh 1/4"
             // cho một mạch chỉ có ba cảnh, và khúc thứ tư của thanh mạch không bao
@@ -310,12 +311,15 @@ export function UploadPage() {
       <MediaPickerDialog
         open={libraryOpen}
         onOpenChange={setLibraryOpen}
-        title="Tư liệu chèn"
+        title="Kho tư liệu"
         projectItems={upload.insertItems}
         alreadyIn={upload.libraryFilesInProject}
         onTake={upload.addFromLibrary}
         onUpload={(files) => handleFiles(files, "insert")}
         defaultTab="library"
+        // Nút mở hộp này tên là "Từ kho" — người dùng đã nói rõ mình muốn
+        // cái kho, nên đừng hỏi lại bằng một hàng tab.
+        tabs={false}
       />
     </div>
   );

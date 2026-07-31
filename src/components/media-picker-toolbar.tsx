@@ -25,9 +25,19 @@ export function MediaPickerToolbar({
   onSearchChange,
   filter,
   onFilterChange,
+  tabs = true,
 }: {
   tab: Tab;
   onTabChange: (tab: Tab) => void;
+  /**
+   * Bày hàng tab hay không.
+   *
+   * Tắt ở nơi chỉ có MỘT chỗ để lấy — màn nạp tệp mở hộp này bằng nút "Từ kho",
+   * tức người dùng đã nói rõ mình muốn cái kho. Bày thêm tab "Của dự án" ở đó
+   * là hỏi lại đúng câu họ vừa trả lời, và tab ấy còn dẫn tới một lưới trùng
+   * với lưới đang nằm ngay sau lưng hộp thoại.
+   */
+  tabs?: boolean;
   search: string;
   onSearchChange: (value: string) => void;
   filter: Loc;
@@ -35,12 +45,14 @@ export function MediaPickerToolbar({
 }) {
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2">
-      <Tabs value={tab} onValueChange={(value) => onTabChange(value as Tab)}>
-        <TabsList>
-          <TabsTrigger value="project">Của dự án</TabsTrigger>
-          <TabsTrigger value="library">Kho tư liệu</TabsTrigger>
-        </TabsList>
-      </Tabs>
+      {tabs && (
+        <Tabs value={tab} onValueChange={(value) => onTabChange(value as Tab)}>
+          <TabsList>
+            <TabsTrigger value="project">Của dự án</TabsTrigger>
+            <TabsTrigger value="library">Kho tư liệu</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      )}
 
       <InputGroup className="min-w-40 flex-1">
         <InputGroupAddon>
