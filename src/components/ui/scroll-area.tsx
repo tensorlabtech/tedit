@@ -200,20 +200,16 @@ function ScrollArea({
       className={cn("relative", className)}
       {...props}
     >
-      {/* `p-[3px]` KHÔNG phải trang trí — nó là chỗ cho VIỀN TIÊU ĐIỂM thở.
-          Cả hệ vẽ tiêu điểm bằng `focus-visible:ring-3`, mà `ring` của Tailwind
-          là bóng đổ nằm NGOÀI hộp viền. Vùng cuộn thì `overflow` cắt đúng ở mép
-          hộp đệm, nên thứ nào nằm sát mép là ring bị gọt mất một cạnh — đây là
-          lỗi lặp đi lặp lại ở dự án này, và soát bằng DOM thì MỌI chỗ dính đều
-          quy về đúng thành phần này.
-          3px là con số vừa đủ: bằng đúng bề dày ring. Sửa ở đây một lần thì mọi
-          nơi gọi khỏi phải nhớ. */}
+      {/* `p-[3px]` là chỗ thở cho MÉP của thứ nằm sát rìa vùng cuộn.
+          `overflow` cắt đúng ở mép hộp đệm, nên ô đầu và ô cuối của một dải bị
+          gọt mất một cạnh viền — trông khác hẳn mấy ô ở giữa mà không vì lý do
+          gì. Sửa ở đây một lần thì mọi nơi gọi khỏi phải nhớ. */}
       <ScrollAreaPrimitive.Viewport
         ref={viewportRef}
         data-slot="scroll-area-viewport"
         data-overflowing={overflowing || undefined}
         className={cn(
-          "size-full rounded-[inherit] p-[3px] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1",
+          "size-full rounded-[inherit] p-[3px] transition-[color,box-shadow] outline-none ",
           viewportClassName,
         )}
       >

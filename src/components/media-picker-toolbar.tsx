@@ -54,7 +54,8 @@ export function MediaPickerToolbar({
         </Tabs>
       )}
 
-      <InputGroup className="min-w-40 flex-1">
+      {/* Cùng hàng thì cùng chiều cao: `h-9` cho cả hai. */}
+      <InputGroup className="h-9 min-w-40 flex-1">
         <InputGroupAddon>
           <SearchIcon />
         </InputGroupAddon>
@@ -69,6 +70,7 @@ export function MediaPickerToolbar({
       <ToggleGroup
         variant="outline"
         size="sm"
+        className="[&>button]:h-9"
         spacing={0}
         value={[filter]}
         onValueChange={(value) => onFilterChange((value[0] as Loc) ?? "all")}

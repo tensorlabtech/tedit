@@ -9,11 +9,12 @@ import {
 } from "@/components/ui/tooltip";
 
 const buttonVariants = cva(
-  "group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-normal whitespace-nowrap transition-all outline-none select-none focus-visible:ring-2 focus-visible:ring-ring active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-normal whitespace-nowrap transition-all outline-none select-none active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/80",
+        default:
+          "bg-primary text-primary-foreground hover:bg-primary/80 focus-visible:bg-primary/80",
         // KHÔNG CÒN VIỀN — tên giữ nguyên để 47 nơi gọi khỏi phải sửa, nhưng
         // hiện thực là một mảng nấc 2. Viền chỉ có việc khi hai thứ cùng độ
         // sáng đứng cạnh nhau, mà nút luôn nằm trên mặt thẻ nên nó luôn có nền
@@ -22,13 +23,13 @@ const buttonVariants = cva(
         // Nút nền nấc 2 KHÔNG lẫn với ô nhập dù cùng màu: nút ôm sát chữ và
         // chữ căn giữa, ô nhập kéo hết bề ngang và chữ căn trái.
         outline:
-          "bg-muted hover:bg-accent aria-expanded:bg-accent-active",
+          "bg-muted hover:bg-accent focus-visible:bg-accent-active aria-expanded:bg-accent-active",
         secondary:
-          "bg-secondary text-secondary-foreground hover:bg-accent aria-expanded:bg-accent-active",
+          "bg-secondary text-secondary-foreground hover:bg-accent focus-visible:bg-accent-active aria-expanded:bg-accent-active",
         ghost:
-          "hover:bg-accent hover:text-foreground aria-expanded:bg-accent-active aria-expanded:text-foreground",
+          "hover:bg-accent hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground aria-expanded:bg-accent-active aria-expanded:text-foreground",
         destructive:
-          "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
+          "bg-destructive/10 text-destructive hover:bg-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30",
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {

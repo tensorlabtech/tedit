@@ -26,7 +26,7 @@ function Input({ className, type, ...props }: React.ComponentProps<"input">) {
        * cùng cách với lời nhắn.
        */
       className={cn(
-        "h-10 w-full min-w-0 rounded-lg bg-input px-3 py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-normal file:text-foreground placeholder:text-muted-foreground hover:bg-accent focus:bg-accent-active focus-visible:bg-accent-active focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:cursor-not-allowed disabled:text-muted-foreground disabled:opacity-60 aria-invalid:bg-destructive/15 aria-invalid:text-destructive md:text-sm",
+        "h-10 w-full min-w-0 rounded-lg bg-input px-3 py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-normal file:text-foreground placeholder:text-muted-foreground hover:bg-accent focus:bg-accent-active focus-visible:bg-accent-active disabled:pointer-events-none disabled:cursor-not-allowed disabled:text-muted-foreground disabled:opacity-60 aria-invalid:bg-destructive/15 aria-invalid:text-destructive md:text-sm",
         className,
       )}
       {...props}
