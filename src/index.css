@@ -5,6 +5,8 @@
 @import "@fontsource/be-vietnam-pro/500.css";
 @import "@fontsource/be-vietnam-pro/600.css";
 @import "@fontsource/be-vietnam-pro/700.css";
+/* Font của các bộ dáng chữ — cùng tệp `.ttf` mà ffmpeg in ra. */
+@import "./style-pack-fonts.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -39,6 +41,7 @@
     --color-border: var(--border);
     --color-destructive: var(--destructive);
     --color-success: var(--success);
+    --color-accent-active: var(--accent-active);
     --color-accent-foreground: var(--accent-foreground);
     --color-accent: var(--accent);
     --color-muted-foreground: var(--muted-foreground);
@@ -68,19 +71,42 @@
 }
 
 :root {
-    --background: oklch(0.975 0 0);
+    /**
+     * THANG 5 NẤC — mỗi nấc mang một nghĩa cố định, không hai nấc nói cùng một
+     * chuyện:
+     *
+     *   nấc 0  nền trang            thứ không đụng vào được
+     *   nấc 1  mặt thẻ              mặt bàn làm việc
+     *   nấc 2  chỗ nhận thao tác    ô nhập · nút · mục danh sách · khối trên dải
+     *   nấc 3  đang trỏ vào
+     *   nấc 4  đang nhấn · đang gõ
+     *
+     * Hệ quả là một lời hứa với người dùng: CHỖ NÀO LỆCH KHỎI MẶT THẺ LÀ CHỖ
+     * BẤM ĐƯỢC. Nên đừng cấp nền cho một nhóm chỉ-để-gom — gom nhóm dùng kẻ
+     * ngang chạy hết bề ngang thẻ.
+     *
+     * Trước đây `muted` `secondary` `accent` chênh nhau chưa tới 1% nên thực chất
+     * chỉ có MỘT nấc rồi hết, và mọi phân tầng phải với sang viền — đó là nguồn
+     * của hơn trăm chỗ viền tự chế rải khắp `src/routes/`.
+     *
+     * Bản sáng ĐẢO CHIỀU: mặt thẻ vọt lên gần trắng rồi từ trong thẻ đi XUỐNG,
+     * vì ô nhập không thể sáng hơn mặt thẻ được nữa. Mặt thẻ rời khỏi trắng tinh
+     * (0.99) để còn chỗ chia nấc — giữ 1.0 thì cả thang chỉ còn ~6% cho 5 nấc.
+     */
+    --background: oklch(0.925 0.004 310);
     --foreground: oklch(0.145 0 0);
-    --card: oklch(1 0 0);
+    --card: oklch(0.99 0.004 310);
     --card-foreground: oklch(0.145 0 0);
-    --popover: oklch(1 0 0);
+    --popover: oklch(0.99 0.004 310);
     --popover-foreground: oklch(0.145 0 0);
     --primary: oklch(0.48 0.16 310);
     --primary-foreground: oklch(0.985 0.01 310);
-    --secondary: oklch(0.95 0 0);
+    --secondary: oklch(0.955 0.004 310);
     --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.958 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.95 0 0);
+    --muted: oklch(0.955 0.004 310);
+    --muted-foreground: oklch(0.52 0.01 310);
+    --accent: oklch(0.93 0.005 310);
+    --accent-active: oklch(0.905 0.006 310);
     --accent-foreground: oklch(0.205 0 0);
     --destructive: oklch(0.577 0.245 27.325);
     /**
@@ -89,8 +115,8 @@
      * thứ tranh nhau chỗ nhấn.
      */
     --success: oklch(0.55 0.13 155);
-    --border: oklch(0.955 0 0);
-    --input: oklch(0.945 0 0);
+    --border: oklch(0.9 0.005 310);
+    --input: oklch(0.955 0.004 310);
     --ring: oklch(0.58 0.15 310);
     --chart-1: oklch(0.8 0.07 310);
     --chart-2: oklch(0.68 0.11 310);
@@ -98,31 +124,34 @@
     --chart-4: oklch(0.45 0.16 310);
     --chart-5: oklch(0.35 0.13 310);
     /* Bốn loại lớp trên dải thời gian — MÀU là thứ đọc được trước cả chữ, nên
-       mỗi loại một sắc riêng: lời chép tím (chất liệu gốc), chữ đè vàng, tư
-       liệu chèn xanh lam, nhạc nền xanh lá. Độ bão hoà giữ thấp để dải không
-       thành cầu vồng. */
-    --lane-word: oklch(0.935 0.035 310);
-    --lane-word-foreground: oklch(0.36 0.11 310);
+       mỗi loại một sắc riêng: lời chép và chữ đè tím, tư liệu chèn lam, nhạc nền
+       xanh lá, chỗ nối đỏ cam.
+       Đây là NƠI DUY NHẤT được đậm màu trong cả giao diện, nên độ bão hoà đẩy
+       hẳn lên 0,15: dải là chỗ phân loại quan trọng nhất và là chỗ mắt lướt qua
+       hàng trăm lần một buổi, mà trước đây nó lại nhạt nhất màn. Mọi chỗ khác
+       giữ xám thì một dải đậm không biến giao diện thành cầu vồng. */
+    --lane-word: oklch(0.84 0.13 310);
+    --lane-word-foreground: oklch(0.32 0.15 310);
     /* Chữ trên màn mang SẮC CHỦ ĐẠO, không còn vàng riêng: từ khi chữ, khung
        hình và sóng âm gộp thành một khối (§60), ba tầng ấy phải đọc ra là MỘT
        vật — vàng cạnh xám của sóng thì mắt lại tách chúng ra làm hai.
        Nhưng vẫn theo đúng nếp của mọi dải khác: nền NHẠT, chữ ĐẬM cùng sắc. Nền
        đặc màu chủ đạo với chữ trắng thì một khối trên dải nặng bằng nút Xuất
        video, mà dải là nơi mắt lướt qua hàng trăm lần một buổi. */
-    --lane-text: oklch(0.93 0.05 310);
-    --lane-text-foreground: oklch(0.4 0.13 310);
-    --lane-insert: oklch(0.93 0.045 195);
-    --lane-insert-foreground: oklch(0.38 0.08 195);
-    --lane-music: oklch(0.93 0.05 145);
-    --lane-music-foreground: oklch(0.38 0.08 145);
+    --lane-text: oklch(0.84 0.13 310);
+    --lane-text-foreground: oklch(0.32 0.15 310);
+    --lane-insert: oklch(0.84 0.13 195);
+    --lane-insert-foreground: oklch(0.32 0.15 195);
+    --lane-music: oklch(0.84 0.13 145);
+    --lane-music-foreground: oklch(0.32 0.15 145);
     /* Sắc 25 — cách sắc gần nhất (chữ, 85) đúng 60 độ, nên không đọc nhầm ra
        nhau ở độ bão hoà thấp này. */
-    --lane-junction: oklch(0.93 0.05 25);
+    --lane-junction: oklch(0.84 0.13 25);
     /* Đậm ngang ba tông kia. Trước để 0,42 — sáng hơn chữ của chữ/tư liệu/nhạc
        (0,38–0,40), mà sắc đỏ cam ở độ sáng ấy còn trông nhạt thêm một nấc nữa,
        nên một khối bình thường đọc ra như đang bị khoá. */
-    --lane-junction-foreground: oklch(0.38 0.12 25);
-    --radius: 0.625rem;
+    --lane-junction-foreground: oklch(0.32 0.15 25);
+    --radius: 0.5rem;
     --sidebar: oklch(1 0 0);
     --sidebar-foreground: oklch(0.145 0 0);
     --sidebar-primary: oklch(0.48 0.16 310);
@@ -134,41 +163,50 @@
 }
 
 .dark {
-    --background: oklch(0.145 0 0);
+    /* Nền trang cách xa hơn phần còn lại (8%, trong khi các nấc trong thẻ cách
+       đều 5%): để nó cách đúng một bước như các nấc bên trong thì mắt không tách
+       được "đây là một khối" với "đây là một ô bấm được".
+       Giữ xám trung tính hoàn toàn — xám không pha vẫn đậm đà, miễn thang nấc đủ
+       rõ. */
+    --background: oklch(0.115 0 0);
     --foreground: oklch(0.985 0 0);
-    --card: oklch(0.185 0 0);
+    --card: oklch(0.195 0 0);
     --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.2 0 0);
+    --popover: oklch(0.195 0 0);
     --popover-foreground: oklch(0.985 0 0);
     --primary: oklch(0.62 0.16 310);
     --primary-foreground: oklch(0.985 0.01 310);
-    --secondary: oklch(0.255 0 0);
+    --secondary: oklch(0.245 0 0);
     --secondary-foreground: oklch(0.985 0 0);
     --muted: oklch(0.245 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.262 0 0);
+    --muted-foreground: oklch(0.65 0 0);
+    /* Hai nấc trên NÉN LẠI (3% thay vì 5%): nấc càng cao càng là trạng thái
+       ngắn, mà cách đều 5% thì nấc 4 xa mặt thẻ tới 15% — một mục đang chọn
+       đứng yên lại sáng bừng như đang bị nhấn. */
+    --accent: oklch(0.275 0 0);
+    --accent-active: oklch(0.305 0 0);
     --accent-foreground: oklch(0.985 0 0);
     --destructive: oklch(0.704 0.191 22.216);
     /* Sáng hơn bản nền trắng: nền tối thì màu đậm tụt xuống gần như đen. */
     --success: oklch(0.72 0.15 155);
-    --border: oklch(1 0 0 / 5.5%);
-    --input: oklch(1 0 0 / 9%);
+    --border: oklch(1 0 0 / 8%);
+    --input: oklch(0.245 0 0);
     --ring: oklch(0.58 0.15 310);
     --chart-1: oklch(0.76 0.09 310);
     --chart-2: oklch(0.66 0.13 310);
     --chart-3: oklch(0.56 0.15 310);
     --chart-4: oklch(0.46 0.14 310);
     --chart-5: oklch(0.36 0.11 310);
-    --lane-word: oklch(0.32 0.05 310);
-    --lane-word-foreground: oklch(0.88 0.05 310);
-    --lane-text: oklch(0.32 0.05 310);
-    --lane-text-foreground: oklch(0.88 0.06 310);
-    --lane-insert: oklch(0.32 0.05 195);
-    --lane-insert-foreground: oklch(0.88 0.05 195);
-    --lane-music: oklch(0.32 0.05 145);
-    --lane-music-foreground: oklch(0.88 0.05 145);
-    --lane-junction: oklch(0.32 0.05 25);
-    --lane-junction-foreground: oklch(0.89 0.06 25);
+    --lane-word: oklch(0.44 0.15 310);
+    --lane-word-foreground: oklch(0.96 0.05 310);
+    --lane-text: oklch(0.44 0.15 310);
+    --lane-text-foreground: oklch(0.96 0.05 310);
+    --lane-insert: oklch(0.44 0.15 195);
+    --lane-insert-foreground: oklch(0.96 0.05 195);
+    --lane-music: oklch(0.44 0.15 145);
+    --lane-music-foreground: oklch(0.96 0.05 145);
+    --lane-junction: oklch(0.44 0.15 25);
+    --lane-junction-foreground: oklch(0.96 0.05 25);
     --sidebar: oklch(0.185 0 0);
     --sidebar-foreground: oklch(0.985 0 0);
     --sidebar-primary: oklch(0.62 0.16 310);
