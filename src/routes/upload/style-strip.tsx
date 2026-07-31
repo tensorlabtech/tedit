@@ -69,14 +69,29 @@ export function StyleStrip({
           không cần thanh cuộn để mà kéo.
           Mép mờ còn làm hỏng đúng thứ quan trọng nhất: ô ĐANG CHỌN nằm ở rìa
           thì viền báo chọn của nó bị làm nhạt, trông như vẽ lỗi. */}
+      {/* `flex-1` để dải ăn hết chiều cao còn lại, `min-h-52` để nó ĐẶT SÀN
+          cho chiều cao ấy.
+          Thiếu sàn thì cả thẻ đổ: ô cao theo vùng chứa, vùng chứa cao theo nội
+          dung, mà nội dung là chính mấy cái ô — không còn gì ép nữa nên cả hai
+          cột cùng co lại, ô mô tả tụt xuống một dòng. */}
       <ScrollArea
         orientation="horizontal"
-        className="min-h-0"
+        className="min-h-52 flex-1"
         scrollbar={false}
       >
-        <div className="flex gap-2 pr-1 pb-2">
+        {/* Ô tính bề RỘNG TỪ CHIỀU CAO, không phải ngược lại: `h-full` cho nó
+            cao hết vùng cuộn rồi `aspect` suy ra bề ngang. Ép bề rộng cố định
+            thì chiều cao ô do con số ấy quyết định, và nó chẳng liên quan gì
+            tới chỗ trống thật sự có.
+            `[&>button]:size-full` vì `StylePreviewTile` có gốc là `Tooltip` —
+            thứ không dựng thẻ DOM nào — nên cái nút là con TRỰC TIẾP ở đây. */}
+        <div className="flex h-full gap-2 pr-1">
           {STYLE_PACKS.map((pack) => (
-            <div key={pack.id} className="w-32 shrink-0">
+            <div
+              key={pack.id}
+              className="h-full shrink-0 [&>button]:size-full"
+              style={{ aspectRatio: "3 / 4" }}
+            >
               <StylePreviewTile
                 pack={pack}
                 text={sampleText}
