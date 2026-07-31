@@ -36,7 +36,7 @@ export function SectionShowcase({ section }: { section: ShowcaseSection }) {
               <div className="text-xs font-medium text-muted-foreground">
                 {showcaseCase.name}
               </div>
-              <div className="no-scrollbar flex flex-wrap items-start gap-3 overflow-x-auto rounded-xl border border-border bg-card p-5">
+              <div className="no-scrollbar flex flex-wrap items-start gap-3 overflow-x-auto rounded-xl bg-muted p-5">
                 {showcaseCase.node}
               </div>
             </div>

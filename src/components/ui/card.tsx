@@ -94,11 +94,14 @@ function CardAction({ className, ...props }: React.ComponentProps<"div">) {
         // thứ thấp hơn (huy hiệu, nút nhỏ) phải căn giữa theo nó — ghim lên đỉnh
         // là nó treo lơ lửng cao hơn dòng chữ.
         // Lề âm cho nút tràn vào đệm thẻ, nên nó KHÔNG đẩy đầu thẻ cao lên.
-        // Đệm thẻ 16px thừa sức chứa 8px tràn mỗi bên.
         //
-        // Ràng buộc kèm theo: nút trong đầu thẻ cao TỐI ĐA 32px. Lớn hơn thì
-        // phần vượt lại đẩy đầu thẻ, và mốc chữ lệch đúng như trước.
-        "col-start-2 row-start-1 -my-2 flex items-center gap-2 self-center justify-self-end",
+        // 12px mỗi bên chứ không phải 8: nút cỡ mặc định cao 40px, trừ đi 24px
+        // là còn 16px — thấp hơn dòng chữ 19px nên không đẩy được gì. Để 8px thì
+        // nút 40px vẫn nhô ra 5px và mốc chữ lệch so với thẻ không có nút.
+        //
+        // Đệm thẻ 16px thừa sức chứa 12px tràn mỗi bên. Ràng buộc còn lại: nút
+        // trong đầu thẻ cao tối đa 40px, tức trọn thang control hiện có.
+        "col-start-2 row-start-1 -my-3 flex items-center gap-2 self-center justify-self-end",
         className,
       )}
       {...props}

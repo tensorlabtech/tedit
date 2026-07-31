@@ -349,9 +349,15 @@ function Nhom({
   children: React.ReactNode;
 }) {
   return (
-    <section className="grid gap-4 rounded-xl bg-muted/30 p-4 inset-ring inset-ring-border">
+    // Nhóm KHÔNG được cấp mảng nền, cũng không viền: nền chỉ dành cho thứ bấm
+    // được, nên tô nền một nhóm chỉ-để-gom là đưa mảng ấy đi nói dối — người
+    // dùng rê chuột vào rồi chẳng có gì xảy ra.
+    //
+    // Ranh giới do kẻ ngang chạy hết bề ngang thẻ lo, âm lề đúng bằng đệm thẻ
+    // rồi trả lại bằng `px` nên chữ vẫn thụt đều. Nhóm đầu không kẻ.
+    <section className="-mx-(--card-spacing) grid gap-4 px-(--card-spacing) py-5 not-first:border-t not-first:border-border">
       <div className="grid gap-0.5">
-        <h2 className="font-heading text-sm font-semibold">{ten}</h2>
+        <h2 className="font-heading text-sm font-medium">{ten}</h2>
         {y && <p className="text-xs text-muted-foreground">{y}</p>}
       </div>
       {children}

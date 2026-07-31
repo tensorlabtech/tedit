@@ -1,23 +1,31 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PauseIcon, PlayIcon } from "lucide-react";
 
 import { api } from "@/lib/api";
 import {
-  FLASH_AMOUNT,
-  PUNCH_SCALE,
-  REVEAL_RISE,
-  REVEAL_SECONDS,
-  shapeBox,
-  type BandId,
-} from "@/dev/overlays/overlay-model";
+  GradeFilterDefs,
+  gradeFilterId,
+  gradeStyle,
+} from "@/dev/overlays/grade-filter";
+import { revealCss, shapeBox, type BandId } from "@/dev/overlays/overlay-model";
 import { OverlayTextBlock } from "@/dev/overlays/overlay-render";
 
 import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+
+import { packForElement } from "../../../server/style-pack";
+import { findStylePack } from "../../../server/style-pack-catalog";
 
 import { formatTime } from "./editor-data";
 import { PreviewMusic } from "./preview-music";
+import { StyleSwitchDialog } from "./style-switch-dialog";
 import type { EditorState } from "./use-editor";
 
 /**
@@ -37,6 +45,8 @@ export function PreviewPanel({
   playing: boolean;
   onTogglePlay: () => void;
 }) {
+  const [styleOpen, setStyleOpen] = useState(false);
+  const projectPack = findStylePack(editor.stylePack);
   // Lọc theo MỐC của chính phần tử, không tra ngược ra hai đầu từ.
   //
   // Bản trước tra `wordsById` rồi lấy mốc của từ. Chữ TỰ DO neo theo giờ nên hai
@@ -95,7 +105,8 @@ export function PreviewPanel({
             ? 1 - da / after
             : 0;
       if (value <= 0) continue;
-      if (item.kind === "flash") sang = Math.max(sang, value * FLASH_AMOUNT);
+      if (item.kind === "flash")
+        sang = Math.max(sang, value * projectPack.intensity.flashAmount);
       else if (item.kind === "dip") sang = Math.min(sang, -value);
       else zoom = Math.max(zoom, value);
     }
@@ -141,10 +152,60 @@ export function PreviewPanel({
     else video.pause();
   }, [editor.time, insert, playing]);
 
+  // Cụm đang hiện tại vạch — thứ Dialog đổi dáng vẽ trong khung xem lớn của nó,
+  // để ngữ cảnh đi theo người dùng thay vì bắt họ nhớ mình đang đứng ở đâu.
+  //
+  // Vạch ở chỗ chưa có chữ thì lấy CỤM ĐẦU của dự án: vẫn là chữ thật của người
+  // dùng, chỉ không phải chữ ngay dưới vạch. Trống hẳn mới là thứ đọc ra như lỗi.
+  const atPlayhead =
+    visible[0] ??
+    [...editor.textElements].sort((a, b) => a.start - b.start)[0];
+
   return (
-    // Thẻ này không có tiêu đề: khung hình tự nói nó là khung hình, mà mỗi dòng
-    // chữ thêm vào đây là một dòng chiều cao lấy đi của chính cái video.
-    <Card size="sm" className="min-h-80 lg:min-h-0">
+    /*
+     * Thẻ này TỪNG không có tiêu đề — "khung hình tự nói nó là khung hình, mà
+     * mỗi dòng chữ thêm vào là một dòng chiều cao lấy đi của chính cái video".
+     *
+     * Nay có, vì bộ dáng chữ cần một chỗ đứng và không chỗ nào khác đúng: nó là
+     * chuyện cấp DỰ ÁN nên không thuộc Inspector (nơi sửa vật đang chọn), và ba
+     * tab ở cột phải đã đủ tải. `CardHeader` tự thành lưới hai cột khi có
+     * `CardAction`, nên thẻ chỉ cao thêm đúng một hàng tiêu đề.
+     */
+    <Card className="min-h-80 lg:min-h-0">
+      <CardHeader>
+        <CardTitle>Phong cách: {projectPack.label}</CardTitle>
+        <CardAction>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setStyleOpen(true)}
+          >
+            Đổi
+          </Button>
+        </CardAction>
+      </CardHeader>
+      <StyleSwitchDialog
+        open={styleOpen}
+        onOpenChange={setStyleOpen}
+        value={editor.stylePack}
+        onAccept={(next) => void editor.setStylePack(next)}
+        // Khung hình thật làm nền ô mẫu — cùng thứ màn nạp tệp dùng. Thiếu nó
+        // thì hộp này bày mười ô nền đen trơn, và trục MÀU HÌNH của phong cách
+        // thành vô hình đúng ở chỗ để chọn nó.
+        poster={editor.posterUrl}
+        preview={
+          atPlayhead
+            ? {
+                text: atPlayhead.content,
+                align: atPlayhead.align,
+                emphasis: atPlayhead.emphasis,
+                band: atPlayhead.position as BandId,
+                keywords: atPlayhead.keywords,
+                emoji: atPlayhead.emoji,
+              }
+            : null
+        }
+      />
       <CardContent className="flex min-h-0 flex-1 flex-col">
         <AspectRatio ratio={9 / 16} className="mx-auto min-h-0 flex-1">
           <div
@@ -165,6 +226,9 @@ export function PreviewPanel({
                 </p>
               </div>
             )}
+            {/* Bộ lọc NẮN MÀU khai một lần cho cả khung. Nó chỉ là khai báo,
+                không chiếm chỗ trong bố cục. */}
+            <GradeFilterDefs pack={projectPack} />
             {editor.projectId && editor.duration > 0 && (
               <video
                 ref={videoRef}
@@ -173,8 +237,21 @@ export function PreviewPanel({
                 // Nhấn zoom chỉ phóng HÌNH GỐC: chữ và tư liệu vẽ sau nên giữ
                 // nguyên cỡ, đúng như bản in ra.
                 style={{
-                  transform: `scale(${1 + PUNCH_SCALE * junction.zoom})`,
-                  filter: `brightness(${1 + junction.sang})`,
+                  // Độ mạnh lấy từ BỘ DÁNG, không phải hằng dùng chung: bộ
+                  // "nhanh" và bộ "êm" chọn kiểu chuyển cảnh khác nhau mà cú
+                  // zoom vẫn đẩy bằng nhau thì xem video thật vẫn hao hao.
+                  transform: `scale(${1 + projectPack.intensity.punchScale * junction.zoom})`,
+                  // NẮN MÀU của phong cách đứng TRƯỚC cú nháy sáng của chỗ nối —
+                  // cùng thứ tự với chuỗi lọc ffmpeg, nơi nắn màu là bộ lọc đầu
+                  // tiên còn `eq` của chỗ nối nối vào sau.
+                  filter: [
+                    projectPack.grade
+                      ? `url(#${gradeFilterId(projectPack)})`
+                      : null,
+                    `brightness(${1 + junction.sang})`,
+                  ]
+                    .filter(Boolean)
+                    .join(" "),
                 }}
                 muted={false}
                 playsInline
@@ -188,21 +265,15 @@ export function PreviewPanel({
                 const box = shapeBox(insert.shape);
                 // Hiệu ứng chạy theo VẠCH, không theo vòng lặp: người dùng tua tới
                 // đâu thì thấy đúng trạng thái ở đó, giống lúc xem video thật.
-                const da = editor.time - insert.start;
-                const p = Math.min(1, Math.max(0, da / REVEAL_SECONDS));
-                const rest = (1 - p) ** 3;
-                const effectStyle =
-                  insert.reveal === "none"
-                    ? {}
-                    : insert.reveal === "fade"
-                      ? { opacity: p }
-                      : {
-                          opacity: p,
-                          // `translateY` theo % tính trên chiều cao CỦA HỘP, còn
-                          // máy chủ trượt theo % chiều cao KHUNG — chia lại cho
-                          // đúng, không thì hộp nhỏ trượt ít hơn bản in ra.
-                          transform: `translateY(${(REVEAL_RISE * 100 * rest) / box.h}%)`,
-                        };
+                //
+                // `translateY` theo % tính trên chiều cao CỦA HỘP, còn máy chủ
+                // trượt theo % chiều cao KHUNG — `revealCss` nhận `box.h` để
+                // chia lại, không thì hộp nhỏ trượt ít hơn bản in ra.
+                const effectStyle = revealCss(
+                  insert.reveal,
+                  editor.time - insert.start,
+                  box.h,
+                );
                 return (
                   <div
                     // Bo góc: bản in ra khoét góc bằng biểu thức trong luồng tư
@@ -223,12 +294,16 @@ export function PreviewPanel({
                     {insert.url ? (
                       // Tư liệu THẬT, không phải ô màu có tên: ô màu không cho biết
                       // nó có che mặt người nói hay không.
+                      // Nắn màu ĐÈ luôn lên tư liệu chèn, đúng như bản in ra:
+                      // chèn một mảnh chưa nắn vào giữa dải đã nắn thì mỗi lần
+                      // chèn là một lần màu nhảy.
                       insert.isVideo ? (
                         <video
                           key={insert.id}
                           ref={insertRef}
                           src={insert.url}
                           className="size-full object-cover"
+                          style={gradeStyle(projectPack)}
                           muted
                           playsInline
                         />
@@ -238,6 +313,7 @@ export function PreviewPanel({
                           src={insert.url}
                           alt=""
                           className="size-full object-cover"
+                          style={gradeStyle(projectPack)}
                         />
                       )
                     ) : (
@@ -261,8 +337,14 @@ export function PreviewPanel({
                     emphasis: element.emphasis,
                     band: element.position as BandId,
                     keywords: element.keywords,
+                    emoji: element.emoji,
                     insert: { kind: "none", shape: "wide" },
                   }}
+                  // Bộ dáng HIỆU LỰC của riêng cụm này: bộ của dự án, cộng phần
+                  // cụm tự đè. Thiếu dòng này thì khung xem vẽ bằng bộ gốc
+                  // trong khi video xuất ra vẽ bằng bộ đã chọn — đúng lỗi "xem
+                  // một đằng xuất một nẻo" mà cả hệ này chống.
+                  pack={packForElement(projectPack, element)}
                   // Đang CHỌN cụm này mà không phát: hiện chữ ĐỦ, không theo
                   // nhịp từng tiếng.
                   //
