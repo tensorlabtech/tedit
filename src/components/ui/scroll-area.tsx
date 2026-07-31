@@ -76,6 +76,93 @@ function useWheelToHorizontal(
   }, [ref, enabled]);
 }
 
+/**
+ * KÉO ĐỂ TRƯỢT dải ngang, như kéo một tờ giấy trên bàn.
+ *
+ * Có ba cách cuộn ngang rồi — vuốt bàn di chuột, lăn bánh xe, kéo thanh cuộn —
+ * nhưng cả ba đều là "điều khiển thanh cuộn", còn cái này là cầm thẳng vào nội
+ * dung. Cùng một cử chỉ với dải thời gian ở bàn dựng.
+ *
+ * NGƯỠNG 5px là phần khó: dải ngang thường đầy NÚT (ô phong cách, ô cảnh), nên
+ * phải phân biệt "kéo" với "bấm". Dưới 5px thì để yên cho cú bấm đi tiếp; quá
+ * 5px mới nuốt nó và bắt đầu trượt — và từ lúc ấy chặn luôn `click` sắp tới,
+ * không thì thả tay ra là chọn nhầm đúng cái ô vừa kéo qua.
+ *
+ * `data-dragging` trên thẻ gốc là cơ chế sẵn có của dự án: nó lo con trỏ nắm và
+ * chặn bôi đen chữ trên CẢ trang, vì chuột đi ra ngoài dải trong lúc kéo thì
+ * trình duyệt vẫn quét chọn chữ ở chỗ khác.
+ */
+function useDragToScroll(
+  ref: React.RefObject<HTMLDivElement | null>,
+  enabled: boolean,
+) {
+  useEffect(() => {
+    const node = ref.current;
+    if (!node || !enabled) return;
+
+    let startX = 0;
+    let startLeft = 0;
+    let dragging = false;
+    let pointerId: number | null = null;
+
+    const THRESHOLD = 5;
+
+    const onPointerDown = (event: PointerEvent) => {
+      // Chuột phải và bút cảm ứng để yên; bàn di chuột đã vuốt ngang được rồi.
+      if (event.button !== 0) return;
+      startX = event.clientX;
+      startLeft = node.scrollLeft;
+      pointerId = event.pointerId;
+      dragging = false;
+    };
+
+    const onPointerMove = (event: PointerEvent) => {
+      if (pointerId !== event.pointerId) return;
+      const dx = event.clientX - startX;
+      if (!dragging) {
+        if (Math.abs(dx) < THRESHOLD) return;
+        dragging = true;
+        node.setPointerCapture(event.pointerId);
+        document.documentElement.dataset.dragging = "true";
+      }
+      event.preventDefault();
+      node.scrollLeft = startLeft - dx;
+    };
+
+    const stop = (event: PointerEvent) => {
+      if (pointerId !== event.pointerId) return;
+      pointerId = null;
+      if (!dragging) return;
+      dragging = false;
+      delete document.documentElement.dataset.dragging;
+      // Nuốt đúng một cú `click` — cú sinh ra từ chính lần thả tay này.
+      const swallow = (click: MouseEvent) => {
+        click.stopPropagation();
+        click.preventDefault();
+      };
+      node.addEventListener("click", swallow, { capture: true, once: true });
+      // Kéo mà không bấm trúng nút nào thì chẳng có `click` nào tới, và cái bẫy
+      // trên nằm lại nuốt oan cú bấm kế tiếp.
+      setTimeout(
+        () => node.removeEventListener("click", swallow, { capture: true }),
+        0,
+      );
+    };
+
+    node.addEventListener("pointerdown", onPointerDown);
+    node.addEventListener("pointermove", onPointerMove);
+    node.addEventListener("pointerup", stop);
+    node.addEventListener("pointercancel", stop);
+    return () => {
+      node.removeEventListener("pointerdown", onPointerDown);
+      node.removeEventListener("pointermove", onPointerMove);
+      node.removeEventListener("pointerup", stop);
+      node.removeEventListener("pointercancel", stop);
+      delete document.documentElement.dataset.dragging;
+    };
+  }, [ref, enabled]);
+}
+
 function ScrollArea({
   className,
   viewportClassName,
@@ -105,6 +192,7 @@ function ScrollArea({
   const viewportRef = useRef<HTMLDivElement>(null);
   const overflowing = useOverflowing(viewportRef);
   useWheelToHorizontal(viewportRef, orientation === "horizontal");
+  useDragToScroll(viewportRef, orientation === "horizontal");
 
   return (
     <ScrollAreaPrimitive.Root

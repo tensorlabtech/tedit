@@ -56,11 +56,10 @@ export function StyleStrip({
   return (
     <div className="flex min-h-0 flex-col gap-2">
       <div className="flex items-baseline justify-between gap-3">
-        <span className="text-sm">
-          {shown.label}
-          <span className="ml-2 text-muted-foreground">
-            {describeStyleFeel(shown)}
-          </span>
+        <span className="shrink-0 text-sm">Chọn phong cách</span>
+        {/* Mô tả của bộ đang ngó — ba trục mà ô mẫu không vẽ ra được. */}
+        <span className="truncate text-xs text-muted-foreground">
+          {describeStyleFeel(shown)}
         </span>
       </div>
 
@@ -76,7 +75,7 @@ export function StyleStrip({
         className="min-h-0"
         viewportClassName="scroll-fade-r"
       >
-        <div className="flex gap-2 pb-2">
+        <div className="flex gap-2 pr-1 pb-2">
           {STYLE_PACKS.map((pack) => (
             <div
               key={pack.id}
