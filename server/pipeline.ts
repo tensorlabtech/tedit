@@ -577,17 +577,65 @@ export async function runExport(projectId: string) {
   // quãng ra mà thấy y như cũ, không hiểu vì sao.
   const junctions: Array<{ start: number; end: number; kind: JunctionId }> = [];
   const [before, after] = junctionHalves(defaultKind);
+
+  // Mốc của MỌI vết cắt trên dải đã cắt, kể cả chỗ sẽ bỏ qua vì đã có hiệu ứng
+  // đặt tay: cần đủ danh sách thì mới biết một hiệu ứng được phép lấn tới đâu.
+  const cutMarks: number[] = [];
   let running = 0;
   for (const range of kept.slice(0, -1)) {
     running += range.end - range.start;
-    const cutAt = range.end;
+    cutMarks.push(running);
+  }
+  const tongDaCat = kept.reduce((sum, r) => sum + (r.end - r.start), 0);
+
+  /*
+   * KẸP quãng hiệu ứng vào chỗ nó được phép chạy.
+   *
+   * Hai nửa của một kiểu êm dài tới 2,2–2,6 giây mỗi bên, mà công cụ này cắt im
+   * lặng nên đoạn còn lại thường ngắn hơn thế nhiều. Không kẹp thì ra hai hỏng
+   * nhìn thấy được:
+   *
+   * · Chỗ nối gần đầu video cho quãng bắt đầu ở số ÂM. Xung tính theo `t` nên
+   *   ngay khung hình đầu tiên nó đã ở lưng chừng — video mở ra đã phóng to sẵn
+   *   rồi mới hạ về, ở đúng cảnh người xem nhìn đầu tiên.
+   *
+   * · Hai chỗ nối gần nhau cho hai quãng CHỒNG nhau, và `max` của hai xung
+   *   không bao giờ về 0 ở giữa. Hình không còn trở lại tỉ lệ thật giữa hai
+   *   nhịp, nó cứ phóng dở suốt.
+   *
+   * Đo trên một dải bốn đoạn ngắn (9 giây): kiểu `push-in` cho ba quãng
+   * [−1,2 · 3,2] [0,8 · 5,2] [1,8 · 6,2] — một quãng âm và hai quãng chồng.
+   *
+   * Quãng bị giới hạn trong nửa đường tới hai chỗ nối bên cạnh, và CO ĐỀU hai
+   * nửa thay vì cắt cụt bên nào chật.
+   *
+   * Cắt cụt một bên là đổi tỉ lệ giữa hai nửa, mà đỉnh xung lại được tính LẠI
+   * theo đúng tỉ lệ ấy (`effectPeak`) — nên đỉnh trượt khỏi vết cắt và cú nhấn
+   * rơi vào chỗ hình đang chạy liền, không phải chỗ hình đứt. Co đều thì tỉ lệ
+   * giữ nguyên, đỉnh vẫn đúng chỗ, hiệu ứng chỉ gọn lại.
+   */
+  for (const [index, cutAt] of cutMarks.entries()) {
     if (manual.some((item) => item.start <= cutAt && cutAt <= item.end))
       continue;
-    junctions.push({
-      start: running - before,
-      end: running + after,
-      kind: defaultKind,
-    });
+    // Ranh giới là NỬA ĐƯỜNG tới vết cắt bên cạnh, không phải chính vết cắt đó:
+    // cho chạy tới tận vết cắt sau thì quãng này và quãng của chỗ nối ấy vẫn
+    // giẫm lên nhau, vì quãng kia được phép bắt đầu từ vết cắt trước — tức từ
+    // đây. Gặp nhau ở giữa thì hai bên chạm mép mà không chồng.
+    const sanTruoc = index > 0 ? (cutMarks[index - 1] + cutAt) / 2 : 0;
+    const sanSau =
+      index + 1 < cutMarks.length
+        ? (cutAt + cutMarks[index + 1]) / 2
+        : tongDaCat;
+    // Nửa dài 0 giây không đòi chỗ nào — để nguyên `Infinity` thì nó không tham
+    // gia quyết định hệ số co, thay vì thành 0/0.
+    const coTruoc = before > 0 ? (cutAt - sanTruoc) / before : Infinity;
+    const coSau = after > 0 ? (sanSau - cutAt) / after : Infinity;
+    const co = Math.min(1, coTruoc, coSau);
+    const start = cutAt - before * co;
+    const end = cutAt + after * co;
+    // Quãng bị bóp còn quá ngắn thì bỏ hẳn: một cú nhấn dưới một phần mười giây
+    // không đọc ra là hiệu ứng, chỉ đọc ra là hình bị giật.
+    if (end - start > 0.1) junctions.push({ start, end, kind: defaultKind });
   }
 
   // Quy quãng đặt tay sang dải đã cắt. Quãng nằm gọn trong một phần bị bỏ thì
