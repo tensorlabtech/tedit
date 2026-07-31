@@ -75,6 +75,17 @@ export function SetupCard({
                 spellCheck={false}
                 // Điền SẴN tên gợi ý, không để trống chờ gõ: ai không muốn nghĩ tên
                 // thì bỏ qua ô này, mà danh sách dự án vẫn phân biệt được nhau.
+                // `key` buộc ô dựng LẠI khi giá trị thật từ máy chủ về.
+                //
+                // `defaultValue` chỉ được đọc một lần lúc dựng, mà lúc ấy dữ
+                // liệu chưa về — ô hiện tên GỢI Ý theo ngày hôm nay. Mở lại
+                // một dự án cũ thì thấy "Dự án 1/8" trong khi tên thật là
+                // "Dự án 31/7", và chỉ cần rời ô một cái là tên thật bị ghi đè
+                // bằng tên sai ấy. Đo được trên dự án thật.
+                //
+                // Gõ bình thường KHÔNG dựng lại: `title` chỉ đổi sau khi lưu,
+                // mà lúc lưu thì giá trị mới đúng bằng thứ đang nằm trong ô.
+                key={upload.title}
                 defaultValue={upload.title}
                 onBlur={(event) => {
                   const clean = event.target.value.trim();
@@ -111,6 +122,8 @@ export function SetupCard({
               // những từ ấy — thành ra ô nào gõ đúng ý nhất lại trông sai nhất.
               spellCheck={false}
               placeholder="Tên riêng máy hay nghe sai — cứ viết vào: mình lập công ty TensorLab, làm Golang với Redis"
+              // Cùng bệnh với ô tên: xem ghi chú ở trên.
+              key={upload.profile}
               defaultValue={upload.profile}
               onBlur={(event) => {
                 const clean = event.target.value.trim();

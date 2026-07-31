@@ -291,15 +291,36 @@ export class ApiError extends Error {
   }
 }
 
-/** Bóc câu tiếng Việt trong thân lỗi — máy chủ luôn trả `{"error":"..."}`. */
+/**
+ * Câu thay cho lỗi mặc định của Fastify.
+ *
+ * Chúng ra thẳng màn hình người dùng: mở một dự án đã xoá thì màn báo lỗi hiện
+ * đúng chữ "Not Found" — tiếng Anh, và không nói được người dùng nên làm gì.
+ */
+const CAU_THEO_MA: Record<number, string> = {
+  400: "Lời gọi không hợp lệ",
+  401: "Phiên đăng nhập đã hết hạn",
+  403: "Dự án này không thuộc tài khoản của bạn",
+  404: "Không tìm thấy — có thể dự án đã bị xoá",
+  413: "Tệp lớn quá mức cho phép",
+  500: "Máy chủ gặp lỗi khi xử lý",
+};
+
+/**
+ * Bóc câu tiếng Việt trong thân lỗi.
+ *
+ * Lỗi do DỰ ÁN viết chỉ có `{"error":"câu tiếng Việt"}`. Lỗi mặc định của
+ * Fastify thì kèm `statusCode` — đó là cách phân biệt hai loại, và loại thứ
+ * hai phải thay bằng câu của mình chứ không bày nguyên văn tiếng Anh.
+ */
 function errorMessage(body: string, status: number) {
   try {
-    const parsed = JSON.parse(body) as { error?: string };
-    if (parsed?.error) return parsed.error;
+    const parsed = JSON.parse(body) as { error?: string; statusCode?: number };
+    if (parsed?.error && parsed.statusCode === undefined) return parsed.error;
   } catch {
-    /* không phải JSON thì dùng nguyên văn */
+    /* không phải JSON thì xét tiếp bên dưới */
   }
-  return body || `Máy chủ trả về ${status}`;
+  return CAU_THEO_MA[status] ?? (body || `Máy chủ trả về ${status}`);
 }
 
 /**

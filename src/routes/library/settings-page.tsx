@@ -114,6 +114,9 @@ export function SettingsPage() {
                   id="profile"
                   className="min-h-24 resize-none"
                   spellCheck={false}
+                  // Dựng lại khi cài đặt từ máy chủ về — `defaultValue` đọc
+                  // một lần lúc dựng, mà lúc ấy ô còn rỗng.
+                  key={settings.profile}
                   defaultValue={settings.profile}
                   placeholder="Tên riêng máy hay nghe sai — cứ viết vào: mình lập công ty TensorLab, làm Golang với Redis"
                   onBlur={(event) => {
