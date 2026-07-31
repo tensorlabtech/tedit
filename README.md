@@ -248,8 +248,14 @@ server/                   API Fastify + SQLite
 ├── style-pack-store.ts   đọc bộ dáng của một dự án, rơi về bộ gốc
 ├── music-tags.ts         vốn từ ĐÓNG cho kho nhạc (ba trục)
 ├── insert-reveal.ts      cách tư liệu chèn hiện ra, dùng chung hai đường vẽ
-├── transcribe.ts         gọi mlx-whisper, vá mốc từ bị dồn cục
-└── asr/                  mlx-whisper cục bộ (model whisper-large-v3-turbo)
+├── junction-kinds.ts     vốn từ ĐÓNG cho chỗ nối — 18 kiểu, dùng chung ffmpeg và CSS
+├── auto-grade.ts         đo hình rồi tự cân sáng/màu/nhiễu, biết khi nào nên im
+├── auto-audio.ts         đo tiếng rồi tự cân độ to về -14 LUFS
+├── ai-context.ts         bối cảnh dự án nối vào lời nhắc của các chặng AI
+├── ai-post-copy.ts       viết hộ tiêu đề, mô tả và thẻ để đăng bài
+├── transcribe.ts         gọi máy nghe cục bộ, vá mốc từ bị dồn cục
+└── asr/                  máy nghe cục bộ — mlx-whisper trên Mac,
+                          faster-whisper trên máy chủ (whisper-large-v3-turbo)
 
 assets/fonts/             font đóng gói theo repo (SIL OFL / Apache), KHÔNG lấy
                           font hệ thống — máy chủ Linux không có chúng
