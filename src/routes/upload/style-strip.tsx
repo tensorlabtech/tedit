@@ -63,13 +63,11 @@ export function StyleStrip({
         </span>
       </div>
 
-      {/* Cuộn NGANG có thanh cuộn: đây là một trong số ít chỗ thanh cuộn đáng
-          có mặt, vì mười ô không bao giờ vừa bề ngang và người dùng phải biết
-          là còn nữa. `scroll-fade-r` mờ mép phải — phía "còn nữa" của một dải
-          xếp từ trái sang. */}
-      {/* `scroll-fade-r` đặt ở VIEWPORT, không ở khối nội dung: đặt vào nội
-          dung thì vùng mờ trôi theo nó lúc cuộn, thay vì đứng yên ở mép phải
-          nơi "còn nữa". Cùng cách với dải cảnh và dải tư liệu. */}
+      {/* Mười ô không bao giờ vừa bề ngang, nên phải có thứ nói "còn nữa":
+          `scroll-fade-r` mờ mép PHẢI — phía còn nữa của một dải xếp từ trái
+          sang. Đặt ở VIEWPORT chứ không ở khối nội dung, vì đặt vào nội dung
+          thì vùng mờ trôi theo nó lúc cuộn thay vì đứng yên ở mép. Cùng cách
+          với dải cảnh và dải tư liệu. */}
       <ScrollArea
         orientation="horizontal"
         className="min-h-0"
@@ -77,10 +75,7 @@ export function StyleStrip({
       >
         <div className="flex gap-2 pr-1 pb-2">
           {STYLE_PACKS.map((pack) => (
-            <div
-              key={pack.id}
-              className="w-32 shrink-0"
-            >
+            <div key={pack.id} className="w-32 shrink-0">
               <StylePreviewTile
                 pack={pack}
                 text={sampleText}
@@ -96,15 +91,6 @@ export function StyleStrip({
           ))}
         </div>
       </ScrollArea>
-
-      {/* Nói thẳng ô mẫu KHÔNG diễn hết được.
-          Bộ dáng quyết định bốn thứ, mà một khung hình đứng yên chỉ cho thấy
-          được một: chữ. Không nói ra thì người dùng đọc cả dải này thành "chọn
-          phông chữ" — rồi ngạc nhiên khi nhịp cắt và nhạc cũng đổi theo. */}
-      <span className="text-xs text-muted-foreground">
-        Bộ dáng quyết định dáng chữ, nhịp cắt, tư liệu chèn và nhạc nền. Ô mẫu
-        chỉ cho thấy phần chữ.
-      </span>
     </div>
   );
 }
