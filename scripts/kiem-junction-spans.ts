@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { junctionHalves, JUNCTION_SPECS } from "../server/junction-kinds";
 import { effectPeak } from "../server/render";
 
@@ -106,6 +108,28 @@ for (const { ten, kept } of DAI) {
       dat++;
     }
   }
+}
+
+/*
+ * Mọi kiểu trong vốn từ phải được TẢ trong lời nhắc chọn hiệu ứng.
+ *
+ * Danh sách cho mô hình chọn lấy thẳng từ `JUNCTION_SPECS`, nên thêm một kiểu là
+ * nó lập tức nằm trong enum. Nhưng mô hình gần như không bao giờ chọn thứ nó
+ * không được tả — kiểu mới sẽ hợp lệ, có mặt, và không bao giờ được dùng. Đúng
+ * chuyện đã xảy ra với `push-in` và `drift`.
+ */
+const loiNhac = readFileSync(
+  new URL("../server/ai-effects.ts", import.meta.url),
+  "utf8",
+).split("const INSTRUCTIONS = `")[1]?.split("`;")[0] ?? "";
+const chuaTa = JUNCTION_SPECS.filter(
+  (spec) => spec.id !== "none" && !loiNhac.includes(spec.id),
+);
+if (chuaTa.length > 0) {
+  truot++;
+  console.log(`✗ lời nhắc chọn hiệu ứng chưa tả: ${chuaTa.map((s) => s.id).join(", ")}`);
+} else {
+  dat++;
 }
 
 console.log(`\n${dat} đạt · ${truot} trượt`);

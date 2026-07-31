@@ -80,6 +80,10 @@ VỪA — dùng cho đổi ý bình thường:
 - desaturate: xám đi một nhịp rồi có màu lại, hợp lúc hạ giọng
 - vignette: bốn góc sụp tối rồi mở, dồn mắt vào giữa khung
 - hue-shift: màu trượt sắc một nhát — cú nhiễu nhẹ, dùng rất dè
+- push-in: phóng dần suốt cả đoạn rồi hạ về, dồn dần vào người nói — hợp đoạn
+  kể chuyện, tâm sự, chỗ cần người xem nghiêng vào nghe
+- drift: khung trôi chậm sang ngang — cứu một cảnh người nói ngồi yên không động
+  đậy, chỗ hình tĩnh mà lời vẫn đang chạy
 
 ĐỪNG dùng một kiểu quá hai lần trong cùng một video, trừ zoom-in và zoom-out.
 Lặp một kiểu lạ ba bốn lần thì nó thành tật của video chứ không còn là điểm nhấn.
