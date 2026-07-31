@@ -1,12 +1,15 @@
+import type { StylePack } from "./style-pack";
+
 /**
  * Hiệu ứng HIỆN CHỮ cho bản in ra, viết bằng biểu thức thời gian của ffmpeg.
  *
  * Ba luật lấy nguyên từ `src/dev/overlays/use-reveal-loop.ts` — trang xem và bản
- * in phải là một, nên mọi con số ở đây đều có bản sinh đôi ở đó:
+ * in phải là một, nên mọi con số ở đây đều có bản sinh đôi ở đó. Nay cả sáu con
+ * số nằm trong `motion` của bộ dáng, nên "một" nghĩa là hai bên đọc CÙNG một
+ * pack chứ không phải hai bên chép cho khớp nhau:
  *
  * 1. **Hiện theo TỪNG TIẾNG.** Cả cụm bật ra một lượt thì mắt không biết bắt đầu
- *    đọc từ đâu, và nó không khớp với việc người nói đang nói lần lượt. Đây là
- *    khác biệt lớn nhất giữa "có làm đồ hoạ" và "có gắn phụ đề".
+ *    đọc từ đâu, và nó không khớp với việc người nói đang nói lần lượt.
  * 2. **Hướng trượt suy từ CỠ chữ.** Chữ nhỏ trượt ngang quãng ngắn (trùng hướng
  *    đọc nên gần như không thấy); chữ lớn trượt từ dưới lên quãng dài hơn.
  * 3. **Nhịp dòng thưa hơn nhịp tiếng.** Mỗi dòng là một ý; các tiếng trong một
@@ -18,22 +21,10 @@
  * cho mỗi cụm.
  */
 
-/** Thời gian một tiếng hiện xong. Khớp `ENTER_SECONDS`. */
-export const ENTER_SECONDS = 0.3;
-
-/** Từ 14% bề rộng khung trở lên là CHỮ LỚN — trượt dọc, quãng dài. */
-export const LARGE_SCALE = 0.14;
-
-/** Quãng trượt: chữ nhỏ 3,5% bề rộng CHÍNH NÓ, chữ lớn 24% chiều cao dòng của nó. */
-const SMALL_SHIFT = 0.035;
-const LARGE_SHIFT = 0.24;
-
-/** Chiều cao hộp một tiếng — `lineHeight: 1.15` bên trang xem. */
-const LINE_BOX = 1.15;
-
-/** Trễ của tiếng thứ `col` ở hàng thứ `row`. Khớp `unitDelay`. */
-export function unitDelay(row: number, col: number) {
-  return 0.06 + row * 0.16 + col * 0.07;
+/** Trễ của tiếng thứ `col` ở hàng thứ `row`. Khớp `unitDelay` của trang xem. */
+export function unitDelay(pack: StylePack, row: number, col: number) {
+  const { baseDelay, rowDelay, colDelay } = pack.motion;
+  return baseDelay + row * rowDelay + col * colDelay;
 }
 
 const round = (value: number) => Math.round(value * 1000) / 1000;
@@ -45,9 +36,9 @@ const round = (value: number) => Math.round(value * 1000) / 1000;
  * phải viết phép trừ hai lần. `u` bị kẹp trong [0,1] để trước lúc tới lượt thì
  * đứng yên ở vị trí xuất phát, và sau khi xong thì không trôi tiếp.
  */
-function restExpr(startAt: number) {
+function restExpr(startAt: number, enterSeconds: number) {
   const t0 = round(startAt);
-  return `pow(2,-10*clip((t-${t0})/${ENTER_SECONDS},0,1))`;
+  return `pow(2,-10*clip((t-${t0})/${enterSeconds},0,1))`;
 }
 
 /**
@@ -56,8 +47,17 @@ function restExpr(startAt: number) {
  * Nhân sẵn độ đục của MÀU vào đây thay vì viết vào `fontcolor`: `drawtext` nhân
  * hai lớp đục với nhau, để riêng thì chữ nhạt gấp đôi ý muốn.
  */
-export function alphaExpr(startAt: number, colorAlpha: number) {
-  return `${round(colorAlpha)}*(1-${restExpr(startAt)})`;
+export function alphaExpr(
+  pack: StylePack,
+  startAt: number,
+  colorAlpha: number,
+) {
+  // Tắt hiệu ứng thì độ đục là một HẰNG, không phải một biểu thức theo `t`. Trả
+  // biểu thức luôn-bằng-hằng cũng ra hình đúng, nhưng ffmpeg phải tính lại nó ở
+  // mỗi khung cho mỗi tiếng — với năm mươi cụm phụ đề thì đó là tiền thật.
+  if (pack.motion.reveal === "none") return String(round(colorAlpha));
+  const rest = restExpr(startAt, pack.motion.enterSeconds);
+  return `${round(colorAlpha)}*(1-${rest})`;
 }
 
 /**
@@ -66,21 +66,30 @@ export function alphaExpr(startAt: number, colorAlpha: number) {
  * Trả cả `x` và `y` dù chỉ một trục động: trục còn lại là hằng số, và để ffmpeg
  * nhận một chuỗi số cũng không tốn gì.
  */
-export function positionExpr(options: {
-  x: number;
-  y: number;
-  /** Bề rộng đã đo của tiếng này, tính bằng pixel */
-  width: number;
-  fontSize: number;
-  /** Cỡ chữ theo tỉ lệ bề rộng khung — quyết định trượt ngang hay trượt dọc */
-  scale: number;
-  startAt: number;
-}) {
-  const rest = restExpr(options.startAt);
-  if (options.scale < LARGE_SCALE) {
-    const shift = round(options.width * SMALL_SHIFT);
+export function positionExpr(
+  pack: StylePack,
+  options: {
+    x: number;
+    y: number;
+    /** Bề rộng đã đo của tiếng này, tính bằng pixel */
+    width: number;
+    fontSize: number;
+    /** Cỡ chữ theo tỉ lệ bề rộng khung — quyết định trượt ngang hay trượt dọc */
+    scale: number;
+    startAt: number;
+  },
+) {
+  const { reveal, enterSeconds, largeScale, smallShift, largeShift, lineBox } =
+    pack.motion;
+  // Tắt hiệu ứng thì toạ độ là hai con số cố định — không tiếng nào trượt vào.
+  if (reveal === "none") {
+    return { x: String(options.x), y: String(options.y) };
+  }
+  const rest = restExpr(options.startAt, enterSeconds);
+  if (options.scale < largeScale) {
+    const shift = round(options.width * smallShift);
     return { x: `${options.x}-${shift}*${rest}`, y: `${options.y}` };
   }
-  const shift = round(options.fontSize * LINE_BOX * LARGE_SHIFT);
+  const shift = round(options.fontSize * lineBox * largeShift);
   return { x: `${options.x}`, y: `${options.y}+${shift}*${rest}` };
 }

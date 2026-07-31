@@ -39,6 +39,11 @@ examples/
 # không phải mã nguồn của dự án.
 server/asr/pylibs/
 
+# Sinh ra lúc cài trên máy chủ: môi trường Python của faster-whisper và mô hình
+# nghe tải về (khoảng 1,5 GB). Cả hai đều dựng lại được bằng deploy/setup-ubuntu.sh.
+server/asr/venv/
+server/asr/hf-cache/
+
 # Khoá API — KHÔNG BAO GIỜ commit
 .env
 .env.*

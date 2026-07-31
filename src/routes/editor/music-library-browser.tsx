@@ -13,6 +13,7 @@ import { EmptyState } from "@/components/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { describeMusicTags } from "../../../server/music-tags";
 import {
   Item,
   ItemActions,
@@ -211,7 +212,11 @@ export function MusicLibraryBrowser({
                     <ItemDescription className="truncate text-xs">
                       {[
                         track.seconds > 0 ? phut(track.seconds) : null,
-                        track.tags.slice(0, 3).join(" · ") || null,
+                        // Ba trục nhãn TRƯỚC thẻ tự do: chúng là thứ quyết
+                        // định bài này có lọt vào lượt AI chọn nhạc hay không,
+                        // còn thẻ tự do chỉ để đọc.
+                        describeMusicTags(track.labels) || null,
+                        track.tags.slice(0, 2).join(" · ") || null,
                         track.mine ? "bạn tải lên" : null,
                       ]
                         .filter(Boolean)

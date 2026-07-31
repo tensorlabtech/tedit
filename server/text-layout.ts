@@ -1,5 +1,15 @@
 import { measureText } from "./media-tools";
-import { OVERLAY_FONT } from "./paths";
+import { resolvePackFont } from "./paths";
+import {
+  boxPadShare,
+  styleCase,
+  type AlignId,
+  type Band,
+  type EmphasisId,
+  type StylePack,
+} from "./style-pack";
+
+export type { AlignId, Band, EmphasisId } from "./style-pack";
 
 /**
  * Dải an toàn 9:16 — trên 10%, dưới 20%, trái 11%, phải 18%.
@@ -14,14 +24,6 @@ import { OVERLAY_FONT } from "./paths";
  */
 export const SAFE = { top: 0.1, bottom: 0.2, left: 0.11, right: 0.18 };
 
-/**
- * BA dải, không phải bốn.
- *
- * Bốn dải liên tiếp phủ gần kín chiều dọc khung: đặt chữ ở hai dải giữa là che
- * đúng mặt người nói — thứ mà cả video đang nói về. Ba chỗ thì mỗi chỗ có nghĩa
- * rõ ràng, và hai chỗ mặc định (trên / dưới) chừa hẳn khoảng giữa cho hình.
- */
-export type Band = "top" | "middle" | "bottom";
 
 /**
  * Lề phải theo dải: chỉ nửa dưới khung mới bị cột nút của TikTok/Reels chiếm.
@@ -102,35 +104,25 @@ export const MAX_LINES = 3;
  * làm là tách cụm, không phải hạ sàn.
  */
 /**
- * Trần cỡ chữ, theo BỀ RỘNG khung. Chỉ trần đổi — SÀN giữ nguyên.
- *
- * Hạ trần thì chỉ những cụm NGẮN nhỏ đi: chúng là những cụm đang chạm trần. Cụm
- * dài vốn đã bị bề rộng ép xuống dưới trần từ trước, nên không đổi gì. Đó đúng
- * là điều cần: mấy dòng to quá thì bớt, mấy dòng đã nhỏ thì để yên.
+ * SÀN cỡ chữ, theo bề rộng khung. Trần thì bộ dáng đổi được
+ * (`density.maxScale`), sàn thì không: dưới 0,09 là cỡ chú thích, tức là ngưỡng
+ * ĐỌC ĐƯỢC chứ không phải chuyện phong cách. Gặp cụm không cỡ nào vừa thì việc
+ * phải làm là tách cụm, không phải hạ sàn.
  */
-const MAX_SCALE = 0.15;
 const MIN_SCALE = 0.09;
 
 /**
- * Bước dòng, theo cỡ chữ. Các dòng gần CHẠM nhau để cả khối đọc ra một mảng đặc
- * — đó là dáng của kiểu chữ này, xem ảnh tham khảo ở `examples/`.
+ * SÀN của bước dòng. Bộ dáng chỉnh `density.lineHeight` trong [1.0, 1.4], không
+ * tự do.
  *
  * KHÔNG được xuống dưới 1: tiếng Việt có dấu chồng dấu (`Ắ`, `Ữ`, `ệ`), dưới 1
  * là dấu vượt ra ngoài hộp dòng và bị cắt cụt. Lỗi này không có ở tiếng Anh nên
  * rất dễ lọt nếu chỉ thử bằng chữ mẫu tiếng Anh.
- */
-export const LINE_HEIGHT = 1;
-
-/**
- * Khoảng cách giữa hai tiếng cùng hàng, theo cỡ chữ. Hẹp để cả hàng đọc ra MỘT
- * KHỐI — cùng lý do với `LINE_HEIGHT`, xem ảnh tham khảo ở `examples/`.
  *
- * Ở ĐÂY chứ không ở `word-layout.ts`, vì phép BẺ DÒNG cũng phải dùng đúng con số
- * này. Trước đây bẻ dòng tính theo bề rộng dấu cách của font còn lúc vẽ lại dùng
- * `WORD_GAP` — hạ `WORD_GAP` xuống thì bản vẽ chật hơn bản tính, và hai bên chia
- * dòng khác nhau: khung xem 2 dòng, bản in ra 3 dòng.
+ * Các dòng gần CHẠM nhau (1,0) là dáng của kiểu chữ này — xem ảnh tham khảo ở
+ * `examples/`. Bộ dáng chữ HOA phải nới ra, xem `reports/font-audit.md`.
  */
-export const WORD_GAP = 0.12;
+export const MIN_LINE_HEIGHT = 1;
 
 /**
  * Cùng thang với `overlay-model.ts` của trang xem — hai bên phải là MỘT con số.
@@ -164,7 +156,9 @@ export async function layoutText(
   band: Band,
   videoWidth: number,
   videoHeight: number,
+  pack: StylePack,
 ): Promise<LaidOutText> {
+  const { maxScale, lineHeight: lineHeightShare, wordGap } = pack.density;
   const usableWidth = videoWidth * (1 - SAFE.left - RIGHT_MARGIN[band]);
   // Chỗ cao được phép chiếm phụ thuộc DẢI: dải dưới không có 45% để dùng.
   const maxBlockHeight = videoHeight * blockRoom(band);
@@ -178,18 +172,24 @@ export async function layoutText(
         : Math.round(videoHeight * anchor.at - (lineCount * lineHeight) / 2);
 
   // Hệ Oversize: chữ TO đến mức gần tràn mép, không phải chữ vừa khít trong lề.
-  let fontSize = Math.round(videoWidth * MAX_SCALE);
+  let fontSize = Math.round(videoWidth * maxScale);
   const minSize = Math.round(videoWidth * MIN_SCALE);
 
   // Đo từng từ một lần, rồi dò cỡ bằng phép tính — không gọi lại ImageMagick.
-  const measured = await measureWords(content);
+  const measured = await measureWords(content, pack);
 
   for (; fontSize >= minSize; fontSize -= 2) {
-    const lines = wrapAtSize(measured, fontSize, usableWidth);
+    const lines = wrapAtSize(
+      measured,
+      fontSize,
+      usableWidth,
+      wordGap,
+      boxPadShare(pack) * 2,
+    );
     if (!lines) continue;
     // Quá trần dòng thì thử cỡ nhỏ hơn; hết cỡ thì báo cần tách cụm.
     if (lines.length > MAX_LINES) continue;
-    const lineHeight = Math.round(fontSize * LINE_HEIGHT);
+    const lineHeight = Math.round(fontSize * lineHeightShare);
     if (lines.length * lineHeight <= maxBlockHeight) {
       return {
         lines,
@@ -209,8 +209,11 @@ export async function layoutText(
   // dòng còn hơn để chữ tràn ra ngoài khung — bảo đảm "không bao giờ tràn" là thứ
   // không được phép hy sinh. Cụm phụ đề tự tách trước khi tới đây; chỉ chữ do
   // người tự nhập mới rơi vào nhánh này.
-  const lineHeight = Math.round(minSize * LINE_HEIGHT);
-  const lines = wrapAtSize(measured, minSize, usableWidth) ?? [content];
+  const lineHeight = Math.round(minSize * lineHeightShare);
+  const lines =
+    wrapAtSize(measured, minSize, usableWidth, wordGap, boxPadShare(pack) * 2) ?? [
+      content,
+    ];
   const room = Math.max(1, Math.floor(maxBlockHeight / lineHeight));
   const kept = lines.slice(0, Math.min(MAX_LINES, room));
   return {
@@ -239,21 +242,31 @@ export async function layoutText(
 const BASE_SIZE = 100;
 const widthCache = new Map<string, number>();
 
-async function baseWidth(text: string) {
-  const hit = widthCache.get(text);
+async function baseWidth(text: string, pack: StylePack) {
+  // Khoá nhớ gồm cả TỆP FONT: hai bộ dáng dùng hai font khác nhau thì cùng một
+  // chữ ra hai bề rộng, và nhớ chung một khoá là bộ dáng thứ hai đọc số của bộ
+  // thứ nhất — chữ tràn khung mà không lệnh nào sai.
+  const fontPath = resolvePackFont(pack.font.file);
+  const key = `${fontPath}|${text}`;
+  const hit = widthCache.get(key);
   if (hit !== undefined) return hit;
-  const { width } = await measureText(text, OVERLAY_FONT, BASE_SIZE);
+  const { width } = await measureText(text, fontPath, BASE_SIZE);
   // Chặn số phần tử để chạy lâu không phình bộ nhớ; từ vựng một dự án nhỏ hơn thế.
   if (widthCache.size > 5000) widthCache.clear();
-  widthCache.set(text, width);
+  widthCache.set(key, width);
   return width;
 }
 
 type Measured = { words: string[]; widths: number[] };
 
-async function measureWords(content: string): Promise<Measured> {
-  const words = content.trim().split(/\s+/).filter(Boolean);
-  const widths = await Promise.all(words.map((word) => baseWidth(word)));
+async function measureWords(
+  content: string,
+  pack: StylePack,
+): Promise<Measured> {
+  // Áp trục HOA TRƯỚC khi đo: chữ hoa rộng hơn chữ thường, đo bằng chuỗi thường
+  // rồi in ra chuỗi hoa là chữ tràn khung.
+  const words = styleCase(content, pack).trim().split(/\s+/).filter(Boolean);
+  const widths = await Promise.all(words.map((word) => baseWidth(word, pack)));
   return { words, widths };
 }
 
@@ -262,22 +275,31 @@ function wrapAtSize(
   measured: Measured,
   fontSize: number,
   maxWidth: number,
+  wordGap: number,
+  /**
+   * Phần nền khối cộng vào MỖI tiếng (cả hai bên), tính theo cỡ chữ.
+   *
+   * Không có nó thì bộ có nền khối bẻ dòng theo bề rộng CHỮ trong khi thứ vẽ ra
+   * là chữ CỘNG nền — và cả hàng tràn ra ngoài khung.
+   */
+  padPerWord: number,
 ): string[] | null {
   const { words, widths } = measured;
   if (words.length === 0) return [""];
   const ratio = fontSize / BASE_SIZE;
+  const pad = fontSize * padPerWord;
 
   const lines: string[] = [];
   let current: string[] = [];
   let currentWidth = 0;
 
   for (const [index, word] of words.entries()) {
-    const wordWidth = widths[index] * ratio;
+    const wordWidth = widths[index] * ratio + pad;
     if (wordWidth > maxWidth) return null;
     // Cùng công thức với lúc vẽ (`placeWords`): khoảng giữa hai tiếng là
-    // `WORD_GAP` nhân cỡ chữ, không phải bề rộng dấu cách của font.
+    // `density.wordGap` nhân cỡ chữ, không phải bề rộng dấu cách của font.
     const added =
-      current.length === 0 ? wordWidth : fontSize * WORD_GAP + wordWidth;
+      current.length === 0 ? wordWidth : fontSize * wordGap + wordWidth;
     if (currentWidth + added <= maxWidth) {
       current.push(word);
       currentWidth += added;
@@ -302,17 +324,21 @@ export async function fitLines(
   content: string,
   usable: number,
   videoWidth: number,
+  pack: StylePack,
 ): Promise<{ lines: string[]; scale: number; needsSplit: boolean }> {
-  const measured = await measureWords(content);
+  const { maxScale, wordGap } = pack.density;
+  const padPerWord = boxPadShare(pack) * 2;
+  const measured = await measureWords(content, pack);
   if (measured.words.length === 0)
-    return { lines: [], scale: MAX_SCALE, needsSplit: false };
+    return { lines: [], scale: maxScale, needsSplit: false };
   const room = usable * 0.98;
-  for (let scale = MAX_SCALE; scale >= MIN_SCALE - 0.0001; scale -= 0.005) {
-    const lines = wrapAtSize(measured, scale * videoWidth, room);
+  for (let scale = maxScale; scale >= MIN_SCALE - 0.0001; scale -= 0.005) {
+    const lines = wrapAtSize(measured, scale * videoWidth, room, wordGap, padPerWord);
     if (lines && lines.length <= MAX_LINES)
       return { lines, scale, needsSplit: false };
   }
-  const lines = wrapAtSize(measured, MIN_SCALE * videoWidth, room) ?? [content];
+  const lines =
+    wrapAtSize(measured, MIN_SCALE * videoWidth, room, wordGap, padPerWord) ?? [content];
   return {
     lines: lines.slice(0, MAX_LINES),
     scale: MIN_SCALE,
@@ -328,8 +354,6 @@ export async function fitLines(
  * và không cách nào tồn tại ở bản in. Xếp dòng là chuyện của toạ độ, không phải
  * chuyện của phép đo, nên nó thuộc về đây chứ không cần một hệ riêng.
  */
-export type AlignId = "left" | "center" | "right" | "stair" | "stagger";
-export type EmphasisId = "even" | "keyword-large" | "mixed-size" | "taper";
 
 /**
  * Đổi giá trị `layout` cũ sang hai trục mới.
@@ -418,8 +442,12 @@ export function usableWidthOf(band: Band, videoWidth: number) {
 }
 
 /** Bề rộng VẾT MỰC ở một cỡ bất kỳ — dùng lại phép đo đã nhớ, không gọi lại ImageMagick. */
-export async function textWidth(text: string, fontSize: number) {
-  return ((await baseWidth(text)) * fontSize) / BASE_SIZE;
+export async function textWidth(
+  text: string,
+  fontSize: number,
+  pack: StylePack,
+) {
+  return ((await baseWidth(text, pack)) * fontSize) / BASE_SIZE;
 }
 
 /**
@@ -433,10 +461,14 @@ export async function textWidth(text: string, fontSize: number) {
  * Đo bằng cách nhân đôi chuỗi: vết mực của "AA" bằng bước tiến của "A" cộng vết
  * mực của "A", nên hiệu hai phép đo chính là bước tiến. Cả hai đều đã nhớ sẵn.
  */
-export async function advanceWidth(text: string, fontSize: number) {
+export async function advanceWidth(
+  text: string,
+  fontSize: number,
+  pack: StylePack,
+) {
   const [single, doubled] = await Promise.all([
-    baseWidth(text),
-    baseWidth(text + text),
+    baseWidth(text, pack),
+    baseWidth(text + text, pack),
   ]);
   return ((doubled - single) * fontSize) / BASE_SIZE;
 }

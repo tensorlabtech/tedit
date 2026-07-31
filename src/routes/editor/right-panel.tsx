@@ -96,7 +96,12 @@ export function RightPanel({
               {/* Giấu cả đầu thẻ của hàng soát: tab ngay trên đã nói "Cần bạn
                   xem 3" rồi, lặp lại lần nữa cách hai chục pixel là thừa. */}
               <LotVo className="[&_[data-slot=card-header]]:hidden">
-                <ReviewQueue editor={editor} issues={issues} onBoQua={boQua} />
+                <ReviewQueue
+                  editor={editor}
+                  issues={issues}
+                  onBoQua={boQua}
+                  onPreview={onPreview}
+                />
               </LotVo>
             </TabsContent>
           )}

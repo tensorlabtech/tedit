@@ -2,6 +2,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { db } from "./db";
+import { readMusicTags, type MusicTags } from "./music-tags";
 import { DATA_ROOT } from "./paths";
 
 /**
@@ -27,6 +28,8 @@ export type LibraryTrack = {
   file: string;
   title: string;
   tags: string[];
+  /** Ba trục nhãn có kiểm soát; trường nào rỗng là chưa gán. */
+  labels: MusicTags;
   seconds: number;
   /** Người dùng tự tải lên, chứ không phải bài đi kèm sẵn */
   mine: boolean;
@@ -79,7 +82,7 @@ export function listLibrary(viewerId: string): LibraryTrack[] {
     (
       db
         .prepare(
-          "SELECT file, title, tags, seconds, uploaded_by FROM library_tracks",
+          "SELECT file, title, tags, seconds, uploaded_by, energy, density, vocal FROM library_tracks",
         )
         .all() as Array<{
         file: string;
@@ -87,6 +90,9 @@ export function listLibrary(viewerId: string): LibraryTrack[] {
         tags: string | null;
         seconds: number | null;
         uploaded_by: string | null;
+        energy: string | null;
+        density: string | null;
+        vocal: string | null;
       }>
     ).map((row) => [row.file, row]),
   );
@@ -113,6 +119,7 @@ export function listLibrary(viewerId: string): LibraryTrack[] {
                 .map((tag) => tag.trim())
                 .filter(Boolean)
             : (extra?.tags ?? []),
+          labels: readMusicTags(row ?? {}),
           seconds: row?.seconds ?? extra?.seconds ?? 0,
           mine: Boolean(row?.uploaded_by),
           starred: starred.has(file),

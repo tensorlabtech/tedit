@@ -1,7 +1,7 @@
 ---
 phase: 6
 title: "Style Picker On Waiting Screen"
-status: pending
+status: done
 priority: P1
 effort: "1d"
 dependencies: [5]
@@ -95,21 +95,21 @@ Nguồn chữ cho ô mẫu:
 
 ## Todo List
 
-- [ ] Component ô mẫu một bộ dáng
-- [ ] Card năm ô, viền vẽ vào trong
-- [ ] Chữ ví dụ → chữ thật khi có lời
-- [ ] `PATCH` khi chọn
-- [ ] Câu "không chọn cũng được"
-- [ ] Kiểm không xô layout khi trang hỏi lại
-- [ ] Kiểm chi phí khi 5 ô cùng chạy
+- [x] Component ô mẫu một bộ dáng
+- [x] Card năm ô, viền vẽ vào trong
+- [x] Chữ ví dụ → chữ thật khi có lời
+- [x] `PATCH` khi chọn
+- [x] Câu "không chọn cũng được"
+- [x] Kiểm không xô layout khi trang hỏi lại
+- [x] Kiểm chi phí khi 5 ô cùng chạy
 
 ## Success Criteria
 
-- [ ] Chọn một ô rồi để pipeline chạy hết → video ra đúng dáng đã chọn
-- [ ] Không chọn gì → ra dáng mặc định, không có lời nhắc nào chặn đường
-- [ ] Ô mẫu đổi sang chữ của người dùng sau khi chép lời xong
-- [ ] Card không làm xô layout ở màn 1160px lẫn 720px
-- [ ] Đổi qua lại nhiều lần vẫn ra đúng bộ dáng chọn cuối
+- [x] Chọn một ô rồi để pipeline chạy hết → video ra đúng dáng đã chọn
+- [x] Không chọn gì → ra dáng mặc định, không có lời nhắc nào chặn đường
+- [x] Ô mẫu đổi sang chữ của người dùng sau khi chép lời xong
+- [x] Card không làm xô layout ở màn 1160px lẫn 720px
+- [x] Đổi qua lại nhiều lần vẫn ra đúng bộ dáng chọn cuối
 
 ## Risk Assessment
 

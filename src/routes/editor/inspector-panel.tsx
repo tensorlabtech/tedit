@@ -11,7 +11,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 import {
   REVEALS,
@@ -201,23 +207,47 @@ export function InspectorPanel({
           </Field>
           <Field>
             <FieldLabel>Hiện ra</FieldLabel>
-            <ToggleGroup
-              size="sm"
-              className="flex-wrap"
-              value={[item.reveal]}
+            {/*
+             * Hộp CHỌN chứ không phải dải nút, kể từ khi kho có 5 kiểu.
+             *
+             * Ghi chú ở đầu tệp này nói rõ: dải chọn mà xuống dòng là mất hẳn
+             * lợi thế "thấy hết cùng lúc" — hai hàng nút so le đọc còn chậm hơn
+             * một hộp chọn. Năm nhãn ("Cắt thẳng", "Mờ + lên", "Mờ dần",
+             * "Trượt vào", "Giữ rồi bật") không nằm vừa một hàng ở cột này.
+             *
+             * Trục này là trục về THỜI GIAN nên để chữ nói, không thêm icon —
+             * cũng theo ghi chú ấy.
+             */}
+            <Select
+              // `items` là BẮT BUỘC, không phải tuỳ chọn.
+              //
+              // `SelectValue` của Base UI in ra chính GIÁ TRỊ khi Root không có
+              // bảng tra nhãn — đo thật: hộp chọn hiện "fade-up" thay vì
+              // "Mờ + lên". Danh sách thả xuống thì vẫn đúng nhãn, nên lỗi này
+              // chỉ lộ ra ở trạng thái ĐÓNG, tức là ở trạng thái người dùng
+              // nhìn thấy gần như suốt.
+              items={Object.fromEntries(
+                REVEALS.map((reveal) => [reveal.id, reveal.label]),
+              )}
+              value={item.reveal}
               onValueChange={(value) => {
-                const next = value[0] as RevealId | undefined;
+                const next = value as RevealId | null;
                 if (!next) return;
                 editor.setInsertStyle(item.id, { reveal: next });
                 replay();
               }}
             >
-              {REVEALS.map((reveal) => (
-                <ToggleGroupItem key={reveal.id} value={reveal.id}>
-                  {reveal.label}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
+              <SelectTrigger size="sm" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {REVEALS.map((reveal) => (
+                  <SelectItem key={reveal.id} value={reveal.id}>
+                    {reveal.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <FieldDescription>
               {REVEALS.find((reveal) => reveal.id === item.reveal)?.note}
             </FieldDescription>

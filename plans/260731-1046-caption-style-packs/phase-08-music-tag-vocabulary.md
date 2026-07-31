@@ -1,7 +1,7 @@
 ---
 phase: 8
 title: "Music Tag Vocabulary"
-status: pending
+status: done
 priority: P3
 effort: "0.5d + 1 buổi gán nhãn 55 bài"
 dependencies: [5]
@@ -94,21 +94,21 @@ LLM vẫn chọn — nó biết nội dung video, còn nhãn thì không. Nhưng
 
 ## Todo List
 
-- [ ] Chốt ba trục nhãn
-- [ ] Vá cột `library_tracks`
-- [ ] Gán nhãn cho 55 bài
-- [ ] `musicBias` trong bộ dáng
-- [ ] Lọc trong `ai-music.ts` + luật rơi về cả kho
-- [ ] Hiện và lọc theo nhãn ở kho nhạc
+- [x] Chốt ba trục nhãn
+- [x] Vá cột `library_tracks`
+- [x] Gán nhãn cho 55 bài
+- [x] `musicBias` trong bộ dáng
+- [x] Lọc trong `ai-music.ts` + luật rơi về cả kho
+- [x] Hiện và lọc theo nhãn ở kho nhạc
 
 ## Success Criteria
 
-- [ ] Cả 55 bài có đủ ba nhãn
-- [ ] Bài chưa có hàng trong `library_tracks` vẫn hiện trong kho, không biến mất
-- [ ] Hai bộ dáng khác nhau → AI chọn ra nhạc khác nhau trên **cùng một** video
-- [ ] Lọc rỗng → rơi về cả kho, không phải "không có nhạc"
-- [ ] Đổi bộ dáng **không** đổi bài nhạc đã đặt trên dải
-- [ ] Lọc tay ở kho nhạc chạy đúng
+- [x] Cả 55 bài có đủ ba nhãn
+- [x] Bài chưa có hàng trong `library_tracks` vẫn hiện trong kho, không biến mất
+- [x] Hai bộ dáng khác nhau → AI chọn ra nhạc khác nhau trên **cùng một** video
+- [x] Lọc rỗng → rơi về cả kho, không phải "không có nhạc"
+- [x] Đổi bộ dáng **không** đổi bài nhạc đã đặt trên dải
+- [x] Lọc tay ở kho nhạc chạy đúng
 
 ## Risk Assessment
 

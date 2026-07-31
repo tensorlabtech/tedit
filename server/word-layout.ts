@@ -3,8 +3,6 @@ import {
   MAX_LINES,
   SAFE,
   advanceWidth,
-  LINE_HEIGHT,
-  WORD_GAP,
   fitLines,
   indentShare,
   textWidth,
@@ -13,6 +11,13 @@ import {
   type Band,
   type EmphasisId,
 } from "./text-layout";
+import {
+  boxPadShare,
+  boxPadShareY,
+  styleCase,
+  type StylePack,
+  type Tone,
+} from "./style-pack";
 
 /**
  * Xếp một cụm chữ theo TỪNG TIẾNG — mỗi tiếng có cỡ và toạ độ riêng.
@@ -28,6 +33,28 @@ import {
  * thả tự do từng tiếng là ném đi bảo đảm "chữ không bao giờ tràn khung".
  */
 
+/**
+ * Khối chữ đã xếp: các tiếng, kèm HỘP BAO của cả khối.
+ *
+ * Hộp bao có mặt ở đây vì emoji cần nó, và nó phải tính ở ĐÚNG chỗ đã tính ra
+ * `y` của từng hàng. Tính lại ở nơi khác nghĩa là chép `halfLeading` và phép
+ * cộng chiều cao hàng sang một tệp thứ hai — hai bản chép của cùng một phép đo
+ * là hai bản sẽ trôi khỏi nhau.
+ */
+export type PlacedBlock = {
+  words: PlacedWord[];
+  box: {
+    /** Mép TRÊN hộp khối — khớp mép trên của thẻ bọc bên trang xem */
+    top: number;
+    /** Mép DƯỚI hộp khối */
+    bottom: number;
+    /** Mép trái vùng dùng được của dải */
+    left: number;
+    /** Bề rộng vùng dùng được của dải */
+    width: number;
+  };
+};
+
 export type PlacedWord = {
   text: string;
   x: number;
@@ -42,22 +69,13 @@ export type PlacedWord = {
   alpha: number;
 };
 
-/**
- * Ba mức màu, chép từ `COLOR` của `overlay-render.tsx`.
+/*
+ * Không còn hằng `MIN_SCALE` ở tệp này.
  *
- * Chữ thường hơi trong một chút, chữ nhấn trắng đặc, chữ dẫn thì xám và mờ. Ba
- * mức này là thứ tạo ra lớp lang trong khối chữ — in tất cả bằng trắng đặc thì
- * mọi tiếng cùng hét lên và không tiếng nào nổi.
+ * Sàn cỡ chữ vẫn tồn tại — nhưng ở `text-layout.ts`, nơi phép BẺ DÒNG dùng nó để
+ * quyết định "cụm này phải tách". Ở đây thì hàng đã bị chốt số dòng từ trước
+ * (`packRows`), nên áp sàn chỉ còn một tác dụng: đẩy chữ ra ngoài khung.
  */
-const COLOR = {
-  main: { color: "#FFFFFF", alpha: 0.92 },
-  soft: { color: "#FFFFFF", alpha: 1 },
-  dim: { color: "#D6DBE0", alpha: 0.72 },
-};
-
-/** Trần và sàn cỡ chữ theo tỉ lệ BỀ RỘNG khung — cùng bộ số với trang xem. */
-const MAX_SCALE = 0.15;
-const MIN_SCALE = 0.09;
 
 
 type Piece = { text: string; keyword: boolean };
@@ -68,14 +86,30 @@ type Sized = {
   alpha: number;
 };
 
-/** Tách cụm thành từng tiếng, đánh dấu tiếng nào là từ khoá. */
-export function splitPieces(content: string, keywords: string[]): Piece[] {
+/**
+ * Tách cụm thành từng tiếng, đánh dấu tiếng nào là từ khoá, và áp trục HOA.
+ *
+ * Viết hoa NGAY TỪ ĐÂY chứ không viết hoa lúc vẽ: mọi phép đo phía sau đều chạy
+ * trên chuỗi này, và chữ hoa rộng hơn chữ thường. Đo bằng chuỗi thường rồi in ra
+ * chuỗi hoa là chữ tràn khung — mà tràn khung là bảo đảm lớn nhất của sản phẩm.
+ *
+ * Đối chiếu từ khoá vẫn dùng chuỗi GỐC: người dùng đánh dấu "quyết" thì bật chữ
+ * hoa lên không được làm mất dấu đó.
+ */
+export function splitPieces(
+  content: string,
+  keywords: string[],
+  pack: StylePack,
+): Piece[] {
   const marked = new Set(keywords.map((word) => word.toLowerCase()));
   return content
     .trim()
     .split(/\s+/)
     .filter(Boolean)
-    .map((text) => ({ text, keyword: marked.has(text.toLowerCase()) }));
+    .map((text) => ({
+      text: styleCase(text, pack),
+      keyword: marked.has(text.toLowerCase()),
+    }));
 }
 
 /** Dồn các tiếng vào tối đa `MAX_LINES` hàng. */
@@ -95,19 +129,33 @@ function packRows(pieces: Piece[]) {
  * khung để hai vế cùng đơn vị. Thiếu phép chia này thì `byWidth` ra một con số
  * pixel luôn lớn hơn trần, `Math.min` luôn chọn trần, và chữ dài bao nhiêu cũng
  * in ở cỡ tối đa rồi chạy ra ngoài khung.
+ *
+ * **Bề rộng thắng SÀN cỡ chữ.** Trước đây có `Math.max(MIN_SCALE, …)` bọc ngoài,
+ * nên hàng nào chỉ vừa ở cỡ 0,07 vẫn bị kéo lên 0,09 và chạy hẳn ra ngoài khung —
+ * đo thật trên cụm 15 tiếng ở kiểu `taper` thì chữ vượt mép phải 12% bề rộng
+ * khung. Hàng không xuống dòng được (`packRows` đã chốt số hàng theo `MAX_LINES`)
+ * nên sàn và bề rộng không thể cùng thoả; giữa "chữ nhỏ hơn ngưỡng đọc" và "chữ
+ * ra ngoài khung" thì bảo đảm KHÔNG BAO GIỜ TRÀN là thứ không được hy sinh —
+ * cùng lý lẽ với phép kẹp `x` ở cuối `placeWords`.
  */
 async function fitRow(
   text: string,
   usable: number,
   rows: number,
   videoWidth: number,
+  pack: StylePack,
 ) {
-  const byHeight = MAX_SCALE * (rows > 2 ? 0.7 : rows > 1 ? 0.85 : 1);
+  const byHeight = pack.density.maxScale * (rows > 2 ? 0.7 : rows > 1 ? 0.85 : 1);
   // Đo ở cỡ 100 rồi suy: bề rộng tỉ lệ thuận với cỡ chữ.
-  const at100 = await textWidth(text, 100);
+  //
+  // Cộng nền khối của TỪNG tiếng: hàng này vẽ ra là chữ CỘNG nền, mà đo mỗi chữ
+  // thì bộ có nền khối luôn chọn cỡ to hơn chỗ nó có.
+  const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
+  const at100 =
+    (await textWidth(text, 100, pack)) + wordCount * boxPadShare(pack) * 2 * 100;
   const perUnit = Math.max(0.001, at100 / 100);
   const byWidth = (usable * 0.98) / (perUnit * videoWidth);
-  return Math.max(MIN_SCALE, Math.min(byHeight, byWidth));
+  return Math.min(byHeight, byWidth);
 }
 
 /** Trục NHẤN: chia hàng và định cỡ. Đây là chỗ DUY NHẤT quyết định cỡ chữ. */
@@ -116,8 +164,10 @@ async function buildRows(
   emphasis: EmphasisId,
   usable: number,
   videoWidth: number,
+  pack: StylePack,
 ): Promise<Sized[][]> {
   const px = (scale: number) => Math.round(videoWidth * scale);
+  const { main, dim, key } = pack.color;
 
   if (emphasis === "keyword-large") {
     // Đoạn từ khoá LIỀN NHAU phóng to, phần trước lên trên, phần sau xuống dưới.
@@ -130,23 +180,34 @@ async function buildRows(
     const before = from >= 0 ? pieces.slice(0, from) : pieces.slice(1);
     const after = from >= 0 ? pieces.slice(last + 1) : [];
     const heroText = hero.map((piece) => piece.text).join(" ");
-    const heroScale = await fitRow(heroText, usable, 1, videoWidth);
+    const heroScale = await fitRow(heroText, usable, 1, videoWidth, pack);
     const small = Math.min(heroScale * 0.4, 0.075);
-    const row = (list: Piece[], scale: number, tone: (typeof COLOR)["main"]) =>
+    const row = (list: Piece[], scale: number, tone: Tone) =>
       list.map((piece) => ({
         text: piece.text,
         fontSize: px(scale),
         ...tone,
       }));
+    // MÀU theo từ khoá THẬT, CỠ theo trục nhấn — hai việc tách bạch.
+    //
+    // Cụm chưa đánh dấu tiếng nào thì `hero` là tiếng đầu, chọn theo VỊ TRÍ chứ
+    // không theo nghĩa. Tô nó bằng màu từ khoá là nói dối: với bộ dáng có màu
+    // nhấn thật (vàng, xanh) thì một tiếng ngẫu nhiên bỗng đổi màu. Nó đã nổi
+    // bằng cỡ chữ rồi, không cần nổi thêm bằng màu.
+    const heroRow = hero.map((piece) => ({
+      text: piece.text,
+      fontSize: px(heroScale),
+      ...(piece.keyword ? key : main),
+    }));
     return [
-      ...(before.length > 0 ? [row(before, small, COLOR.dim)] : []),
-      row(hero, heroScale, COLOR.soft),
-      ...(after.length > 0 ? [row(after, small, COLOR.dim)] : []),
+      ...(before.length > 0 ? [row(before, small, dim)] : []),
+      heroRow,
+      ...(after.length > 0 ? [row(after, small, dim)] : []),
     ];
   }
 
   if (emphasis === "mixed-size") {
-    const SMALL = 0.55;
+    const SMALL = pack.density.mixedSmallRatio;
     // Chưa đánh dấu tiếng nào thì XEN THEO THỨ TỰ — cùng luật với trang xem.
     // Không có bước này thì cả cụm ra một cỡ nhỏ, đúng cái tên hứa ngược lại.
     const hasKeyword = pieces.some((piece) => piece.keyword);
@@ -157,13 +218,14 @@ async function buildRows(
     const scaleOf = async (list: Piece[], offset = 0) => {
       let width = 0;
       for (const [index, piece] of list.entries()) {
-        const at100 = await textWidth(piece.text, 100);
+        const at100 = await textWidth(piece.text, 100, pack);
         width +=
-          (at100 / 100) * (to(piece, offset + index) ? 1 : SMALL) + WORD_GAP;
+          (at100 / 100) * (to(piece, offset + index) ? 1 : SMALL) +
+          pack.density.wordGap;
       }
       // Cùng lý do như `fitRow`: quy về tỉ lệ bề rộng khung trước khi so với trần.
       return Math.min(
-        MAX_SCALE,
+        pack.density.maxScale,
         (usable * 0.98) / (Math.max(0.001, width) * videoWidth),
       );
     };
@@ -181,7 +243,10 @@ async function buildRows(
           return {
             text: piece.text,
             fontSize: px(big ? scale : scale * SMALL),
-            ...(big ? COLOR.soft : COLOR.main),
+            // Cùng luật với `keyword-large`: cỡ theo trục nhấn, MÀU theo từ khoá
+            // thật. Cụm chưa đánh dấu gì thì `big` là các tiếng chẵn lẻ — tô
+            // chúng bằng màu từ khoá là một nửa cụm đổi màu vô cớ.
+            ...(piece.keyword ? key : main),
           };
         }),
       );
@@ -194,7 +259,7 @@ async function buildRows(
     // Vẫn trả về từng tiếng chứ không trả cả dòng, vì hiệu ứng hiện ra chạy theo
     // TIẾNG. Gộp dòng lại thì cả dòng bật ra một lượt, mất đúng thứ làm nên nhịp.
     const content = pieces.map((piece) => piece.text).join(" ");
-    const { lines, scale } = await fitLines(content, usable, videoWidth);
+    const { lines, scale } = await fitLines(content, usable, videoWidth, pack);
     const marked = new Map(
       pieces.map((piece) => [piece.text.toLowerCase(), piece.keyword]),
     );
@@ -205,7 +270,7 @@ async function buildRows(
         .map((word) => ({
           text: word,
           fontSize: px(scale),
-          ...(marked.get(word.toLowerCase()) ? COLOR.soft : COLOR.main),
+          ...(marked.get(word.toLowerCase()) ? key : main),
         })),
     );
   }
@@ -217,13 +282,14 @@ async function buildRows(
     const text = row.map((piece) => piece.text).join(" ");
     const lead = index === 0 && rows.length > 1;
     const scale = lead
-      ? (await fitRow(text, usable, 3, videoWidth)) * 0.45
-      : await fitRow(text, usable, rows.length, videoWidth);
+      ? (await fitRow(text, usable, 3, videoWidth, pack)) *
+        pack.density.leadRatio
+      : await fitRow(text, usable, rows.length, videoWidth, pack);
     out.push(
       row.map((piece) => ({
         text: piece.text,
         fontSize: px(scale),
-        ...(lead ? COLOR.dim : piece.keyword ? COLOR.soft : COLOR.main),
+        ...(lead ? dim : piece.keyword ? key : main),
       })),
     );
   }
@@ -237,15 +303,19 @@ async function buildRows(
  * Tiếng cuối phải tính vết mực vì nét nghiêng của nó là thứ chạm mép khung —
  * tính bước tiến thì hàng căn phải bị nhô ra ngoài lề.
  */
-async function rowWidth(row: Sized[]) {
+async function rowWidth(row: Sized[], pack: StylePack) {
+  const padShare = boxPadShare(pack);
   let width = 0;
   for (const [index, word] of row.entries()) {
+    // Nền khối nới MỖI tiếng ra cả hai bên, nên cộng vào bề rộng của mọi tiếng —
+    // kể cả tiếng cuối, nơi phép đo lấy vết mực thay cho bước tiến.
+    width += word.fontSize * padShare * 2;
     if (index === row.length - 1) {
-      width += await textWidth(word.text, word.fontSize);
+      width += await textWidth(word.text, word.fontSize, pack);
     } else {
       width +=
-        (await advanceWidth(word.text, word.fontSize)) +
-        word.fontSize * WORD_GAP;
+        (await advanceWidth(word.text, word.fontSize, pack)) +
+        word.fontSize * pack.density.wordGap;
     }
   }
   return width;
@@ -259,22 +329,35 @@ export async function placeWords(
   band: Band,
   videoWidth: number,
   videoHeight: number,
-): Promise<PlacedWord[]> {
-  const pieces = splitPieces(content, keywords);
-  if (pieces.length === 0) return [];
+  pack: StylePack,
+): Promise<PlacedBlock> {
+  const empty = { top: 0, bottom: 0, left: 0, width: 0 };
+  const pieces = splitPieces(content, keywords, pack);
+  if (pieces.length === 0) return { words: [], box: empty };
 
+  const lineHeight = pack.density.lineHeight;
   const usable = usableWidthOf(band, videoWidth);
   const left = Math.round(videoWidth * SAFE.left);
   const right = left + usable;
-  const rows = await buildRows(pieces, emphasis, usable, videoWidth);
+  const rows = await buildRows(pieces, emphasis, usable, videoWidth, pack);
 
   // Chiều cao cả khối để neo được từ mép DƯỚI: hai dải dưới mọc lên, không thì khối
   // ba hàng chữ khổ lớn ở dải `bottom` chạy hẳn ra ngoài đáy khung.
-  // Lấy thẳng `LINE_HEIGHT` chứ không chép số: trước đây chỗ này ghi 1,15 còn
-  // `text-layout.ts` ghi 1,28 — hai bên đo cùng một khối ra hai chiều cao khác
-  // nhau, và dải dưới đội chữ lên khỏi chỗ đã canh.
+  // Lấy thẳng `density.lineHeight` chứ không chép số: trước đây chỗ này ghi 1,15
+  // còn `text-layout.ts` ghi 1,28 — hai bên đo cùng một khối ra hai chiều cao
+  // khác nhau, và dải dưới đội chữ lên khỏi chỗ đã canh.
+  // Đệm DỌC của nền khối nằm TRONG chiều cao hàng.
+  //
+  // Bên trang xem mỗi tiếng là một `inline-block` có `padding`, nên đệm nở hộp
+  // dòng ra thật; bên này trước đây chỉ nhân `lineHeight`. Đo được trên dự án
+  // thật: khối hai hàng của bộ "Lửa" xuất ra thấp hơn trang xem 86 điểm ảnh —
+  // đúng bằng 2 hàng × 2 cạnh × 0,14 cỡ chữ. Phép so hai đường vẽ không bắt
+  // được vì nó chỉ so số dòng và cỡ chữ, không so CHỖ ĐỨNG.
+  const padY = boxPadShareY(pack);
   const rowHeights = rows.map((row) =>
-    Math.round(Math.max(...row.map((word) => word.fontSize)) * LINE_HEIGHT),
+    Math.round(
+      Math.max(...row.map((word) => word.fontSize)) * (lineHeight + padY * 2),
+    ),
   );
   const total = rowHeights.reduce((sum, height) => sum + height, 0);
   const anchor = BAND_ANCHOR[band];
@@ -283,9 +366,9 @@ export async function placeWords(
   // qua thì cả khối in ra cao hơn bản xem chừng 2% chiều cao khung.
   const halfLeading = Math.round(
     (rows[0]?.reduce((max, word) => Math.max(max, word.fontSize), 0) ?? 0) *
-      ((LINE_HEIGHT - 1) / 2),
+      ((lineHeight - 1) / 2 + padY),
   );
-  let y =
+  const startY =
     anchor.edge === "top"
       ? Math.round(videoHeight * anchor.at) + halfLeading
       : anchor.edge === "bottom"
@@ -293,10 +376,11 @@ export async function placeWords(
         : // Giữa: neo bằng TÂM khối, cao mấy dòng cũng tự căn giữa.
           Math.round(videoHeight * anchor.at - total / 2) + halfLeading;
 
+  let y = startY;
   const out: PlacedWord[] = [];
   for (const [index, row] of rows.entries()) {
     const shift = Math.round(usable * indentShare(align, index, rows.length));
-    const width = await rowWidth(row);
+    const width = await rowWidth(row, pack);
     let x: number;
     if (align === "center") x = Math.round(left + (usable - width) / 2);
     else if (align === "right") x = Math.round(right - width - shift);
@@ -307,7 +391,9 @@ export async function placeWords(
     for (const [col, word] of row.entries()) {
       out.push({
         text: word.text,
-        x,
+        // `x` của lệnh vẽ là chỗ CHỮ bắt đầu, còn nền khối chìa ra trước nó một
+        // khoảng đệm. Không dời thì mép trái của nền nằm ngoài mép hàng.
+        x: x + Math.round(word.fontSize * boxPadShare(pack)),
         y,
         fontSize: word.fontSize,
         row: index,
@@ -316,11 +402,16 @@ export async function placeWords(
         alpha: word.alpha,
       });
       x += Math.round(
-        (await advanceWidth(word.text, word.fontSize)) +
-          word.fontSize * WORD_GAP,
+        (await advanceWidth(word.text, word.fontSize, pack)) +
+          word.fontSize * pack.density.wordGap +
+          word.fontSize * boxPadShare(pack) * 2,
       );
     }
     y += rowHeights[index];
   }
-  return out;
+  // Mép trên hộp khối = chỗ hàng đầu bắt đầu TRỪ nửa khoảng đệm dòng — tức là
+  // trả lại đúng phần `halfLeading` đã cộng vào lúc tính `y`. Bên trang xem, mép
+  // trên thẻ bọc nằm đúng ở đó.
+  const top = startY - halfLeading;
+  return { words: out, box: { top, bottom: top + total, left, width: usable } };
 }

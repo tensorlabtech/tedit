@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <title>Font audit — đường vẽ CSS</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #3a3f45;
+      }
+      /* Khung 1080×1920 và `container-type: size` để `cqw` có nghĩa — đúng như
+         `OverlayFrame` của trang xem, nơi mọi cỡ chữ đều tính bằng `cqw`. */
+      .sheet {
+        position: relative;
+        width: 1080px;
+        height: 1920px;
+        background: #3a3f45;
+        container-type: size;
+        overflow: hidden;
+      }
+      .rows {
+        position: absolute;
+        top: 6%;
+        left: 11%;
+        right: 11%;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .row {
+        white-space: nowrap;
+        color: rgba(255, 255, 255, 0.92);
+        text-shadow: 0 0 var(--glow) rgba(0, 0, 0, 0.9);
+        -webkit-text-stroke-color: rgba(0, 0, 0, 0.7);
+        paint-order: stroke fill;
+      }
+      .caption {
+        position: absolute;
+        left: 11%;
+        bottom: 100px;
+        color: #ffd400;
+        font-size: 34px;
+      }
+    </style>
+  </head>
+  <body>
+    <script type="module">
+      const EDGE_SHARE = 0.022;
+      const LINE_HEIGHT = 1;
+      const MAX_SCALE = 0.15;
+      const LEAD_RATIO = 0.45;
+      const AVAILABLE = 1 - 0.11 - 0.11;
+
+      const catalog = await (await fetch("./font-candidates.json")).json();
+      const sample = (await (await fetch("./sample-text.txt")).text())
+        .trim()
+        .split("\n");
+      const [upperMarks, lowerMarks, upperLine, lowerLine, longLine] = sample;
+
+      const splitInHalf = (sentence) => {
+        const words = sentence.split(" ");
+        const middle = Math.ceil(words.length / 2);
+        return [
+          words.slice(0, middle).join(" "),
+          words.slice(middle).join(" "),
+        ];
+      };
+      const [longHead, longTail] = splitInHalf(longLine);
+
+      const ROWS = [
+        { text: upperMarks, scale: 1 },
+        { text: upperMarks, scale: 1 },
+        { text: lowerMarks, scale: 1 },
+        { text: lowerMarks, scale: 1 },
+        { text: upperLine, scale: 1 },
+        { text: lowerLine, scale: 1 },
+        { text: longHead, scale: 1 },
+        { text: longTail, scale: 1 },
+        { text: lowerMarks, scale: LEAD_RATIO },
+      ];
+
+      // Nạp font bằng đúng tệp `.ttf` mà ffmpeg sẽ in, không nạp bản woff2 của
+      // Google Fonts: hai tệp có thể khác nhau về hinting và bảng dấu, mà cả
+      // phép đo này sinh ra là để bắt lệch giữa hai đường vẽ.
+      const measurer = document.createElement("canvas").getContext("2d");
+      const BASE = 100;
+
+      async function loadFont(family) {
+        const face = new FontFace(
+          family.id,
+          `url(/assets/fonts/${family.file})`,
+          { weight: String(family.cssWeight) },
+        );
+        await face.load();
+        document.fonts.add(face);
+      }
+
+      /** Bề rộng theo TỈ LỆ khung, cùng cách `overlay-model.ts` đo. */
+      function widthShare(text, familyId, italic) {
+        measurer.font = `${italic ? "italic " : ""}${BASE}px ${familyId}`;
+        return measurer.measureText(text).width / BASE;
+      }
+
+      function rowSize(row, familyId, italic) {
+        const perUnit = widthShare(row.text, familyId, italic);
+        const byWidth = (AVAILABLE * 0.98) / perUnit;
+        return Math.min(MAX_SCALE, byWidth) * row.scale;
+      }
+
+      const entries = [...catalog.families];
+      for (const family of entries) await loadFont(family);
+      entries.push({
+        ...catalog.reference,
+        id: "arial-reference",
+        cssFamily: catalog.reference.cssStack,
+      });
+
+      for (const family of entries) {
+        const familyId = family.cssFamily ?? family.id;
+        const sheet = document.createElement("div");
+        sheet.className = "sheet";
+        sheet.dataset.fontId = family.id;
+
+        const rows = document.createElement("div");
+        rows.className = "rows";
+        for (const row of ROWS) {
+          const size = rowSize(row, familyId, family.italic);
+          const node = document.createElement("div");
+          node.className = "row";
+          node.textContent = row.text;
+          node.style.fontFamily = familyId;
+          node.style.fontWeight = String(family.cssWeight);
+          node.style.fontStyle = family.italic ? "italic" : "normal";
+          node.style.fontSize = `${size * 100}cqw`;
+          node.style.lineHeight = String(LINE_HEIGHT);
+          node.style.setProperty("--glow", `${size * 12}cqw`);
+          node.style.webkitTextStrokeWidth = `${size * 2 * EDGE_SHARE * 100}cqw`;
+          rows.append(node);
+        }
+        sheet.append(rows);
+
+        const caption = document.createElement("div");
+        caption.className = "caption";
+        caption.style.fontFamily = familyId;
+        caption.textContent = `${family.label} · CSS`;
+        sheet.append(caption);
+
+        document.body.append(sheet);
+      }
+
+      await document.fonts.ready;
+      document.body.dataset.ready = "1";
+    </script>
+  </body>
+</html>

@@ -1,7 +1,7 @@
 ---
 phase: 4
 title: "Define Style Packs"
-status: pending
+status: done
 priority: P1
 effort: "1d"
 dependencies: [1, 3]
@@ -87,22 +87,22 @@ khỏi nghĩ lại từ đầu.
 
 ## Todo List
 
-- [ ] Gán font theo `font-audit.md`
-- [ ] Chốt font của bộ dáng gốc (giữ Arial hay đổi)
-- [ ] Điền giá trị 5 pack
-- [ ] Đặt tên tiếng Việt
-- [ ] Render đoạn mẫu qua cả 5
-- [ ] Soi, loại bộ trùng cảm giác
-- [ ] Kiểm chữ hoa với cụm dài nhất
-- [ ] Ghi báo cáo kèm ảnh
+- [x] Gán font theo `font-audit.md`
+- [x] Chốt font của bộ dáng gốc (giữ Arial hay đổi)
+- [x] Điền giá trị 5 pack
+- [x] Đặt tên tiếng Việt
+- [x] Render đoạn mẫu qua cả 5
+- [x] Soi, loại bộ trùng cảm giác
+- [x] Kiểm chữ hoa với cụm dài nhất
+- [x] Ghi báo cáo kèm ảnh
 
 ## Success Criteria
 
-- [ ] 5 bộ dáng, mỗi cặp khác nhau ≥ 2 trục nhìn thấy được
-- [ ] `defaults` giống hệt nhau ở cả 5 — kiểm được bằng mắt trong mã nguồn
-- [ ] Mọi font trỏ vào `assets/fonts/`, không còn font hệ thống
-- [ ] Không bộ nào tràn khung ở cụm dài nhất, kể cả bộ chữ hoa
-- [ ] Ảnh so sánh lưu lại được để phase 6 dùng làm ô mẫu
+- [x] 5 bộ dáng, mỗi cặp khác nhau ≥ 2 trục nhìn thấy được
+- [x] `defaults` giống hệt nhau ở cả 5 — kiểm được bằng mắt trong mã nguồn
+- [x] Mọi font trỏ vào `assets/fonts/`, không còn font hệ thống
+- [x] Không bộ nào tràn khung ở cụm dài nhất, kể cả bộ chữ hoa
+- [x] Ảnh so sánh lưu lại được để phase 6 dùng làm ô mẫu
 
 ## Risk Assessment
 

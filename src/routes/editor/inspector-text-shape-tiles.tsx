@@ -3,6 +3,7 @@ import {
   type AlignId,
   type EmphasisId,
 } from "@/dev/overlays/overlay-model";
+import type { StylePack } from "../../../server/style-pack";
 import { OverlayTextBlock } from "@/dev/overlays/overlay-render";
 import {
   Tooltip,
@@ -57,12 +58,15 @@ export function TextShapeTiles({
   align,
   keywords,
   value,
+  pack,
   onChange,
 }: {
   text: string;
   align: AlignId;
   keywords: string[];
   value: EmphasisId;
+  /** Bộ dáng của dự án — ô mẫu phải vẽ bằng đúng font và màu sẽ xuất ra. */
+  pack: StylePack;
   onChange: (next: EmphasisId) => void;
 }) {
   const sample = text.trim() || PLACEHOLDER_TEXT;
@@ -132,6 +136,7 @@ export function TextShapeTiles({
                   keywords,
                   insert: { kind: "none", shape: "wide" },
                 }}
+                pack={pack}
                 seconds={DONE}
               />
               </span>

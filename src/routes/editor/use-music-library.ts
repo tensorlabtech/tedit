@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { describeMusicTags } from "../../../server/music-tags";
 
 import { toast } from "@/components/ui/toast";
 import { api, type ApiLibraryTrack } from "@/lib/api";
@@ -116,7 +117,15 @@ export function useMusicLibrary(open: boolean) {
   const moiThe = useMemo(() => {
     const dem = new Map<string, number>();
     for (const track of tracks ?? []) {
-      for (const the of track.tags) dem.set(the, (dem.get(the) ?? 0) + 1);
+      // Ba trục nhãn đứng ĐẦU danh sách thẻ: chúng là thứ duy nhất phủ hết kho,
+      // nên lọc theo chúng luôn cho ra một tập dùng được, còn thẻ tự do thì có
+      // cái chỉ dính đúng một bài.
+      for (const the of [
+        ...describeMusicTags(track.labels).split(" · ").filter(Boolean),
+        ...track.tags,
+      ]) {
+        dem.set(the, (dem.get(the) ?? 0) + 1);
+      }
     }
     return [...dem.entries()]
       .sort((a, b) => b[1] - a[1])
@@ -131,7 +140,12 @@ export function useMusicLibrary(open: boolean) {
       if (!tu) return true;
       return (
         track.title.toLowerCase().includes(tu) ||
-        track.tags.some((the) => the.toLowerCase().includes(tu))
+        track.tags.some((the) => the.toLowerCase().includes(tu)) ||
+        // Ba trục nhãn tìm được bằng chính ô tìm đang có ("mạnh", "êm", "dày"),
+        // không thêm một hàng nút lọc thứ hai. Ô tìm đã ở đúng chỗ và đã có
+        // thói quen dùng; thêm control cho một trục nữa là bắt người dùng học
+        // hai cách lọc cho cùng một việc.
+        describeMusicTags(track.labels).toLowerCase().includes(tu)
       );
     });
   }, [tracks, tim, chiSao]);

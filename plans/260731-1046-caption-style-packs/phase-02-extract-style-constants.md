@@ -1,7 +1,7 @@
 ---
 phase: 2
 title: "Extract Style Constants"
-status: pending
+status: done
 priority: P1
 effort: "1d"
 dependencies: [1]
@@ -116,22 +116,22 @@ không phải đổi kiểu.
 
 ## Todo List
 
-- [ ] `server/style-pack.ts` + pack `goc`
-- [ ] Luồn vào `text-layout.ts`
-- [ ] Luồn vào `word-layout.ts`
-- [ ] Luồn vào `render.ts`
-- [ ] Luồn vào `reveal-expr.ts`
-- [ ] Luồn vào `overlay-render.tsx`
-- [ ] `/_dev/overlays` không còn cờ lệch
-- [ ] So hai bản render, khác 0 pixel
+- [x] `server/style-pack.ts` + pack `goc`
+- [x] Luồn vào `text-layout.ts`
+- [x] Luồn vào `word-layout.ts`
+- [x] Luồn vào `render.ts`
+- [x] Luồn vào `reveal-expr.ts`
+- [x] Luồn vào `overlay-render.tsx`
+- [x] `/_dev/overlays` không còn cờ lệch
+- [x] So hai bản render, khác 0 pixel
 
 ## Success Criteria
 
-- [ ] Render một dự án có sẵn trước/sau ra tệp **giống hệt**
-- [ ] `/_dev/overlays` không báo lệch ở bất kỳ tổ hợp nào
-- [ ] `SAFE`, `MAX_LINES`, `MIN_SCALE`, `MAX_BLOCK_SHARE` vẫn là hằng, không nằm
+- [x] Render một dự án có sẵn trước/sau ra tệp **giống hệt**
+- [x] `/_dev/overlays` không báo lệch ở bất kỳ tổ hợp nào
+- [x] `SAFE`, `MAX_LINES`, `MIN_SCALE`, `MAX_BLOCK_SHARE` vẫn là hằng, không nằm
       trong pack
-- [ ] `npm run build` và `npm run lint` sạch
+- [x] `npm run build` và `npm run lint` sạch
 
 ## Risk Assessment
 

@@ -1,0 +1,47 @@
+{
+  "be-vietnam-pro-extrabold-italic": {
+    "lowercase": 1.271,
+    "uppercase": 1.481,
+    "mixed": 1.481
+  },
+  "be-vietnam-pro-black": {
+    "lowercase": 1.289,
+    "uppercase": 1.499,
+    "mixed": 1.499
+  },
+  "anton": {
+    "lowercase": 1.526,
+    "uppercase": 1.409,
+    "mixed": 1.531
+  },
+  "archivo-expanded-black": {
+    "lowercase": 1.133,
+    "uppercase": 1.259,
+    "mixed": 1.268
+  },
+  "barlow-condensed-bold-italic": {
+    "lowercase": 1.124,
+    "uppercase": 1.31,
+    "mixed": 1.31
+  },
+  "montserrat-bold-italic": {
+    "lowercase": 1.124,
+    "uppercase": 1.274,
+    "mixed": 1.274
+  },
+  "oswald-bold": {
+    "lowercase": 1.233,
+    "uppercase": 1.465,
+    "mixed": 1.465
+  },
+  "lexend-bold": {
+    "lowercase": 1.22,
+    "uppercase": 1.327,
+    "mixed": 1.333
+  },
+  "arial-bold-italic": {
+    "lowercase": 1.116,
+    "uppercase": 1.12,
+    "mixed": 1.137
+  }
+}

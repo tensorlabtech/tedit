@@ -1,7 +1,7 @@
 ---
 phase: 5
 title: "Persist Style On Project"
-status: pending
+status: done
 priority: P1
 effort: "0.5d"
 dependencies: [4]
@@ -85,21 +85,21 @@ API:
 
 ## Todo List
 
-- [ ] Cột `style_pack` + vá cột dần
-- [ ] `readStylePack` với luật rơi về `goc`
-- [ ] `caption-elements.ts` nhận `defaults`
-- [ ] `pipeline.ts` truyền pack
-- [ ] `render.ts` nhận pack
-- [ ] API `GET`/`PATCH`
-- [ ] Kiểm bằng `UPDATE` tay
+- [x] Cột `style_pack` + vá cột dần
+- [x] `readStylePack` với luật rơi về `goc`
+- [x] `caption-elements.ts` nhận `defaults`
+- [x] `pipeline.ts` truyền pack
+- [x] `render.ts` nhận pack
+- [x] API `GET`/`PATCH`
+- [x] Kiểm bằng `UPDATE` tay
 
 ## Success Criteria
 
-- [ ] Đổi cột bằng tay rồi xuất lại → video đổi dáng
-- [ ] Bảng `elements` **không đổi một hàng nào** sau khi đổi pack
-- [ ] Dự án cũ (không có cột) xuất ra đúng như trước
-- [ ] Tên pack rác trong CSDL → rơi về `goc`, không sập
-- [ ] `npm run check:ownership` sạch
+- [x] Đổi cột bằng tay rồi xuất lại → video đổi dáng
+- [x] Bảng `elements` **không đổi một hàng nào** sau khi đổi pack
+- [x] Dự án cũ (không có cột) xuất ra đúng như trước
+- [x] Tên pack rác trong CSDL → rơi về `goc`, không sập
+- [x] `npm run check:ownership` sạch
 
 ## Risk Assessment
 

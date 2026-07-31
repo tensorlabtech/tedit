@@ -23,7 +23,14 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["server/**/*.ts"],
+  // `scripts/**/*.ts` NẰM TRONG đây, không để ngoài.
+  //
+  // Công cụ ở `scripts/` gọi thẳng mã máy chủ (`placeWords`, `style-pack`…), nên
+  // đổi một kiểu bên server là chúng gãy. Để ngoài phép kiểm kiểu thì chúng gãy
+  // IM LẶNG cho tới lần chạy tay tiếp theo — đo được một lần: đổi `highlight`
+  // thành một đối tượng làm script dựng ảnh so sánh chết, mà không lệnh kiểm nào
+  // báo. `.tsx` thì thuộc phần web, khai ở `tsconfig.app.json`.
+  "include": ["server/**/*.ts", "scripts/**/*.ts"],
   // Thư viện Python của bước nhận dạng tiếng nằm trong `server/asr/pylibs` —
   // không phải mã của mình.
   "exclude": ["server/asr/pylibs"]

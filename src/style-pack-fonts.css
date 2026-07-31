@@ -1,0 +1,99 @@
+/*
+ * Font của các BỘ DÁNG CHỮ — nạp đúng tệp `.ttf` mà ffmpeg in ra.
+ *
+ * Không nạp bản woff2 của Google Fonts: hai tệp có thể khác nhau về bảng dấu và
+ * hinting, mà cả hệ này sống bằng lời hứa "thấy sao thì xuất ra vậy". Một tệp,
+ * hai đường vẽ.
+ *
+ * Tên họ chữ ở đây phải KHỚP `font.cssStack` trong `server/style-pack-catalog.ts`.
+ * Lệch một chữ là trình duyệt lặng lẽ rơi về `sans-serif` và khung xem hiện đúng
+ * bố cục nhưng sai hẳn dáng chữ — hỏng kiểu khó nhận ra nhất.
+ *
+ * `font-display: block`: thà chờ font tải xong còn hơn vẽ bằng font thay thế rồi
+ * nhảy. Ô mẫu chọn dáng mà nhấp nháy qua một font khác thì người dùng đang chọn
+ * đúng thứ họ không nhận được.
+ *
+ * Trình duyệt chỉ tải tệp khi có thứ gì đó thật sự dùng tới họ chữ đó, nên năm bộ
+ * dáng không thành năm lần tải ở mọi trang.
+ */
+
+@font-face {
+  font-family: "Anton";
+  src: url("../assets/fonts/Anton-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "Archivo Expanded";
+  src: url("../assets/fonts/Archivo-ExpandedBlack.ttf") format("truetype");
+  font-weight: 900;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "Barlow Condensed";
+  src: url("../assets/fonts/BarlowCondensed-BoldItalic.ttf") format("truetype");
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "Oswald";
+  src: url("../assets/fonts/Oswald-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "Lexend";
+  src: url("../assets/fonts/Lexend-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "Montserrat";
+  src: url("../assets/fonts/Montserrat-BoldItalic.ttf") format("truetype");
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+}
+
+/*
+ * Be Vietnam Pro **Black đứng** khai thành một HỌ RIÊNG, không khai thêm một
+ * độ đậm cho họ `Be Vietnam Pro`.
+ *
+ * Nếu khai chung họ thì nó đứng cạnh bản 800 nghiêng của bộ gốc, và trình duyệt
+ * được quyền tự chọn giữa hai bản khi độ đậm không khớp tuyệt đối — lúc đó
+ * trang xem vẽ một font mà ffmpeg in ra font kia, im lặng.
+ */
+@font-face {
+  font-family: "Be Vietnam Pro Black";
+  src: url("../assets/fonts/BeVietnamPro-Black.ttf") format("truetype");
+  font-weight: 900;
+  font-style: normal;
+  font-display: block;
+}
+
+/*
+ * Be Vietnam Pro ExtraBold Italic — bộ dáng gốc.
+ *
+ * Gói `@fontsource` đã nạp họ này cho giao diện, nhưng ở đây khai lại từ CHÍNH
+ * tệp `.ttf` của máy chủ: bản `@fontsource` là woff2 đã chia nhỏ theo bộ ký tự,
+ * còn ffmpeg in bằng tệp đầy đủ. Khai riêng ở độ đậm 800 nghiêng nên nó chỉ đè
+ * đúng thể mà lớp chữ overlay dùng, không đụng chữ giao diện.
+ */
+@font-face {
+  font-family: "Be Vietnam Pro";
+  src: url("../assets/fonts/BeVietnamPro-ExtraBoldItalic.ttf")
+    format("truetype");
+  font-weight: 800;
+  font-style: italic;
+  font-display: block;
+}

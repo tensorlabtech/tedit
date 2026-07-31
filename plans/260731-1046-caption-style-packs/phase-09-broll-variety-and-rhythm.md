@@ -1,7 +1,7 @@
 ---
 phase: 9
 title: "Broll Variety And Rhythm"
-status: pending
+status: done
 priority: P3
 effort: "1.5d"
 dependencies: [5]
@@ -89,21 +89,21 @@ mọi kiểu cho người dùng.
 
 ## Todo List
 
-- [ ] Ba kiểu hiện mới, hai đường vẽ
-- [ ] Bày kiểu mới trong bảng sửa
-- [ ] `effectBias` + `rhythm` trong bộ dáng
-- [ ] `ai-effects` đọc thiên lệch
-- [ ] `ai-broll-place` đọc nhịp
-- [ ] Dòng mời đặt lại trong hàng soát
-- [ ] So hai bộ dáng trên cùng một video
+- [x] Ba kiểu hiện mới, hai đường vẽ
+- [x] Bày kiểu mới trong bảng sửa
+- [x] `effectBias` + `rhythm` trong bộ dáng
+- [x] `ai-effects` đọc thiên lệch
+- [x] `ai-broll-place` đọc nhịp
+- [x] Dòng mời đặt lại trong hàng soát
+- [x] So hai bộ dáng trên cùng một video
 
 ## Success Criteria
 
-- [ ] Hai bộ dáng khác nhau → số hiệu ứng và khoảng cách giữa chúng khác nhau rõ
-- [ ] Đổi bộ dáng **không** tự đổi b-roll và chuyển cảnh đã đặt
-- [ ] Dòng mời đặt lại bấm được và làm đúng thứ nó hứa
-- [ ] Kiểu mới khớp giữa trang xem và bản xuất
-- [ ] Người dùng vẫn chọn được kiểu ngoài kho ưu tiên
+- [x] Hai bộ dáng khác nhau → số hiệu ứng và khoảng cách giữa chúng khác nhau rõ
+- [x] Đổi bộ dáng **không** tự đổi b-roll và chuyển cảnh đã đặt
+- [x] Dòng mời đặt lại bấm được và làm đúng thứ nó hứa
+- [x] Kiểu mới khớp giữa trang xem và bản xuất
+- [x] Người dùng vẫn chọn được kiểu ngoài kho ưu tiên
 
 ## Risk Assessment
 

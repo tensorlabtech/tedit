@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 
+import { GOC } from "../../../server/style-pack-catalog";
 import { revealStyle } from "./use-reveal-loop";
 
 /**
@@ -177,7 +178,7 @@ export function FrameText({
         // đổ bóng mềm thì bản in ra không có.
         textShadow: `0 0 ${size * 12}cqw rgba(0,0,0,.9)`,
         ...(reveal
-          ? revealStyle(reveal.seconds, reveal.order, size, reveal.word)
+          ? revealStyle(GOC, reveal.seconds, reveal.order, size, reveal.word)
           : undefined),
         ...style,
       }}

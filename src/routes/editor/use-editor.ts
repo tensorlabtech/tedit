@@ -12,6 +12,9 @@ import {
 
 import { fromLegacyLayout } from "@/dev/overlays/overlay-legacy";
 
+import type { StylePackId } from "../../../server/style-pack";
+import { findStylePack } from "../../../server/style-pack-catalog";
+
 import { silenceLabel, shortMediaLabel } from "./editor-data";
 import type { AudioEnvelope } from "./timeline-audio-lane";
 
@@ -351,6 +354,13 @@ function shape(data: ApiProject) {
         };
       })(),
       keywords: element.keywords ? element.keywords.split("|") : [],
+      emoji: element.emoji ?? null,
+      // Hai trục ĐÈ; rỗng là theo bộ dáng của dự án.
+      letterCase:
+        element.letter_case === "upper" || element.letter_case === "as-typed"
+          ? element.letter_case
+          : null,
+      keyColor: element.key_color ?? null,
     }));
 
   const inserts: Insert[] = data.elements
@@ -445,6 +455,20 @@ function shape(data: ApiProject) {
     // Kho tư liệu đã tải lên: nguồn để chọn khi chèn, khác với `inserts` là
     // những lần đã đặt lên dải.
     insertLibrary: data.files.filter((file) => file.role === "insert"),
+    /**
+     * Khung hình thật của cảnh chính đầu tiên — nền cho ô mẫu chọn phong cách.
+     *
+     * Cùng nguồn với màn nạp tệp (`media_files.thumb_path`). Thiếu nó thì hộp
+     * đổi phong cách ở bàn dựng bày mười ô nền đen trơn, trong khi cũng hộp ấy
+     * ở màn nạp tệp lại có khung hình — và cái làm nên khác biệt giữa "chọn
+     * phong cách" và "chọn font" chính là khung hình đó.
+     */
+    posterUrl: (() => {
+      const first = data.files
+        .filter((file) => file.role === "main" && file.thumb_path)
+        .sort((a, b) => a.position - b.position)[0];
+      return first?.thumb_path ? api.fileUrl(first.thumb_path) : null;
+    })(),
     clips,
     duration: cursor || (sentences.at(-1)?.end ?? 0),
     title: data.project.title,
@@ -561,6 +585,8 @@ export function useEditor(projectId: string | undefined) {
             )
             .catch(boQuaLoi());
         }
+        setStylePackState(findStylePack(project.project.style_pack).id);
+        setEffectsStylePack(project.project.effects_style_pack ?? null);
         // Giá trị cũ vẫn đọc được: 1 và "in" đều là nhấn zoom vào.
         const raw = project.project.zoom_punch;
         setZoomPunchState(
@@ -1150,6 +1176,10 @@ export function useEditor(projectId: string | undefined) {
             align: patch.align,
             emphasis: patch.emphasis,
             keywords: patch.keywords,
+            // `null` phải đi qua được: nó nghĩa là BỎ ĐÈ, quay về theo bộ dáng.
+            // Dùng `??` ở đây là nuốt mất chính cái ý đó.
+            letterCase: patch.letterCase,
+            keyColor: patch.keyColor,
           })
           .catch(boQuaLoi());
         return {
@@ -1435,6 +1465,9 @@ export function useEditor(projectId: string | undefined) {
                 align: "center",
                 emphasis: "even",
                 keywords: [],
+                emoji: null,
+                letterCase: null,
+                keyColor: null,
               },
             ],
           }
@@ -1442,6 +1475,62 @@ export function useEditor(projectId: string | undefined) {
     );
     setSelection({ kind: "text", id: created.id });
   }, [projectId, data, time]);
+
+  /**
+   * Đặt một CÂU MỞ neo vào mấy tiếng đầu video.
+   *
+   * Ở `useEditor` chứ không ở màn "3 giây đầu": mọi lần thêm phần tử đều phải
+   * cập nhật `data` ngay sau khi máy chủ nhận, không thì chữ mới không hiện ra
+   * cho tới lúc tải lại trang — người dùng bấm "Dùng câu này" và tưởng hỏng.
+   * Đó là việc của tệp giữ state, không phải của một Dialog.
+   */
+  const addOpeningText = useCallback(
+    async (content: string) => {
+      if (!projectId || !data) return;
+      const span = data.words.slice(0, Math.min(8, data.words.length));
+      if (span.length === 0) return;
+
+      const created = await api.createElement(projectId, {
+        kind: "text",
+        // Neo vào KHOẢNG TỪ, không neo vào giây: bỏ một câu phía trước thì câu
+        // mở vẫn dính đúng chỗ. Nhờ vậy nó cũng không bao giờ hiện trước lúc có
+        // tiếng nói đầu tiên.
+        fromWordId: span[0].id,
+        toWordId: span[span.length - 1].id,
+        content,
+        band: "middle",
+      });
+
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              textElements: [
+                ...current.textElements,
+                {
+                  id: created.id,
+                  fromWordId: span[0].id,
+                  toWordId: span[span.length - 1].id,
+                  byTime: false,
+                  start: span[0].start,
+                  end: span[span.length - 1].end,
+                  content,
+                  position: "middle" as TextElementPosition,
+                  align: "center",
+                  emphasis: "even",
+                  keywords: [],
+                emoji: null,
+                  letterCase: null,
+                  keyColor: null,
+                },
+              ],
+            }
+          : current,
+      );
+      setSelection({ kind: "text", id: created.id });
+    },
+    [projectId, data],
+  );
 
   /** Chèn tư liệu vào câu đang ở vạch giữa. */
   const addInsertAtPlayhead = useCallback(
@@ -2495,6 +2584,22 @@ export function useEditor(projectId: string | undefined) {
    * không hiểu vì sao.
    */
   const [zoomPunch, setZoomPunchState] = useState<JunctionId>("none");
+  /**
+   * BỘ DÁNG CHỮ của dự án — font, màu, viền, quầng, mật độ, nhịp.
+   *
+   * Cấp DỰ ÁN, không phải cấp phần tử: nó không nằm trong `elements` nên đổi nó
+   * không đụng một hàng dữ liệu nào. Vì thế nó ở đây chứ không ở Inspector —
+   * Inspector là nơi sửa VẬT ĐANG CHỌN.
+   */
+  const [stylePack, setStylePackState] = useState<StylePackId>("goc");
+  /**
+   * Bộ dáng ĐANG DÙNG lúc chặng hiệu ứng chạy lần cuối.
+   *
+   * Khác `stylePack` nghĩa là người dùng đã đổi dáng sau đó — hàng soát mời họ
+   * đặt lại. Không tự đặt lại: hiệu ứng và tư liệu chèn nằm trên dải, người dùng
+   * nhìn thấy chúng và có thể đã sắp lại bằng tay.
+   */
+  const [effectsStylePack, setEffectsStylePack] = useState<string | null>(null);
 
   /** Đổi cách một tư liệu hiện ra, hoặc hình dáng khung của nó. */
   const setInsertStyle = useCallback(
@@ -2519,6 +2624,47 @@ export function useEditor(projectId: string | undefined) {
       if (!projectId) return;
       setZoomPunchState(punch);
       await api.setZoomPunch(projectId, punch).catch(boQuaLoi());
+    },
+    [projectId],
+  );
+
+  /**
+   * Đổi bộ dáng chữ của cả dự án.
+   *
+   * KHÔNG có dialog xác nhận và KHÔNG có phép đếm "đổi 47 giữ 6": cả năm bộ dáng
+   * khai `defaults` giống hệt nhau, nên đổi bộ dáng chỉ đụng phần VẼ — không cụm
+   * nào bị mất, không luật merge nào. Nếu thấy mình đang định viết một câu đếm
+   * như thế thì nghĩa là `defaults` của các bộ đã lệch nhau, và chỗ phải sửa là
+   * `style-pack-catalog.ts` chứ không phải chỗ này.
+   *
+   * Đặt state trước rồi mới gọi máy chủ: chữ trên bàn dựng vẽ lại ngay, không
+   * phải chờ một vòng tải lại.
+   */
+  /**
+   * Chạy lại ĐÚNG chặng hiệu ứng theo bộ dáng hiện tại.
+   *
+   * Không dựng lại cả mạch: nghe và chép lời mất vài phút, và người dùng chỉ
+   * đang xin một việc — đánh dấu lại mấy chỗ nối theo nhịp của dáng mới.
+   */
+  const redoEffects = useCallback(async () => {
+    if (!projectId) return;
+    await api.retryStep(projectId, "effects").catch(boQuaLoi());
+    // PHẢI báo ra: chặng chạy nền ở máy chủ, còn bàn dựng thì không hỏi lại
+    // tiến trình như màn chờ. Không có dòng này thì người dùng bấm xong không
+    // thấy gì đổi và bấm tiếp — mỗi lần bấm là một lượt gọi mô hình.
+    toast.add({
+      title: "Đang đặt lại hiệu ứng",
+      description: "Xong thì mở lại dự án để thấy — mất chừng nửa phút.",
+    });
+  }, [projectId]);
+
+  const setStylePack = useCallback(
+    async (next: StylePackId) => {
+      if (!projectId) return;
+      setStylePackState(next);
+      await api
+        .updateProject(projectId, { stylePack: next })
+        .catch(boQuaLoi());
     },
     [projectId],
   );
@@ -2665,6 +2811,7 @@ export function useEditor(projectId: string | undefined) {
       inserts: [] as Insert[],
       music: [] as MusicTrack[],
       insertLibrary: [] as ApiProject["files"],
+      posterUrl: null as string | null,
       segments: [] as Clip[],
       clips: [] as Clip[],
       duration: 0,
@@ -2939,6 +3086,7 @@ export function useEditor(projectId: string | undefined) {
     updateSentenceText,
     updateTextElement,
     addTextAtPlayhead,
+    addOpeningText,
     addInsertAtPlayhead,
     deleteElement,
     moveElement,
@@ -2958,6 +3106,10 @@ export function useEditor(projectId: string | undefined) {
     restoreRange,
     zoomPunch,
     setZoomPunch,
+    stylePack,
+    setStylePack,
+    effectsStylePack,
+    redoEffects,
     setInsertStyle,
     removeCut,
     undo,

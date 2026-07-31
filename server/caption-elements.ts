@@ -1,5 +1,6 @@
 import { buildCaptionGroups } from "./caption-groups";
 import { db, newId } from "./db";
+import type { StylePack } from "./style-pack";
 import type { Band } from "./text-layout";
 
 /**
@@ -19,11 +20,21 @@ import type { Band } from "./text-layout";
  */
 export async function createCaptionElements(
   projectId: string,
-  band: Band = "bottom",
+  band: Band,
+  /**
+   * Bộ dáng của dự án. Đọc ở ĐÂY — lúc SINH chữ — chứ không đọc lúc render:
+   * `defaults` là thứ duy nhất của bộ dáng đi vào bảng `elements`, nên nó phải
+   * được ghi một lần rồi thôi. Đọc lại lúc render là đổi bộ dáng sẽ ghi đè bố
+   * cục người dùng đã chỉnh tay.
+   *
+   * BẮT BUỘC truyền, và đứng TRƯỚC `only`: để nó ở cuối với một giá trị mặc
+   * định thì nơi nào quên truyền sẽ sinh chữ theo bộ gốc mà không báo gì.
+   */
+  pack: StylePack,
   /** Chỉ sinh trong khoảng này — dùng khi lấp chữ cho riêng một câu. */
   only?: { start: number; end: number },
 ) {
-  const all = await buildCaptionGroups(projectId, band);
+  const all = await buildCaptionGroups(projectId, band, pack);
   const groups = only
     ? all.filter((group) => group.start < only.end && group.end > only.start)
     : all;
@@ -51,9 +62,17 @@ export async function createCaptionElements(
   //
   // Đây là chỗ quyết định dáng của CẢ dự án: mọi chữ đều sinh ra từ đây, và
   // không ai đi đổi tay năm chục lần.
+  //
+  // Bốn giá trị dưới đây đến từ `pack.defaults`, không viết cứng nữa. Cả năm bộ
+  // dáng khai `defaults` GIỐNG HỆT NHAU, nên đổi bộ dáng không đụng một hàng
+  // `elements` nào — xem `SHARED_DEFAULTS` ở `style-pack-catalog.ts`.
+  //
+  // KHÔNG ghi vào cột `elements.layout`: nó là di sản đã chết (`db.ts`,
+  // `text-layout.ts:337`), đã bị thay bằng `align` + `emphasis`. Sửa câu INSERT
+  // này mà tiện tay ghi vào nó là làm sống lại một mô hình đã bỏ.
   const insert = db.prepare(
     `INSERT INTO elements (id, project_id, kind, from_word_id, to_word_id, content, position_band, align, emphasis, reveal, shape)
-     VALUES (?,?,'text',?,?,?,?,'center','taper','none','full')`,
+     VALUES (?,?,'text',?,?,?,?,?,?,?,'full')`,
   );
 
   const created: string[] = [];
@@ -71,6 +90,9 @@ export async function createCaptionElements(
         group.words[group.words.length - 1].id,
         group.text,
         band,
+        pack.defaults.align,
+        pack.defaults.emphasis,
+        pack.defaults.reveal,
       );
       created.push(id);
     }
@@ -93,8 +115,11 @@ export async function createCaptionElements(
  * Giữ nguyên kiểu dáng cho từng mảnh: người dùng đã chọn dải, căn, nhấn, từ
  * khoá cho khối gốc thì các mảnh phải thừa hưởng, không thì chẻ xong là mất dáng.
  */
-export async function splitVerbatimCaptions(projectId: string) {
-  const groups = await buildCaptionGroups(projectId);
+export async function splitVerbatimCaptions(
+  projectId: string,
+  pack: StylePack,
+) {
+  const groups = await buildCaptionGroups(projectId, "bottom", pack);
   if (groups.length === 0) return 0;
 
   const words = db

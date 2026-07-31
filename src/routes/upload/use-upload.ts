@@ -4,6 +4,12 @@ import type { PickerItem } from "@/components/media-picker-item";
 import { toast } from "@/components/ui/toast";
 import { ApiError, api, type ApiSettings } from "@/lib/api";
 
+import type { StylePackId } from "../../../server/style-pack";
+import {
+  DEFAULT_STYLE_PACK_ID,
+  findStylePack,
+} from "../../../server/style-pack-catalog";
+
 import { makeThumbnail } from "./make-thumbnail";
 import {
   isVideo,
@@ -24,6 +30,9 @@ export type IntakeResult = {
  * @param openingProjectId Dự án đang mở dở, lấy từ đường dẫn. Có nó thì màn này
  * dựng lại từ máy chủ thay vì bắt đầu bằng một mạch rỗng.
  */
+/** Nơi nhớ phong cách đã chọn lần trước, để dự án sau không phải chọn lại. */
+const LAST_STYLE_KEY = "teddit-style-pack";
+
 export function useUpload(openingProjectId?: string) {
   const [files, setFiles] = useState<MediaFile[]>([]);
   const [projectId, setProjectId] = useState<string | null>(
@@ -47,6 +56,19 @@ export function useUpload(openingProjectId?: string) {
    * coi nó là chưa đặt.
    */
   const [minSilence, setMinSilence] = useState(0.8);
+  /**
+   * Phong cách của dự án. Mở màn thì lấy lại lựa chọn LẦN TRƯỚC.
+   *
+   * Người làm kênh dùng một phong cách cho mọi video; bắt họ chọn lại ở từng dự
+   * án là bắt trả giá cho một quyết định họ đã ra rồi.
+   */
+  const [stylePack, setStylePackState] = useState<StylePackId>(() => {
+    try {
+      return findStylePack(localStorage.getItem(LAST_STYLE_KEY)).id;
+    } catch {
+      return DEFAULT_STYLE_PACK_ID;
+    }
+  });
   /**
    * Máy được lấy tư liệu ở đâu cho DỰ ÁN NÀY.
    *
@@ -261,6 +283,9 @@ export function useUpload(openingProjectId?: string) {
         setSentenceCount(data.sentences.length);
         setTitle(data.project.title);
         setMinSilence(data.project.min_silence ?? 0.8);
+        // Dự án đang mở lại thì lấy phong cách CỦA NÓ, không lấy lựa chọn lần
+        // trước — lựa chọn lần trước chỉ dành cho dự án mới.
+        setStylePackState(findStylePack(data.project.style_pack).id);
         setInsertSource(
           (data.project.insert_source as ApiSettings["insertSource"]) ??
             "starred",
@@ -728,6 +753,44 @@ export function useUpload(openingProjectId?: string) {
   );
 
   /** Ghi tên dự án. Cũng chỉ ghi lúc RỜI Ô, cùng lý do như lời dặn. */
+  /**
+   * Chọn PHONG CÁCH ở màn nạp tệp — trước khi máy chạy.
+   *
+   * Đây là lúc DUY NHẤT lựa chọn còn lái được cả mạch: chặng `captions` là chặng
+   * thứ năm trong mười một và nó chạy ngay sau khi chép lời xong, nên chọn ở màn
+   * chờ là một cuộc đua với chính cái máy. Thua cuộc đua thì bố cục chữ đã sinh
+   * theo bộ gốc, và từ đó đổi phong cách chỉ còn vẽ lại được font với màu.
+   *
+   * Ghi kèm NGƯỠNG RÚT LẶNG của phong cách đó, và ghi ở phía màn hình chứ không
+   * ở máy chủ: thanh kéo ngay bên cạnh nhảy theo trước mắt người dùng, nên họ
+   * thấy nguyên nhân và kéo lại được. Máy chủ ghi đè lặng lẽ thì họ mất một lựa
+   * chọn mà không biết vì sao.
+   */
+  const saveStylePack = useCallback(
+    async (next: StylePackId) => {
+      setStylePackState(next);
+      const pack = findStylePack(next);
+      setMinSilence(pack.intensity.minSilence);
+      // Nhớ cho LẦN SAU: người làm kênh dùng một phong cách cho mọi video, mà
+      // mỗi dự án mới lại quay về bộ gốc thì họ phải chọn lại mỗi lần.
+      try {
+        localStorage.setItem(LAST_STYLE_KEY, next);
+      } catch {
+        // Trình duyệt chặn lưu trữ — mất trí nhớ giữa các dự án, không sao.
+      }
+      // `ensureProject` chứ không đọc mã có sẵn: người dùng chọn phong cách được
+      // NGAY khi mở màn, trước cả tệp đầu tiên — mà lúc đó dự án chưa tồn tại.
+      const id = await ensureProject();
+      await api
+        .updateProject(id, {
+          stylePack: next,
+          minSilence: pack.intensity.minSilence,
+        })
+        .catch(() => {});
+    },
+    [ensureProject],
+  );
+
   const saveTitle = useCallback(async (next: string) => {
     const clean = next.trim() || suggestedTitle();
     setTitle(clean);
@@ -899,6 +962,8 @@ export function useUpload(openingProjectId?: string) {
     saveDescription,
     profile,
     saveProfile,
+    stylePack,
+    saveStylePack,
     minSilence,
     /**
      * Đổi con số TRONG LÚC kéo, chưa ghi xuống máy chủ.

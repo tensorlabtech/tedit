@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+
+import type { StylePack } from "../../../server/style-pack";
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -6,6 +8,7 @@ import {
   PlayIcon,
 } from "lucide-react";
 
+import { GradeFilterDefs, gradeStyle } from "@/dev/overlays/grade-filter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -44,6 +47,7 @@ export function SequencePreviewCard({
   source,
   onSelect,
   onDescribe,
+  pack,
   className,
 }: {
   /** Mạch chính, theo đúng thứ tự sẽ ghép */
@@ -54,6 +58,14 @@ export function SequencePreviewCard({
   onSelect: (id: string) => void;
   /** Ghi mô tả một tư liệu chèn. Chuỗi rỗng nghĩa là trả lại cho máy đọc. */
   onDescribe: (id: string, description: string) => void;
+  /**
+   * Bộ dáng ĐANG CHỌN — khung xem này nắn màu theo nó.
+   *
+   * Thẻ chọn phong cách nằm ngay bên trái khung này. Không nắn thì chọn xong
+   * chẳng thấy gì đổi, và trục MÀU HÌNH — trục khó hình dung nhất qua một cái
+   * tên — thành vô hình đúng ở chỗ để chọn nó.
+   */
+  pack: StylePack;
   className?: string;
 }) {
   const [playing, setPlaying] = useState(false);
@@ -158,6 +170,7 @@ export function SequencePreviewCard({
         <div className="flex min-h-0 flex-1 items-center justify-center">
           {file && url ? (
             <div className="relative flex aspect-[9/16] h-full max-h-full max-w-full items-center justify-center overflow-hidden rounded-xl bg-muted">
+              <GradeFilterDefs pack={pack} />
               {isVideo(file.name) ? (
                 <video
                   ref={videoRef}
@@ -172,6 +185,7 @@ export function SequencePreviewCard({
                     "size-full",
                     inSequence ? "object-cover" : "object-contain",
                   )}
+                  style={gradeStyle(pack)}
                   onTimeUpdate={(event) => {
                     const video = event.currentTarget;
                     if (video.duration)
@@ -196,6 +210,7 @@ export function SequencePreviewCard({
                     "size-full",
                     inSequence ? "object-cover" : "object-contain",
                   )}
+                  style={gradeStyle(pack)}
                 />
               )}
             </div>

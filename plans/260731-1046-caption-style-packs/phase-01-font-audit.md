@@ -1,7 +1,7 @@
 ---
 phase: 1
 title: "Font Audit"
-status: pending
+status: done
 priority: P1
 effort: "3h"
 dependencies: []
@@ -105,23 +105,23 @@ Khác nhau ở đâu là chỗ đó lệch.
 
 ## Todo List
 
-- [ ] Soạn tệp chữ mẫu
-- [ ] Gom 6–8 tệp `.ttf` ứng viên, kiểm giấy phép, chép vào `assets/fonts/`
-- [ ] `OVERLAY_FONT` trỏ vào `assets/fonts/`, bỏ đường dẫn font hệ thống
-- [ ] Script in qua ffmpeg
-- [ ] Trang in qua CSS
-- [ ] Soi từng font, trả lời ba câu
-- [ ] Đo `lineHeight` tối thiểu cho dạng chữ hoa
-- [ ] Viết `reports/font-audit.md`
+- [x] Soạn tệp chữ mẫu
+- [x] Gom 6–8 tệp `.ttf` ứng viên, kiểm giấy phép, chép vào `assets/fonts/`
+- [x] `OVERLAY_FONT` trỏ vào `assets/fonts/`, bỏ đường dẫn font hệ thống
+- [x] Script in qua ffmpeg
+- [x] Trang in qua CSS
+- [x] Soi từng font, trả lời ba câu
+- [x] Đo `lineHeight` tối thiểu cho dạng chữ hoa
+- [x] Viết `reports/font-audit.md`
 
 ## Success Criteria
 
-- [ ] Có danh sách font dùng được, **mọi tệp nằm trong `assets/fonts/`**
-- [ ] Mỗi font dùng được đều vẽ đủ `Ế Ữ Ặ Ắ` ở **cả hai** đường vẽ
-- [ ] Có con số `lineHeight` tối thiểu cho dạng chữ HOA của từng font
-- [ ] Mọi font đều có giấy phép cho phép phát hành kèm, ghi rõ trong báo cáo
-- [ ] Không còn chỗ nào trỏ vào `/System/Library/Fonts/`
-- [ ] Ảnh kết quả lưu lại được để đối chiếu ở phase 4
+- [x] Có danh sách font dùng được, **mọi tệp nằm trong `assets/fonts/`**
+- [x] Mỗi font dùng được đều vẽ đủ `Ế Ữ Ặ Ắ` ở **cả hai** đường vẽ
+- [x] Có con số `lineHeight` tối thiểu cho dạng chữ HOA của từng font
+- [x] Mọi font đều có giấy phép cho phép phát hành kèm, ghi rõ trong báo cáo
+- [x] Không còn chỗ nào trỏ vào `/System/Library/Fonts/`
+- [x] Ảnh kết quả lưu lại được để đối chiếu ở phase 4
 
 ## Risk Assessment
 

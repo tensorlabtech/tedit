@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <title>Grade parity — nửa trang xem</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #000;
+      }
+      /* Ảnh phải vẽ ĐÚNG cỡ gốc: phóng hay thu đều đẻ ra nội suy, mà nội suy
+         cộng vào phép so như thể hai bên nắn màu khác nhau. */
+      #plate {
+        width: 480px;
+        height: 270px;
+      }
+      #plate img {
+        display: block;
+        width: 480px;
+        height: 270px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="plate"><img id="src" alt="" /></div>
+    <svg id="defs" width="0" height="0"></svg>
+
+    <script type="module">
+      // Dựng bộ lọc bằng ĐÚNG phép tính mà `grade-filter.tsx` dùng, và lấy hệ số
+      // kênh từ chính `style-pack.ts` — chép tay một công thức thứ hai ở đây là
+      // phép đo này đo chính bản chép, không đo thứ sản phẩm chạy.
+      const { STYLE_PACKS } = await import("/server/style-pack-catalog.ts");
+      const { gradeChannels } = await import("/server/style-pack.ts");
+
+      const NS = "http://www.w3.org/2000/svg";
+      const defs = document.createElementNS(NS, "defs");
+      document.getElementById("defs").append(defs);
+
+      for (const pack of STYLE_PACKS) {
+        if (!pack.grade) continue;
+        const gain = gradeChannels(pack.grade);
+        const { contrast, saturation } = pack.grade;
+        const intercept = (1 - contrast) / 2;
+
+        const filter = document.createElementNS(NS, "filter");
+        filter.id = `grade-${pack.id}`;
+        filter.setAttribute("color-interpolation-filters", "sRGB");
+
+        const channels = document.createElementNS(NS, "feColorMatrix");
+        channels.setAttribute("type", "matrix");
+        channels.setAttribute(
+          "values",
+          [
+            gain.r, 0, 0, 0, 0,
+            0, gain.g, 0, 0, 0,
+            0, 0, gain.b, 0, 0,
+            0, 0, 0, 1, 0,
+          ].join(" "),
+        );
+
+        const transfer = document.createElementNS(NS, "feComponentTransfer");
+        for (const tag of ["feFuncR", "feFuncG", "feFuncB"]) {
+          const func = document.createElementNS(NS, tag);
+          func.setAttribute("type", "linear");
+          func.setAttribute("slope", String(contrast));
+          func.setAttribute("intercept", String(intercept));
+          transfer.append(func);
+        }
+
+        const sat = document.createElementNS(NS, "feColorMatrix");
+        sat.setAttribute("type", "saturate");
+        sat.setAttribute("values", String(saturation));
+
+        filter.append(channels, transfer, sat);
+        defs.append(filter);
+      }
+
+      const image = document.getElementById("src");
+      image.src = "/scripts/style-packs/grade-source.png";
+      await image.decode();
+
+      window.__applyGrade = (id) => {
+        image.style.filter = `url(#grade-${id})`;
+      };
+      window.__gradeReady = true;
+    </script>
+  </body>
+</html>

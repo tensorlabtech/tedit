@@ -117,6 +117,22 @@ export type TextElement = {
   emphasis: EmphasisId;
   /** Tiếng được đánh dấu từ khoá — đậm hơn, và là tiếng được phóng to */
   keywords: string[];
+  /**
+   * Emoji bám vào cụm; `null` là không có.
+   *
+   * Cột GIÁ TRỊ chứ không phải cột đè: bộ dáng tắt emoji thì khâu vẽ im lặng bỏ
+   * qua và giá trị vẫn còn — đổi về bộ có emoji là nó hiện lại, không phải chạy
+   * lại lượt AI.
+   */
+  emoji: string | null;
+  /**
+   * Hai trục cụm này TỰ ĐÈ, `null` là theo bộ dáng của dự án.
+   *
+   * Đè chứ không phải giá trị: đổi bộ dáng không bao giờ ghi vào chúng, nên cụm
+   * chưa đè thì đổi theo dáng mới còn cụm đã đặt tay thì giữ nguyên.
+   */
+  letterCase?: "as-typed" | "upper" | null;
+  keyColor?: string | null;
   pinned?: boolean;
 };
 
@@ -232,6 +248,7 @@ const TEXT_ELEMENT_SEEDS: Array<Omit<TextElement, "start" | "end">> = [
     align: "center",
     emphasis: "even",
     keywords: [],
+    emoji: null,
   },
   {
     id: "t2",
@@ -242,6 +259,7 @@ const TEXT_ELEMENT_SEEDS: Array<Omit<TextElement, "start" | "end">> = [
     align: "center",
     emphasis: "even",
     keywords: [],
+    emoji: null,
     pinned: true,
   },
   {
@@ -253,6 +271,7 @@ const TEXT_ELEMENT_SEEDS: Array<Omit<TextElement, "start" | "end">> = [
     align: "center",
     emphasis: "even",
     keywords: [],
+    emoji: null,
   },
   {
     id: "t4",
@@ -263,6 +282,7 @@ const TEXT_ELEMENT_SEEDS: Array<Omit<TextElement, "start" | "end">> = [
     align: "center",
     emphasis: "even",
     keywords: [],
+    emoji: null,
     pinned: true,
   },
   {
@@ -274,6 +294,7 @@ const TEXT_ELEMENT_SEEDS: Array<Omit<TextElement, "start" | "end">> = [
     align: "center",
     emphasis: "even",
     keywords: [],
+    emoji: null,
   },
   {
     id: "t6",
@@ -284,6 +305,7 @@ const TEXT_ELEMENT_SEEDS: Array<Omit<TextElement, "start" | "end">> = [
     align: "center",
     emphasis: "even",
     keywords: [],
+    emoji: null,
   },
   {
     id: "t7",
@@ -294,6 +316,7 @@ const TEXT_ELEMENT_SEEDS: Array<Omit<TextElement, "start" | "end">> = [
     align: "center",
     emphasis: "even",
     keywords: [],
+    emoji: null,
   },
   {
     id: "t8",
@@ -304,6 +327,7 @@ const TEXT_ELEMENT_SEEDS: Array<Omit<TextElement, "start" | "end">> = [
     align: "center",
     emphasis: "even",
     keywords: [],
+    emoji: null,
   },
 ];
 

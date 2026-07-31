@@ -9,7 +9,7 @@
  *   npx tsx server/dev-render-frame.ts "<chữ>" <căn> <nhấn> <dải> <đường ra> [từ khoá...]
  */
 import { ffmpeg } from "./media-tools";
-import { OVERLAY_FONT } from "./paths";
+import { resolvePackFont } from "./paths";
 import { alphaExpr, positionExpr, unitDelay } from "./reveal-expr";
 import { OUT_HEIGHT, OUT_WIDTH } from "./render";
 import {
@@ -18,10 +18,14 @@ import {
   type Band,
   type EmphasisId,
 } from "./text-layout";
+import { GOC } from "./style-pack-catalog";
+import { ffmpegColor } from "./style-pack";
 import { placeWords } from "./word-layout";
 
 const [content, align, emphasis, band, target, bgArg, ...keywords] =
   process.argv.slice(2);
+const pack = GOC;
+const fontPath = resolvePackFont(pack.font.file);
 const bgColor = bgArg && bgArg !== "-" ? bgArg : "#3a3a3a";
 
 /** Cùng phép thoát ký tự với bộ in thật. */
@@ -32,7 +36,7 @@ const escape = (value: string) =>
     .replace(/:/g, "\\:")
     .replace(/%/g, "\\%");
 
-const placed = await placeWords(
+const { words: placed } = await placeWords(
   content,
   keywords,
   align as AlignId,
@@ -40,24 +44,29 @@ const placed = await placeWords(
   band as Band,
   OUT_WIDTH,
   OUT_HEIGHT,
+  pack,
 );
 
 const draws: string[] = [];
 for (const [, word] of placed.entries()) {
-  const startAt = unitDelay(word.row, word.col);
-  const spot = positionExpr({
+  const startAt = unitDelay(pack, word.row, word.col);
+  const spot = positionExpr(pack, {
     x: word.x,
     y: word.y,
-    width: await textWidth(word.text, word.fontSize),
+    width: await textWidth(word.text, word.fontSize, pack),
     fontSize: word.fontSize,
     scale: word.fontSize / OUT_WIDTH,
     startAt,
   });
+  const edge = pack.edge
+    ? `:borderw=${Math.max(2, Math.round(word.fontSize * pack.edge.share))}` +
+      `:bordercolor=${ffmpegColor(pack.edge.tone)}`
+    : "";
   draws.push(
-    `drawtext=fontfile='${OVERLAY_FONT}':text='${escape(word.text)}':` +
-      `fontcolor=${word.color}:alpha='${alphaExpr(startAt, word.alpha)}':` +
-      `fontsize=${word.fontSize}:x='${spot.x}':y='${spot.y}':` +
-      `borderw=${Math.max(2, Math.round(word.fontSize * 0.022))}:bordercolor=black@0.7`,
+    `drawtext=fontfile='${fontPath}':text='${escape(word.text)}':` +
+      `fontcolor=${word.color}:alpha='${alphaExpr(pack, startAt, word.alpha)}':` +
+      `fontsize=${word.fontSize}:x='${spot.x}':y='${spot.y}'` +
+      edge,
   );
 }
 

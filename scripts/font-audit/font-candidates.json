@@ -1,0 +1,123 @@
+{
+  "note": "Danh sách font ứng viên dùng CHUNG cho cả hai đường vẽ (ffmpeg và CSS). Mọi font đều có giấy phép cho phép phát hành kèm phần mềm — điều kiện vào danh sách, không phải chuyện kiểm sau.",
+  "source": "https://github.com/google/fonts",
+  "families": [
+    {
+      "id": "be-vietnam-pro-extrabold-italic",
+      "label": "Be Vietnam Pro ExtraBold Italic",
+      "file": "BeVietnamPro-ExtraBoldItalic.ttf",
+      "remote": "ofl/bevietnampro/BeVietnamPro-ExtraBoldItalic.ttf",
+      "license": "ofl/bevietnampro/OFL.txt",
+      "licenseName": "SIL OFL 1.1",
+      "italic": true,
+      "cssStack": "'Be Vietnam Pro', sans-serif",
+      "cssWeight": 800,
+      "feel": "Nghiêng, thân tròn, thiết kế riêng cho tiếng Việt — gần dáng Arial Bold Italic hiện hành nhất"
+    },
+    {
+      "id": "be-vietnam-pro-black",
+      "label": "Be Vietnam Pro Black",
+      "file": "BeVietnamPro-Black.ttf",
+      "remote": "ofl/bevietnampro/BeVietnamPro-Black.ttf",
+      "license": "ofl/bevietnampro/OFL.txt",
+      "licenseName": "SIL OFL 1.1",
+      "italic": false,
+      "cssStack": "'Be Vietnam Pro', sans-serif",
+      "cssWeight": 900,
+      "feel": "Đứng, nét dày đặc — dáng khối"
+    },
+    {
+      "id": "anton",
+      "label": "Anton",
+      "file": "Anton-Regular.ttf",
+      "remote": "ofl/anton/Anton-Regular.ttf",
+      "license": "ofl/anton/OFL.txt",
+      "licenseName": "SIL OFL 1.1",
+      "italic": false,
+      "cssStack": "Anton, sans-serif",
+      "cssWeight": 400,
+      "feel": "Hẹp và cao, nét rất dày — dáng tít báo, hợp chữ HOA"
+    },
+    {
+      "id": "archivo-expanded-black",
+      "label": "Archivo Expanded Black",
+      "file": "Archivo-ExpandedBlack.ttf",
+      "remote": "ofl/archivo/Archivo[wdth,wght].ttf",
+      "instanceAxes": {
+        "wght": 900,
+        "wdth": 115
+      },
+      "license": "ofl/archivo/OFL.txt",
+      "licenseName": "SIL OFL 1.1",
+      "italic": false,
+      "cssStack": "Archivo, sans-serif",
+      "cssWeight": 900,
+      "feel": "Rộng bản, nét dày đều — dáng bảng hiệu. Họ `ArchivoBlack` tĩnh KHÔNG dùng được: thiếu 92 chữ cái tiếng Việt, phải lấy từ bản biến thiên của họ `Archivo`"
+    },
+    {
+      "id": "barlow-condensed-bold-italic",
+      "label": "Barlow Condensed Bold Italic",
+      "file": "BarlowCondensed-BoldItalic.ttf",
+      "remote": "ofl/barlowcondensed/BarlowCondensed-BoldItalic.ttf",
+      "license": "ofl/barlowcondensed/OFL.txt",
+      "licenseName": "SIL OFL 1.1",
+      "italic": true,
+      "cssStack": "'Barlow Condensed', sans-serif",
+      "cssWeight": 700,
+      "feel": "Hẹp và nghiêng, nét mảnh hơn — dáng thưa"
+    },
+    {
+      "id": "montserrat-bold-italic",
+      "label": "Montserrat Bold Italic",
+      "file": "Montserrat-BoldItalic.ttf",
+      "remote": "ofl/montserrat/Montserrat-Italic[wght].ttf",
+      "license": "ofl/montserrat/OFL.txt",
+      "licenseName": "SIL OFL 1.1",
+      "italic": true,
+      "cssStack": "Montserrat, sans-serif",
+      "cssWeight": 700,
+      "feel": "Hình học, chữ cái tròn và rộng — dáng sạch",
+      "instanceAxes": {
+        "wght": 700
+      }
+    },
+    {
+      "id": "oswald-bold",
+      "label": "Oswald Bold",
+      "file": "Oswald-Bold.ttf",
+      "remote": "ofl/oswald/Oswald[wght].ttf",
+      "license": "ofl/oswald/OFL.txt",
+      "licenseName": "SIL OFL 1.1",
+      "italic": false,
+      "cssStack": "Oswald, sans-serif",
+      "cssWeight": 700,
+      "feel": "Hẹp, đứng, nét vuông vắn — dáng thể thao",
+      "instanceAxes": {
+        "wght": 700
+      }
+    },
+    {
+      "id": "lexend-bold",
+      "label": "Lexend Bold",
+      "file": "Lexend-Bold.ttf",
+      "remote": "ofl/lexend/Lexend[wght].ttf",
+      "license": "ofl/lexend/OFL.txt",
+      "licenseName": "SIL OFL 1.1",
+      "italic": false,
+      "cssStack": "Lexend, sans-serif",
+      "cssWeight": 700,
+      "feel": "Rộng rãi, thiết kế cho dễ đọc — dáng êm",
+      "instanceAxes": {
+        "wght": 700
+      }
+    }
+  ],
+  "reference": {
+    "id": "arial-bold-italic",
+    "label": "Arial Bold Italic (macOS, chỉ để so — KHÔNG vào danh sách cuối)",
+    "file": "/System/Library/Fonts/Supplemental/Arial Bold Italic.ttf",
+    "cssStack": "Arial, Helvetica, sans-serif",
+    "cssWeight": 800,
+    "italic": true
+  }
+}

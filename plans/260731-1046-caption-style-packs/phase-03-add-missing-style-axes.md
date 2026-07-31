@@ -1,7 +1,7 @@
 ---
 phase: 3
 title: "Add Missing Style Axes"
-status: pending
+status: done
 priority: P1
 effort: "1.5d"
 dependencies: [2]
@@ -102,21 +102,21 @@ còn giữ `mot-tieng-khong-lo`, `flush`, `lech-tam` từ mô hình cũ, và
 
 ## Todo List
 
-- [ ] Cổng `reveal` cho chữ ở máy chủ
-- [ ] Cổng `reveal` ở trang xem
-- [ ] `letterCase` — đo bề rộng bằng chuỗi ĐÃ hoa
-- [ ] `letterCase` ở trang xem
-- [ ] `color.key` thay `COLOR.soft` ở `:208` và `:226`
-- [ ] Thử `color.key` ở `:143`/`:184`, soi rồi quyết
-- [ ] `/_dev/overlays` khớp ở mọi tổ hợp mới
+- [x] Cổng `reveal` cho chữ ở máy chủ
+- [x] Cổng `reveal` ở trang xem
+- [x] `letterCase` — đo bề rộng bằng chuỗi ĐÃ hoa
+- [x] `letterCase` ở trang xem
+- [x] `color.key` thay `COLOR.soft` ở `:208` và `:226`
+- [x] Thử `color.key` ở `:143`/`:184`, soi rồi quyết
+- [x] `/_dev/overlays` khớp ở mọi tổ hợp mới
 
 ## Success Criteria
 
-- [ ] Tắt `reveal` thì cả cụm chữ đứng yên, không có tiếng nào trượt vào
-- [ ] Chữ hoa không tràn khung, không đè dòng trên
-- [ ] Đánh dấu từ khoá ở kiểu `even` **nhìn thấy được** — đây là phép thử của trục 3
-- [ ] `elements.content` không đổi khi bật chữ hoa
-- [ ] `/_dev/overlays` không báo lệch ở tổ hợp nào
+- [x] Tắt `reveal` thì cả cụm chữ đứng yên, không có tiếng nào trượt vào
+- [x] Chữ hoa không tràn khung, không đè dòng trên
+- [x] Đánh dấu từ khoá ở kiểu `even` **nhìn thấy được** — đây là phép thử của trục 3
+- [x] `elements.content` không đổi khi bật chữ hoa
+- [x] `/_dev/overlays` không báo lệch ở tổ hợp nào
 
 ## Risk Assessment
 

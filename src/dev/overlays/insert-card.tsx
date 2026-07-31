@@ -19,8 +19,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { OverlayFrame } from "./overlay-frame";
 import {
   REVEALS,
-  REVEAL_RISE,
-  REVEAL_SECONDS,
+  revealCss,
   type RevealId,
 } from "./overlay-model";
 import { useDemoMedia } from "./demo-media";
@@ -41,21 +40,6 @@ const SHAPES: Array<{ id: Shape; label: string; ratio: string }> = [
   { id: "wide", label: "Ngang", ratio: "16 / 9" },
   { id: "full", label: "Đè kín", ratio: "9 / 16" },
 ];
-
-/**
- * Kiểu hiện ra, tính theo giây đã trôi trong vòng lặp.
- *
- * Nới chậm (1-(1-x)³) chứ không tuyến tính: vào nhanh rồi dừng êm mới ra chuyển
- * động, tuyến tính đọc ra như bị kéo bằng tay. Cùng công thức với `insertY` của
- * `server/render.ts` để xem trước và bản in ra cùng nhịp.
- */
-function revealStyleOf(reveal: RevealId, seconds: number): React.CSSProperties {
-  if (reveal === "none") return {};
-  const p = Math.min(1, seconds / REVEAL_SECONDS);
-  const rest = (1 - p) ** 3;
-  if (reveal === "fade") return { opacity: p };
-  return { opacity: p, transform: `translateY(${REVEAL_RISE * 100 * rest}%)` };
-}
 
 export function InsertCard() {
   const [kind, setKind] = useState<"image" | "video">("image");
@@ -155,7 +139,7 @@ export function InsertCard() {
               {shape === "full" ? (
                 <div
                   className="absolute inset-0 overflow-hidden"
-                  style={revealStyleOf(reveal, seconds)}
+                  style={revealCss(reveal, seconds)}
                 >
                   {content}
                 </div>
@@ -164,7 +148,7 @@ export function InsertCard() {
                   <div
                     style={{
                       aspectRatio: found.ratio,
-                      ...revealStyleOf(reveal, seconds),
+                      ...revealCss(reveal, seconds),
                     }}
                   >
                     {content}

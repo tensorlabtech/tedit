@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <title>Overlay parity — nửa trang xem</title>
+  </head>
+  <body>
+    <script type="module">
+      // Nạp ĐÚNG tệp `.ttf` mà ffmpeg in ra, không nạp bản woff2 của gói giao
+      // diện: cả phép kiểm này sinh ra để bắt lệch giữa hai đường vẽ, nên hai
+      // bên phải đo trên cùng một tệp font.
+      const { STYLE_PACKS } = await import("/server/style-pack-catalog.ts");
+      for (const pack of STYLE_PACKS) {
+        // Tên họ chữ lấy từ `cssStack` sau khi bóc dấu nháy — phải khớp đúng
+        // chuỗi mà `overlay-render.tsx` đặt vào `fontFamily`, không thì trình
+        // duyệt lặng lẽ đo bằng font thay thế và phép kiểm này đo nhầm thứ.
+        const family = pack.font.cssStack.split(",")[0].replace(/['"]/g, "").trim();
+        const face = new FontFace(family, `url(/${pack.font.file})`, {
+          weight: String(pack.font.cssWeight),
+          style: pack.font.italic ? "italic" : "normal",
+        });
+        await face.load();
+        document.fonts.add(face);
+      }
+      await document.fonts.ready;
+
+      const { styleCase } = await import("/server/style-pack.ts");
+      const model = await import("/src/dev/overlays/overlay-model.ts");
+      const render = await import("/src/dev/overlays/overlay-render.tsx");
+      const { CASES } = await import("/scripts/overlay-parity/parity-cases.ts");
+
+      window.__parity = STYLE_PACKS.flatMap((pack) =>
+        CASES.map((item) => {
+          // Áp trục HOA trước khi đo, đúng như `buildRows` làm.
+          const text = styleCase(item.text, pack);
+          const fitted = model.fitGroup(text, render.availOf(item.band), pack);
+          return {
+            pack: pack.id,
+            text: item.text,
+            band: item.band,
+            lines: fitted.lines.length,
+            scale: fitted.size,
+          };
+        }),
+      );
+      document.body.dataset.ready = "1";
+    </script>
+  </body>
+</html>

@@ -1,9 +1,14 @@
+import { GOC } from "../../../server/style-pack-catalog";
+import {
+  cssColor,
+  styleCase,
+  type StylePack,
+} from "../../../server/style-pack";
+import { emojiSpot } from "../../../server/emoji-layout";
+import { emojiUrl, isKnownEmoji } from "../../../server/emoji-vocab";
 import { OverlayFrame } from "./overlay-frame";
 import {
   BANDS,
-  OVERLAY_FONT_STACK,
-  LINE_HEIGHT,
-  WORD_GAP,
   fitGroup,
   fitRow,
   indentOf,
@@ -36,6 +41,8 @@ export type OverlayConfig = {
   /** Tiếng được đánh dấu là từ khoá — đậm hơn, và là tiếng được phóng to */
   keywords: string[];
   insert: Insert;
+  /** Emoji bám vào cụm; rỗng là không có. Bộ dáng tắt emoji thì bỏ qua. */
+  emoji?: string | null;
 };
 
 const SHAPE_RATIO: Record<Insert["shape"], string> = {
@@ -46,19 +53,11 @@ const SHAPE_RATIO: Record<Insert["shape"], string> = {
 };
 
 /**
- * Bề dày viền theo cỡ chữ — khớp `EDGE_SHARE` của `server/render.ts`.
+ * Bề dày viền: `edge.share` của bộ dáng, NHÂN ĐÔI khi đặt vào `WebkitTextStroke`.
  *
- * Nhân đôi khi đặt vào `WebkitTextStroke`: `drawtext` vẽ viền RA NGOÀI nét, còn
- * CSS vẽ viền GIỮA đường biên (một nửa vào trong), nên cùng một con số thì bản
- * in ra dày gấp đôi trang xem.
+ * `drawtext` vẽ viền RA NGOÀI nét, còn CSS vẽ viền GIỮA đường biên (một nửa vào
+ * trong), nên cùng một con số thì bản in ra dày gấp đôi trang xem.
  */
-const EDGE_SHARE = 0.022;
-
-const COLOR = {
-  main: "rgba(255,255,255,0.92)",
-  soft: "#ffffff",
-  dim: "rgba(214,219,224,0.72)",
-};
 
 /** Một tiếng đã có đủ số đo — lúc vẽ không còn gì phải quyết định. */
 type Placed = { text: string; size: number; bold: boolean; color: string };
@@ -95,21 +94,34 @@ export const availOf = (band: BandId) => (band === "top" ? 0.78 : 0.71);
  * chỗ đứng thì hai lựa chọn của người dùng dính vào nhau, và đổi một cái thì cái
  * kia thành gì không ai đoán được.
  */
-export function buildRows(config: OverlayConfig): Row[] {
-  const words = config.text.trim().split(/\s+/).filter(Boolean);
+export function buildRows(config: OverlayConfig, pack: StylePack = GOC): Row[] {
+  const COLOR = {
+    main: cssColor(pack.color.main),
+    key: cssColor(pack.color.key),
+    dim: cssColor(pack.color.dim),
+  };
+  // Áp trục HOA NGAY TỪ ĐÂY, giống `splitPieces` của máy chủ: mọi phép đo phía
+  // sau chạy trên chuỗi này. Không dùng `text-transform: uppercase` vì làm thế
+  // là đo chuỗi gốc mà vẽ chuỗi hoa — cụm chữ tự rộng thêm sau lưng phép đo.
+  const words = styleCase(config.text, pack).trim().split(/\s+/).filter(Boolean);
   if (words.length === 0) return [];
   const avail = availOf(config.band);
-  const isKey = (word: string) => config.keywords.includes(word);
+  // Đối chiếu từ khoá trên chuỗi GỐC: bật chữ hoa không được làm mất dấu người
+  // dùng đã đánh.
+  const keys = new Set(
+    config.keywords.map((word) => styleCase(word, pack).toLowerCase()),
+  );
+  const isKey = (word: string) => keys.has(word.toLowerCase());
   const plain = (word: string, size: number): Placed => ({
     text: word,
     size,
     bold: isKey(word),
-    color: isKey(word) ? COLOR.soft : COLOR.main,
+    color: isKey(word) ? COLOR.key : COLOR.main,
   });
 
   if (config.emphasis === "even") {
     // Bẻ dòng theo bề rộng rồi dùng CHUNG một cỡ — dáng phụ đề khổ lớn.
-    const { lines, size } = fitGroup(config.text, avail);
+    const { lines, size } = fitGroup(words.join(" "), avail, pack);
     return lines.map((line) =>
       line.split(/\s+/).map((word) => plain(word, size)),
     );
@@ -125,7 +137,7 @@ export function buildRows(config: OverlayConfig): Row[] {
     const hero = from >= 0 ? words.slice(from, last + 1) : [words[0]];
     const before = from >= 0 ? words.slice(0, from) : words.slice(1);
     const after = from >= 0 ? words.slice(last + 1) : [];
-    const heroSize = fitRow(hero.join(" "), avail, 1);
+    const heroSize = fitRow(hero.join(" "), avail, 1, pack);
     const small = Math.min(heroSize * 0.4, 0.075);
     const secondary = (list: string[]): Row =>
       list.map((word) => ({
@@ -136,18 +148,21 @@ export function buildRows(config: OverlayConfig): Row[] {
       }));
     return [
       ...(before.length > 0 ? [secondary(before)] : []),
+      // MÀU theo từ khoá THẬT, CỠ theo trục nhấn — cùng luật với máy chủ. Cụm
+      // chưa đánh dấu tiếng nào thì `hero` là tiếng đầu, chọn theo VỊ TRÍ chứ
+      // không theo nghĩa; tô nó bằng màu nhấn là một tiếng ngẫu nhiên đổi màu.
       hero.map((word) => ({
         text: word,
         size: heroSize,
-        bold: true,
-        color: COLOR.soft,
+        bold: isKey(word),
+        color: isKey(word) ? COLOR.key : COLOR.main,
       })),
       ...(after.length > 0 ? [secondary(after)] : []),
     ];
   }
 
   if (config.emphasis === "mixed-size") {
-    const SMALL = 0.55;
+    const SMALL = pack.density.mixedSmallRatio;
     // Chưa đánh dấu tiếng nào thì XEN THEO THỨ TỰ. Không có bước này, "xen cỡ"
     // không từ khoá cho ra cả cụm cùng một cỡ nhỏ — đúng cái tên hứa ngược lại,
     // mà người dùng vừa bấm xong lại thấy chữ bé đi thì tưởng mình bấm nhầm.
@@ -158,13 +173,17 @@ export function buildRows(config: OverlayConfig): Row[] {
     // rộng gần gấp đôi thật, và chữ bị co quắt lại.
     const sizeOf = (list: string[], offset = 0) =>
       Math.min(
-        0.24,
+        // Trần là `density.maxScale`, KHÔNG phải một con số riêng. Trước đây chỗ
+        // này để 0,24 trong khi máy chủ chặn ở 0,15: cụm ngắn ở kiểu xen cỡ hiện
+        // trên trang xem to hơn hẳn bản xuất ra, mà chỉ cụm ngắn mới chạm trần
+        // nên lệch này không lộ ở cụm dài.
+        pack.density.maxScale,
         (avail * 0.94) /
           list.reduce(
             (sum, word, index) =>
               sum +
-              widthOf(word, to(word, offset + index) ? 1 : SMALL) +
-              WORD_GAP,
+              widthOf(word, to(word, offset + index) ? 1 : SMALL, pack) +
+              pack.density.wordGap,
             0,
           ),
       );
@@ -182,7 +201,7 @@ export function buildRows(config: OverlayConfig): Row[] {
           text: word,
           size: big ? size : size * SMALL,
           bold: big,
-          color: big ? COLOR.soft : COLOR.main,
+          color: isKey(word) ? COLOR.key : COLOR.main,
         };
       });
     });
@@ -194,8 +213,8 @@ export function buildRows(config: OverlayConfig): Row[] {
     const lead = index === 0 && rows.length > 1;
     const text = row.join(" ");
     const size = lead
-      ? fitRow(text, avail, 3) * 0.45
-      : fitRow(text, avail, rows.length);
+      ? fitRow(text, avail, 3, pack) * pack.density.leadRatio
+      : fitRow(text, avail, rows.length, pack);
     return row.map((word) =>
       lead
         ? { text: word, size, bold: false, color: COLOR.dim }
@@ -206,18 +225,28 @@ export function buildRows(config: OverlayConfig): Row[] {
 
 function Syllable({
   word,
+  pack,
   order,
   index,
   seconds,
   startAt,
+  until,
   onPick,
 }: {
   word: Placed;
+  pack: StylePack;
   order: number;
   index: number;
   seconds: number;
   /** Mốc hiện ra riêng của tiếng này; bỏ trống thì chạy nhịp đều theo hàng/cột */
   startAt?: number;
+  /**
+   * Tiếng SAU bắt đầu lúc nào — mép tắt của lớp tô sáng.
+   *
+   * Bỏ trống thì không tô sáng, kể cả khi bộ dáng bật trục đó: không biết tiếng
+   * này kết thúc lúc nào thì tô cũng chỉ là đoán.
+   */
+  until?: number;
   /**
    * Bấm thẳng vào tiếng để đánh dấu từ khoá.
    *
@@ -249,25 +278,77 @@ function Syllable({
         // Khoảng cách giữa các tiếng bằng LỀ, không bằng ký tự trắng: dấu cách nằm
         // cuối một thẻ `inline-block` bị trình bày cắt bỏ nên chữ dính vào nhau
         // ("Minhnghĩ"). Lỗi này chỉ lộ ở vài dáng nên rất dễ tưởng là lỗi font.
-        marginRight: `${WORD_GAP}em`,
+        marginRight: `${pack.density.wordGap}em`,
         fontSize: `${word.size * 100}cqw`,
         // Đúng họ chữ của bản in ra — không đặt thì nó ăn theo font giao diện.
-        fontFamily: OVERLAY_FONT_STACK,
-        fontWeight: word.bold ? 800 : 600,
-        // Nghiêng là mặc định của hệ này: bản in ra dùng tệp font Bold Italic.
-        fontStyle: "italic",
-        lineHeight: LINE_HEIGHT,
-        color: word.color,
-        // Quầng mềm tách chữ khỏi nền — khớp `GLOW_RADIUS` của máy chủ.
-        textShadow: `0 0 ${word.size * 12}cqw rgba(0,0,0,.9)`,
-        // Viền mảnh bám sát nét, khớp `EDGE_SHARE`/`EDGE_COLOR` của máy chủ:
-        // chỉ có quầng mềm thì chữ trắng trên tư liệu sáng không đọc được.
-        // `paintOrder: stroke` vẽ viền TRƯỚC rồi mới đè nét chữ lên — thiếu nó
-        // thì viền ăn vào trong và chữ mảnh hẳn đi.
-        WebkitTextStrokeWidth: `${word.size * 2 * EDGE_SHARE * 100}cqw`,
-        WebkitTextStrokeColor: "rgba(0,0,0,.7)",
-        paintOrder: "stroke fill",
-        ...revealStyle(seconds, order, word.size, index, startAt),
+        fontFamily: pack.font.cssStack,
+        // MỘT độ đậm cho mọi tiếng: máy chủ chỉ có một tệp font để vẽ, nên nó
+        // không có cách nào làm tiếng này đậm hơn tiếng kia. Trước đây trang xem
+        // đổi 600/800 theo từ khoá — một khác biệt chỉ tồn tại ở trang xem, và
+        // với Arial thì trình duyệt gộp cả hai về Bold nên không ai thấy. Với
+        // font thật có đủ hai độ đậm thì nó lộ ra thành "xem một đằng xuất một
+        // nẻo". Từ khoá phân biệt bằng MÀU, không bằng độ đậm.
+        fontWeight: pack.font.cssWeight,
+        // Nghiêng nằm trong chính TỆP font của bộ dáng, không phải một lựa chọn
+        // riêng của trang xem.
+        fontStyle: pack.font.italic ? "italic" : "normal",
+        lineHeight: pack.density.lineHeight,
+        // Nền khối sau chữ, vẽ theo TỪNG TIẾNG — khớp `box=1` của `drawtext`,
+        // vốn cũng vẽ nền cho từng lệnh vẽ chứ không cho cả khối.
+        ...(pack.box
+          ? {
+              backgroundColor: cssColor(pack.box.tone),
+              padding: `${pack.box.padShare}em ${pack.box.padShare * 1.4}em`,
+              // Góc vuông: `drawtext` chỉ cho góc vuông, bo ở đây là trang xem
+              // đẹp hơn bản xuất — đúng lỗi cả hệ này chống.
+              borderRadius: 0,
+            }
+          : null),
+        // TÔ SÁNG tiếng đang được nói — kiểu karaoke.
+        //
+        // Đổi thẳng `color` chứ không vẽ đè một lớp thứ hai như máy chủ: CSS đổi
+        // được màu theo thời gian, còn `drawtext` thì không (chỉ `alpha`, `x`,
+        // `y` nhận biểu thức có `t`). Hai đường vẽ khác cách làm nhưng ra cùng
+        // một hình.
+        ...(() => {
+          const lit =
+            pack.highlight &&
+            startAt !== undefined &&
+            until !== undefined &&
+            seconds >= startAt &&
+            seconds < until;
+          if (!lit || !pack.highlight) return { color: word.color };
+          return {
+            color: cssColor(pack.highlight.tone),
+            // Nền RIÊNG cho tiếng đang nói, đè lên nền thường. Dáng "ô sáng
+            // chạy theo lời" khác hẳn dáng chỉ đổi màu chữ.
+            ...(pack.highlight.box
+              ? {
+                  backgroundColor: cssColor(pack.highlight.box),
+                  padding: `${pack.box?.padShare ?? 0.12}em ${(pack.box?.padShare ?? 0.12) * 1.4}em`,
+                  borderRadius: 0,
+                }
+              : null),
+          };
+        })(),
+        // Quầng mềm tách chữ khỏi nền — khớp `glow` của máy chủ.
+        ...(pack.glow
+          ? {
+              textShadow: `0 0 ${word.size * pack.glow.cssBlurShare}cqw rgba(0,0,0,${pack.glow.opacity})`,
+            }
+          : null),
+        // Viền mảnh bám sát nét, khớp `edge` của máy chủ: chỉ có quầng mềm thì
+        // chữ trắng trên tư liệu sáng không đọc được. `paintOrder: stroke` vẽ
+        // viền TRƯỚC rồi mới đè nét chữ lên — thiếu nó thì viền ăn vào trong và
+        // chữ mảnh hẳn đi.
+        ...(pack.edge
+          ? {
+              WebkitTextStrokeWidth: `${word.size * 2 * pack.edge.share * 100}cqw`,
+              WebkitTextStrokeColor: cssColor(pack.edge.tone),
+              paintOrder: "stroke fill",
+            }
+          : null),
+        ...revealStyle(pack, seconds, order, word.size, index, startAt),
       }}
     >
       {word.text}
@@ -283,6 +364,7 @@ function Syllable({
  */
 export function OverlayTextBlock({
   config,
+  pack = GOC,
   seconds,
   ring,
   wordStarts,
@@ -290,6 +372,8 @@ export function OverlayTextBlock({
   onPickWord,
 }: {
   config: OverlayConfig;
+  /** Bộ dáng của dự án — quyết định font, màu, viền, quầng, nhịp */
+  pack?: StylePack;
   seconds: number;
   /** Viền báo đang chọn — chỉ dùng trong editor */
   ring?: boolean;
@@ -308,23 +392,76 @@ export function OverlayTextBlock({
    */
   span?: number;
 }) {
-  const rows = buildRows(config);
+  const rows = buildRows(config, pack);
   const totalSyllables = rows.reduce((sum, row) => sum + row.length, 0);
   // Đếm phẳng qua các hàng để tra mốc: `wordStarts` là một mảng theo thứ tự
   // tiếng trong câu, không chia hàng.
   let flat = -1;
+  /**
+   * Mốc hiện ra của tiếng thứ `at`. Vượt quá số tiếng thì trả mốc hết cụm — đó
+   * là mép tắt của lớp tô sáng ở tiếng cuối.
+   */
+  const beat = (at: number): number | undefined => {
+    if (wordStarts) return wordStarts[at] ?? span;
+    if (span && totalSyllables > 1) return (span * at) / totalSyllables;
+    return undefined;
+  };
   const items =
     config.align === "center"
       ? "center"
       : config.align === "right"
         ? "flex-end"
         : "flex-start";
+  /*
+   * EMOJI của cụm — vật NỔI, không phải một hàng nữa của khối.
+   *
+   * Đặt tuyệt đối so với thẻ bọc chứ không thả vào dòng flex: thả vào flex là nó
+   * đẩy các hàng chữ xuống, và bản xuất — nơi emoji không đụng gì tới bố cục chữ
+   * — sẽ đặt chữ ở chỗ khác. Đúng lỗi "xem một đằng xuất một nẻo".
+   *
+   * Mọi số đo ở đây tính bằng `cqw`, cùng đơn vị với cỡ chữ, nên không phải đo
+   * DOM lần nào: cùng một phép tính của `emojiSpot` chạy cho cả hai đường vẽ.
+   */
+  const largest = Math.max(0, ...rows.flat().map((word) => word.size));
+  const spot =
+    config.emoji && isKnownEmoji(config.emoji) && largest > 0
+      ? emojiSpot(config.band, largest * 100, pack)
+      : null;
+
   return (
     <div className="absolute" style={bandStyle(config.band)}>
       <div
         className={ring ? "rounded-md ring-2 ring-primary" : undefined}
-        style={{ display: "flex", flexDirection: "column", alignItems: items }}
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: items,
+          // Mốc cho emoji đặt tuyệt đối. Không đổi bố cục của chính thẻ này.
+          position: "relative",
+        }}
       >
+        {spot && (
+          <img
+            src={emojiUrl(config.emoji!)}
+            alt=""
+            aria-hidden
+            style={{
+              position: "absolute",
+              width: `${spot.size}cqw`,
+              height: `${spot.size}cqw`,
+              ...(spot.side === "above"
+                ? { bottom: `calc(100% + ${spot.gap}cqw)` }
+                : { top: `calc(100% + ${spot.gap}cqw)` }),
+              // Bám theo TRỤC CĂN, cùng luật với `placeWords`: `stair` và
+              // `stagger` bám lề trái ở hàng đầu nên emoji của chúng cũng bám trái.
+              ...(config.align === "center"
+                ? { left: "50%", transform: "translateX(-50%)" }
+                : config.align === "right"
+                  ? { right: 0 }
+                  : { left: 0 }),
+            }}
+          />
+        )}
         {rows.map((row, index) => {
           const shift = indentOf(config.align, index, rows.length) * 100;
           return (
@@ -335,6 +472,17 @@ export function OverlayTextBlock({
                 // hàng khi phép ước bề rộng lệch, và cụm 3 hàng thành 4 hàng mà
                 // không báo gì. Có nó thì lệch lộ ra thành chữ chạm mép.
                 whiteSpace: "nowrap",
+                /*
+                 * `lineHeight: 0` ở tầng HÀNG — giết thanh chống của hộp dòng.
+                 *
+                 * Mỗi tiếng là một `inline-block` cao đúng `cỡ chữ × lineHeight`,
+                 * nhưng hộp dòng chứa nó còn cộng thêm thanh chống của chính thẻ
+                 * hàng, mà thẻ hàng thừa hưởng `line-height` của giao diện. Phần
+                 * cộng thêm ấy không có bên `drawtext`, nên cả khối chữ trên
+                 * trang xem cao hơn bản xuất — đo được tới 40 điểm ảnh ở khổ
+                 * 1920, và nó đẩy lệch chỗ đứng của cả khối lẫn emoji.
+                 */
+                lineHeight: 0,
                 ...(config.align === "right"
                   ? { marginRight: `${shift}%` }
                   : { marginLeft: `${shift}%` }),
@@ -346,15 +494,14 @@ export function OverlayTextBlock({
                   <Syllable
                     key={`${word.text}-${wordIndex}`}
                     word={word}
+                    pack={pack}
                     order={index}
                     index={wordIndex}
                     seconds={seconds}
-                    startAt={
-                      wordStarts?.[flat] ??
-                      (span && totalSyllables > 1
-                        ? (span * flat) / totalSyllables
-                        : undefined)
-                    }
+                    startAt={beat(flat)}
+                    // Chỉ tô sáng khi chữ CÒN KHỚP lời. Người dùng viết lại thì
+                    // `wordStarts` rỗng và tô theo nhịp đều là tô bừa.
+                    until={wordStarts ? beat(flat + 1) : undefined}
                     onPick={onPickWord}
                   />
                 );
@@ -369,11 +516,13 @@ export function OverlayTextBlock({
 
 export function OverlayRender({
   config,
+  pack = GOC,
   seconds,
   showSafeArea = true,
   background,
 }: {
   config: OverlayConfig;
+  pack?: StylePack;
   seconds: number;
   showSafeArea?: boolean;
   /** Video thật làm nền — xem chữ trên chất liệu thật, không trên ảnh tĩnh */
@@ -396,7 +545,7 @@ export function OverlayRender({
             />
           </div>
         ))}
-      <OverlayTextBlock config={config} seconds={seconds} />
+      <OverlayTextBlock config={config} pack={pack} seconds={seconds} />
     </OverlayFrame>
   );
 }

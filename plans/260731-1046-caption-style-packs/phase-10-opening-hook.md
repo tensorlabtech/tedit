@@ -1,7 +1,7 @@
 ---
 phase: 10
 title: "Opening Hook"
-status: pending
+status: done
 priority: P2
 effort: "1d"
 dependencies: [5]
@@ -98,22 +98,22 @@ theo `position` tuyến tính, đảo thứ tự là việc lớn hẳn. Để v
 
 ## Todo List
 
-- [ ] Loại lời nhắc "3 giây đầu" trong hàng soát
-- [ ] Nút Nghe thử
-- [ ] Đường 1 — bỏ phần rào đón
-- [ ] Đường 2 — phóng to câu đầu
-- [ ] Đường 3 — tự viết + gợi ý
-- [ ] Bỏ qua được
-- [ ] Kiểm không đụng thứ tự đoạn
+- [x] Loại lời nhắc "3 giây đầu" trong hàng soát
+- [x] Nút Nghe thử
+- [x] Đường 1 — bỏ phần rào đón
+- [x] Đường 2 — phóng to câu đầu
+- [x] Đường 3 — tự viết + gợi ý
+- [x] Bỏ qua được
+- [x] Kiểm không đụng thứ tự đoạn
 
 ## Success Criteria
 
-- [ ] Dòng hiện đúng lời của 3 giây đầu
-- [ ] Nghe thử chạy đúng 3 giây rồi dừng
-- [ ] Cả ba đường xem thử được **trước** khi nhận
-- [ ] Không tạo loại `element` mới, không đụng `segments.position`
-- [ ] Bỏ qua thì không hiện lại
-- [ ] Không có con số chấm điểm nào trên màn
+- [x] Dòng hiện đúng lời của 3 giây đầu
+- [x] Nghe thử chạy đúng 3 giây rồi dừng
+- [x] Cả ba đường xem thử được **trước** khi nhận
+- [x] Không tạo loại `element` mới, không đụng `segments.position`
+- [x] Bỏ qua thì không hiện lại
+- [x] Không có con số chấm điểm nào trên màn
 
 ## Risk Assessment
 

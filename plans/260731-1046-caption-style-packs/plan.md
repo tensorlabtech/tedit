@@ -1,7 +1,7 @@
 ---
 title: "Bộ dáng chữ và hook mở đầu"
 description: "Nâng các hằng số dáng chữ thành bộ dáng chọn được, thêm trục còn thiếu, và làm 3 giây đầu thành việc nhìn thấy được"
-status: pending
+status: done
 priority: P2
 branch: "main"
 tags: [style, caption, hook, ux]
@@ -59,6 +59,13 @@ không cần luật merge.
 viền, quầng, mật độ, nhịp** — nền móng đứng vững.
 
 ## Các phase
+
+**Trạng thái: cả 10 phase đã xong (31-07-2026).** Báo cáo:
+[font-audit](./reports/font-audit.md) ·
+[extract-style-constants](./reports/extract-style-constants.md) ·
+[style-axes-and-packs](./reports/style-axes-and-packs.md) ·
+[persist-ui-music-rhythm-hook](./reports/persist-ui-music-rhythm-hook.md) ·
+[audit-sau-khi-lam](./reports/audit-sau-khi-lam.md)
 
 | # | Phase | Làm gì | Vì sao xếp ở đây |
 |---|---|---|---|
@@ -185,3 +192,40 @@ Không phụ thuộc plan nào khác — đây là plan đầu tiên của dự 
 - Decision deltas checked: 4
 - Reconciled stale references: 24 (mọi chỗ "6 bộ" / "sáu ô" / "bốn trục" / `box`)
 - Unresolved contradictions: 0
+
+## Kết quả
+
+Năm bộ dáng chọn được ở màn chờ và đổi được trong bàn dựng, mỗi bộ mang theo
+thiên lệch nhạc và nhịp riêng. Ảnh so cạnh nhau:
+`reports/style-packs/sosanh-*.png`.
+
+**Bằng chứng cho lời hứa "đổi bộ dáng an toàn":**
+
+- `npm run check:style-pack` — 25 phép, trong đó có phép giữ cho `defaults` của
+  cả năm bộ luôn giống hệt nhau. Đó là bất biến làm cho việc đổi bộ dáng không
+  đụng một hàng `elements` nào.
+- `python3 scripts/overlay-parity/check-overlay-parity.py` — 50/50 tổ hợp
+  (5 bộ × 10 cụm) khớp số dòng giữa khung xem và bản xuất, chạy được không cần
+  đăng nhập.
+- Render trước/sau khi gom hằng số: **10/10 lệch 0 điểm ảnh**.
+
+**Ba việc phát sinh ngoài kế hoạch, đều đã ghi rõ trong báo cáo:**
+
+1. `OVERLAY_FONT` không còn trỏ vào font macOS — máy chủ Linux vốn không xuất
+   video được. Hệ quả: dự án cũ xuất lại ra chữ rộng hơn ≈4%.
+2. Sửa một lỗi **tràn khung có sẵn** ở kiểu `taper`: chữ vượt mép phải 12% bề
+   rộng khung. Đã dựng lại bản mã trước phiên và render ra y hệt, nên nó có
+   trước chứ không do đợt này.
+3. Ba chỗ hai đường vẽ lệch nhau đã được kéo về một mối (trần cỡ 0,24↔0,15 ·
+   lề 3%↔2% · độ đậm 600/800 theo từ khoá).
+
+## Việc để lại
+
+- Trục `box` (nền khối) và bộ dáng thứ sáu đi kèm — đã hoãn từ đầu, trường vẫn
+  khai trong kiểu với giá trị `null`.
+- `motion.lineBox = 1.15` lệch với bước dòng 1,0 của trang xem — chỉ thấy được
+  trong lúc chữ đang hiện.
+- Chỗ tách cụm (`buildCaptionGroups`) quyết định bằng luật của kiểu `even`, trong
+  khi mặc định của sản phẩm là `taper`. Đó là gốc rễ của lỗi tràn khung vừa sửa.
+- `brollHoldSec` khai trong bộ dáng nhưng chưa ai đọc.
+- Ba màn giao diện mới chưa xem tận mắt trên dự án thật (cổng đăng nhập Google).

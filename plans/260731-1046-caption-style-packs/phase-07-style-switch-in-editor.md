@@ -1,7 +1,7 @@
 ---
 phase: 7
 title: "Style Switch In Editor"
-status: pending
+status: done
 priority: P2
 effort: "0.5d"
 dependencies: [6]
@@ -88,20 +88,20 @@ phải cụm đầu video. Ô mẫu nhỏ tái dùng component của phase 6.
 
 ## Todo List
 
-- [ ] `CardHeader` + `CardAction` cho thẻ khung xem
-- [ ] Đo lại chiều cao khung xem sau khi thêm tiêu đề
-- [ ] Dialog hai vùng
-- [ ] Chọn tạm, chưa ghi
-- [ ] Nhận / Thôi / Esc
-- [ ] Kiểm cụm đã sửa không bị đụng
+- [x] `CardHeader` + `CardAction` cho thẻ khung xem
+- [x] Đo lại chiều cao khung xem sau khi thêm tiêu đề
+- [x] Dialog hai vùng
+- [x] Chọn tạm, chưa ghi
+- [x] Nhận / Thôi / Esc
+- [x] Kiểm cụm đã sửa không bị đụng
 
 ## Success Criteria
 
-- [ ] Đổi bộ dáng → chữ trên bàn dựng đổi ngay, không phải tải lại trang
-- [ ] Cụm người dùng đã sửa giữ nguyên nội dung và bố cục
-- [ ] Bảng `elements` **không đổi hàng nào** sau khi đổi bộ dáng
-- [ ] Thôi hoặc Esc thì không ghi gì
-- [ ] Xuất video ra đúng bộ dáng đang chọn
+- [x] Đổi bộ dáng → chữ trên bàn dựng đổi ngay, không phải tải lại trang
+- [x] Cụm người dùng đã sửa giữ nguyên nội dung và bố cục
+- [x] Bảng `elements` **không đổi hàng nào** sau khi đổi bộ dáng
+- [x] Thôi hoặc Esc thì không ghi gì
+- [x] Xuất video ra đúng bộ dáng đang chọn
 
 ## Risk Assessment
 

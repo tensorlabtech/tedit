@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { skippedSpans } from "./segments";
 import { OUT_HEIGHT, OUT_WIDTH } from "./render";
+import type { StylePack } from "./style-pack";
 import { layoutText, type Band } from "./text-layout";
 
 /** Một từ trong bản chép lời, mang theo mã để chữ còn neo vào được. */
@@ -37,28 +38,27 @@ const build = (words: CaptionWord[]): CaptionGroup => ({
   wordStarts: words.map((word) => word.start_sec),
 });
 
-/**
- * Tối đa 5 tiếng một cụm.
+/*
+ * BỐN CON SỐ CHIA CỤM nay nằm trong bộ dáng (`pack.grouping`), không còn là hằng.
  *
- * Đây là ràng buộc CỐ Ý, không phải cho dễ đọc: hệ Oversize in chữ ở ~17% chiều
- * cao khung, nên quá 5 tiếng là hết chỗ và phép đo buộc phải co chữ về cỡ chú
- * thích — mất luôn phong cách. Ít chữ to hơn nhiều chữ nhỏ.
+ * Vì sao chúng từng là hằng, và vì sao mỗi con số có lý do riêng:
+ *
+ * - **Số tiếng (mặc định 5)** — ràng buộc CỐ Ý, không phải cho dễ đọc: hệ
+ *   Oversize in chữ ở ~17% chiều cao khung, nên quá 5 tiếng là hết chỗ và phép
+ *   đo buộc phải co chữ về cỡ chú thích. Ít chữ to hơn nhiều chữ nhỏ.
+ * - **Số ký tự (mặc định 26)** — ràng buộc THẬT, còn trần số tiếng chỉ là ước.
+ *   Suy từ trần 3 dòng: bề rộng dùng được ≈ 77% của 1080 = 832px, cỡ sàn 15% bề
+ *   rộng = 162px, một ký tự rộng ≈ 0,6 cỡ ≈ 97px → chừng 8,5 ký tự một dòng, ba
+ *   dòng là 26. Cần cả hai trần vì "Mình" và "nghiêng" đều một tiếng mà dài gấp
+ *   đôi nhau: 5 tiếng có thể ra 15 ký tự mà cũng có thể ra 35.
+ * - **Độ dài cụm (mặc định 2,2 giây)** — dài quá thì chữ đứng lâu, mất cảm giác
+ *   chạy theo lời.
+ * - **Sàn thời gian hiện (mặc định 0)** — chỉ có nghĩa với phụ đề từng chữ.
+ *
+ * Nới chúng thành trục của bộ dáng là chỗ mở ra "phụ đề từng chữ": `maxWords: 1`.
+ * Mô hình dữ liệu vốn đã chịu được, vì chữ neo vào KHOẢNG TỪ và khoảng một từ là
+ * hợp lệ — không cần thêm loại `element` nào.
  */
-const MAX_WORDS = 5;
-/** Cụm dài quá thì chữ đứng lâu, mất cảm giác chạy theo lời. */
-const MAX_SPAN = 2.2;
-/**
- * Trần KÝ TỰ, tính cả dấu cách — ràng buộc thật, còn trần số tiếng chỉ là ước.
- *
- * Suy ra từ trần 3 dòng: bề rộng dùng được ≈ 77% của 1080 = 832px, cỡ sàn 15% bề
- * rộng = 162px, một ký tự rộng ≈ 0.6 cỡ ≈ 97px → chừng 8,5 ký tự một dòng, ba
- * dòng là 26.
- *
- * Vì sao cần cả hai trần: "Mình" và "nghiêng" đều là một tiếng nhưng dài gấp đôi
- * nhau, nên 5 tiếng có thể ra 15 ký tự mà cũng có thể ra 35 — đếm tiếng một mình
- * thì cụm dài vẫn lọt qua rồi bị co chữ ở bước in.
- */
-const MAX_CHARS = 26;
 
 /**
  * Gom từ thành cụm chữ chạy theo lời.
@@ -70,6 +70,14 @@ const MAX_CHARS = 26;
 export async function buildCaptionGroups(
   projectId: string,
   band: Band = "bottom",
+  /**
+   * Bộ dáng quyết định cỡ chữ và bước dòng, nên nó quyết định luôn CHỖ TÁCH cụm.
+   *
+   * BẮT BUỘC truyền, không có mặc định — cùng lý do với `avail` của `fitGroup`
+   * bên trang xem: nơi nào quên truyền sẽ tách cụm theo mật độ của bộ gốc trong
+   * khi video in ra theo mật độ của bộ khác, và không có lỗi nào báo ra.
+   */
+  pack: StylePack,
 ): Promise<CaptionGroup[]> {
   const words = db
     .prepare(
@@ -90,6 +98,8 @@ export async function buildCaptionGroups(
     span.start,
     span.end,
   ]);
+
+  const { maxWords, maxChars, maxSpan, minHold } = pack.grouping;
 
   const groups: CaptionGroup[] = [];
   let current: CaptionWord[] = [];
@@ -117,10 +127,17 @@ export async function buildCaptionGroups(
       );
       // Nghỉ trên 0,35 giây là ranh giới ý — cắt ở đó nghe tự nhiên hơn là cắt
       // giữa dòng vì đủ 5 từ.
+      // Đủ số tiếng NHƯNG chưa đủ lâu thì chưa cắt — gom thêm tiếng nữa.
+      //
+      // Chỉ có nghĩa với phụ đề từng chữ: một tiếng dài 0,12 giây là chữ hiện
+      // 3–4 khung hình rồi tắt, mắt đọc ra là nhấp nháy. Gộp nó với tiếng kế
+      // tiếp thì mất đúng một nhịp mà đổi lại được một cụm đọc được.
+      const held = previous.end_sec - current[0].start_sec;
+      const enoughWords = current.length >= maxWords && held >= minHold;
       if (
-        current.length >= MAX_WORDS ||
-        charsWith(word) > MAX_CHARS ||
-        span > MAX_SPAN ||
+        enoughWords ||
+        charsWith(word) > maxChars ||
+        span > maxSpan ||
         gap > 0.35 ||
         newSentence ||
         crossesCut
@@ -135,7 +152,7 @@ export async function buildCaptionGroups(
   // phải hỏi phép đo bằng đúng tệp font sẽ in — mà cùng một cụm ở dải dưới hẹp
   // hơn dải trên 12% bề rộng, nên vừa ở trên chưa chắc vừa ở dưới.
   const fitted: CaptionGroup[] = [];
-  for (const group of groups) fitted.push(...(await fitGroup(group, band)));
+  for (const group of groups) fitted.push(...(await fitGroup(group, band, pack)));
   return fitted;
 }
 
@@ -149,9 +166,10 @@ export async function buildCaptionGroups(
 async function fitGroup(
   group: CaptionGroup,
   band: Band,
+  pack: StylePack,
   depth = 0,
 ): Promise<CaptionGroup[]> {
-  const laid = await layoutText(group.text, band, OUT_WIDTH, OUT_HEIGHT);
+  const laid = await layoutText(group.text, band, OUT_WIDTH, OUT_HEIGHT, pack);
   // Dừng ở độ sâu 3: cụm một tiếng mà vẫn không vừa thì tách nữa cũng vô ích,
   // và `truncated` sẽ báo lên hàng "Cần bạn xem".
   if (
@@ -163,7 +181,7 @@ async function fitGroup(
   }
   const mid = Math.ceil(group.words.length / 2);
   return [
-    ...(await fitGroup(build(group.words.slice(0, mid)), band, depth + 1)),
-    ...(await fitGroup(build(group.words.slice(mid)), band, depth + 1)),
+    ...(await fitGroup(build(group.words.slice(0, mid)), band, pack, depth + 1)),
+    ...(await fitGroup(build(group.words.slice(mid)), band, pack, depth + 1)),
   ];
 }

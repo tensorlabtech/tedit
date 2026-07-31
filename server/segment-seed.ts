@@ -4,6 +4,7 @@ import {
   speechStartsAt,
 } from "./audio-envelope";
 import { buildCaptionGroups } from "./caption-groups";
+import type { StylePack } from "./style-pack";
 import { db, newId } from "./db";
 
 /**
@@ -35,8 +36,14 @@ const SPEECH_MARGIN = 0.4;
 export async function seedSegmentsByCaption(
   projectId: string,
   totalDuration: number,
+  /**
+   * Bộ dáng của dự án — nó quyết định chỗ tách cụm, mà đoạn thì gieo THEO cụm.
+   * Truyền bộ gốc trong khi dự án dùng bộ khác là đoạn chia theo một nhịp còn
+   * chữ in ra theo một nhịp khác.
+   */
+  pack: StylePack,
 ) {
-  const groups = await buildCaptionGroups(projectId);
+  const groups = await buildCaptionGroups(projectId, "bottom", pack);
   if (groups.length === 0) return 0;
 
   const envelope = await readEnvelope(projectId);
