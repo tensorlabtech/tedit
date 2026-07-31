@@ -34,6 +34,19 @@ export function EditorPage() {
    */
   const stopAtRef = useRef<number | null>(null);
   /**
+   * Quãng đang nghe thử, đọc được NGAY trong lượt vẽ đặt nó.
+   *
+   * `editor.startAudit` là một lần đặt state, nên `editor.nextKeptTime` chỉ biết
+   * về quãng ấy từ lượt vẽ sau. Mà vòng lặp phát khởi động ngay trong lượt này
+   * và dùng `skipRef` cũ — hàm nhảy-qua-chỗ-đã-bỏ ấy vọt thẳng qua đúng cái
+   * quãng ta vừa bảo nó hãy phát, rơi ra sau mốc dừng, và tắt phát ở khung hình
+   * đầu tiên.
+   *
+   * Đo được: `play @63.54` → `seeking @39.90` → `pause` — nút "Nghe thử" bấm
+   * vào không kêu, dù video phát thật được một nhịp.
+   */
+  const auditRef = useRef<{ start: number; end: number } | null>(null);
+  /**
    * Kết thúc lượt nghe thử phần đã bỏ.
    *
    * Qua ref vì vòng lặp phát chỉ dựng lại khi `playing` đổi — cho `startAudit` vào
@@ -49,14 +62,24 @@ export function EditorPage() {
     let frame = 0;
     let last = performance.now();
     const tick = (now: number) => {
-      const raw = timeRef.current + (now - last) / 1000;
+      // Đang nghe thử mà con trỏ còn nằm ngoài quãng thì kéo về đầu quãng.
+      // `seek` đặt state, nên trong một hai lượt vẽ đầu `timeRef` vẫn giữ vị
+      // trí cũ — và vị trí cũ ấy thường đã quá mốc dừng, làm vòng lặp tắt phát
+      // ngay ở khung hình đầu tiên.
+      const audit = auditRef.current;
+      const base =
+        audit && (timeRef.current < audit.start || timeRef.current >= audit.end)
+          ? audit.start
+          : timeRef.current;
+      const raw = base + (now - last) / 1000;
       last = now;
       // Nhảy qua chỗ đã bỏ: xem trước phải giống hệt video sẽ xuất ra.
-      const next = skipRef.current(raw);
+      const next = auditRef.current ? raw : skipRef.current(raw);
       if (stopAtRef.current != null && next >= stopAtRef.current) {
         setPlaying(false);
         // Hạ cờ nghe thử NGAY tại mốc dừng: còn treo thì vạch đứng lại bên trong
         // quãng đã bỏ, và khung xem hiện một khung hình không có trong video.
+        auditRef.current = null;
         endAudit.current();
         seek(stopAtRef.current);
         stopAtRef.current = null;
@@ -200,14 +223,26 @@ export function EditorPage() {
           // một thứ gọn hơn trên giấy.
           onPreview={(at, until) => {
             stopAtRef.current = until ?? null;
-            seek(Math.max(0, at));
+            const from = Math.max(0, at);
+            seek(from);
+            // Cùng lý do với `onAudit` bên dưới: vòng lặp đọc `timeRef` ngay
+            // trong lượt vẽ này, mà `seek` thì phải đợi lượt sau.
+            timeRef.current = from;
             setPlaying(true);
           }}
         />
       </div>
 
       {/* Kéo dải trong lúc đang phát thì dừng phát — ca kiểm T4 của đặc tả. */}
-      <div onPointerDown={() => setPlaying(false)}>
+      <div
+        onPointerDown={(event) => {
+          // Chỉ cú bấm THẬT SỰ nằm trong dải mới dừng phát. Thứ dựng qua portal
+          // — popover chỗ nối, menu chuột phải — không nằm trong khối này về
+          // mặt DOM, nhưng React vẫn cho sự kiện của chúng nổi bọt tới đây.
+          if (!event.currentTarget.contains(event.target as Node)) return;
+          setPlaying(false);
+        }}
+      >
         <Timeline
           editor={editor}
           // Nghe thử một quãng ĐÃ BỎ: treo phép nhảy qua nó, đưa vạch về đầu quãng
@@ -217,6 +252,17 @@ export function EditorPage() {
             editor.startAudit(span);
             stopAtRef.current = span.end;
             seek(span.start);
+            // `timeRef` phải nhích NGAY, không đợi lượt vẽ sau.
+            //
+            // `seek` là một lần đặt state, nên `timeRef.current` vẫn giữ vị trí
+            // CŨ cho tới lượt vẽ kế. Mà vòng lặp phát khởi động ngay trong lượt
+            // này và đọc đúng cái ref ấy: nó lấy vị trí cũ đem so với mốc dừng
+            // MỚI, thấy đã quá mốc nên tắt phát ở khung hình đầu tiên.
+            //
+            // Đo được: nhật ký video ra `play @63.54` rồi `seeking @39.90` rồi
+            // `pause` — phát thật, tua về đầu quãng, rồi chết. Người dùng thấy
+            // một nút "Nghe thử" bấm vào không kêu.
+            auditRef.current = span;
             setPlaying(true);
           }}
         />
