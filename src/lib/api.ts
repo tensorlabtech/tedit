@@ -442,6 +442,19 @@ export const api = {
       { method: "POST" },
     ),
 
+  /**
+   * Lời đăng bài viết sẵn từ bản chép lời: ba tiêu đề, một mô tả, mấy thẻ.
+   *
+   * KHÔNG nuốt lỗi như `suggestOpeningLines`: ở đó lời gợi ý chỉ là một trong ba
+   * đường của màn "3 giây đầu", còn ở đây người dùng chủ động bấm và đang đợi —
+   * im lặng trả rỗng thì họ không biết là thiếu khoá hay mất mạng.
+   */
+  writePostCopy: (projectId: string) =>
+    request<{ titles: string[]; description: string; hashtags: string[] }>(
+      `/api/projects/${projectId}/post-copy`,
+      { method: "POST" },
+    ),
+
   /** Bỏ qua một lời nhắc ở hàng soát — ghi xuống máy chủ để tải lại không hỏi lại */
   dismissIssue: (projectId: string, issueId: string) =>
     request<{ ok: true }>(`/api/projects/${projectId}/dismissed`, {

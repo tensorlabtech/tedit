@@ -83,6 +83,7 @@ import {
   splitVerbatimCaptions,
 } from "./caption-elements";
 import { suggestOpeningLines } from "./ai-opening";
+import { writePostCopy } from "./ai-post-copy";
 import { KEY_COLORS } from "./style-pack";
 import { GOC, STYLE_PACKS } from "./style-pack-catalog";
 import { readStylePack } from "./style-pack-store";
@@ -576,6 +577,28 @@ app.post("/api/projects/:id/opening-lines", async (request) => {
   // của màn "3 giây đầu" không cần AI, nên một lỗi ở đây sẽ chặn cả ba.
   const lines = await suggestOpeningLines(id).catch(() => []);
   return { lines };
+});
+
+/**
+ * Lời đăng bài — tiêu đề, mô tả, thẻ — viết từ chính bản chép lời.
+ *
+ * Chạy khi người dùng bấm chứ không nằm trong mạch dựng: không phải video nào
+ * cũng đem đăng, mà mỗi lượt gọi là tiền thật.
+ */
+app.post("/api/projects/:id/post-copy", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  try {
+    const copy = await writePostCopy(id);
+    if (!copy) return reply.code(400).send({ error: "Chưa có lời để viết" });
+    return copy;
+  } catch (error) {
+    // Trả lỗi THẬT chứ không nuốt: khác chặng gợi ý câu mở đầu, ở đây người dùng
+    // chủ động bấm và đang đợi kết quả — im lặng trả rỗng thì màn hình chỉ biết
+    // hiện "không có gì", và không ai đoán được là do thiếu khoá hay do mạng.
+    return reply
+      .code(502)
+      .send({ error: (error as Error).message.slice(0, 160) });
+  }
 });
 
 app.post("/api/projects/:id/dismissed", async (request, reply) => {

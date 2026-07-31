@@ -9,6 +9,7 @@ import { ProjectTitle } from "@/components/project-title";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardHeader } from "@/components/ui/card";
 
+import { PostCopyDialog } from "./post-copy-dialog";
 import { PreviewPanel } from "./preview-panel";
 import { RightPanel } from "./right-panel";
 import { Timeline } from "./timeline";
@@ -21,6 +22,14 @@ export function EditorPage() {
   const navigate = useNavigate();
   const editor = useEditor(projectId);
   const [playing, setPlaying] = useState(false);
+  /**
+   * Hộp thoại lời đăng bài — chỉ mở được sau khi đã xuất xong video.
+   *
+   * Khai ở ĐÂY chứ không ngay trên chỗ dùng: bên dưới có một nhánh thoát sớm cho
+   * lúc đang tải, mà hook đặt sau nhánh ấy thì số hook đổi giữa hai lượt vẽ và
+   * React làm trắng cả bàn dựng. Bàn dựng thì luôn đi qua lúc đang tải.
+   */
+  const [moLoiDang, setMoLoiDang] = useState(false);
   const { seek, duration } = editor;
   const timeRef = useRef(editor.time);
   timeRef.current = editor.time;
@@ -160,6 +169,13 @@ export function EditorPage() {
 
   return (
     <div className="grid min-h-svh gap-2 bg-background p-2 text-foreground lg:h-svh lg:grid-rows-[auto_1fr_auto] lg:overflow-hidden">
+      {editor.projectId && (
+        <PostCopyDialog
+          projectId={editor.projectId}
+          open={moLoiDang}
+          onOpenChange={setMoLoiDang}
+        />
+      )}
       <Card>
         <CardHeader>
           <ProjectTitle
@@ -175,11 +191,18 @@ export function EditorPage() {
               Trở về
             </Button>
             {editor.exportJob?.status === "done" ? (
-              <Button
-                render={<a href={api.exportUrl(editor.projectId!)} download />}
-              >
-                Tải video về
-              </Button>
+              <>
+                {/* Đặt TRƯỚC nút tải: đăng bài là việc tiếp theo sau khi tải,
+                    nhưng đọc từ trái sang thì nút chính phải đứng cuối. */}
+                <Button variant="ghost" onClick={() => setMoLoiDang(true)}>
+                  Lời đăng bài
+                </Button>
+                <Button
+                  render={<a href={api.exportUrl(editor.projectId!)} download />}
+                >
+                  Tải video về
+                </Button>
+              </>
             ) : (
               <Button
                 // Chưa có lời thì không có gì để cắt, và máy chủ sẽ lỗi ngay.
