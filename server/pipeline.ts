@@ -758,10 +758,27 @@ function resolveElements(
           }
         : { from: Number(row.from_start), to: Number(row.to_end) };
     if (Number.isNaN(source.from) || Number.isNaN(source.to)) continue;
-    const start = mapToOutput(kept, source.from);
-    const end = mapToOutput(kept, source.to);
-    // Phần tử neo vào câu đã bị gạch bỏ thì không còn chỗ nào để hiện — bỏ qua
-    // im lặng ở đây là đúng, vì người dùng đã chủ động bỏ câu đó.
+    const rawStart = mapToOutput(kept, source.from);
+    const rawEnd = mapToOutput(kept, source.to);
+
+    /*
+     * CẢ HAI đầu rơi vào chỗ đã bỏ thì phần tử không còn chỗ nào để hiện — bỏ
+     * qua im lặng ở đây là đúng, vì người dùng đã chủ động bỏ câu đó.
+     *
+     * Nhưng chỉ MỘT đầu rơi thì khác: phần nằm trên đoạn được giữ vẫn có chỗ để
+     * hiện. Ca này xảy ra khi một cụm chữ BẮC QUA mép một quãng bị bỏ — chữ neo
+     * từ giây 10 tới giây 20 mà người dùng gạch câu ở giây 18 chẳng hạn. Vứt cả
+     * nó đi là làm biến mất một dòng chữ người dùng không hề đụng tới, và không
+     * có gì báo ra vì "không in dòng đó" cũng là một kết quả hợp lệ.
+     *
+     * `keptBefore` là hàm luôn trả ra một con số — mốc rơi vào đoạn đã bỏ thì
+     * lấy mép của đoạn đó. Chữ vì thế hiện tới đúng lúc hình bị cắt rồi thôi.
+     *
+     * Phần tử nằm TRỌN trong quãng bỏ mà chỉ chạm mép ở một điểm thì hai mốc
+     * quy về cùng một chỗ, và `end <= start` bên dưới loại nó — đúng như trước.
+     */
+    const start = rawStart ?? (rawEnd === null ? null : keptBefore(kept, source.from));
+    const end = rawEnd ?? (rawStart === null ? null : keptBefore(kept, source.to));
     if (start === null || end === null || end <= start) continue;
     out.push({
       kind: row.kind === "insert" ? "insert" : "text",
