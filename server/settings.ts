@@ -26,7 +26,7 @@ export type Settings = {
   /** Có sinh chữ từ lời không. Đọc lúc tạo dự án. */
   wantCaptions: boolean;
   /**
-   * Tự cân sáng, lọc nhiễu và nâng màu cho hình gốc.
+   * Tự cân sáng/màu/nhiễu cho hình, và cân độ to cho giọng nói.
    *
    * Bật sẵn vì người dùng của công cụ này quay bằng điện thoại trong phòng —
    * đo 81 tệp thật thì độ sáng trung bình quanh 40-50 trên thang 255. Ai quay

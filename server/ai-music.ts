@@ -1,11 +1,19 @@
+import { voiBoiCanh } from "./ai-context";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { db } from "./db";
 import { ask, object } from "./llm";
+import {
+  describeMusicTags,
+  matchesBias,
+  readMusicTags,
+  type MusicTags,
+} from "./music-tags";
 import { addMusic, listMusic, mainDuration } from "./music-tracks";
 import { DATA_ROOT } from "./paths";
 import { settingsForProject } from "./settings";
+import { readStylePack } from "./style-pack-store";
 
 /**
  * Chọn nhạc nền trong số nhạc NGƯỜI DÙNG ĐÃ TẢI LÊN.
@@ -85,6 +93,25 @@ function readTags(): Map<string, string> {
   }
 }
 
+/**
+ * Ba trục nhãn của từng bài, đọc từ bảng `library_tracks`.
+ *
+ * Dựng từ THƯ MỤC rồi ghép bảng vào, không `SELECT` thẳng từ bảng: thư mục mới
+ * là nguồn sự thật của kho (`db.ts`), nên bài vừa thả vào chưa có hàng nào. Đọc
+ * thẳng từ bảng là bài mới vô hình với chặng chọn nhạc.
+ */
+function readLabels(): Map<string, MusicTags> {
+  const rows = db
+    .prepare("SELECT file, energy, density, vocal FROM library_tracks")
+    .all() as Array<{
+    file: string;
+    energy: string | null;
+    density: string | null;
+    vocal: string | null;
+  }>;
+  return new Map(rows.map((row) => [row.file, readMusicTags(row)]));
+}
+
 export async function pickMusic(projectId: string): Promise<{
   applied: number;
   note: string;
@@ -98,7 +125,8 @@ export async function pickMusic(projectId: string): Promise<{
     return { applied: 0, note: "chưa có kho nhạc" };
   }
   const tags = readTags();
-  const files = readdirSync(LIBRARY)
+  const labels = readLabels();
+  const all = readdirSync(LIBRARY)
     .filter((name) => AUDIO.test(name))
     .map((name) => ({
       id: name,
@@ -107,9 +135,25 @@ export async function pickMusic(projectId: string): Promise<{
       // đối chiếu lại giấy phép đều cần tên thật. Nhưng "Ocean Memory" thì không
       // nói lên tông nhạc, nên tông nằm ở `kho.json` và được ghép vào đây.
       tags: tags.get(name) ?? "",
+      labels: labels.get(name) ?? {
+        energy: null,
+        density: null,
+        vocal: null,
+      },
       stored_path: join(LIBRARY, name),
     }));
-  if (files.length === 0) return { applied: 0, note: "kho nhạc rỗng" };
+  if (all.length === 0) return { applied: 0, note: "kho nhạc rỗng" };
+
+  // LỌC TRƯỚC khi hỏi mô hình, không lọc sau: mô hình biết nội dung video còn
+  // nhãn thì không, nên nó vẫn là bên chọn — nhưng nó chọn trong tập đã lọc, và
+  // vì thế kết quả bám theo bộ dáng.
+  //
+  // Lọc xong mà RỖNG thì rơi về cả kho. Thà một bài hơi chỏi tông còn hơn video
+  // không có nhạc, và một thiên lệch chặt quá không được phép biến thành "kho
+  // nhạc rỗng" trong mắt người dùng.
+  const bias = readStylePack(projectId).musicBias;
+  const narrowed = all.filter((file) => matchesBias(file.labels, bias));
+  const files = narrowed.length > 0 ? narrowed : all;
 
   const sentences = db
     .prepare("SELECT text FROM sentences WHERE project_id=? ORDER BY position")
@@ -117,10 +161,15 @@ export async function pickMusic(projectId: string): Promise<{
   if (sentences.length === 0) return { applied: 0, note: "chưa có lời" };
 
   const proposal = await ask<Proposal>({
-    instructions: INSTRUCTIONS,
+    instructions: voiBoiCanh(INSTRUCTIONS, projectId),
     input:
       `Bài nhạc (mã|tên|tông):\n` +
-      files.map((file) => `${file.id}|${file.name}|${file.tags}`).join("\n") +
+      files
+        .map((file) => {
+          const shaped = describeMusicTags(file.labels);
+          return `${file.id}|${file.name}|${[file.tags, shaped].filter(Boolean).join(" · ")}`;
+        })
+        .join("\n") +
       `\n\nLời:\n${sentences.map((s) => s.text).join(" ")}`,
     schemaName: "music",
     // Việc này không cần suy luận sâu — dùng bậc mô hình rẻ.

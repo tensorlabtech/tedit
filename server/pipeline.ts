@@ -1,3 +1,4 @@
+import { canTieng, doTieng } from "./auto-audio";
 import { autoGradeOn, canHinh, doHinh } from "./auto-grade";
 import { join } from "node:path";
 
@@ -607,12 +608,14 @@ export async function runExport(projectId: string) {
    * Tốn hai giây quét — chấp nhận được ở chặng cuối, nơi ffmpeg vốn đã chạy
    * hàng chục giây.
    */
-  const canh = autoGradeOn(projectId)
-    ? canHinh(await doHinh(cut))
-    : null;
-  if (canh) {
-    console.log(`[render] tự cân hình: ${canh.lyDo.join(" · ")}`);
-  }
+  const tuCan = autoGradeOn(projectId);
+  const canh = tuCan ? canHinh(await doHinh(cut)) : null;
+  if (canh) console.log(`[render] tự cân hình: ${canh.lyDo.join(" · ")}`);
+
+  // Đo TIẾNG trên cùng bản đã cắt, cùng lý do với hình: nhiều tệp ghép lại thì
+  // mỗi tệp một mức, đo riêng rồi chỉnh riêng là đoạn nọ to hơn đoạn kia.
+  const canhTieng = tuCan ? canTieng(await doTieng(cut)) : null;
+  if (canhTieng) console.log(`[render] tự cân tiếng: ${canhTieng.lyDo.join(" · ")}`);
 
   const finalPath = await burnElements(
     projectId,
@@ -642,9 +645,12 @@ export async function runExport(projectId: string) {
     // Bài nằm trọn trong một quãng đã bỏ thì độ dài về 0 — bỏ luôn, giữ lại là
     // `atrim` ra luồng rỗng và cả lệnh trộn hỏng.
     .filter((cue) => cue.length > 0.2);
-  if (cues.length > 0) {
-    setJob(projectId, "export", "running", 85, "Đang trộn nhạc nền");
-    await mixMusic(projectId, finalPath, cues);
+  if (cues.length > 0 || canhTieng) {
+    setJob(
+      projectId, "export", "running", 85,
+      cues.length > 0 ? "Đang trộn nhạc nền" : "Đang cân âm lượng",
+    );
+    await mixMusic(projectId, finalPath, cues, canhTieng);
   }
 
   setJob(projectId, "export", "done", 100, "Xong", finalPath);

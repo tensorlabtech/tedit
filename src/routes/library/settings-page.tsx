@@ -310,7 +310,7 @@ export function SettingsPage() {
               </Field>
 
               <Field orientation="horizontal">
-                <FieldLabel htmlFor="auto-grade">Tự chỉnh sáng và màu</FieldLabel>
+                <FieldLabel htmlFor="auto-grade">Tự chỉnh hình và tiếng</FieldLabel>
                 <Switch
                   id="auto-grade"
                   checked={settings.autoGrade}
@@ -318,9 +318,11 @@ export function SettingsPage() {
                 />
               </Field>
               <FieldDescription>
-                Máy đo hình trước khi dựng: tối thì nâng sáng, bạc màu thì nâng
-                màu, thiếu sáng thì lọc bớt hạt nhiễu. Video quay đủ sáng thì nó
-                không đụng gì. Tắt nếu bạn đã tự nắn màu ở nơi khác.
+                Máy đo trước khi dựng: hình tối thì nâng sáng, bạc màu thì nâng
+                màu, thiếu sáng thì lọc bớt hạt nhiễu; tiếng nhỏ thì nâng lên
+                đúng mức các mạng xã hội dùng, kèm cắt tiếng ù của căn phòng.
+                Video vốn đã ổn thì nó không đụng gì. Tắt nếu bạn đã tự nắn ở
+                nơi khác.
               </FieldDescription>
 
               <Field orientation="horizontal">

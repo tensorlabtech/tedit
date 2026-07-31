@@ -1,3 +1,4 @@
+import { autoAudioFilter, type CanTieng } from "./auto-audio";
 import { autoGradeFilter, type CanHinh } from "./auto-grade";
 import {
   findJunction,
@@ -349,8 +350,13 @@ export async function mixMusic(
   projectId: string,
   video: string,
   cues: MusicCue[],
+  /** Bộ cân giọng đã đo sẵn; `null` là không chỉnh gì. */
+  canhTieng: CanTieng | null = null,
 ) {
-  if (cues.length === 0) return video;
+  // Không nhạc VÀ không phải cân giọng thì mới bỏ qua được bước này. Trước đây
+  // chỉ xét nhạc, nên video không nhạc đi thẳng ra ngoài — mà đó lại chính là
+  // những video chỉ có giọng, tức những video cần cân giọng nhất.
+  if (cues.length === 0 && !canhTieng) return video;
   const target = join(outDir(projectId), "final-music.mp4");
 
   const inputs: string[] = ["-i", video];
@@ -368,12 +374,30 @@ export async function mixMusic(
         `adelay=${Math.round(cue.start * 1000)}:all=1[${label}]`,
     );
   }
-  // `normalize=0` là bắt buộc: mặc định `amix` chia đều biên độ cho số luồng,
-  // nên thêm nhạc lại làm GIỌNG NÓI nhỏ đi 6dB. Mức nhạc điều bằng `volume`.
-  const musicLabels = cues.map((_, index) => `[bg${index}]`).join("");
-  filters.push(
-    `[0:a]${musicLabels}amix=inputs=${cues.length + 1}:duration=first:dropout_transition=0:normalize=0[aout]`,
-  );
+  /*
+   * Cân GIỌNG trước khi trộn nhạc, không phải sau.
+   *
+   * Sau khi trộn thì thứ đo được là hỗn hợp giọng + nhạc, mà mức nhạc lại do
+   * người dùng chỉnh — nâng cả hỗn hợp lên thì nhạc to theo, và tỉ lệ giọng
+   * trên nhạc mà người dùng vừa canh bị phá.
+   */
+  const voiceChain = autoAudioFilter(canhTieng);
+
+  if (cues.length === 0) {
+    // Chỉ cân giọng, không nhạc: `amix` một luồng vào là phép trộn không trộn
+    // gì — cho giọng đi thẳng ra.
+    filters.push(`[0:a]${voiceChain}[aout]`);
+  } else {
+    const voice = voiceChain ? "[voice]" : "[0:a]";
+    if (voiceChain) filters.push(`[0:a]${voiceChain}[voice]`);
+
+    // `normalize=0` là bắt buộc: mặc định `amix` chia đều biên độ cho số luồng,
+    // nên thêm nhạc lại làm GIỌNG NÓI nhỏ đi 6dB. Mức nhạc điều bằng `volume`.
+    const musicLabels = cues.map((_, index) => `[bg${index}]`).join("");
+    filters.push(
+      `${voice}${musicLabels}amix=inputs=${cues.length + 1}:duration=first:dropout_transition=0:normalize=0[aout]`,
+    );
+  }
 
   await ffmpeg([
     ...inputs,

@@ -1,3 +1,4 @@
+import { voiBoiCanh } from "./ai-context";
 import { JUNCTION_SPECS } from "./junction-kinds";
 import { db, newId } from "./db";
 import { ask, object } from "./llm";
@@ -172,7 +173,7 @@ export async function pickEffects(
       : "";
 
   const proposal = await ask<Proposal>({
-    instructions: INSTRUCTIONS,
+    instructions: voiBoiCanh(INSTRUCTIONS, projectId),
     input:
       `Phim dài ${outputSeconds.toFixed(0)} giây. Nhắm khoảng ${want} chỗ.${biasLine}\n\n` +
       joins

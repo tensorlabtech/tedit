@@ -1,22 +1,32 @@
+import { voiBoiCanh } from "./ai-context";
 import { db } from "./db";
 import { ask, object } from "./llm";
+import { readStylePack } from "./style-pack-store";
 
 /**
  * Chọn từ đáng nhấn trong từng cụm phụ đề.
  *
  * Nhấn là thứ chỉ có nghĩa khi HIẾM. Nhấn đều tay mọi cụm thì mắt không còn
  * chỗ nào để dừng lại, và kết quả đọc ra y như không nhấn gì — nên trần
- * `MAX_SHARE` ở dưới không phải phòng xa, nó là chính cái làm việc này có tác
+ * Trần `intensity.keywordShare` không phải phòng xa, nó là chính cái làm việc này có tác
  * dụng.
  *
  * Chỉ chạm vào cụm CHƯA ai đánh dấu: người dùng đã chọn tay thì đó là lựa chọn
  * của họ, không phải chỗ để sửa lưng.
  */
 
-/** Nhiều nhất bao nhiêu phần trăm số cụm được có từ nhấn. */
-const MAX_SHARE = 0.4;
-/** Mỗi cụm nhiều nhất mấy từ — hai từ trở lên trong một cụm ngắn là nhấn cả cụm. */
-const MAX_PER_GROUP = 2;
+/*
+ * Hai con số này nay nằm trong bộ dáng (`intensity.keywordShare` và
+ * `intensity.keywordsPerGroup`).
+ *
+ * Nhấn là thứ chỉ có nghĩa khi HIẾM, nên trần phần trăm không phải phòng xa —
+ * nó là chính cái làm việc này có tác dụng. Nhưng "hiếm" tới mức nào thì tuỳ
+ * phong cách: bộ nhịp nhanh nhấn dày hơn bộ tối giản, và trước đây mọi bộ đều
+ * nhấn y như nhau.
+ *
+ * Trần MỖI CỤM cũng vậy: hai từ trở lên trong một cụm ngắn là nhấn cả cụm, mà
+ * cụm ngắn đến đâu thì lại do `grouping` của chính bộ dáng quyết định.
+ */
 
 type Row = { id: string; content: string | null };
 
@@ -64,7 +74,7 @@ export async function pickKeywords(projectId: string): Promise<{
   if (rows.length < 5) return { applied: 0, rejected: 0 };
 
   const proposal = await ask<Proposal>({
-    instructions: INSTRUCTIONS,
+    instructions: voiBoiCanh(INSTRUCTIONS, projectId),
     input: rows.map((row) => `${row.id}|${row.content}`).join("\n"),
     schemaName: "keywords",
     // Việc này không cần suy luận sâu — dùng bậc mô hình rẻ.
@@ -74,7 +84,8 @@ export async function pickKeywords(projectId: string): Promise<{
 
   const byId = new Map(rows.map((row) => [row.id, row.content ?? ""]));
   const update = db.prepare("UPDATE elements SET keywords=? WHERE id=?");
-  let budget = Math.max(1, Math.floor(rows.length * MAX_SHARE));
+  const { keywordShare, keywordsPerGroup } = readStylePack(projectId).intensity;
+  let budget = Math.max(1, Math.floor(rows.length * keywordShare));
   let applied = 0;
   let rejected = 0;
 
@@ -95,7 +106,7 @@ export async function pickKeywords(projectId: string): Promise<{
       const words = content.split(/\s+/);
       const valid = pick.keywords
         .filter((keyword) => words.includes(keyword))
-        .slice(0, MAX_PER_GROUP);
+        .slice(0, keywordsPerGroup);
       if (valid.length === 0) {
         rejected += 1;
         continue;

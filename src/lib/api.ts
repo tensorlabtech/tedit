@@ -228,7 +228,7 @@ export type ApiProject = {
      * CHƯA có ô nào ở giao diện bật tắt nó, nên thực tế luôn là mặc định (bật).
      */
     want_captions?: number | null;
-    /** Tự cân sáng và lọc nhiễu cho hình gốc. Rỗng = bật. */
+    /** Tự cân hình (sáng, màu, nhiễu) và tiếng (độ to). Rỗng = bật. */
     auto_grade?: number | null;
     /** Như `want_captions`, cho chặng `music`. Cũng chưa có ô nào bật tắt. */
     want_music?: number | null;

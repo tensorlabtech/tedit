@@ -1,7 +1,9 @@
+import { voiBoiCanh } from "./ai-context";
 import { copyIntoProject, libraryCandidates } from "./asset-library";
 import { db, newId } from "./db";
 import { ask, object } from "./llm";
 import { settingsForProject } from "./settings";
+import { readStylePack } from "./style-pack-store";
 
 /** Nguồn tư liệu đã chốt lúc tạo dự án; dự án cũ chưa có thì theo cài đặt. */
 function insertSourceOf(projectId: string) {
@@ -159,13 +161,23 @@ export async function placeInserts(projectId: string): Promise<{
     return { placed: 0, rejected: 0, why: "người dùng tắt tự chèn" };
   // Không nhắm nhiều hơn số tư liệu đang có: bảo nó tìm 5 chỗ trong khi chỉ có 2
   // tấm hình là mời nó đặt cùng một tấm hai lần, mà luật dưới kia sẽ gạt ngay.
-  const want = Math.max(
-    1,
-    Math.min(free.length, Math.round((spokenSeconds / 60) * moiPhut)),
-  );
+  const pack = readStylePack(projectId);
+  // NHỊP của bộ dáng: mấy giây một lần chèn. Nó là con số, không phải enum —
+  // "nhanh" khác "êm" chủ yếu ở đây chứ không ở danh sách kiểu hiện ra.
+  //
+  // Lấy mức DÀY HƠN trong hai nguồn (cài đặt của người dùng và nhịp của bộ
+  // dáng), rồi vẫn kẹp bởi số tư liệu đang có: bảo mô hình tìm 5 chỗ trong khi
+  // chỉ có 2 tấm hình là mời nó đặt cùng một tấm hai lần.
+  const byUser = Math.round((spokenSeconds / 60) * moiPhut);
+  const byPack = Math.round(spokenSeconds / pack.rhythm.brollEverySec);
+  const want = Math.max(1, Math.min(free.length, Math.max(byUser, byPack)));
+
+  // Kho kiểu hiện ra ưu tiên của bộ dáng. Kiểu ĐẦU danh sách là kiểu mọi lần
+  // chèn của chặng này dùng — mô hình không chọn kiểu hiện ra, nó chỉ chọn CHỖ.
+  const revealForPack = pack.effectBias.insertReveal[0] ?? "none";
 
   const proposal = await ask<Proposal>({
-    instructions: INSTRUCTIONS,
+    instructions: voiBoiCanh(INSTRUCTIONS, projectId),
     input:
       `Lời dài ${spokenSeconds.toFixed(0)} giây. Nhắm khoảng ${want} chỗ chèn.\n\n` +
       `Tư liệu (mã|tên|nội dung):\n` +
@@ -179,9 +191,12 @@ export async function placeInserts(projectId: string): Promise<{
   const index = new Map(words.map((word, at) => [word.id, at]));
   let budget = spokenSeconds * MAX_SHARE;
 
+  // `reveal` lấy từ bộ dáng thay vì chôn cứng `'none'`: đây là chỗ DUY NHẤT
+  // sinh ra tư liệu chèn tự động, nên nó quyết định dáng của cả video. Người
+  // dùng vẫn đổi từng cái ở bảng sửa, và bảng sửa vẫn bày đủ mọi kiểu.
   const insert = db.prepare(
     `INSERT INTO elements (id, project_id, kind, from_word_id, to_word_id, media_file_id, align, emphasis, reveal, shape)
-     VALUES (?,?,'insert',?,?,?,'center','taper','none','full')`,
+     VALUES (?,?,'insert',?,?,?,'center','taper',?,'full')`,
   );
   const taken: Array<{ start: number; end: number }> = [];
   const seen = new Set<string>();
@@ -302,6 +317,7 @@ export async function placeInserts(projectId: string): Promise<{
         words[item.lo].id,
         words[item.hi].id,
         fileId,
+        revealForPack,
       );
     }
   })();
