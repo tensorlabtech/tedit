@@ -555,6 +555,22 @@ export function useEditor(projectId: string | undefined) {
         const shaped = shape(project);
         durationRef.current = shaped.duration;
         setData(shaped);
+
+        /*
+         * Đọc lại TRẠNG THÁI XUẤT từ máy chủ khi mở bàn dựng.
+         *
+         * `exportJob` vốn chỉ được đặt lúc người dùng bấm nút, nên tải lại trang
+         * là nó về rỗng và nút quay lại thành "Xuất video" — dù bản dựng vẫn nằm
+         * nguyên trên đĩa. Người dùng không có cách nào biết, nên họ bấm, và chờ
+         * thêm cả phút cho một tệp đã có sẵn.
+         *
+         * Cũng nhặt lại việc đang CHẠY DỞ: đóng tab giữa lúc xuất rồi mở lại thì
+         * vòng theo dõi tiến độ bên dưới bắt nhịp tiếp, thay vì đứng im.
+         */
+        const job = project.jobs?.find((item) => item.kind === "export");
+        if (job && (job.status === "done" || job.status === "running")) {
+          setExportJob({ status: job.status, message: job.message ?? "" });
+        }
         // Dự án dựng bằng bản cũ không ghi lại thang của dải ảnh. Dựng lại một
         // lần ngay tại đây: vừa có con số đúng, vừa lên được bản 2× cho màn
         // Retina. Hỏng thì thôi — bên dưới còn cách suy ra từ thời lượng.
