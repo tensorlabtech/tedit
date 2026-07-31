@@ -3,7 +3,7 @@ import { EyeOffIcon, Undo2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-import { formatTime, nhanImLang } from "./editor-data";
+import { formatTime, silenceLabel } from "./editor-data";
 import type { EditorState } from "./use-editor";
 
 /**
@@ -26,9 +26,9 @@ export function SilenceRow({
   end: number;
   editor: EditorState;
 }) {
-  const giua = (start + end) / 2;
+  const mid = (start + end) / 2;
   const removed = editor.skipRanges.some(
-    (span) => giua >= span.start && giua < span.end,
+    (span) => mid >= span.start && mid < span.end,
   );
 
   return (
@@ -48,7 +48,7 @@ export function SilenceRow({
           removed && "line-through",
         )}
       >
-        {nhanImLang(end - start)}
+        {silenceLabel(end - start)}
       </button>
       <Button
         variant="ghost"
@@ -63,7 +63,7 @@ export function SilenceRow({
         )}
         onClick={() =>
           removed
-            ? void editor.restoreRange(giua)
+            ? void editor.restoreRange(mid)
             : void editor.cutRange(start, end)
         }
       >

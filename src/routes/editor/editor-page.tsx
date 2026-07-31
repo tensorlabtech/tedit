@@ -5,10 +5,10 @@ import { Empty, EmptyDescription, EmptyTitle } from "@/components/ui/empty";
 import { Spinner } from "@/components/ui/spinner";
 import { api } from "@/lib/api";
 
+import { ProjectTitle } from "@/components/project-title";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardHeader } from "@/components/ui/card";
 
-import { EditorTitle } from "./editor-title";
 import { PreviewPanel } from "./preview-panel";
 import { RightPanel } from "./right-panel";
 import { Timeline } from "./timeline";
@@ -32,7 +32,15 @@ export function EditorPage() {
    * Xem thử một hiệu ứng thì chỉ cần xem đúng nó — hiệu ứng dài 0,65 giây mà cứ
    * để chạy tiếp thì người dùng phải tự bấm dừng, hoặc ngồi xem cả đoạn sau.
    */
-  const dungTaiRef = useRef<number | null>(null);
+  const stopAtRef = useRef<number | null>(null);
+  /**
+   * Kết thúc lượt nghe thử phần đã bỏ.
+   *
+   * Qua ref vì vòng lặp phát chỉ dựng lại khi `playing` đổi — cho `startAudit` vào
+   * danh sách phụ thuộc thì mỗi lượt nghe thử là một vòng lặp mới chồng lên cái cũ.
+   */
+  const endAudit = useRef(() => editor.startAudit(null));
+  endAudit.current = () => editor.startAudit(null);
 
   // Phát giả lập: nhích mốc thời gian theo đồng hồ thật, để thử được vòng lặp
   // "sửa → xem lại ngay" mà không cần tệp video.
@@ -45,10 +53,13 @@ export function EditorPage() {
       last = now;
       // Nhảy qua chỗ đã bỏ: xem trước phải giống hệt video sẽ xuất ra.
       const next = skipRef.current(raw);
-      if (dungTaiRef.current != null && next >= dungTaiRef.current) {
+      if (stopAtRef.current != null && next >= stopAtRef.current) {
         setPlaying(false);
-        seek(dungTaiRef.current);
-        dungTaiRef.current = null;
+        // Hạ cờ nghe thử NGAY tại mốc dừng: còn treo thì vạch đứng lại bên trong
+        // quãng đã bỏ, và khung xem hiện một khung hình không có trong video.
+        endAudit.current();
+        seek(stopAtRef.current);
+        stopAtRef.current = null;
         return;
       }
       if (next >= duration) {
@@ -70,10 +81,32 @@ export function EditorPage() {
     onTogglePlay: () => {
       // Bấm phát bằng tay thì bỏ mốc dừng — không thì lần phát sau bị cắt ngang
       // ở chỗ hiệu ứng vừa xem thử, mà chẳng có gì giải thích.
-      dungTaiRef.current = null;
+      stopAtRef.current = null;
+      // Và hạ cờ nghe thử: lượt phát bằng tay phải cho ra ĐÚNG video sẽ xuất, chứ
+      // không mang theo một quãng đã bỏ từ lượt nghe thử trước.
+      endAudit.current();
       setPlaying((current) => !current);
     },
   });
+
+  /**
+   * Máy chưa buông tay thì đẩy về màn chờ.
+   *
+   * Cổng nằm ở CẢ HAI đầu: nút "Mở trình sửa" tắt là chưa đủ, vì mã dự án nằm
+   * trên đường dẫn nên người dùng gõ thẳng hoặc mở lại thẻ cũ là vào được. Vào
+   * lúc này thì thấy ba cột rỗng, mà tệ hơn là sửa được — đúng cái tranh chấp
+   * mà lối chạy tuần tự sinh ra để tránh.
+   *
+   * Dự án CŨ không có chặng nào (dựng xong từ trước khi có bảng này) nên
+   * `steps.length === 0` phải cho qua, không thì chúng bị nhốt vĩnh viễn.
+   */
+  const pipeline = editor.pipeline;
+  useEffect(() => {
+    if (!projectId || !pipeline) return;
+    if (pipeline.steps.length > 0 && !pipeline.settled) {
+      navigate(`/pipeline/${projectId}`, { replace: true });
+    }
+  }, [projectId, pipeline, navigate]);
 
   if (editor.loading || editor.error) {
     return (
@@ -106,7 +139,7 @@ export function EditorPage() {
     <div className="grid min-h-svh gap-2 bg-background p-2 text-foreground lg:h-svh lg:grid-rows-[auto_1fr_auto] lg:overflow-hidden">
       <Card>
         <CardHeader>
-          <EditorTitle
+          <ProjectTitle
             title={editor.title}
             onRename={(next) => void editor.renameProject(next)}
           />
@@ -165,8 +198,8 @@ export function EditorPage() {
           // Một tầng trung gian thì chấp nhận được; dời cả vòng lặp vào
           // `useEditor` chỉ để bớt một prop là đổi một thứ đang chạy đúng lấy
           // một thứ gọn hơn trên giấy.
-          onPreview={(at, denKhi) => {
-            dungTaiRef.current = denKhi ?? null;
+          onPreview={(at, until) => {
+            stopAtRef.current = until ?? null;
             seek(Math.max(0, at));
             setPlaying(true);
           }}
@@ -175,7 +208,18 @@ export function EditorPage() {
 
       {/* Kéo dải trong lúc đang phát thì dừng phát — ca kiểm T4 của đặc tả. */}
       <div onPointerDown={() => setPlaying(false)}>
-        <Timeline editor={editor} />
+        <Timeline
+          editor={editor}
+          // Nghe thử một quãng ĐÃ BỎ: treo phép nhảy qua nó, đưa vạch về đầu quãng
+          // rồi chạy tới hết quãng. Khung xem vốn phát tệp gốc nên không cần dựng
+          // gì — xem `auditSpan` trong `use-editor.ts`.
+          onAudit={(span) => {
+            editor.startAudit(span);
+            stopAtRef.current = span.end;
+            seek(span.start);
+            setPlaying(true);
+          }}
+        />
       </div>
     </div>
   );

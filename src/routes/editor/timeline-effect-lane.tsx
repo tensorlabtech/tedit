@@ -9,8 +9,8 @@ export type EffectItem = {
   outStart: number;
   outEnd: number;
   outPeak: number;
-  rieng: boolean;
-  taiCat: boolean;
+  custom: boolean;
+  atCut: boolean;
 };
 
 /**
@@ -31,6 +31,15 @@ export type EffectItem = {
  * là không co dãn được nữa (đo được: dấu chiếm [x−13, x+13] ở lớp 30, tay nắm
  * chiếm [x, x+14] ở lớp 20).
  */
+/**
+ * Khối hẹp hơn ngần này thì không in nhãn nữa.
+ *
+ * 44px là chỗ vừa đủ cho một chữ ngắn nhất của hệ ("Chìm đen" mất 52px, "Zoom
+ * ra" 48px) cộng hai bên đệm; dưới mức đó `truncate` chỉ còn cắt ra một hai ký
+ * tự đầu.
+ */
+const LABEL_MIN_WIDTH = 44;
+
 export function EffectLane({
   effects,
   pxPerSecond,
@@ -46,7 +55,7 @@ export function EffectLane({
   return (
     <div className="relative h-6">
       {effects.map((item) => {
-        const ten =
+        const name =
           JUNCTIONS.find((kind) => kind.id === item.kind)?.label ?? "Cắt thẳng";
         return (
           <TimelineBlock
@@ -72,10 +81,10 @@ export function EffectLane({
               selection?.kind === "junction" && selection.id === item.id
             }
             trimmable
-            title={`${item.taiCat ? "Chỗ nối" : "Nhấn nhịp"} — ${ten} · ${formatTimeFine(
+            title={`${item.atCut ? "Chỗ nối" : "Nhấn nhịp"} — ${name} · ${formatTimeFine(
               item.outStart,
             )}–${formatTimeFine(item.outEnd)}${
-              item.rieng ? "" : " (theo mặc định của dự án)"
+              item.custom ? "" : " (theo mặc định của dự án)"
             }`}
             className="gap-1 px-2"
             onSelect={() => onSelect(item.id)}
@@ -91,7 +100,17 @@ export function EffectLane({
                 left: (item.outPeak - item.outStart) * pxPerSecond,
               }}
             />
-            <span className="truncate">{ten}</span>
+            {/* Nhãn chỉ in khi khối ĐỦ RỘNG để đọc hết một chữ.
+                
+                Hiệu ứng ở chỗ nối chỉ dài `trước + sau` — nháy sáng là 0,12
+                giây, tức 24px ở mức phóng thường. Nhồi "Nháy sáng" vào đó thì
+                `truncate` cắt còn đúng chữ "N", và một khối hồng mang một ký tự
+                đọc ra như lỗi vẽ chứ không ra một cái nhãn. Cùng luật với ô từ
+                hẹp ở §12: hẹp thì bỏ chữ, giữ ô — tên vẫn còn trong chú thích
+                khi rê chuột vào, và bảng sửa nói đủ khi bấm vào. */}
+            {(item.outEnd - item.outStart) * pxPerSecond >= LABEL_MIN_WIDTH && (
+              <span className="truncate">{name}</span>
+            )}
           </TimelineBlock>
         );
       })}

@@ -2,15 +2,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { toast } from "@/components/ui/toast";
 import {
+  ApiError,
   api,
   type ApiMusicTrack,
   type ApiProject,
+  type ApiPipeline,
   type ApiSegment,
 } from "@/lib/api";
 
 import { fromLegacyLayout } from "@/dev/overlays/overlay-legacy";
 
-import { nhanImLang, shortMediaLabel } from "./editor-data";
+import { silenceLabel, shortMediaLabel } from "./editor-data";
 import type { AudioEnvelope } from "./timeline-audio-lane";
 
 import type {
@@ -198,6 +200,9 @@ const boQuaLoi = () => (error: unknown) => {
   });
 };
 
+/** Một khung hình ở 30 khung/giây — bước lùi nhỏ nhất còn có nghĩa trên dải. */
+const FRAME = 1 / 30;
+
 /** Khối chữ tự do mới đặt dài bao lâu — đủ đọc một dòng tiêu đề. */
 const TEXT_DEFAULT_LENGTH = 2;
 /** Sàn khi kéo hai đầu khối chữ; máy chủ chặn cùng con số này. */
@@ -225,25 +230,27 @@ export function demElement(
   from: number,
   to: number,
 ) {
-  const dinh = (start: number, end: number) =>
+  const overlaps = (start: number, end: number) =>
     start >= from - 0.01 && end <= to + 0.01;
   // Đếm theo MỐC của phần tử, không tra ngược ra hai đầu từ: chữ tự do không có
   // mã từ nào, mà bỏ đoạn chứa nó thì nó cũng không vào video như mọi thứ khác.
   // Tra theo mã từ là nó không được đếm, và lời cảnh báo trước khi bỏ đoạn nói
   // thiếu đúng những thứ người dùng vừa đặt tay.
-  const chu = data.textElements.filter((item) =>
-    dinh(item.start, item.end),
+  const textCount = data.textElements.filter((item) =>
+    overlaps(item.start, item.end),
   ).length;
-  const tu = data.inserts.filter((item) => dinh(item.start, item.end)).length;
-  return chu + tu;
+  const insertCount = data.inserts.filter((item) =>
+    overlaps(item.start, item.end),
+  ).length;
+  return textCount + insertCount;
 }
 
 /** Thứ tự của một tệp trong danh sách tư liệu chèn — dùng để đặt tên phân biệt. */
-function thuTuTuLieu(data: ApiProject, fileId: string) {
-  const dsach = data.files
+function insertOrder(data: ApiProject, fileId: string) {
+  const list = data.files
     .filter((item) => item.role === "insert")
     .sort((a, b) => a.position - b.position);
-  const i = dsach.findIndex((item) => item.id === fileId);
+  const i = list.findIndex((item) => item.id === fileId);
   return i === -1 ? undefined : i;
 }
 
@@ -255,28 +262,28 @@ function thuTuTuLieu(data: ApiProject, fileId: string) {
  * trong đoạn thì dải phim đọc ra như bản chép lời; đoạn không có lời nào là
  * khoảng lặng, nói thẳng nó dài bao nhiêu.
  */
-function nhanDoan(
+function segmentLabel(
   start: number,
   end: number,
   texts: Array<{
     start: number;
     end: number;
     content: string;
-    theoGio?: boolean;
+    byTime?: boolean;
   }>,
 ) {
-  const giua = (start + end) / 2;
+  const mid = (start + end) / 2;
   // Chỉ lấy nhãn từ chữ CHÉP LỜI. Đoạn là một khúc người ta NÓI, nên nhãn của
   // nó phải là lời nói ở đó; một cái tiêu đề vắt ngang sẽ cướp nhãn của cụm lời
   // thật và khối trên dải đọc ra một thứ chẳng ai nói.
-  const trong = texts.find(
-    (item) => !item.theoGio && giua >= item.start && giua < item.end,
+  const inside = texts.find(
+    (item) => !item.byTime && mid >= item.start && mid < item.end,
   );
-  if (trong?.content.trim()) {
-    const chu = trong.content.trim();
-    return chu.length > 28 ? `${chu.slice(0, 27)}…` : chu;
+  if (inside?.content.trim()) {
+    const text = inside.content.trim();
+    return text.length > 28 ? `${text.slice(0, 27)}…` : text;
   }
-  return nhanImLang(end - start);
+  return silenceLabel(end - start);
 }
 
 /** Đổi một hàng nhạc của máy chủ sang kiểu của bàn dựng. */
@@ -322,7 +329,7 @@ function shape(data: ApiProject) {
       toWordId: element.to_word_id ?? "",
       // Chữ TỰ DO neo theo giờ: hai mã từ để rỗng, mốc lấy thẳng từ dữ liệu.
       // Chữ chép lời neo vào KHOẢNG TỪ; mốc giây chỉ là hình chiếu để vẽ lên dải.
-      theoGio: element.from_word_id === null,
+      byTime: element.from_word_id === null,
       start:
         element.from_word_id === null
           ? (element.start_sec ?? 0)
@@ -355,7 +362,7 @@ function shape(data: ApiProject) {
       const file = data.files.find((item) => item.id === element.media_file_id);
       // Số thứ tự trong THƯ VIỆN, không phải trên dải: cùng một tệp chèn hai
       // lần thì hai khối phải mang cùng tên, không thì tưởng là hai tệp khác.
-      const thuTu = file ? thuTuTuLieu(data, file.id) : undefined;
+      const order = file ? insertOrder(data, file.id) : undefined;
       return {
         id: element.id,
         start: from?.start ?? 0,
@@ -363,7 +370,8 @@ function shape(data: ApiProject) {
         fromWordId: element.from_word_id ?? "",
         toWordId: element.to_word_id ?? "",
         mediaFileId: element.media_file_id ?? undefined,
-        label: file ? shortMediaLabel(file.name, thuTu) : "Tư liệu",
+        fromLibrary: !!file?.from_library,
+        label: file ? shortMediaLabel(file.name, order) : "Tư liệu",
         fullName: file?.name,
         // Giá trị cũ (`zoom`, `slide`, `ken`) đổi về kiểu gần nhất còn lại.
         reveal: (["none", "fade", "fade-up"].includes(element.reveal ?? "")
@@ -376,9 +384,9 @@ function shape(data: ApiProject) {
         // biết tư liệu có che mặt người nói hay không.
         url: file ? api.mediaUrl(file.id) : undefined,
         ...(() => {
-          const isVideo = /\.(mp4|mov|m4v|webm|mkv|avi)$/i.test(
-            file?.name ?? "",
-          );
+          // Máy chủ chốt ảnh-hay-video theo đuôi đường dẫn thật; `name` là chữ
+          // người dùng đặt nên có thể chẳng còn đuôi nào để mà đoán.
+          const isVideo = file?.kind !== "image";
           return {
             isVideo,
             // Mặt của khối trên dải: ảnh thu nhỏ do máy chủ dựng sẵn lúc tải
@@ -405,7 +413,7 @@ function shape(data: ApiProject) {
     end: row.end_sec,
     // Nhãn mặc định sinh TẠI ĐÂY — máy chủ không lưu nó, vì mỗi lần tách/gộp/
     // gọt là nó đổi. Cột `label` chỉ còn giữ tên người dùng tự đặt.
-    label: row.label ?? nhanDoan(row.start_sec, row.end_sec, textElements),
+    label: row.label ?? segmentLabel(row.start_sec, row.end_sec, textElements),
     removed: row.removed === 1,
   }));
 
@@ -442,6 +450,8 @@ function shape(data: ApiProject) {
     title: data.project.title,
     /** Mã những lời nhắc đã bỏ qua — hàng soát lọc theo danh sách này */
     dismissed: data.dismissed ?? [],
+    /** Tiến trình dựng — bàn dựng dùng nó làm CỔNG, xem `editor-page.tsx` */
+    pipeline: data.pipeline ?? null,
     /** Hiệu ứng người dùng đặt tay — quãng theo giây bản gốc */
     manualEffects: (data.effects ?? []).map((row) => ({
       id: row.id,
@@ -468,7 +478,7 @@ export function useEditor(projectId: string | undefined) {
   const timeRef = useRef(time);
   timeRef.current = time;
   /** Cầu nối tới `toOutput`/`toSource` cho những hàm khai TRƯỚC chúng. */
-  const doiGioRef = useRef({
+  const timeMapRef = useRef({
     toOutput: (at: number) => at,
     toSource: (at: number) => at,
   });
@@ -542,11 +552,11 @@ export function useEditor(projectId: string | undefined) {
           void api
             .rebuildFilmstrip(project.project.id)
             .then(
-              (moi) =>
+              (next) =>
                 alive &&
                 setStrip({
-                  seconds: moi.seconds,
-                  native: moi.nativeSecondWidth,
+                  seconds: next.seconds,
+                  native: next.nativeSecondWidth,
                 }),
             )
             .catch(boQuaLoi());
@@ -569,9 +579,22 @@ export function useEditor(projectId: string | undefined) {
     };
   }, [projectId]);
 
+  /**
+   * Mốc gốc CAO NHẤT mà vạch được phép đứng.
+   *
+   * Bằng thời lượng gốc, TRỪ khi đuôi video đã bị bỏ — lúc đó là giây cuối cùng
+   * còn vào video. Không kẹp ở đây thì mọi cú kéo/lăn đều đưa vạch vào quãng bỏ
+   * ở đuôi rồi bị đẩy ngược ra, và hai bên tranh nhau mỗi khung hình: khung xem
+   * chớp nháy liên tục giữa hình thật và chữ "Đoạn này đã bỏ".
+   *
+   * Chặn ở KHÂU TÍNH thay vì chữa ở khâu hiển thị: đó là chỗ duy nhất mọi đường
+   * tua đều đi qua.
+   */
+  const maxSeekRef = useRef(0);
+
   const seek = useCallback(
     (next: number) =>
-      setTime(Math.min(Math.max(next, 0), durationRef.current || 0)),
+      setTime(Math.min(Math.max(next, 0), maxSeekRef.current || 0)),
     [],
   );
 
@@ -587,9 +610,11 @@ export function useEditor(projectId: string | undefined) {
   const scrubByPixels = useCallback(
     (deltaX: number) =>
       setTime((current) => {
-        const doi = doiGioRef.current;
-        const next = doi.toSource(doi.toOutput(current) - deltaX / pxPerSecond);
-        return Math.min(Math.max(next, 0), durationRef.current || 0);
+        const timeMap = timeMapRef.current;
+        const next = timeMap.toSource(
+          timeMap.toOutput(current) - deltaX / pxPerSecond,
+        );
+        return Math.min(Math.max(next, 0), maxSeekRef.current || 0);
       }),
     [pxPerSecond],
   );
@@ -835,29 +860,29 @@ export function useEditor(projectId: string | undefined) {
       return;
     }
     if (last.type === "restore") {
-      const goc = last.element;
-      const tao = await api
+      const original = last.element;
+      const created = await api
         .createElement(projectId ?? "", {
-          kind: goc.kind,
+          kind: original.kind,
           // Neo theo TỪ hay theo GIỜ — gửi đúng một kiểu, máy chủ từ chối nếu
           // thiếu cả hai.
-          ...(goc.fromWordId
-            ? { fromWordId: goc.fromWordId, toWordId: goc.toWordId }
-            : { start: goc.start, end: goc.end }),
-          content: goc.content,
-          band: goc.band,
-          mediaFileId: goc.mediaFileId,
+          ...(original.fromWordId
+            ? { fromWordId: original.fromWordId, toWordId: original.toWordId }
+            : { start: original.start, end: original.end }),
+          content: original.content,
+          band: original.band,
+          mediaFileId: original.mediaFileId,
         })
         .catch(() => null);
-      if (tao) {
+      if (created) {
         // Kiểu dáng nằm ở lệnh sửa riêng, không nhét được vào lệnh tạo.
         await api
-          .updateElement(tao.id, {
-            align: goc.align,
-            emphasis: goc.emphasis,
-            reveal: goc.reveal,
-            shape: goc.shape,
-            keywords: goc.keywords,
+          .updateElement(created.id, {
+            align: original.align,
+            emphasis: original.emphasis,
+            reveal: original.reveal,
+            shape: original.shape,
+            keywords: original.keywords,
           })
           .catch(boQuaLoi());
         const fresh = await api.getProject(projectId ?? "").catch(() => null);
@@ -895,17 +920,17 @@ export function useEditor(projectId: string | undefined) {
   const cutRange = useCallback(
     async (start: number, end: number) => {
       if (!projectId || !(end > start)) return;
-      const truoc = new Set(
+      const before = new Set(
         (dataRef.current?.segments ?? [])
           .filter((item) => item.removed)
           .map((item) => item.id),
       );
       const rows = await api.removeRange(projectId, start, end);
       applySegmentsRef.current(rows);
-      const moi = rows
-        .filter((row) => row.removed === 1 && !truoc.has(row.id))
+      const added = rows
+        .filter((row) => row.removed === 1 && !before.has(row.id))
         .map((row) => row.id);
-      pushUndo({ type: "cut", label: "Bỏ một quãng", segmentIds: moi });
+      pushUndo({ type: "cut", label: "Bỏ một quãng", segmentIds: added });
     },
     [projectId, pushUndo],
   );
@@ -927,6 +952,43 @@ export function useEditor(projectId: string | undefined) {
           : current,
       );
       setSelection({ kind: "music", id: row.id });
+    },
+    [projectId],
+  );
+
+  /**
+   * Đặt một bài TỪ KHO DÙNG CHUNG vào dải, tại vạch.
+   *
+   * Khác `attachMusic` ở trên: cái kia nhận một `File` từ máy người dùng rồi tải
+   * lên dự án. Ở đây tệp đã nằm sẵn trên máy chủ, nên chỉ gửi TÊN — không gửi
+   * đường dẫn, vì đường dẫn do client đặt là một cửa trỏ vào bất kỳ tệp nào.
+   */
+  const addMusicFromLibrary = useCallback(
+    async (file: string) => {
+      if (!projectId) return;
+      try {
+        const row = await api.addMusicFromLibrary(
+          projectId,
+          file,
+          timeRef.current,
+        );
+        setData((current) =>
+          current
+            ? { ...current, music: [...current.music, toMusicTrack(row)] }
+            : current,
+        );
+        setSelection({ kind: "music", id: row.id });
+      } catch (loi) {
+        // Chỗ này hay hỏng vì một lý do CÓ THẬT và sửa được: vạch đang đứng trong
+        // khoảng một bài khác. Nói ra thì người dùng dời vạch rồi bấm lại.
+        toast.add({
+          title:
+            loi instanceof ApiError && loi.status === 409
+              ? "Chỗ này đã có nhạc — dời vạch rồi thử lại"
+              : "Không đặt được bài này",
+          type: "error",
+        });
+      }
     },
     [projectId],
   );
@@ -1000,10 +1062,10 @@ export function useEditor(projectId: string | undefined) {
         // Im lặng thì người dùng tưởng mình vừa mất công đặt chữ vô ích: nói ngay,
         // và nói bao nhiêu cái.
         if (nowRemoved) {
-          const beo = demElement(current, target.start, target.end);
-          if (beo > 0) {
+          const held = demElement(current, target.start, target.end);
+          if (held > 0) {
             toast.add({
-              title: `Đã bỏ câu — ${beo} thứ neo vào đây cũng mất`,
+              title: `Đã bỏ câu — ${held} thứ neo vào đây cũng mất`,
               description: "Hoàn tác thì chúng quay lại",
               type: "info",
             });
@@ -1049,18 +1111,18 @@ export function useEditor(projectId: string | undefined) {
    * duy nhất là xoá rồi làm lại, mất luôn kiểu căn, kiểu nhấn và từ khoá.
    */
   const moveElement = useCallback(
-    async (id: string, huong: -1 | 1) => {
-      const hienTai = dataRef.current;
-      if (!hienTai || !projectId) return;
-      const chu = hienTai.textElements.find((item) => item.id === id);
-      const tu = hienTai.inserts.find((item) => item.id === id);
-      const neo = chu?.fromWordId ?? tu?.fromWordId;
-      if (!neo) return;
-      const cauId = hienTai.wordsById.get(neo)?.sentenceId;
-      const i = hienTai.sentences.findIndex((item) => item.id === cauId);
-      const dich = hienTai.sentences[i + huong];
-      if (!dich) return;
-      await api.updateElement(id, { sentenceId: dich.id }).catch(boQuaLoi());
+    async (id: string, direction: -1 | 1) => {
+      const current = dataRef.current;
+      if (!current || !projectId) return;
+      const element = current.textElements.find((item) => item.id === id);
+      const insert = current.inserts.find((item) => item.id === id);
+      const anchor = element?.fromWordId ?? insert?.fromWordId;
+      if (!anchor) return;
+      const sentenceId = current.wordsById.get(anchor)?.sentenceId;
+      const i = current.sentences.findIndex((item) => item.id === sentenceId);
+      const shift = current.sentences[i + direction];
+      if (!shift) return;
+      await api.updateElement(id, { sentenceId: shift.id }).catch(boQuaLoi());
       const fresh = await api.getProject(projectId).catch(() => null);
       if (fresh) {
         const shaped = shape(fresh);
@@ -1163,7 +1225,7 @@ export function useEditor(projectId: string | undefined) {
       if (!projectId) return;
       setData((current) => (current ? { ...current, title } : current));
       const saved = await api
-        .renameProject(projectId, title)
+        .updateProject(projectId, { title })
         .catch(boQuaLoi());
       if (saved) {
         setData((current) =>
@@ -1174,38 +1236,137 @@ export function useEditor(projectId: string | undefined) {
     [projectId],
   );
 
-  const mergeTextWithNext = useCallback(
+  /**
+   * Chẻ một cụm chữ làm đôi — việc đối xứng với `mergeTextWithNext`.
+   *
+   * Gộp mà không tách được thì cú gộp là một chiều: nhập hai cụm lại rồi thấy
+   * dài quá cũng không lùi được, ngoài đường hoàn tác một bước. Và cụm dài còn
+   * sinh ra từ chỗ khác nữa — người dùng tự gõ thêm chữ vào một cụm ngắn.
+   *
+   * Chẻ ở giữa DANH SÁCH TỪ, không ở giữa chuỗi chữ: mỗi nửa phải neo được vào
+   * từ đầu và từ cuối của chính nó, mà chữ thì có thể đã viết lại nên không còn
+   * ứng một-một với lời. Chữ chia theo cùng tỉ lệ — thô nhưng luôn cho ra hai
+   * nửa hợp lệ, và người dùng sửa lại từng nửa ngay tại chỗ.
+   */
+  const splitTextElement = useCallback(
     async (id: string) => {
       const current = dataRef.current;
       if (!projectId || !current) return;
       const chu = current.textElements.find((item) => item.id === id);
-      if (!chu || chu.theoGio) return;
+      if (!chu || chu.byTime) return;
+
+      const inside = current.words
+        .filter(
+          (word) =>
+            word.start >= chu.start - 0.01 && word.end <= chu.end + 0.01,
+        )
+        .sort((a, b) => a.start - b.start);
+      if (inside.length < 2) return;
+
+      const mid = Math.ceil(inside.length / 2);
+      const syllables = chu.content.trim().split(/\s+/).filter(Boolean);
+      // Chỗ chẻ chữ suy theo TỈ LỆ số từ, và luôn để mỗi nửa ít nhất một tiếng.
+      const cut = Math.min(
+        Math.max(1, Math.round((syllables.length * mid) / inside.length)),
+        Math.max(1, syllables.length - 1),
+      );
+
+      await api
+        .updateElement(id, {
+          toWordId: inside[mid - 1].id,
+          content: syllables.slice(0, cut).join(" "),
+        })
+        .catch(boQuaLoi());
+      const created = await api
+        .createElement(projectId, {
+          kind: "text",
+          fromWordId: inside[mid].id,
+          toWordId: inside[inside.length - 1].id,
+          content: syllables.slice(cut).join(" ") || inside[mid].text,
+          band: chu.position,
+        })
+        .catch(boQuaLoi());
+
+      if (created) {
+        pushUndoRef.current({
+          type: "element",
+          label: "Tách chữ",
+          elementId: created.id,
+        });
+      }
+      const fresh = await api.getProject(projectId).catch(() => null);
+      if (fresh) {
+        const shaped = shape(fresh);
+        durationRef.current = shaped.duration;
+        setData(shaped);
+      }
+      setSelection({ kind: "text", id });
+    },
+    [projectId],
+  );
+
+  /**
+   * Lấy kiểu của MỘT cụm làm kiểu chung cho mọi chữ chạy theo lời.
+   *
+   * Đo trên một dự án thật: 82–90% cụm giữ nguyên mặc định ở cả ba trục. Người
+   * dùng không sửa từng cụm — họ muốn đổi phong cách cả video, mà bảng sửa chỉ
+   * sửa được một cụm nên việc đó là năm chục cú bấm y hệt nhau.
+   *
+   * Nạp lại sau khi ghi thay vì tự đoán trạng thái mới: máy chủ là nơi quyết
+   * định cụm nào nằm trong phạm vi (chữ tự do thì không), đoán ở đây là hai nơi
+   * cùng giữ một luật.
+   */
+  const applyTextStyleToAll = useCallback(
+    async (style: { band?: string; align?: string; emphasis?: string }) => {
+      if (!projectId) return 0;
+      const saved = await api
+        .applyTextStyleToAll(projectId, style)
+        .catch(boQuaLoi());
+      const fresh = await api.getProject(projectId).catch(() => null);
+      if (fresh) {
+        const shaped = shape(fresh);
+        durationRef.current = shaped.duration;
+        setData(shaped);
+      }
+      return saved?.changed ?? 0;
+    },
+    [projectId],
+  );
+
+  const mergeTextWithNext = useCallback(
+    async (id: string) => {
+      const current = dataRef.current;
+      if (!projectId || !current) return;
+      const element = current.textElements.find((item) => item.id === id);
+      if (!element || element.byTime) return;
       // Cụm KẾ TIẾP theo thời gian, và phải là chữ chạy theo lời như nó: chữ tự
       // do neo theo giây, gộp vào đây là trộn hai loại neo khác nhau.
-      const sau = current.textElements
-        .filter((item) => !item.theoGio && item.start >= chu.end - 0.001)
+      const next = current.textElements
+        .filter((item) => !item.byTime && item.start >= element.end - 0.001)
         .sort((a, b) => a.start - b.start)[0];
-      if (!sau) return;
+      if (!next) return;
 
-      const noiDung = `${chu.content} ${sau.content}`.replace(/\s+/g, " ").trim();
+      const content = `${element.content} ${next.content}`
+        .replace(/\s+/g, " ")
+        .trim();
       pushUndoRef.current({
         type: "restore",
         label: "Gộp chữ",
         element: {
           kind: "text",
-          fromWordId: sau.fromWordId,
-          toWordId: sau.toWordId,
-          content: sau.content,
-          band: sau.position,
-          align: sau.align,
-          emphasis: sau.emphasis,
-          keywords: sau.keywords,
+          fromWordId: next.fromWordId,
+          toWordId: next.toWordId,
+          content: next.content,
+          band: next.position,
+          align: next.align,
+          emphasis: next.emphasis,
+          keywords: next.keywords,
         },
       });
 
-      await api.deleteElement(sau.id).catch(boQuaLoi());
+      await api.deleteElement(next.id).catch(boQuaLoi());
       await api
-        .updateElement(id, { toWordId: sau.toWordId, content: noiDung })
+        .updateElement(id, { toWordId: next.toWordId, content: content })
         .catch(boQuaLoi());
 
       // Nạp lại: mép mới của cụm kéo theo cả nhịp hiện từng tiếng lẫn ranh giới
@@ -1263,7 +1424,7 @@ export function useEditor(projectId: string | undefined) {
                 id: created.id,
                 fromWordId: "",
                 toWordId: "",
-                theoGio: true,
+                byTime: true,
                 start: created.start_sec ?? time,
                 end: created.end_sec ?? end,
                 content: "",
@@ -1272,7 +1433,7 @@ export function useEditor(projectId: string | undefined) {
                 // Chữ mới: căn giữa, cỡ đều — dáng an toàn nhất, đổi sau bằng
                 // hai hộp chọn ở khung bên phải.
                 align: "center",
-                emphasis: "deu",
+                emphasis: "even",
                 keywords: [],
               },
             ],
@@ -1328,9 +1489,7 @@ export function useEditor(projectId: string | undefined) {
                   thumbUrl: file?.thumb_path
                     ? api.fileUrl(file.thumb_path)
                     : undefined,
-                  isVideo: /\.(mp4|mov|m4v|webm|mkv|avi)$/i.test(
-                    file?.name ?? "",
-                  ),
+                  isVideo: file?.kind !== "image",
                   // Tư liệu mới: cắt thẳng. Hiệu ứng là lựa chọn có ý thức.
                   reveal: "none",
                   // Tư liệu mới đè kín khung — dáng an toàn nhất, đổi sau ở khung
@@ -1348,39 +1507,39 @@ export function useEditor(projectId: string | undefined) {
 
   const deleteElement = useCallback(async (id: string) => {
     // Chụp lại phần tử TRƯỚC khi xoá — sau khi xoá thì không còn gì để chụp.
-    const truoc = dataRef.current;
-    const chu = truoc?.textElements.find((item) => item.id === id);
-    const tu = truoc?.inserts.find((item) => item.id === id);
-    if (chu) {
+    const previous = dataRef.current;
+    const element = previous?.textElements.find((item) => item.id === id);
+    const insert = previous?.inserts.find((item) => item.id === id);
+    if (element) {
       pushUndoRef.current({
         type: "restore",
         label: "Xoá chữ",
         element: {
           kind: "text",
-          fromWordId: chu.fromWordId,
-          toWordId: chu.toWordId,
+          fromWordId: element.fromWordId,
+          toWordId: element.toWordId,
           // Chữ tự do không có mã từ; thiếu cặp giây này thì lệnh dựng lại
           // thiếu cả hai kiểu neo, máy chủ trả 400 và cú hoàn tác im lặng
           // không làm gì — xoá nhầm một tiêu đề là mất hẳn.
-          ...(chu.theoGio ? { start: chu.start, end: chu.end } : {}),
-          content: chu.content,
-          band: chu.position,
-          align: chu.align,
-          emphasis: chu.emphasis,
-          keywords: chu.keywords,
+          ...(element.byTime ? { start: element.start, end: element.end } : {}),
+          content: element.content,
+          band: element.position,
+          align: element.align,
+          emphasis: element.emphasis,
+          keywords: element.keywords,
         },
       });
-    } else if (tu) {
+    } else if (insert) {
       pushUndoRef.current({
         type: "restore",
         label: "Gỡ tư liệu",
         element: {
           kind: "insert",
-          fromWordId: tu.fromWordId,
-          toWordId: tu.toWordId,
-          mediaFileId: tu.mediaFileId,
-          reveal: tu.reveal,
-          shape: tu.shape,
+          fromWordId: insert.fromWordId,
+          toWordId: insert.toWordId,
+          mediaFileId: insert.mediaFileId,
+          reveal: insert.reveal,
+          shape: insert.shape,
         },
       });
     }
@@ -1458,7 +1617,7 @@ export function useEditor(projectId: string | undefined) {
               end: row.end_sec,
               label:
                 row.label ??
-                nhanDoan(row.start_sec, row.end_sec, current.textElements),
+                segmentLabel(row.start_sec, row.end_sec, current.textElements),
               removed: row.removed === 1,
             })),
           }
@@ -1507,14 +1666,17 @@ export function useEditor(projectId: string | undefined) {
         // lần kéo đầu tiên hoá nó thành hàng thật — không thì kéo xong buông
         // tay là nó về chỗ cũ, mà chẳng có gì giải thích.
         if (kind === "effect") {
-          const dat = current.manualEffects.find((item) => item.id === id);
-          const goc =
-            dat ?? effectsRef.current.find((item) => item.id === id) ?? null;
-          if (!goc) return current;
+          const manual = current.manualEffects.find((item) => item.id === id);
+          const original =
+            manual ?? effectsRef.current.find((item) => item.id === id) ?? null;
+          if (!original) return current;
           const bounded =
             edge === "start"
-              ? Math.min(Math.max(nextTime, 0), goc.end - MIN_EFFECT_LENGTH)
-              : Math.max(nextTime, goc.start + MIN_EFFECT_LENGTH);
+              ? Math.min(
+                  Math.max(nextTime, 0),
+                  original.end - MIN_EFFECT_LENGTH,
+                )
+              : Math.max(nextTime, original.start + MIN_EFFECT_LENGTH);
           dragTrim.current = {
             kind: "effect",
             id,
@@ -1522,20 +1684,24 @@ export function useEditor(projectId: string | undefined) {
             at: bounded,
             was:
               dragTrim.current?.was ??
-              (edge === "start" ? goc.start : goc.end),
-            wasKind: dragTrim.current?.wasKind ?? (dat ? undefined : goc.kind),
+              (edge === "start" ? original.start : original.end),
+            wasKind:
+              dragTrim.current?.wasKind ?? (manual ? undefined : original.kind),
           };
           const next =
             edge === "start"
-              ? { start: bounded, end: goc.end }
-              : { start: goc.start, end: bounded };
+              ? { start: bounded, end: original.end }
+              : { start: original.start, end: bounded };
           return {
             ...current,
-            manualEffects: dat
+            manualEffects: manual
               ? current.manualEffects.map((item) =>
                   item.id === id ? { ...item, ...next } : item,
                 )
-              : [...current.manualEffects, { id, ...next, kind: goc.kind }],
+              : [
+                  ...current.manualEffects,
+                  { id, ...next, kind: original.kind },
+                ],
           };
         }
         // Chữ TỰ DO kéo theo GIÂY, y như nhạc — nó không neo vào tiếng nào để
@@ -1572,9 +1738,9 @@ export function useEditor(projectId: string | undefined) {
           const insert = current.inserts.find((item) => item.id === id);
           if (!insert) return current;
           const words = current.words;
-          const dau = words.findIndex((w) => w.id === insert.fromWordId);
-          const cuoi = words.findIndex((w) => w.id === insert.toWordId);
-          if (dau === -1 || cuoi === -1) return current;
+          const from = words.findIndex((w) => w.id === insert.fromWordId);
+          const to = words.findIndex((w) => w.id === insert.toWordId);
+          if (from === -1 || to === -1) return current;
           // Mép BÁM RANH GIỚI TỪ, không bám giây: tư liệu chèn neo vào khoảng
           // từ (đặc tả §1), nên "kéo dài thêm" nghĩa là phủ thêm một tiếng nữa.
           // Giữ ít nhất một tiếng — hai mép trùng nhau là khối rộng 0.
@@ -1590,11 +1756,11 @@ export function useEditor(projectId: string | undefined) {
             }
             return best;
           };
-          const chon =
+          const pick =
             edge === "start"
-              ? gan(0, cuoi, (w) => w.start)
-              : gan(dau, words.length - 1, (w) => w.end);
-          const word = words[chon];
+              ? gan(0, to, (w) => w.start)
+              : gan(from, words.length - 1, (w) => w.end);
+          const word = words[pick];
           dragTrim.current = {
             kind: "insert",
             id,
@@ -1657,22 +1823,32 @@ export function useEditor(projectId: string | undefined) {
         // thả tay xong máy chủ kéo về — người dùng thấy khối giật ngược một cái
         // mà không hiểu vì sao. Chặn ở cả hai nơi thì cái nhìn thấy đúng bằng
         // cái sẽ được ghi.
-        const truoc = current.segments
+        const before = current.segments
           .filter((item) => item.end <= segment.start + 0.001)
           .reduce((max, item) => Math.max(max, item.end), 0);
-        const sau = current.segments
+        const after = current.segments
           .filter((item) => item.start >= segment.end - 0.001)
           .reduce(
             (min, item) => Math.min(min, item.start),
             Number.POSITIVE_INFINITY,
           );
+        // KHÔNG cần hít mép vào biên láng giềng ở đây, dù nghe như cần.
+        //
+        // Kéo mép ra khỏi một chỗ đã gọt thì hai phép chặn dưới đây đã cho ra ĐÚNG
+        // biên rồi, không sai một phần nghìn giây: mốc kéo đi qua `toSource`, mà
+        // `toSource` không bao giờ trả về một giây nằm TRONG quãng đã bỏ — nó nhảy
+        // thẳng từ mép này sang mép kia (xem vòng lặp `skipRanges` của nó). Nên chỉ
+        // cần nhích chuột ra một điểm ảnh là `nextTime` đã ở bên kia chỗ hở, rồi bị
+        // `Math.min(..., after)` ghim đúng vào biên.
+        //
+        // Nói cách khác: trên dải vẽ theo giờ XUẤT RA, chỗ hở rộng 0 nên không có
+        // cách nào kéo vào "giữa" nó. Từng thêm một phép hít 0,45s ở đây và bỏ đi,
+        // vì nó không bao giờ đổi được kết quả — chỉ là một hằng số để người đọc sau
+        // tưởng có luật gì đó đang chạy.
         const bounded =
           edge === "start"
-            ? Math.min(Math.max(nextTime, truoc), segment.end - MIN_SEGMENT)
-            : Math.min(
-                Math.max(nextTime, segment.start + MIN_SEGMENT),
-                sau,
-              );
+            ? Math.min(Math.max(nextTime, before), segment.end - MIN_SEGMENT)
+            : Math.min(Math.max(nextTime, segment.start + MIN_SEGMENT), after);
         dragTrim.current = {
           kind: "clip",
           id,
@@ -1748,7 +1924,8 @@ export function useEditor(projectId: string | undefined) {
         was: pending.wasKind
           ? null
           : {
-              start: pending.edge === "start" ? pending.was : (item?.start ?? 0),
+              start:
+                pending.edge === "start" ? pending.was : (item?.start ?? 0),
               end: pending.edge === "end" ? pending.was : (item?.end ?? 0),
               kind: item?.kind ?? "zoom-in",
             },
@@ -1893,12 +2070,12 @@ export function useEditor(projectId: string | undefined) {
    */
   const keptSpan = useCallback(
     (from: number, to: number) => {
-      let bo = 0;
+      let dropped = 0;
       for (const span of skipRanges) {
-        const giao = Math.min(to, span.end) - Math.max(from, span.start);
-        if (giao > 0) bo += giao;
+        const overlap = Math.min(to, span.end) - Math.max(from, span.start);
+        if (overlap > 0) dropped += overlap;
       }
-      return Math.max(0, to - from - bo);
+      return Math.max(0, to - from - dropped);
     },
     [skipRanges],
   );
@@ -1921,32 +2098,78 @@ export function useEditor(projectId: string | undefined) {
   /** Ngược lại: một mốc trên dải là giây nào của bản gốc. */
   const toSource = useCallback(
     (out: number) => {
-      let con = Math.max(0, out);
+      let left = Math.max(0, out);
       let cursor = 0;
       for (const span of skipRanges) {
-        const giu = span.start - cursor;
-        if (con < giu) return cursor + con;
-        con -= giu;
+        const kept = span.start - cursor;
+        if (left < kept) return cursor + left;
+        left -= kept;
         cursor = span.end;
       }
-      return cursor + con;
+      return cursor + left;
     },
     [skipRanges],
   );
 
   // Cắm hai hàm quy đổi vào ref để `scrubByPixels` (khai trước) dùng được.
-  doiGioRef.current = { toOutput, toSource };
+  timeMapRef.current = { toOutput, toSource };
 
-  /** Mốc kế tiếp còn giữ lại; trả chính nó nếu đang ở chỗ không bị bỏ. */
+  /**
+   * Quãng đã bỏ đang được NGHE THỬ — tạm treo luật "vạch không vào quãng đã bỏ".
+   *
+   * Khung xem phát TỆP GỐC (`preview-panel.tsx`) và tua theo giây gốc, còn cú cắt
+   * chỉ được mô phỏng bằng phép đẩy vạch ở dưới. Nên nghe thử phần đã bỏ không cần
+   * dựng gì cả: treo đúng phép đẩy ấy là hình chạy thẳng qua.
+   *
+   * Treo có phạm vi — chỉ quãng này, chỉ trong lượt nghe thử này. Mọi quãng bỏ khác
+   * vẫn bị nhảy qua như thường, vì người dùng đang muốn nghe MỘT chỗ chứ không phải
+   * xem lại bản chưa cắt.
+   */
+  const [auditSpan, setAuditSpan] = useState<{
+    start: number;
+    end: number;
+  } | null>(null);
+
+  /**
+   * Mốc kế tiếp còn giữ lại; trả chính nó nếu đang ở chỗ không bị bỏ.
+   *
+   * Quãng bỏ ở ĐUÔI video thì phải LÙI, không đẩy tiếp: đẩy tới `span.end` là
+   * đẩy tới hết video, mà chỗ đó không thuộc đoạn nào cả — khung xem phủ kín chữ
+   * "Đoạn này đã bỏ" trong khi dải vẽ vạch ở mốc cuối cùng của video xuất ra.
+   * Đo thật trên một dự án mà chặng tự cắt bỏ 2,2 giây cuối: vạch kẹt ở 0:58/0:58
+   * và không có cử chỉ nào gỡ ra được.
+   *
+   * Lùi một khung hình về trước mép quãng: chỗ đó là giây cuối cùng CÒN vào
+   * video, đúng nơi vạch nên đứng khi chạy hết.
+   */
   const nextKeptTime = useCallback(
     (at: number) => {
+      // Đang nghe thử đúng quãng này thì để vạch đi vào: cả việc nghe thử là để
+      // biết phần đã bỏ nghe ra sao.
+      if (auditSpan && at >= auditSpan.start && at < auditSpan.end) return at;
       for (const span of skipRanges) {
-        if (at >= span.start && at < span.end) return span.end;
+        if (at >= span.start && at < span.end) {
+          const tailCut = span.end >= (durationRef.current || 0) - 0.01;
+          return tailCut ? Math.max(0, span.start - FRAME) : span.end;
+        }
       }
       return at;
     },
-    [skipRanges],
+    [skipRanges, auditSpan],
   );
+
+  // Trần tua: đuôi video bị bỏ thì trần là giây cuối cùng còn vào video.
+  maxSeekRef.current = (() => {
+    const total = durationRef.current || 0;
+    // Nghe thử thì trần mở tới hết bản gốc. Giữ trần cũ thì đúng cú cắt ở ĐUÔI
+    // video — chỗ hay cắt oan nhất, vì cả lời chào cuối nằm ở đó — lại là chỗ
+    // không tua tới được để mà nghe.
+    if (auditSpan) return total;
+    const tail = skipRanges.find(
+      (span) => span.end >= total - 0.01 && span.start < total,
+    );
+    return tail ? Math.max(0, tail.start - FRAME) : total;
+  })();
 
   /**
    * Vạch KHÔNG BAO GIỜ đứng trong một quãng đã bỏ.
@@ -2019,6 +2242,55 @@ export function useEditor(projectId: string | undefined) {
    * Không bắt quay về màn upload: màn đó luôn tạo dự án MỚI, nên người dùng
    * muốn chèn thêm một cái ảnh là mất cả buổi sửa.
    */
+  /**
+   * Lấy một tư liệu TỪ KHO DÙNG CHUNG về dự án này.
+   *
+   * Máy chủ chép một bản sang thư mục dự án và mang theo cả mô tả đã viết trong
+   * kho — nhờ vậy chặng ghép tư liệu dùng được ngay, không phải đọc lại tấm ảnh.
+   *
+   * Nạp lại cả dự án sau đó, cùng lý do với `addMedia`: tệp mới phải có mặt trong
+   * kho tư liệu của dự án thì mới chèn được.
+   */
+  /**
+   * Lấy tư liệu TỪ KHO về dự án, nhiều tệp một lượt.
+   *
+   * Chép từng tệp một chứ không `Promise.all`: thứ tự trong dự án là thứ tự người
+   * dùng vừa bấm, mà chạy song song thì tệp nào máy chủ xong trước sẽ giành chỗ
+   * đứng trước.
+   *
+   * Chỉ nạp lại dự án MỘT LẦN ở cuối. Nạp sau mỗi tệp thì lấy năm cái là năm lượt
+   * tải cả dự án về, mà bốn lượt đầu vứt đi ngay.
+   */
+  const addAssetsFromLibrary = useCallback(
+    async (chosen: string[]) => {
+      if (!projectId || chosen.length === 0) return [];
+      const ids: string[] = [];
+      let hong = 0;
+      for (const file of chosen) {
+        try {
+          const row = await api.addAssetFromLibrary(projectId, file);
+          ids.push(row.id);
+        } catch {
+          hong += 1;
+        }
+      }
+      if (ids.length > 0) {
+        const fresh = await api.getProject(projectId);
+        const shaped = shape(fresh);
+        durationRef.current = shaped.duration;
+        setData(shaped);
+      }
+      if (hong > 0) {
+        toast.add({
+          title: `Không lấy được ${hong} tư liệu từ kho`,
+          type: "error",
+        });
+      }
+      return ids;
+    },
+    [projectId],
+  );
+
   const addMedia = useCallback(
     async (files: File[]) => {
       if (!projectId || files.length === 0) return;
@@ -2072,7 +2344,7 @@ export function useEditor(projectId: string | undefined) {
   const updateWordRef = useRef<(id: string, text: string) => Promise<void>>(
     async () => {},
   );
-  const xacNhanTu = useCallback(async (id: string) => {
+  const confirmWord = useCallback(async (id: string) => {
     const word = dataRef.current?.wordsById.get(id);
     if (!word) return;
     await updateWordRef.current(id, word.text);
@@ -2126,6 +2398,15 @@ export function useEditor(projectId: string | undefined) {
       const span = cuts.find((item) => item.id === id);
       if (!span) return;
       if (span.kind === "segment") {
+        // Ghi vết hoàn tác cho CẢ chiều trả lại, không chỉ chiều cắt. Trả lại là
+        // một cú sửa video như mọi cú khác — bấm nhầm thì phải lùi được, mà trước
+        // đây đường này lặng lẽ không để lại vết nào.
+        pushUndoRef.current({
+          type: "segment",
+          label: "Giữ lại đoạn",
+          segmentId: id,
+          wasRemoved: true,
+        });
         await api.updateSegment(id, { removed: false }).catch(boQuaLoi());
       } else {
         const before = [...(dataRef.current?.segments ?? [])]
@@ -2135,10 +2416,26 @@ export function useEditor(projectId: string | undefined) {
           .filter((item) => item.start >= span.end - 0.01)
           .sort((a, b) => a.start - b.start)[0];
         if (before) {
+          // Mốc mép CŨ, đọc trước khi ghi đè — đó là thứ duy nhất đưa được cú gọt
+          // về đúng chỗ nó đứng, thay vì canh lại bằng mắt.
+          pushUndoRef.current({
+            type: "trim",
+            label: "Trả lại chỗ gọt",
+            segmentId: before.id,
+            edge: "end",
+            at: before.end,
+          });
           await api
             .updateSegment(before.id, { edge: "end", at: span.end })
             .catch(boQuaLoi());
         } else if (after) {
+          pushUndoRef.current({
+            type: "trim",
+            label: "Trả lại chỗ gọt",
+            segmentId: after.id,
+            edge: "start",
+            at: after.start,
+          });
           await api
             .updateSegment(after.id, { edge: "start", at: span.start })
             .catch(boQuaLoi());
@@ -2148,6 +2445,22 @@ export function useEditor(projectId: string | undefined) {
       if (rows) applySegmentsRef.current(rows);
     },
     [projectId, cuts],
+  );
+
+  /**
+   * Chỗ gọt nằm sát mép này không — dùng cho phép nhấp đúp trả lại trọn cú gọt.
+   *
+   * Tra theo MỐC MÉP chứ không theo mã đoạn: chỗ gọt không thuộc đoạn nào (xem
+   * nhánh `gap` của `cuts`), nên chẳng có mã nào nối nó với đoạn vừa bị gọt.
+   */
+  const trimmedEdgeAt = useCallback(
+    (at: number) =>
+      cuts.find(
+        (item) =>
+          item.kind === "gap" &&
+          (Math.abs(item.start - at) < 0.01 || Math.abs(item.end - at) < 0.01),
+      ) ?? null,
+    [cuts],
   );
 
   /**
@@ -2166,10 +2479,10 @@ export function useEditor(projectId: string | undefined) {
         return;
       }
       // Không phải quãng cắt thì là câu bị bỏ bằng cách cũ (cờ riêng trên câu).
-      const cau = dataRef.current?.sentences.find(
+      const sentence = dataRef.current?.sentences.find(
         (item) => item.removed && at >= item.start && at < item.end,
       );
-      if (cau) toggleSentence(cau.id);
+      if (sentence) toggleSentence(sentence.id);
     },
     [cuts, removeCut, toggleSentence],
   );
@@ -2273,11 +2586,11 @@ export function useEditor(projectId: string | undefined) {
     const from = all.findIndex((word) => word.id === element.fromWordId);
     const to = all.findIndex((word) => word.id === element.toWordId);
     if (from === -1 || to === -1 || to < from) return undefined;
-    const trong = all.slice(from, to + 1);
-    if (trong.map((word) => word.text).join(" ") !== element.content) {
+    const inside = all.slice(from, to + 1);
+    if (inside.map((word) => word.text).join(" ") !== element.content) {
       return undefined;
     }
-    return trong;
+    return inside;
   }, []);
 
   /** Mốc nói ra của từng tiếng — chỉ có khi chữ còn khớp lời. */
@@ -2357,6 +2670,7 @@ export function useEditor(projectId: string | undefined) {
       duration: 0,
       title: "",
       dismissed: [] as string[],
+      pipeline: null as ApiPipeline | null,
       manualEffects: [] as Array<{
         id: string;
         start: number;
@@ -2381,7 +2695,7 @@ export function useEditor(projectId: string | undefined) {
    * ĐẦU. Cần cả hai vì phần ở giữa không vào video — một hiệu ứng vắt qua vết
    * cắt phải nhảy qua phần đó, không thì nửa sau của nó rơi hết vào chỗ trống.
    */
-  const mocCat = useMemo(() => {
+  const cutMark = useMemo(() => {
     const giu: Array<{ start: number; end: number }> = [];
     let cursor = 0;
     for (const span of skipRanges) {
@@ -2419,7 +2733,7 @@ export function useEditor(projectId: string | undefined) {
       start: number;
       end: number;
       kind: JunctionId;
-      rieng: boolean;
+      custom: boolean;
     }) => {
       const outStart = toOutput(item.start);
       const outEnd = toOutput(item.end);
@@ -2429,15 +2743,17 @@ export function useEditor(projectId: string | undefined) {
         outStart,
         outEnd,
         outPeak,
-        taiCat: mocCat.some((cut) => {
+        atCut: cutMark.some((cut) => {
           const at = toOutput(cut.at);
           return outStart <= at && at <= outEnd;
         }),
       };
     };
 
-    const tay = current.manualEffects.map((item) => doi({ ...item, rieng: true }));
-    const tuSuy = mocCat
+    const tay = current.manualEffects.map((item) =>
+      doi({ ...item, custom: true }),
+    );
+    const derived = cutMark
       .filter(({ at }) => {
         const out = toOutput(at);
         return !tay.some((item) => item.outStart <= out && out <= item.outEnd);
@@ -2451,11 +2767,11 @@ export function useEditor(projectId: string | undefined) {
           start: at - truoc,
           end: resume + sau,
           kind: zoomPunch,
-          rieng: false,
+          custom: false,
         });
       });
-    return [...tuSuy, ...tay].sort((a, b) => a.outPeak - b.outPeak);
-  }, [mocCat, current.manualEffects, zoomPunch, toOutput]);
+    return [...derived, ...tay].sort((a, b) => a.outPeak - b.outPeak);
+  }, [cutMark, current.manualEffects, zoomPunch, toOutput]);
 
   // Đọc danh sách mới nhất từ trong các hàm gọi lại mà không phải cho nó vào
   // danh sách phụ thuộc — cho vào thì mọi hàm dựng lại mỗi lần kéo một mép.
@@ -2463,7 +2779,7 @@ export function useEditor(projectId: string | undefined) {
   effectsRef.current = effects;
 
   /** Ghi một hiệu ứng xuống kho, có ghi vết hoàn tác. */
-  const luuHieuUng = useCallback(
+  const saveEffect = useCallback(
     async (
       id: string,
       next: { start: number; end: number; kind: JunctionId },
@@ -2511,7 +2827,7 @@ export function useEditor(projectId: string | undefined) {
       if (!item) return;
       // Cái tự suy thì lấy quãng mặc định của kiểu MỚI, đo từ chính vết cắt —
       // giữ quãng cũ thì "nháy sáng" dài 0,65 giây, nhức mắt.
-      const next = item.rieng
+      const next = item.custom
         ? { start: item.start, end: item.end, kind }
         : (() => {
             const [truoc, sau] = junctionHalves(kind);
@@ -2522,9 +2838,9 @@ export function useEditor(projectId: string | undefined) {
               kind,
             };
           })();
-      await luuHieuUng(id, next, "Đổi kiểu hiệu ứng");
+      await saveEffect(id, next, "Đổi kiểu hiệu ứng");
     },
-    [luuHieuUng],
+    [saveEffect],
   );
 
   /**
@@ -2538,23 +2854,23 @@ export function useEditor(projectId: string | undefined) {
     // Mặc định "cắt thẳng" nghĩa là không hiệu ứng — thêm một cái không làm gì
     // thì người dùng bấm xong không thấy gì và tưởng nút hỏng.
     const kind: JunctionId = zoomPunch === "none" ? "zoom-in" : zoomPunch;
-    const lat =
+    const slice =
       selection?.kind === "clip"
         ? current.segments.find((item) => item.id === selection.id)
         : undefined;
-    const span = lat
-      ? { start: lat.start, end: lat.end }
+    const span = slice
+      ? { start: slice.start, end: slice.end }
       : effectSpan(time, kind);
     // Sát đầu video thì DỜI cả quãng vào trong, không cắt cụt nửa đầu. Cắt cụt
     // thì con trỏ đứng ở giây 0 sẽ đẻ ra một hiệu ứng dài 0,15 giây — đúng bằng
     // mức tối thiểu — mà người dùng không xin cái đó, họ chỉ đứng ở đầu video.
-    const dich = Math.max(0, -span.start);
-    const start = span.start + dich;
-    const end = Math.max(start + MIN_EFFECT_LENGTH, span.end + dich);
+    const shift = Math.max(0, -span.start);
+    const start = span.start + shift;
+    const end = Math.max(start + MIN_EFFECT_LENGTH, span.end + shift);
     const id = `eff_${Math.random().toString(36).slice(2, 10)}`;
-    await luuHieuUng(id, { start, end, kind }, "Thêm hiệu ứng");
+    await saveEffect(id, { start, end, kind }, "Thêm hiệu ứng");
     setSelection({ kind: "junction", id });
-  }, [projectId, zoomPunch, selection, current.segments, time, luuHieuUng]);
+  }, [projectId, zoomPunch, selection, current.segments, time, saveEffect]);
 
   /**
    * Bỏ một hiệu ứng.
@@ -2567,8 +2883,8 @@ export function useEditor(projectId: string | undefined) {
       if (!projectId) return;
       const item = effectsRef.current.find((row) => row.id === id);
       if (!item) return;
-      if (item.taiCat) {
-        await luuHieuUng(
+      if (item.atCut) {
+        await saveEffect(
           id,
           { start: item.start, end: item.end, kind: "none" },
           "Bỏ đánh dấu chỗ nối",
@@ -2592,7 +2908,7 @@ export function useEditor(projectId: string | undefined) {
       setSelection(null);
       await api.deleteEffect(projectId, id).catch(boQuaLoi());
     },
-    [projectId, luuHieuUng],
+    [projectId, saveEffect],
   );
 
   return {
@@ -2627,6 +2943,10 @@ export function useEditor(projectId: string | undefined) {
     deleteElement,
     moveElement,
     cuts,
+    trimmedEdgeAt,
+    /** Quãng đã bỏ đang được nghe thử; `null` là không có lượt nào */
+    auditSpan,
+    startAudit: setAuditSpan,
     skipRanges,
     keptSpan,
     toOutput,
@@ -2643,6 +2963,7 @@ export function useEditor(projectId: string | undefined) {
     undo,
     undoLabel,
     attachMusic,
+    addMusicFromLibrary,
     setMusicVolume,
     removeMusic,
     startExport,
@@ -2653,11 +2974,13 @@ export function useEditor(projectId: string | undefined) {
     splitAtPlayhead,
     toggleSegment,
     updateWord,
-    xacNhanTu,
+    confirmWord,
     createCaptionsForSentence,
     draftTextContent,
     commitTextContent,
     mergeTextWithNext,
+    splitTextElement,
+    applyTextStyleToAll,
     renameProject,
     captionWords,
     effects,
@@ -2668,6 +2991,7 @@ export function useEditor(projectId: string | undefined) {
     boQuaIssue,
     wordStarts,
     addMedia,
+    addAssetsFromLibrary,
     uploadingMedia: uploading,
   };
 }

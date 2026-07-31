@@ -1,0 +1,28 @@
+<!--
+  Dấu nhận diện. Hai chỗ đã sửa so với bản xuất từ Figma:
+
+  1. Bỏ `<rect fill="white">` phủ nền. Nền trắng cần cho ảnh xuất ra tệp, nhưng
+     dán vào trang thì nó là một ô vuông trắng — ở chế độ tối trông như lỗi vẽ.
+  2. Thu `viewBox` về đúng khung hình. Bản gốc là 2000×2000 trong khi nét chỉ
+     chiếm khoảng một nửa, nên vẽ ở cỡ 28px thì hình thật chỉ còn ~19px.
+
+  Khung dưới đây lấy từ `getBBox()` của chính đường nét, KHÔNG đọc bằng mắt từ
+  toạ độ trong `d`: hộp thật là x [350, 1684], y [240.8, 1759.2], trong khi giá
+  trị nhỏ nhất xuất hiện trong `d` là y=286.9. Đường Bézier phình ra NGOÀI điểm
+  điều khiển của nó, nên lấy theo toạ độ trong `d` là cắt mất 46px đỉnh khối trên
+  — bản trước bị đúng lỗi đó.
+
+  Khung bám sát hộp thật với lề 40px ĐỀU bốn phía, nên nó KHÔNG vuông (1414×1598).
+  Ép cho vuông thì lề dọc còn 31px trong khi lề ngang lên 123px — hình dán vào
+  gần chạm mép trên dưới mà lại thụt sâu hai bên. Khung không vuông thì thẻ `<img>`
+  vuông tự thu theo chiều cao và căn giữa ngang, tỉ lệ vẫn đúng.
+-->
+<svg viewBox="310 201 1414 1598" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M1009.94 1246.15C1090.74 1386.09 1046.16 1564.9 909.128 1650.54L808.999 1713.13C609.185 1838.01 350 1694.36 350 1458.73V1275.64C350 1168.46 407.18 1069.42 500 1015.83L522.916 1002.6C666.404 919.76 849.881 968.922 932.724 1112.41L1009.94 1246.15ZM1542.96 745.601C1730.96 863.101 1730.96 1136.9 1542.96 1254.4L1503.09 1279.32C1359.1 1369.31 1169.18 1321.97 1084.28 1174.92L1012.71 1050.94C933.519 913.788 980.512 738.409 1117.67 659.223C1209.5 606.201 1323.1 608.19 1413.03 664.393L1542.96 745.601ZM350 541.275C350 305.644 609.186 161.991 809 286.875C973.029 389.393 968.824 629.687 801.308 726.403L735.98 764.12C564.433 863.162 350 739.36 350 541.275Z" fill="url(#logo-gradient)"/>
+<defs>
+<linearGradient id="logo-gradient" x1="152.621" y1="659.951" x2="1655.52" y2="1572.83" gradientUnits="userSpaceOnUse">
+<stop stop-color="#58008F"/>
+<stop offset="1" stop-color="#793C9F" stop-opacity="0.75"/>
+</linearGradient>
+</defs>
+</svg>

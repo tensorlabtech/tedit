@@ -38,3 +38,8 @@ examples/
 # Thư viện Python cài kèm cho mlx-whisper — dựng lại được bằng install script,
 # không phải mã nguồn của dự án.
 server/asr/pylibs/
+
+# Khoá API — KHÔNG BAO GIỜ commit
+.env
+.env.*
+!.env.example

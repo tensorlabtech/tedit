@@ -77,22 +77,22 @@ export function PreviewPanel({
    * bằng thời gian đã cắt; so bằng giây gốc thì chỗ nối nào cũng lệch đúng bằng
    * phần bị bỏ ngay tại đó.
    */
-  const noi = (() => {
+  const junction = (() => {
     let zoom = 0;
     let sang = 0;
     const now = editor.toOutput(editor.time);
     for (const item of editor.effects) {
       if (item.kind === "none") continue;
       const da = now - item.outPeak;
-      const truoc = Math.max(0.04, item.outPeak - item.outStart);
-      const sau = Math.max(0.04, item.outEnd - item.outPeak);
+      const before = Math.max(0.04, item.outPeak - item.outStart);
+      const after = Math.max(0.04, item.outEnd - item.outPeak);
       const value =
         da < 0
-          ? da >= -truoc
-            ? 1 - -da / truoc
+          ? da >= -before
+            ? 1 - -da / before
             : 0
-          : da <= sau
-            ? 1 - da / sau
+          : da <= after
+            ? 1 - da / after
             : 0;
       if (value <= 0) continue;
       if (item.kind === "flash") sang = Math.max(sang, value * FLASH_AMOUNT);
@@ -102,9 +102,21 @@ export function PreviewPanel({
     return { zoom, sang };
   })();
 
-  const inSkipped = editor.skipRanges.some(
-    (span) => editor.time >= span.start && editor.time < span.end,
-  );
+  /**
+   * Vạch đang đứng trong một quãng đã bỏ — khung này sẽ không có trong video.
+   *
+   * Trừ lúc NGHE THỬ chính quãng đó: cả việc nghe thử là để xem phần đã cắt ra
+   * sao, mà lớp phủ "đoạn này đã bỏ" thì che kín đúng thứ người dùng vừa xin xem.
+   */
+  const auditing =
+    editor.auditSpan != null &&
+    editor.time >= editor.auditSpan.start &&
+    editor.time < editor.auditSpan.end;
+  const inSkipped =
+    !auditing &&
+    editor.skipRanges.some(
+      (span) => editor.time >= span.start && editor.time < span.end,
+    );
 
   useEffect(() => {
     const video = videoRef.current;
@@ -161,8 +173,8 @@ export function PreviewPanel({
                 // Nhấn zoom chỉ phóng HÌNH GỐC: chữ và tư liệu vẽ sau nên giữ
                 // nguyên cỡ, đúng như bản in ra.
                 style={{
-                  transform: `scale(${1 + PUNCH_SCALE * noi.zoom})`,
-                  filter: `brightness(${1 + noi.sang})`,
+                  transform: `scale(${1 + PUNCH_SCALE * junction.zoom})`,
+                  filter: `brightness(${1 + junction.sang})`,
                 }}
                 muted={false}
                 playsInline
@@ -179,7 +191,7 @@ export function PreviewPanel({
                 const da = editor.time - insert.start;
                 const p = Math.min(1, Math.max(0, da / REVEAL_SECONDS));
                 const rest = (1 - p) ** 3;
-                const hieuUng =
+                const effectStyle =
                   insert.reveal === "none"
                     ? {}
                     : insert.reveal === "fade"
@@ -205,7 +217,7 @@ export function PreviewPanel({
                       top: `${box.y * 100}%`,
                       width: `${box.w * 100}%`,
                       height: `${box.h * 100}%`,
-                      ...hieuUng,
+                      ...effectStyle,
                     }}
                   >
                     {insert.url ? (
@@ -251,7 +263,21 @@ export function PreviewPanel({
                     keywords: element.keywords,
                     insert: { kind: "none", shape: "wide" },
                   }}
-                  seconds={editor.time - element.start}
+                  // Đang CHỌN cụm này mà không phát: hiện chữ ĐỦ, không theo
+                  // nhịp từng tiếng.
+                  //
+                  // Bấm một dòng thì vạch nhảy tới `đầu cụm + 0,05s` — đúng
+                  // khoảnh khắc chữ mới bật tiếng đầu. Nên chọn một cụm 14
+                  // tiếng để sửa mà khung xem hiện đúng chữ "Ngày": sửa chữ mà
+                  // không thấy chữ. Nhịp thật vẫn xem được bằng cách bấm phát,
+                  // và mọi cụm KHÔNG chọn vẫn chạy đúng nhịp.
+                  seconds={
+                    !playing &&
+                    editor.selection?.kind === "text" &&
+                    editor.selection.id === element.id
+                      ? element.end - element.start
+                      : editor.time - element.start
+                  }
                   // Nhịp nói thật, đúng luật của máy chủ: chỉ dùng khi chữ còn
                   // y nguyên lời của khoảng từ nó neo vào (xem `nhipNoi` ở
                   // `server/pipeline.ts`). Thiếu chỗ này thì khung xem bật cả
@@ -290,12 +316,12 @@ export function PreviewPanel({
                   onPickWord={
                     editor.selection?.kind === "text" &&
                     editor.selection.id === element.id &&
-                    (element.emphasis === "tu-khoa-to" ||
-                      element.emphasis === "xen-co")
+                    (element.emphasis === "keyword-large" ||
+                      element.emphasis === "mixed-size")
                       ? (text) => {
-                          const co = element.keywords.includes(text);
+                          const has = element.keywords.includes(text);
                           editor.updateTextElement(element.id, {
-                            keywords: co
+                            keywords: has
                               ? element.keywords.filter((item) => item !== text)
                               : [...element.keywords, text],
                           });
@@ -329,9 +355,9 @@ export function PreviewPanel({
                 variant="secondary"
                 size="icon-sm"
                 aria-label={playing ? "Tạm dừng" : "Phát từ đây"}
-            // Không có video thì không có gì để phát — khoá lại thay vì để bấm
-            // vào một cái không nhúc nhích.
-            disabled={editor.duration === 0}
+                // Không có video thì không có gì để phát — khoá lại thay vì để bấm
+                // vào một cái không nhúc nhích.
+                disabled={editor.duration === 0}
                 onClick={onTogglePlay}
               >
                 {playing ? <PauseIcon /> : <PlayIcon />}
@@ -351,7 +377,7 @@ export function PreviewPanel({
         <PreviewMusic
           tracks={editor.music}
           time={editor.time}
-          playing={playing}
+          playing={playing && !auditing}
           keptSpan={editor.keptSpan}
         />
       </CardContent>

@@ -48,7 +48,7 @@ export function InspectorPanel({
 }: {
   editor: EditorState;
   /** Đưa vạch tới `at` (giây gốc) rồi cho chạy, dừng ở `denKhi` nếu có */
-  onPreview: (at: number, denKhi?: number) => void;
+  onPreview: (at: number, until?: number) => void;
 }) {
   const { selection } = editor;
 
@@ -90,13 +90,13 @@ export function InspectorPanel({
   }
 
   if (selection.kind === "junction") {
-    const noi = editor.effects.find((item) => item.id === selection.id);
-    if (!noi) return null;
+    const junction = editor.effects.find((item) => item.id === selection.id);
+    if (!junction) return null;
     return (
       <EffectPane
-        key={noi.id}
+        key={junction.id}
         editor={editor}
-        effect={noi}
+        effect={junction}
         onPreview={onPreview}
       />
     );
@@ -111,7 +111,7 @@ export function InspectorPanel({
   if (selection.kind === "clip") {
     const segment = editor.segments.find((item) => item.id === selection.id);
     if (!segment) return null;
-    const beoTrong = demElement(editor, segment.start, segment.end);
+    const heldCount = demElement(editor, segment.start, segment.end);
     return (
       <Card className="h-full min-h-0">
         <CardHeader>
@@ -138,9 +138,9 @@ export function InspectorPanel({
                 Chữ và tư liệu NEO VÀO TỪ, nên bỏ đoạn là chúng cũng mất. Câu này
                 thì GIỮ, và chỉ hiện khi có thứ để mất: nói trước khi bấm, chứ
                 mất im lặng thì mười phút sau người dùng mới biết. */}
-            {!segment.removed && beoTrong > 0 && (
+            {!segment.removed && heldCount > 0 && (
               <FieldDescription>
-                Đang giữ {beoTrong} chữ/tư liệu — bỏ đoạn thì chúng cũng không
+                Đang giữ {heldCount} chữ/tư liệu — bỏ đoạn thì chúng cũng không
                 vào video
               </FieldDescription>
             )}
@@ -171,7 +171,7 @@ export function InspectorPanel({
    * Chỉ chạy khi ĐỔI LỰA CHỌN, không chạy khi vừa chọn khối — cùng lý do với
    * bảng chữ.
    */
-  const xemLai = () => onPreview(item.start - 0.2, item.end + 0.3);
+  const replay = () => onPreview(item.start - 0.2, item.end + 0.3);
 
   return (
     <Card className="h-full min-h-0">
@@ -195,7 +195,7 @@ export function InspectorPanel({
               value={item.shape}
               onChange={(next) => {
                 editor.setInsertStyle(item.id, { shape: next });
-                xemLai();
+                replay();
               }}
             />
           </Field>
@@ -209,7 +209,7 @@ export function InspectorPanel({
                 const next = value[0] as RevealId | undefined;
                 if (!next) return;
                 editor.setInsertStyle(item.id, { reveal: next });
-                xemLai();
+                replay();
               }}
             >
               {REVEALS.map((reveal) => (

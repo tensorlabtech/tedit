@@ -2,13 +2,23 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardAction, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 import { toast } from "@/components/ui/toast";
+
+import { MediaPickerDialog } from "@/components/media-picker-dialog";
 
 import { InsertMediaCard } from "./insert-media-card";
 import { MainTimelineCard } from "./main-timeline-card";
 import { SequencePreviewCard } from "./sequence-preview-card";
 import { SetupCard } from "./setup-card";
+import { hasSetupNotes, SetupNotes } from "./setup-notes";
 import { shortName, type MediaRole } from "./upload-data";
 import { useUpload } from "./use-upload";
 
@@ -22,6 +32,7 @@ export function UploadPage() {
   const pickRef = useRef<HTMLInputElement>(null);
   const pickRole = useRef<MediaRole | undefined>(undefined);
   const [previewId, setPreviewId] = useState<string | null>(null);
+  const [libraryOpen, setLibraryOpen] = useState(false);
 
   // Dự án vừa sinh ra ở lần thả tệp đầu tiên: ghi mã nó lên đường dẫn NGAY, và
   // ghi đè mục lịch sử hiện tại chứ không thêm mục mới — người dùng chưa "đi"
@@ -90,6 +101,7 @@ export function UploadPage() {
     upload.mainFiles[0] ??
     null;
   const transcribing = upload.transcribe?.status === "running";
+  const needsReview = hasSetupNotes(upload);
   const blockReason = upload.uploading
     ? "Đang tải tệp lên"
     : upload.readyMainFiles.length === 0
@@ -97,48 +109,57 @@ export function UploadPage() {
       : null;
 
   return (
-    <div className="grid min-h-svh gap-2 bg-background p-2 text-foreground lg:h-svh lg:grid-rows-[auto_1fr] lg:overflow-hidden">
-      {/* Đầu trang giữ đúng HAI nút: đường ra và đường đi tiếp. Nút chạy từng
-          nằm ở chân cột phải, cạnh một khối số liệu — chỗ đó đọc ra như phần
-          kết của một bảng thống kê, chứ không ra hành động chính của cả màn. */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Dự án mới</CardTitle>
-          <CardAction>
-            <Button variant="ghost" onClick={() => navigate("/")}>
-              Trở về
-            </Button>
-            <Button
-              // Phải có cảnh chính TẢI XONG: tệp hỏng hoặc đang dở mà cho bắt
-              // đầu thì máy chủ chép lời trên một dự án không có gì để nghe.
-              disabled={Boolean(blockReason) || transcribing}
-              onClick={async () => {
-                // Chép lời trước rồi mới sang bàn dựng: mở bàn dựng khi chưa có
-                // lời thì màn đó rỗng và người dùng không hiểu phải đợi gì.
-                if (upload.transcribe?.status === "done") {
-                  navigate(`/editor/${upload.projectId}`);
-                  return;
-                }
-                await upload.startTranscribe();
-              }}
-            >
-              {upload.uploading
-                ? "Đang tải tệp…"
-                : transcribing
-                  ? "Đang chép lời…"
-                  : upload.transcribe?.status === "done"
-                    ? "Mở bàn dựng"
-                    : "Bắt đầu chép lời"}
-            </Button>
-          </CardAction>
-        </CardHeader>
-      </Card>
+    /* KHÔNG có đầu trang riêng. Nó từng chiếm một hàng full-width cao 88px cho đúng
+       hai cái nút và một cái tên — mà cái tên nay đã có ô riêng trong khối Dự án, nên
+       nó chỉ còn là bản trùng. Hai nút xuống card hành động ở đầu cột phải: chỗ đó
+       ngay trên khung xem, đúng nơi người ta soát lần cuối trước khi bấm chạy, và câu
+       giải thích "vì sao nút chưa bấm được" đi theo được sang đó. */
+    <div className="grid min-h-svh gap-2 bg-background p-2 text-foreground lg:h-svh lg:overflow-hidden">
+      {/* HAI cột: NỘI DUNG bên trái, XEM TRƯỚC bên phải.
 
-      {/* Hai cột, cùng một nếp: thứ chiếm hết chỗ còn lại nằm trên, thứ cao bằng
-          nội dung nằm dưới. Trái là tư liệu (mạch chính · kho chèn), phải là
-          thành phẩm (khung xem cả mạch · thiết lập). */}
-      <div className="grid gap-2 lg:min-h-0 lg:grid-cols-4">
-        <div className="grid gap-2 lg:col-span-3 lg:min-h-0 lg:grid-rows-[1fr_auto]">
+          Cột nội dung xếp ba khối dọc theo đúng thứ tự làm việc: khai báo dự án →
+          mạch chính → kho chèn. Ba khối, không phải bốn thẻ rải hai cột như trước:
+          bản đó cho kho chèn một cột ngang hàng với mạch chính, đi ngược §1 (kho
+          chèn không có việc gì để làm ở màn này), và ở cửa sổ 577px nó bóp ô tư liệu
+          xuống 32×56px — một ô không nhận ra nội dung gì.
+
+          `2fr_1fr`: khung xem đủ để soát mạch — nó không ra quyết định nào, nên
+          không cần hơn. Từng để `1.5fr_1fr` và khung nuốt một phần ba màn, trong khi
+          hai dải ô bên trái là chỗ người dùng thật sự làm việc.
+
+          Hai dải ô giờ cuộn NGANG nên chiều cao mỗi khối là thứ cố định — thêm cảnh
+          chỉ làm dải dài thêm, không làm mọi ô nhỏ đi. Nhờ vậy tỉ lệ hàng dưới đây
+          chia được một lần rồi thôi.
+
+          SÀN 9rem/7rem cho hai dải: khối Dự án ở hàng `auto` nên nó cao lên bao
+          nhiêu là bóp thẳng vào hai hàng dưới. Đo lần đầu, nó ăn 312px và hai dải
+          sập còn 90px/56px — ô cao 0, dải trống trơn. Hết chỗ thì thà xén khối Dự án
+          từ dưới lên: thứ mất trước ở đó là dòng trạng thái, còn dải ô mất chiều cao
+          là mất luôn nội dung. */}
+      <div className="grid gap-2 lg:min-h-0 lg:grid-cols-[2fr_1fr]">
+        {/* `overflow-y-auto` là LỐI THOÁT, không phải cách dùng thường.
+            
+            Ba khối cần 224+288+192 = 704px để ô còn đọc được, mà cửa sổ cao 577px
+            chỉ cho cột này 473px. Ở màn thật (≥900px) không bao giờ chạm tới; ở màn
+            thấp thì thà cuộn một đoạn còn hơn để ô cao 0 — đo đúng thế khi sàn còn
+            9rem: dải ô trống trơn, không một tấm ảnh nào.
+
+            Hàng đầu cũng cần SÀN, không để `auto` trơn: `auto` co được tới
+            min-content, và khi tổng vượt chỗ thì khối Dự án bị nén còn 40px — đúng
+            cái đầu thẻ, không còn ô nhập nào. 14rem là chiều cao ĐO ĐƯỢC của nội dung
+            khối đó: đầu thẻ 40 + thân 128 (tên 60, thanh kéo 56, một khoảng cách 12)
+            + đệm 48 = 216.
+
+            Tỉ lệ hai dải hạ về 1.15/1 — kho chèn từng chỉ được 268px, mà ô của nó
+            cần gần cả chiều cao đó để còn nhận ra một tấm ảnh dọc.
+
+            Sàn mạch chính 16rem, không phải 13rem: lúc CHƯA có cảnh nào, thẻ đó bày
+            một khối "Chưa có cảnh nào" kèm nút "Chọn video", và khối ấy đo được 252px.
+            Ở 13rem thì nút bị xén mất — người dùng mở màn lần đầu không thấy nút nào
+            để bấm, đúng lỗi §16 đã sửa một lần rồi. */}
+        <div className="grid gap-2 lg:min-h-0 lg:grid-rows-[minmax(14rem,auto)_minmax(18rem,1.15fr)_minmax(12rem,1fr)] lg:overflow-y-auto">
+          <SetupCard upload={upload} />
+
           <MainTimelineCard
             files={upload.mainFiles}
             sourceOf={upload.sourceOf}
@@ -159,30 +180,109 @@ export function UploadPage() {
             sourceOf={upload.sourceOf}
             onOpen={setPreviewId}
             onPick={() => openPicker("insert")}
+            onPickFromLibrary={() => setLibraryOpen(true)}
             onDropFiles={(files) => handleFiles(files, "insert")}
             onRemove={handleRemove}
             onMove={(id) => handleMove(id, "main")}
             onCancel={upload.cancelUpload}
             onRetry={upload.retryUpload}
             selectedId={previewing?.id ?? null}
+            insertSource={upload.insertSource}
+            onInsertSourceChange={upload.saveInsertSource}
           />
         </div>
 
-        <div className="grid gap-2 lg:min-h-0 lg:grid-rows-[1fr_auto]">
+        {/* Cột phải: card HÀNH ĐỘNG trên, khung xem dưới. */}
+        {/* Khung xem cần SÀN: card "Tiếp theo" ở hàng `auto` giờ cao thay đổi theo
+            số dòng soát, nên không có sàn thì khung video co dần theo. Xô lệch ở đây
+            đỡ hơn ở cột nội dung — nhưng vẫn phải chặn đáy. */}
+        <div className="grid gap-2 lg:min-h-0 lg:grid-rows-[auto_minmax(14rem,1fr)]">
+          {/* `size="sm"`: đệm 16px thay 20px. Card này chỉ chứa một hàng, nên đệm cỡ
+              thường làm nó cao 80px — 88px cả khoảng cách, đúng bằng cái đầu trang
+              vừa bỏ đi, và lấy lại của khung xem đúng phần vừa tiết kiệm. */}
+          <Card size="sm">
+            {/* Tiêu đề và hai nút CÙNG MỘT HÀNG, không xếp dọc: `CardHeader` tự thành
+                lưới hai cột khi có `CardAction`, nên thêm tiêu đề mà card không cao
+                thêm một dòng nào.
+
+                Hai nút cạnh nhau, dồn về phải: đường ra và đường đi tiếp là một cặp,
+                tách chúng ra hai đầu thì mắt phải đi hết chiều ngang card mới thấy đủ
+                lựa chọn. */}
+            <CardHeader>
+              <CardTitle>Tiếp theo</CardTitle>
+              <CardAction>
+                <Button variant="ghost" onClick={() => navigate("/")}>
+                  Trở về
+                </Button>
+
+                <Button
+                  // Phải có cảnh chính TẢI XONG: tệp hỏng hoặc đang dở mà cho bắt đầu
+                  // thì máy chủ chép lời trên một dự án không có gì để nghe.
+                  disabled={Boolean(blockReason) || transcribing}
+                  onClick={async () => {
+                    // Chép lời trước rồi mới sang bàn dựng: mở bàn dựng khi chưa có
+                    // lời thì màn đó rỗng và người dùng không hiểu phải đợi gì.
+                    if (upload.transcribe?.status === "done") {
+                      navigate(`/editor/${upload.projectId}`);
+                      return;
+                    }
+                    await upload.startTranscribe();
+                    // Sang màn chờ NGAY, đừng giữ người dùng lại màn nạp tệp: ở đây
+                    // không còn gì để làm, mà việc thì chạy mất vài phút.
+                    navigate(`/pipeline/${upload.projectId}`);
+                  }}
+                >
+                  {upload.uploading
+                    ? "Đang tải tệp…"
+                    : transcribing
+                      ? "Đang chép lời…"
+                      : upload.transcribe?.status === "done"
+                        ? "Mở bàn dựng"
+                        : "Bắt đầu chép lời"}
+                </Button>
+              </CardAction>
+            </CardHeader>
+
+            {/* Hàng soát và tiến độ nằm ở ĐÂY, cạnh cái nút chúng đang nói về.
+                
+                Trước chúng ở card Dự án — card đó ở hàng `auto` đầu cột nội dung, nên
+                mỗi lần thả tệp là nó cao thêm và hai dải ô bị bóp đúng chừng ấy: cả
+                layout xô lệch một nhịp giữa lúc đang làm.
+
+                Bốn bước chép lời thì bỏ hẳn: màn `/pipeline` có danh sách chặng đầy
+                đủ, mà bấm chạy là màn hình chuyển sang đó ngay. */}
+            {(needsReview || upload.uploading) && (
+              <CardContent className="grid gap-2">
+                <SetupNotes
+                  upload={upload}
+                  onOpen={setPreviewId}
+                  onPick={() => openPicker("main")}
+                />
+                {upload.uploading && (
+                  <>
+                    <Progress value={upload.uploadProgress} />
+                    <p className="text-xs text-muted-foreground">
+                      Đang tải {upload.uploadingFiles.length} tệp ·{" "}
+                      {upload.uploadProgress}%
+                    </p>
+                  </>
+                )}
+              </CardContent>
+            )}
+          </Card>
+
           <SequencePreviewCard
-            // Ô tải hỏng KHÔNG phải một cảnh: nó không lên tới máy chủ nên nó
-            // không có trong video sẽ xuất ra. Đếm nó vào đây thì khung xem báo
-            // "Cảnh 1/4" cho một mạch chỉ có ba cảnh, và khúc thứ tư của thanh
-            // mạch không bao giờ chạy tới.
+            // Ô tải hỏng KHÔNG phải một cảnh: nó không lên tới máy chủ nên nó không
+            // có trong video sẽ xuất ra. Đếm nó vào đây thì khung xem báo "Cảnh 1/4"
+            // cho một mạch chỉ có ba cảnh, và khúc thứ tư của thanh mạch không bao
+            // giờ chạy tới.
             scenes={upload.mainFiles.filter((item) => item.status !== "error")}
             file={previewing}
             source={previewing ? upload.sourceOf(previewing.id) : undefined}
             onSelect={setPreviewId}
-          />
-          <SetupCard
-            upload={upload}
-            onOpen={setPreviewId}
-            onPick={() => openPicker("main")}
+            onDescribe={(id, description) =>
+              void upload.saveDescription(id, description)
+            }
           />
         </div>
       </div>
@@ -202,6 +302,20 @@ export function UploadPage() {
           // Xoá giá trị để chọn lại đúng tệp vừa gỡ vẫn kích hoạt `change`.
           event.target.value = "";
         }}
+      />
+
+      {/* Cùng một hộp với bàn dựng — hai tab, một lưới, một cột xem trước. Ở
+          đây KHÔNG truyền `onUse`: màn nạp chưa có vạch nào để chèn vào, nên tab
+          "Của dự án" chỉ để xem lại mình đã có gì trước khi đi lấy thêm. */}
+      <MediaPickerDialog
+        open={libraryOpen}
+        onOpenChange={setLibraryOpen}
+        title="Tư liệu chèn"
+        projectItems={upload.insertItems}
+        alreadyIn={upload.libraryFilesInProject}
+        onTake={upload.addFromLibrary}
+        onUpload={(files) => handleFiles(files, "insert")}
+        defaultTab="library"
       />
     </div>
   );

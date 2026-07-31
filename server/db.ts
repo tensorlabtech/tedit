@@ -50,6 +50,74 @@ CREATE TABLE IF NOT EXISTS music_tracks (
   volume      REAL NOT NULL DEFAULT 0.18
 );
 
+-- KHO NHẠC DÙNG CHUNG — khác hẳn music_tracks ở trên.
+--
+-- music_tracks là bài ĐÃ ĐẶT vào một dự án, có mốc và âm lượng riêng. Còn đây
+-- là danh mục để CHỌN: mọi dự án nhìn thấy cùng một kho.
+--
+-- Tệp nằm ở server/data/music/, và THƯ MỤC MỚI LÀ NGUỒN SỰ THẬT. Bảng này chỉ
+-- ghi thêm những gì thư mục không tự nói được (tên đẹp, tông nhạc, ai tải lên).
+-- Thả một tệp vào thư mục mà không có hàng nào ở đây thì nó vẫn hiện ra trong
+-- kho — lời hứa đó có từ đầu và không được phá.
+CREATE TABLE IF NOT EXISTS library_tracks (
+  file        TEXT PRIMARY KEY,
+  title       TEXT,
+  tags        TEXT,
+  seconds     REAL,
+  uploaded_by TEXT,
+  created_at  INTEGER NOT NULL
+);
+
+-- Bài được đánh dấu, RIÊNG TỪNG NGƯỜI.
+--
+-- Không để một cột starred trên library_tracks: kho dùng chung, nên một cột
+-- chung nghĩa là người này bỏ dấu thì người kia mất dấu.
+-- KHO TƯ LIỆU DÙNG CHUNG — ảnh và video chèn, cùng khuôn với library_tracks.
+--
+-- hash là vân tay NỘI DUNG (sha256). Tư liệu hay bị tải lại nhiều lần: cùng một
+-- tấm ảnh gửi qua Zalo rồi tải về thì tên đổi mà nội dung y hệt. Trùng thì kho
+-- phình ra, và tệ hơn là chặng ghép tư liệu thấy hai bản của cùng một hình rồi
+-- đặt cả hai vào hai chỗ khác nhau trong cùng một video.
+-- Cài đặt của người dùng: MỘT hàng một người, nội dung là JSON.
+--
+-- Không tách mỗi mục một cột: danh sách này còn đổi nhiều, mà mỗi lần thêm một
+-- nút lại phải sửa lược đồ thì cái giá không đáng. Đọc ra bao nhiêu cũng kẹp về
+-- khoảng có nghĩa ở settings.ts, nên JSON méo cũng không làm gãy lượt dựng.
+CREATE TABLE IF NOT EXISTS user_settings (
+  user_id    TEXT PRIMARY KEY,
+  data       TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS library_assets (
+  file        TEXT PRIMARY KEY,
+  title       TEXT,
+  tags        TEXT,
+  description TEXT,
+  seconds     REAL,
+  hash        TEXT,
+  uploaded_by TEXT,
+  created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_assets_hash ON library_assets(hash);
+
+CREATE TABLE IF NOT EXISTS library_stars (
+  user_id    TEXT NOT NULL,
+  file       TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, file)
+);
+
+-- Dấu sao của kho TƯ LIỆU. Bảng riêng chứ không thêm một cột phân loại vào bảng
+-- trên: khoá chính ở đó là (người, tệp), thêm loại vào là phải dựng lại cả bảng —
+-- mà hai kho vốn chẳng dùng chung gì ngoài cái tên cột.
+CREATE TABLE IF NOT EXISTS library_asset_stars (
+  user_id    TEXT NOT NULL,
+  file       TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, file)
+);
+
 CREATE TABLE IF NOT EXISTS sentences (
   id          TEXT PRIMARY KEY,
   project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -156,6 +224,30 @@ CREATE TABLE IF NOT EXISTS effects (
   kind        TEXT NOT NULL
 );
 
+-- Từng chặng của lượt dựng, để màn chờ nói được máy đang ở đâu.
+--
+-- Không đọc ra từ bảng jobs được: ở đó cả lượt dựng là MỘT dòng với một con số
+-- phần trăm, nên chặng đã xong không còn dấu vết — mà thứ đáng xem lại chính là
+-- cái nó đẻ ra ("219 đoạn"), không phải phần trăm.
+--
+-- required = 0 là chặng hỏng thì BỎ QUA rồi đi tiếp. Chạy tuần tự mà chặng nào
+-- hỏng cũng chặn thì một lượt nhận diện ảnh gãy là mất cả video, trong khi
+-- thiếu tư liệu chèn thì bản dựng vẫn đủ lời và chữ.
+--
+-- (Không dùng dấu nháy ngược trong khối này: nó đóng luôn template literal bao
+-- ngoài, và lỗi báo ra là lỗi cú pháp TypeScript ở giữa một câu SQL.)
+CREATE TABLE IF NOT EXISTS steps (
+  project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  key         TEXT NOT NULL,
+  position    INTEGER NOT NULL,
+  status      TEXT NOT NULL,
+  result      TEXT,
+  error       TEXT,
+  required    INTEGER NOT NULL DEFAULT 1,
+  updated_at  INTEGER NOT NULL,
+  PRIMARY KEY (project_id, key)
+);
+
 CREATE TABLE IF NOT EXISTS dismissed_issues (
   project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   issue_id    TEXT NOT NULL,
@@ -170,8 +262,96 @@ CREATE INDEX IF NOT EXISTS idx_files_project ON media_files(project_id, role, po
 CREATE INDEX IF NOT EXISTS idx_jobs_project ON jobs(project_id, kind);
 `);
 
+/**
+ * Bốn bảng của Better Auth — người dùng, phiên, tài khoản nhà cung cấp, mã xác thực.
+ *
+ * Nguyên văn do `npx @better-auth/cli generate` sinh ra, chỉ thêm `IF NOT EXISTS`
+ * để chạy lại không lỗi. KHÔNG sửa tên cột: Better Auth truy vấn đúng những tên
+ * này (`emailVerified`, `expiresAt`, `userId`… kiểu lạc đà, khác hẳn lối
+ * `snake_case` của phần còn lại) và không có chỗ nào đổi được.
+ *
+ * Đổi phiên bản Better Auth thì sinh lại rồi so, đừng đoán:
+ *   npx @better-auth/cli generate --config server/auth.ts
+ *
+ * `user` phải dựng TRƯỚC vòng vá cột bên dưới, vì `projects.owner_id` trỏ vào nó.
+ */
+db.exec(`
+CREATE TABLE IF NOT EXISTS "user" (
+  "id"            TEXT NOT NULL PRIMARY KEY,
+  "name"          TEXT NOT NULL,
+  "email"         TEXT NOT NULL UNIQUE,
+  "emailVerified" INTEGER NOT NULL,
+  "image"         TEXT,
+  "createdAt"     DATE NOT NULL,
+  "updatedAt"     DATE NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS "session" (
+  "id"        TEXT NOT NULL PRIMARY KEY,
+  "expiresAt" DATE NOT NULL,
+  "token"     TEXT NOT NULL UNIQUE,
+  "createdAt" DATE NOT NULL,
+  "updatedAt" DATE NOT NULL,
+  "ipAddress" TEXT,
+  "userAgent" TEXT,
+  "userId"    TEXT NOT NULL REFERENCES "user" ("id") ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS "account" (
+  "id"                    TEXT NOT NULL PRIMARY KEY,
+  "accountId"             TEXT NOT NULL,
+  "providerId"            TEXT NOT NULL,
+  "userId"                TEXT NOT NULL REFERENCES "user" ("id") ON DELETE CASCADE,
+  "accessToken"           TEXT,
+  "refreshToken"          TEXT,
+  "idToken"               TEXT,
+  "accessTokenExpiresAt"  DATE,
+  "refreshTokenExpiresAt" DATE,
+  "scope"                 TEXT,
+  "password"              TEXT,
+  "createdAt"             DATE NOT NULL,
+  "updatedAt"             DATE NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS "verification" (
+  "id"         TEXT NOT NULL PRIMARY KEY,
+  "identifier" TEXT NOT NULL,
+  "value"      TEXT NOT NULL,
+  "expiresAt"  DATE NOT NULL,
+  "createdAt"  DATE NOT NULL,
+  "updatedAt"  DATE NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS "session_userId_idx" ON "session" ("userId");
+CREATE INDEX IF NOT EXISTS "account_userId_idx" ON "account" ("userId");
+CREATE INDEX IF NOT EXISTS "verification_identifier_idx" ON "verification" ("identifier");
+`);
+
 // Thêm cột theo kiểu vá dần: người dùng đã có CSDL cũ thì không mất dữ liệu.
 for (const [table, column, type] of [
+  // Mô tả nội dung tư liệu chèn, do mô hình nhìn ảnh sinh ra. Lưu lại để ĐỌC
+  // MỘT LẦN: đọc lại mỗi lượt dựng thì mỗi lần bấm chạy lại là một lần trả tiền
+  // cho cùng một tấm ảnh không đổi.
+  ["media_files", "description", "TEXT"],
+  // Người dùng tự giới thiệu: ngành nghề, việc đang làm, thuật ngữ hay dùng.
+  // Dùng để MỒI cho máy nghe (xem `server/asr-bias.ts`) — sửa trước khi sai
+  // rẻ hơn nhiều so với sửa sau.
+  ["projects", "profile", "TEXT"],
+  // Lời dặn TẠI LÚC chép lời. So với `profile` hiện tại là biết bản chép có còn
+  // biết những gì người dùng vừa dặn hay không — mà biết được cả sau khi tải lại
+  // trang, chứ không chỉ trong một lượt dựng của màn hình.
+  ["projects", "profile_at_transcribe", "TEXT"],
+  // Danh sách id cảnh chính TẠI LÚC chép lời, nối bằng dấu phẩy. So với mạch hiện
+  // tại là biết bản chép còn khớp hay không — mà biết được cả sau khi tải lại trang.
+  ["projects", "main_files_at_transcribe", "TEXT"],
+  // Quãng không ai nói dài hơn ngần này giây thì chặng `silence` rút nó lại.
+  // 0 nghĩa là KHÔNG tự rút — người dùng tự cắt ở bàn dựng.
+  ["projects", "min_silence", "REAL DEFAULT 0.8"],
+  // Có gieo chữ từ bản chép lời hay không. Tắt thì chặng `captions` chỉ dựng đoạn,
+  // không sinh phần tử chữ nào — người dùng tự thêm ở bàn dựng.
+  ["projects", "want_captions", "INTEGER DEFAULT 1"],
+  // Có để chặng `music` tự chọn một bài nhạc nền hay không.
+  ["projects", "want_music", "INTEGER DEFAULT 1"],
   ["projects", "music_path", "TEXT"],
   ["projects", "music_volume", "REAL DEFAULT 0.18"],
   ["projects", "strip_second_width", "INTEGER DEFAULT 200"],
@@ -210,6 +390,43 @@ for (const [table, column, type] of [
   // cả video nên phải là lựa chọn có ý thức. Cột để TEXT vì nó là ba trạng thái, và
   // giá trị 0/1 cũ vẫn đọc được (`pipeline.ts` đổi khi dựng).
   ["projects", "zoom_punch", "TEXT DEFAULT 'none'"],
+  /**
+   * Chủ của dự án. MỌI bảng khác đều có `project_id`, nên một cột ở đây là đủ để
+   * suy ra chủ của bất cứ hàng nào — không phải rắc `owner_id` khắp mười hai bảng.
+   *
+   * Để rỗng được, và rỗng nghĩa là KHÔNG AI thấy: mấy dự án dựng trước lúc có
+   * đăng nhập không có chủ, mà gán chúng cho người đăng nhập đầu tiên thì người
+   * đó nhận cả đống thứ không phải của mình. Dữ liệu vẫn nằm trong CSDL.
+   *
+   * `ON DELETE CASCADE`: xoá một người là xoá dự án của họ. Cột thêm bằng
+   * `ALTER TABLE` có `REFERENCES` thì SQLite đòi mặc định phải là NULL — đúng
+   * điều ta cần ở đây, nên không khai `DEFAULT`.
+   */
+  ["projects", "owner_id", 'TEXT REFERENCES "user"(id) ON DELETE CASCADE'],
+  /**
+   * Chặng tự ghép tư liệu được lấy từ đâu: "project" | "starred" | "library".
+   *
+   * Chép vào TỪNG DỰ ÁN chứ không đọc thẳng cài đặt lúc dựng: đổi cài đặt sau đó
+   * thì dự án cũ giữ nguyên nguồn nó đã dựng, không tự nhiên mọc thêm tư liệu lạ
+   * ở lượt chạy lại.
+   */
+  ["projects", "insert_source", "TEXT"],
+  /**
+   * Tư liệu này LẤY TỪ KHO chứ không phải người dùng tải lên cho dự án.
+   *
+   * Cần vì máy tự lấy về được: mở bàn dựng thấy một clip mình không nhớ đã thêm
+   * mà không có gì đánh dấu thì đọc ra như máy bịa ra tệp.
+   */
+  ["media_files", "from_library", "INTEGER NOT NULL DEFAULT 0"],
+  /**
+   * Tên tệp TRONG KHO mà bản này chép ra.
+   *
+   * Nhờ nó hộp chọn từ kho đánh dấu được "đã có trong dự án" — không thì người
+   * dùng chọn lại đúng tấm mình thêm mười phút trước và dự án có hai bản y hệt.
+   * So theo tên tệp trong dự án không thay được: tên ấy lấy từ tiêu đề tư liệu,
+   * mà tiêu đề sửa lúc nào cũng được.
+   */
+  ["media_files", "library_file", "TEXT"],
 ] as const) {
   const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{
     name: string;
@@ -231,22 +448,22 @@ for (const [table, column, type] of [
  * cột theo `PRAGMA table_info` chứ không viết tay danh sách: bảng này đã mọc
  * thêm sáu cột qua vòng vá dần bên dưới, viết tay là mất đúng những cột đó.
  */
-function noiRangBuocNeo() {
+function relaxAnchorConstraints() {
   const columns = db.prepare("PRAGMA table_info(elements)").all() as Array<{
     name: string;
     type: string;
     notnull: number;
     dflt_value: string | null;
   }>;
-  const neo = columns.filter(
+  const anchorColumns = columns.filter(
     (column) =>
       (column.name === "from_word_id" || column.name === "to_word_id") &&
       column.notnull === 1,
   );
-  if (neo.length === 0) return;
+  if (anchorColumns.length === 0) return;
 
-  const khai = columns.map((column) => {
-    const batBuoc =
+  const columnDefs = columns.map((column) => {
+    const required =
       column.notnull === 1 &&
       column.name !== "from_word_id" &&
       column.name !== "to_word_id";
@@ -254,7 +471,7 @@ function noiRangBuocNeo() {
       column.name,
       column.type || "TEXT",
       column.name === "id" ? "PRIMARY KEY" : "",
-      batBuoc ? "NOT NULL" : "",
+      required ? "NOT NULL" : "",
       column.dflt_value === null ? "" : `DEFAULT ${column.dflt_value}`,
       column.name === "project_id"
         ? "REFERENCES projects(id) ON DELETE CASCADE"
@@ -265,18 +482,20 @@ function noiRangBuocNeo() {
       .filter(Boolean)
       .join(" ");
   });
-  const ten = columns.map((column) => column.name).join(", ");
+  const names = columns.map((column) => column.name).join(", ");
 
   db.pragma("foreign_keys = OFF");
   db.transaction(() => {
-    db.exec(`CREATE TABLE elements_moi (${khai.join(", ")})`);
-    db.exec(`INSERT INTO elements_moi (${ten}) SELECT ${ten} FROM elements`);
+    db.exec(`CREATE TABLE elements_new (${columnDefs.join(", ")})`);
+    db.exec(
+      `INSERT INTO elements_new (${names}) SELECT ${names} FROM elements`,
+    );
     db.exec("DROP TABLE elements");
-    db.exec("ALTER TABLE elements_moi RENAME TO elements");
+    db.exec("ALTER TABLE elements_new RENAME TO elements");
   })();
   db.pragma("foreign_keys = ON");
 }
-noiRangBuocNeo();
+relaxAnchorConstraints();
 
 /**
  * Chuyển bản sửa chỗ nối cũ (một MỐC) sang hiệu ứng mới (một QUÃNG).
@@ -287,40 +506,77 @@ noiRangBuocNeo();
  *
  * Bộ số phải khớp `junctionHalves` của `server/render.ts`.
  */
-function doiChoNoiThanhHieuUng() {
-  const co = db
+function migrateJunctionsToEffects() {
+  const exists = db
     .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?")
     .get("junctions");
-  if (!co) return;
+  if (!exists) return;
 
-  const nhip: Record<string, [number, number]> = {
+  const rhythm: Record<string, [number, number]> = {
     "zoom-in": [0.5, 0.15],
     "zoom-out": [0.15, 0.5],
     flash: [0.12, 0.12],
     dip: [0.18, 0.18],
     none: [0.5, 0.15],
   };
-  const cu = db
+  const legacy = db
     .prepare("SELECT project_id, at_sec, kind FROM junctions")
     .all() as Array<{ project_id: string; at_sec: number; kind: string }>;
 
   db.transaction(() => {
-    for (const row of cu) {
-      const [truoc, sau] = nhip[row.kind] ?? nhip["zoom-in"];
+    for (const row of legacy) {
+      const [before, after] = rhythm[row.kind] ?? rhythm["zoom-in"];
       db.prepare(
         "INSERT OR IGNORE INTO effects (id, project_id, start_sec, end_sec, kind) VALUES (?,?,?,?,?)",
       ).run(
-        `eff_cu_${row.project_id}_${row.at_sec.toFixed(3)}`,
+        `eff_legacy_${row.project_id}_${row.at_sec.toFixed(3)}`,
         row.project_id,
-        row.at_sec - truoc,
-        row.at_sec + sau,
+        row.at_sec - before,
+        row.at_sec + after,
         row.kind,
       );
     }
     db.exec("DROP TABLE junctions");
   })();
 }
-doiChoNoiThanhHieuUng();
+migrateJunctionsToEffects();
+
+/**
+ * Đổi tên hai trục dáng chữ sang tiếng Anh.
+ *
+ * Chỉ đổi CÁCH GHI, không đổi ý nghĩa: mỗi giá trị cũ ứng đúng một giá trị mới
+ * nên mọi phần tử vẫn hiện ra y hệt. Phải chạm vào dữ liệu vì hai cột này lưu
+ * thẳng chuỗi chứ không qua bảng tra.
+ *
+ * `UPDATE` có `WHERE` nên chạy lại lần nữa không đổi thêm dòng nào.
+ */
+function migrateLayoutAxisNames() {
+  const align: Record<string, string> = { "so-le": "stagger" };
+  const emphasis: Record<string, string> = {
+    deu: "even",
+    "tu-khoa-to": "keyword-large",
+    "xen-co": "mixed-size",
+    "dan-nho": "taper",
+  };
+  db.transaction(() => {
+    for (const [from, to] of Object.entries(align)) {
+      db.prepare("UPDATE elements SET align=? WHERE align=?").run(to, from);
+    }
+    for (const [from, to] of Object.entries(emphasis)) {
+      db.prepare("UPDATE elements SET emphasis=? WHERE emphasis=?").run(
+        to,
+        from,
+      );
+    }
+  })();
+}
+migrateLayoutAxisNames();
+
+// Danh sách dự án luôn lọc theo chủ, nên cột này nằm trong mọi truy vấn đọc.
+// Đặt sau vòng vá cột vì lúc đó `owner_id` mới chắc chắn tồn tại.
+db.exec(
+  "CREATE INDEX IF NOT EXISTS idx_projects_owner ON projects(owner_id, created_at)",
+);
 
 export function newId(prefix: string) {
   return `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;

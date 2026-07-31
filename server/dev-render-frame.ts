@@ -20,9 +20,9 @@ import {
 } from "./text-layout";
 import { placeWords } from "./word-layout";
 
-const [content, align, emphasis, band, target, nen, ...keywords] =
+const [content, align, emphasis, band, target, bgArg, ...keywords] =
   process.argv.slice(2);
-const mauNen = nen && nen !== "-" ? nen : "#3a3a3a";
+const bgColor = bgArg && bgArg !== "-" ? bgArg : "#3a3a3a";
 
 /** Cùng phép thoát ký tự với bộ in thật. */
 const escape = (value: string) =>
@@ -66,7 +66,7 @@ await ffmpeg([
   "-f",
   "lavfi",
   "-i",
-  `color=c=${mauNen}:s=${OUT_WIDTH}x${OUT_HEIGHT}:d=4:r=30`,
+  `color=c=${bgColor}:s=${OUT_WIDTH}x${OUT_HEIGHT}:d=4:r=30`,
   "-f",
   "lavfi",
   "-i",
@@ -76,7 +76,7 @@ await ffmpeg([
     `[g]colorchannelmixer=rr=0:rg=0:rb=0:gr=0:gg=0:gb=0:br=0:bg=0:bb=0:aa=0.9,` +
     `scale=${OUT_WIDTH / 2}:${OUT_HEIGHT / 2},boxblur=luma_radius=5:alpha_radius=5,` +
     `scale=${OUT_WIDTH}:${OUT_HEIGHT}[glow];` +
-    `[0:v][glow]overlay=format=rgb[nen];[nen][m]overlay=format=rgb[out]`,
+    `[0:v][glow]overlay=format=rgb[bg];[bg][m]overlay=format=rgb[out]`,
   "-map",
   "[out]",
   "-ss",

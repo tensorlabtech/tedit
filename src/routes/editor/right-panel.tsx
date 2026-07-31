@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
 import { InspectorPanel } from "./inspector-panel";
+import { MusicLibraryPanel } from "./music-library-panel";
 import { ReviewQueue, useReviewIssues } from "./review-queue";
 import type { EditorState } from "./use-editor";
 
@@ -29,7 +30,7 @@ export function RightPanel({
 }: {
   editor: EditorState;
   /** Đưa vạch tới `at` (giây gốc) rồi cho chạy, dừng ở `denKhi` nếu có */
-  onPreview: (at: number, denKhi?: number) => void;
+  onPreview: (at: number, until?: number) => void;
 }) {
   const { issues, boQua } = useReviewIssues(editor);
   const [tab, setTab] = useState("sua");
@@ -38,18 +39,25 @@ export function RightPanel({
   // Dùng cờ có/không thì đang mở hàng soát mà bấm một khối khác trên dải, cờ
   // vẫn đúng bằng `true` từ lần chọn trước — hiệu ứng không chạy lại, và khung
   // sửa mở ra sau lưng một cái tab đang đóng. Chọn từ đâu cũng phải mở nó ra.
-  const dangChon = editor.selection
+  const hasSelection = editor.selection
     ? `${editor.selection.kind}:${editor.selection.id}`
     : null;
 
   // Chọn một thứ là chuyển sang khung sửa; bỏ chọn thì về hàng soát. Đây là
   // thứ người dùng vừa nói mình muốn xem, không phải phỏng đoán.
   useEffect(() => {
-    setTab(dangChon ? "sua" : "soat");
-  }, [dangChon]);
+    // Đang mở kho nhạc thì ĐỪNG giật sang khung sửa: đặt một bài vào dải là tự
+    // chọn nó, nên tab sẽ nhảy đi ngay giây người dùng vừa bấm — mà họ còn đang
+    // định chọn thêm bài nữa.
+    setTab((cu) => (cu === "kho" ? cu : hasSelection ? "sua" : "soat"));
+  }, [hasSelection]);
 
-  if (issues.length === 0)
-    return <InspectorPanel editor={editor} onPreview={onPreview} />;
+  // Hàng soát rỗng thì BỎ tab của nó, chứ không bỏ cả hàng tab: kho nhạc luôn có
+  // đó, nên vẫn còn hai lựa chọn để mà chọn. Trước đây chỗ này thoát sớm và trả về
+  // riêng khung sửa — làm thế bây giờ là kho nhạc biến mất đúng lúc dự án sạch
+  // việc, tức là đúng lúc người ta rảnh tay đi chọn nhạc.
+  const showReview = issues.length > 0;
+  const openTab = !showReview && tab === "soat" ? "sua" : tab;
 
   return (
     // `h-full` chứ không `flex-1`: thẻ này giờ là một ô lưới, nó phải cao đúng
@@ -58,35 +66,47 @@ export function RightPanel({
       {/* `flex-1 min-h-0` cho cả Tabs lẫn từng TabsContent: Tabs thay chỗ bố
           cục dọc của Card, nên thiếu nó thì chiều cao không truyền xuống được
           và thẻ bên trong tự cao theo nội dung rồi bị cắt chân. */}
+      {/* `min-w-0` cùng với `min-h-0`: Tabs và CardContent đều là con của một
+          flex, mà con flex mặc định không co dưới bề rộng nội dung. Thiếu nó thì
+          một tên bài dài trong kho nhạc nong cả cột phải ra rộng hơn thẻ, và hàng
+          công cụ trồi hẳn ra ngoài màn. */}
       <Tabs
-        value={tab}
+        value={openTab}
         onValueChange={(value) => setTab(String(value))}
-        className="min-h-0 flex-1"
+        className="min-h-0 w-full min-w-0 flex-1"
       >
         <CardHeader>
-          {/* Hai TIÊU ĐỀ đứng cạnh nhau, cái không mở thì mờ — chứ không phải
+          {/* Các TIÊU ĐỀ đứng cạnh nhau, cái không mở thì mờ — chứ không phải
               một hàng tab kẻ gạch chân nằm dưới một tiêu đề. Thẻ chỉ có một
               tên, và tên đó là thứ đang xem. */}
           <TabsList variant="title">
-            <TabsTrigger value="soat">
-              Cần bạn xem
-              <Badge variant="secondary">{issues.length}</Badge>
-            </TabsTrigger>
+            {showReview && (
+              <TabsTrigger value="soat">
+                Cần bạn xem
+                <Badge variant="secondary">{issues.length}</Badge>
+              </TabsTrigger>
+            )}
             <TabsTrigger value="sua">Đang sửa</TabsTrigger>
+            <TabsTrigger value="kho">Kho nhạc</TabsTrigger>
           </TabsList>
         </CardHeader>
-        <CardContent className="min-h-0 flex-1">
-          <TabsContent value="soat" className="h-full min-h-0">
-            {/* Giấu cả đầu thẻ của hàng soát: tab ngay trên đã nói "Cần bạn
-                xem 3" rồi, lặp lại lần nữa cách hai chục pixel là thừa. */}
-            <LotVo className="[&_[data-slot=card-header]]:hidden">
-              <ReviewQueue editor={editor} issues={issues} onBoQua={boQua} />
-            </LotVo>
-          </TabsContent>
+        <CardContent className="min-h-0 min-w-0 flex-1">
+          {showReview && (
+            <TabsContent value="soat" className="h-full min-h-0">
+              {/* Giấu cả đầu thẻ của hàng soát: tab ngay trên đã nói "Cần bạn
+                  xem 3" rồi, lặp lại lần nữa cách hai chục pixel là thừa. */}
+              <LotVo className="[&_[data-slot=card-header]]:hidden">
+                <ReviewQueue editor={editor} issues={issues} onBoQua={boQua} />
+              </LotVo>
+            </TabsContent>
+          )}
           <TabsContent value="sua" className="h-full min-h-0">
             <LotVo>
               <InspectorPanel editor={editor} onPreview={onPreview} />
             </LotVo>
+          </TabsContent>
+          <TabsContent value="kho" className="h-full min-h-0 min-w-0">
+            <MusicLibraryPanel editor={editor} open={openTab === "kho"} />
           </TabsContent>
         </CardContent>
       </Tabs>

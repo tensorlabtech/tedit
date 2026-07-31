@@ -119,7 +119,7 @@ async function buildRows(
 ): Promise<Sized[][]> {
   const px = (scale: number) => Math.round(videoWidth * scale);
 
-  if (emphasis === "tu-khoa-to") {
+  if (emphasis === "keyword-large") {
     // Đoạn từ khoá LIỀN NHAU phóng to, phần trước lên trên, phần sau xuống dưới.
     // Bốc riêng tiếng từ khoá dài nhất ra giữa là đảo thứ tự chữ của người dùng.
     const marked = pieces.map((piece) => piece.keyword);
@@ -145,13 +145,13 @@ async function buildRows(
     ];
   }
 
-  if (emphasis === "xen-co") {
+  if (emphasis === "mixed-size") {
     const SMALL = 0.55;
     // Chưa đánh dấu tiếng nào thì XEN THEO THỨ TỰ — cùng luật với trang xem.
     // Không có bước này thì cả cụm ra một cỡ nhỏ, đúng cái tên hứa ngược lại.
-    const coDau = pieces.some((piece) => piece.keyword);
+    const hasKeyword = pieces.some((piece) => piece.keyword);
     const to = (piece: Piece, index: number) =>
-      coDau ? piece.keyword : index % 2 === 0;
+      hasKeyword ? piece.keyword : index % 2 === 0;
     // Cỡ giải từ TỔNG bề rộng của các cỡ khác nhau: coi cả hàng cùng một cỡ thì ước
     // rộng gần gấp đôi thật và chữ bị co quắt lại.
     const scaleOf = async (list: Piece[], offset = 0) => {
@@ -177,11 +177,11 @@ async function buildRows(
       const scale = await scaleOf(row, offset);
       out.push(
         row.map((piece, index) => {
-          const lon = to(piece, offset + index);
+          const big = to(piece, offset + index);
           return {
             text: piece.text,
-            fontSize: px(lon ? scale : scale * SMALL),
-            ...(lon ? COLOR.soft : COLOR.main),
+            fontSize: px(big ? scale : scale * SMALL),
+            ...(big ? COLOR.soft : COLOR.main),
           };
         }),
       );
@@ -189,7 +189,7 @@ async function buildRows(
     return out;
   }
 
-  if (emphasis === "deu") {
+  if (emphasis === "even") {
     // Cỡ đều: bẻ dòng theo bề rộng rồi dùng CHUNG một cỡ — dáng phụ đề khổ lớn.
     // Vẫn trả về từng tiếng chứ không trả cả dòng, vì hiệu ứng hiện ra chạy theo
     // TIẾNG. Gộp dòng lại thì cả dòng bật ra một lượt, mất đúng thứ làm nên nhịp.

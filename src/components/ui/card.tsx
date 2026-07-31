@@ -2,6 +2,15 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
+/**
+ * Khoảng cách giữa các tầng của thẻ (`--card-gap`) TÁCH khỏi đệm trong
+ * (`--card-spacing`).
+ *
+ * Trước đây cả hai dùng chung một biến `--spacing(5)` = 20px, nên đầu thẻ cách thân
+ * thẻ đúng bằng đệm lề — đọc ra như một khoảng hở, nhất là ở thẻ chỉ có một dòng
+ * tiêu đề. Đệm lề vẫn cần 20px để chữ không dính mép; khoảng cách giữa tiêu đề và
+ * thân thì 8px là đủ để mắt tách hai tầng.
+ */
 function Card({
   className,
   size = "default",
@@ -12,7 +21,7 @@ function Card({
       data-slot="card"
       data-size={size}
       className={cn(
-        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-xl bg-card py-(--card-spacing) text-sm text-card-foreground ring-1 ring-border [--card-spacing:--spacing(5)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(4)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl",
+        "group/card flex flex-col gap-(--card-gap) overflow-hidden rounded-xl bg-card py-(--card-spacing) text-sm text-card-foreground ring-1 ring-border [--card-gap:--spacing(2)] [--card-spacing:--spacing(5)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(4)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl",
         className,
       )}
       {...props}
@@ -93,7 +102,11 @@ function CardFooter({ className, ...props }: React.ComponentProps<"div">) {
       className={cn(
         // `gap-2` cho khớp `ItemActions` — thiếu nó thì footer có hai thứ trở lên
         // là chúng dính sát nhau, và mọi nơi gọi phải tự thêm `gap` lấy lệ.
-        "flex items-center gap-2 rounded-b-xl border-t p-(--card-spacing)",
+        //
+        // `flex-wrap`: bốn cái nút không vừa một hàng ở cột hẹp thì phải xuống
+        // dòng, chứ không phải bị cắt cụt ở mép thẻ — nút bị xén mất nửa chữ đọc
+        // ra như lỗi vẽ, mà thứ mất đi lại đúng là hành động huỷ hoại nhất.
+        "flex flex-wrap items-center gap-2 rounded-b-xl border-t p-(--card-spacing)",
         className,
       )}
       {...props}

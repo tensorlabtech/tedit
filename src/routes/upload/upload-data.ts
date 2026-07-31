@@ -31,6 +31,22 @@ export type MediaFile = {
   hasAudio?: boolean;
   width?: number;
   height?: number;
+  /**
+   * Nội dung tư liệu chèn. Rỗng nghĩa là để MÁY đọc — chặng đọc tư liệu chỉ chạm
+   * tệp nào cột này còn trống, nên viết vào đây là thắng luôn máy.
+   */
+  description?: string;
+  /** Tên tệp trong kho mà ô này chép ra — dùng để đánh dấu "đã có" ở hộp chọn */
+  libraryFile?: string;
+  /**
+   * Ảnh hay video, do MÁY CHỦ chốt theo đuôi đường dẫn thật trên đĩa.
+   *
+   * Chỉ có ở tệp lấy về từ máy chủ. Với tệp vừa thả từ máy thì suy bằng `isVideo`
+   * trên tên tệp là đủ — tên ấy còn nguyên đuôi. Nhưng tệp đã lưu thì `name` là
+   * chữ người dùng đặt (tệp lấy từ kho mang luôn tiêu đề), nên đoán bằng đuôi sẽ
+   * vẽ một clip thành tấm ảnh.
+   */
+  kind?: "image" | "video";
 };
 
 export const VIDEO_EXTENSIONS = [
@@ -80,6 +96,36 @@ export function formatBytes(bytes: number) {
  * ("Gỡ …") thì cả bảng chú giải lẫn trình đọc màn hình đều thành vô nghĩa.
  * Giữ đầu và đuôi vì phần phân biệt các tệp thường nằm ở hai đầu.
  */
+/**
+ * Tên tệp KHÔNG có phần mở rộng, để hiện dưới ô.
+ *
+ * Ô hẹp tới 79px, mà `.mp4` chiếm gần một nửa số ký tự của "main-1.mp4" — cắt nó
+ * đi thì tên vừa trọn thay vì thành "main-1.m…". Phần mở rộng cũng không nói gì
+ * cho người đang nhìn chính khung hình của tệp đó.
+ */
+/**
+ * Tên gợi ý cho một dự án mới: "Dự án 30/7".
+ *
+ * Đặt sẵn cho ai không muốn gõ, mà vẫn phân biệt được nhau trên danh sách — trước
+ * đây mọi dự án đều mang đúng chữ "Dự án mới" và cái tên không nhận dạng nổi ô nào.
+ *
+ * Vẫn tính là TÊN MẶC ĐỊNH: `isDefaultTitle` nhận ra nó, và đoạn mồi từ vựng cho máy
+ * nghe bỏ qua nó — "Video tên là Dự án 30/7" không giúp máy nghe đúng chữ nào.
+ */
+export function suggestedTitle(now = new Date()) {
+  return `Dự án ${now.getDate()}/${now.getMonth() + 1}`;
+}
+
+/** Tên do máy đặt, chưa qua tay người dùng. */
+export function isDefaultTitle(title: string) {
+  return title === "Dự án mới" || /^Dự án \d{1,2}\/\d{1,2}$/.test(title.trim());
+}
+
+export function baseName(name: string) {
+  const dot = name.lastIndexOf(".");
+  return dot > 0 ? name.slice(0, dot) : name;
+}
+
 export function shortName(name: string, limit = 28) {
   if (name.length <= limit) return name;
   const head = Math.ceil((limit - 1) / 2);

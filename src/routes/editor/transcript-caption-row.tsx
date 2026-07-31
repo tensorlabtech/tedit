@@ -20,15 +20,15 @@ export function CaptionRow({
   active: boolean;
   /** Đang nằm trong vùng chọn nhiều dòng */
   inRange: boolean;
-  onPick: (row: TextElement, noiDai: boolean) => void;
+  onPick: (row: TextElement, extend: boolean) => void;
 }) {
   const [editing, setEditing] = useState(false);
   // "Đã bỏ" suy từ CÁC QUÃNG KHÔNG VÀO VIDEO, không từ một cờ riêng của dòng.
   // Cắt bằng đường nào — bỏ khoảng này, bỏ cả câu, hay gọt mép đoạn trên dải —
   // thì dòng cũng phải hiện như nhau, vì với người dùng đó là một chuyện.
-  const giua = (row.start + row.end) / 2;
+  const mid = (row.start + row.end) / 2;
   const removed = editor.skipRanges.some(
-    (span) => giua >= span.start && giua < span.end,
+    (span) => mid >= span.start && mid < span.end,
   );
   const selected =
     editor.selection?.kind === "text" && editor.selection.id === row.id;
@@ -37,7 +37,7 @@ export function CaptionRow({
   // đó mới ứng được tiếng nào với từ nào.
   const words = editor.captionWords(row);
 
-  const chon = () => {
+  const select = () => {
     editor.setSelection({ kind: "text", id: row.id });
     // Nhảy vạch tới chỗ chữ này hiện: chọn xong mà khung vẫn đứng ở giây khác
     // thì người dùng đang sửa một thứ mình KHÔNG thấy.
@@ -50,7 +50,7 @@ export function CaptionRow({
   // cho biết là làm được. Bấm một cái vừa chọn, vừa nhảy vạch tới đó, vừa mở ô
   // sửa — ba thứ người dùng đều muốn cùng lúc. Bấm ra chỗ khác là xong, không
   // sửa gì thì không có gì đổi.
-  const moSua = (event: React.MouseEvent) => {
+  const openEdit = (event: React.MouseEvent) => {
     // Shift-bấm là NỐI DÀI vùng chọn, không mở ô sửa: đang gom nhiều dòng để bỏ
     // một lượt thì mở ô sửa ra giữa chừng là chắn mất tầm nhìn.
     if (event.shiftKey) {
@@ -58,7 +58,7 @@ export function CaptionRow({
       return;
     }
     onPick(row, false);
-    chon();
+    select();
     setEditing(true);
   };
 
@@ -85,7 +85,7 @@ export function CaptionRow({
     >
       <button
         type="button"
-        onClick={chon}
+        onClick={select}
         className="min-h-6 pt-0.5 text-xs text-muted-foreground tabular-nums"
       >
         {formatTime(row.start)}
@@ -99,7 +99,7 @@ export function CaptionRow({
       ) : (
         <button
           type="button"
-          onClick={moSua}
+          onClick={openEdit}
           className={cn(
             "min-h-6 flex-1 text-left text-sm leading-snug text-balance",
             removed && "text-muted-foreground line-through",
@@ -145,7 +145,7 @@ export function CaptionRow({
         )}
         onClick={() =>
           removed
-            ? void editor.restoreRange(giua)
+            ? void editor.restoreRange(mid)
             : void editor.cutRange(row.start, row.end)
         }
       >
@@ -167,17 +167,34 @@ function CaptionInput({
   // Giữ bản GỐC ngay lúc mở ô sửa. Không giữ thì không có gì để so: mỗi phím gõ
   // đã ghi thẳng vào `row.content` để khung xem đổi theo, nên tới lúc chốt thì
   // "có đổi gì không" luôn ra là không, và cú sửa không bao giờ được ghi xuống.
-  const [goc] = useState(row.content);
+  const [original] = useState(row.content);
   const [draft, setDraft] = useState(row.content);
   // Đưa con trỏ vào ô NGAY, và đặt ở cuối chữ.
   //
   // `autoFocus` không đủ: cú bấm thứ hai của thao tác bấm đúp đã chuyển tiêu
   // điểm sang cái nút ngay lúc nhấn, trước cả khi ô nhập kịp dựng — nên người
   // dùng bấm đúp xong gõ vào chỗ trống mà không có gì xảy ra.
-  const ref = useRef<HTMLInputElement>(null);
+  const ref = useRef<HTMLTextAreaElement>(null);
+  /**
+   * Cao đúng bằng nội dung — một dòng với cụm ngắn, nhiều dòng với cụm dài.
+   *
+   * Trước đây đây là `<input>` một dòng, và lý lẽ đúng: một cụm năm tiếng không
+   * cần hộp cao gấp ba, mà dòng nhúc nhích lúc bắt đầu sửa thì cả danh sách
+   * nhảy theo. Nhưng từ khi gộp được hai cụm (§53), cụm dài tới 14 tiếng — chữ
+   * tràn ngang, con trỏ ở cuối nên PHẦN ĐẦU bị cuộn ra ngoài: dòng đọc ra thành
+   * "ình nghĩ 30 tuổi là lớn lắm rồi", mất hẳn "Ngày trước m".
+   *
+   * Tự cao theo nội dung giữ được cả hai: cụm ngắn vẫn đúng một dòng, không
+   * nhích một pixel nào; cụm dài thì thấy hết chữ.
+   */
+  const autoGrow = (node: HTMLTextAreaElement) => {
+    node.style.height = "0px";
+    node.style.height = `${node.scrollHeight}px`;
+  };
   useEffect(() => {
     const node = ref.current;
     if (!node) return;
+    autoGrow(node);
     node.focus();
     node.setSelectionRange(node.value.length, node.value.length);
   }, []);
@@ -185,10 +202,10 @@ function CaptionInput({
   const commit = () => {
     onDone();
     const clean = draft.trim();
-    if (clean && clean !== goc) {
+    if (clean && clean !== original) {
       void editor.commitTextContent(row.id, clean);
     } else {
-      editor.draftTextContent(row.id, goc);
+      editor.draftTextContent(row.id, original);
     }
   };
 
@@ -203,13 +220,14 @@ function CaptionInput({
     //
     // Một dòng chứ không phải nhiều: một cụm chữ không có khái niệm xuống dòng —
     // máy tự bẻ dòng cho vừa khung hình.
-    <input
+    <textarea
       ref={ref}
-      type="text"
-      className="min-h-6 w-full flex-1 border-0 bg-transparent p-0 text-sm leading-snug outline-none"
+      rows={1}
+      className="min-h-6 w-full flex-1 resize-none overflow-hidden border-0 bg-transparent p-0 text-sm leading-snug outline-none"
       value={draft}
       onChange={(event) => {
         setDraft(event.target.value);
+        autoGrow(event.currentTarget);
         // Khung xem trước đổi theo ngay từng phím — chỉ trên màn, chưa ghi.
         editor.draftTextContent(row.id, event.target.value);
       }}
@@ -221,7 +239,7 @@ function CaptionInput({
           event.currentTarget.blur();
         }
         if (event.key === "Escape") {
-          editor.draftTextContent(row.id, goc);
+          editor.draftTextContent(row.id, original);
           onDone();
         }
       }}

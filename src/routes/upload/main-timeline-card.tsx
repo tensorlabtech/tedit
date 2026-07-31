@@ -31,12 +31,12 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useFileDrop } from "@/lib/use-file-drop";
 import { cn } from "@/lib/utils";
 
 import { AddMediaTile } from "./add-media-tile";
 import { SortableMediaTile } from "./sortable-media-tile";
 import type { MediaFile } from "./upload-data";
-import { useFileDrop } from "./use-file-drop";
 
 /** Kéo phải đi được 5px mới tính là kéo — không thì cú BẤM xem cảnh nào cũng hụt. */
 const DRAG_THRESHOLD = 5;
@@ -48,6 +48,23 @@ const DRAG_THRESHOLD = 5;
  * lúc chưa có bản chép lời thì thứ tự cảnh là thứ duy nhất người dùng đang quyết
  * định. Ô xếp trái sang phải rồi xuống dòng — đọc theo đúng lối đọc chữ.
  */
+/**
+ * Bề rộng một ô cảnh, suy ra từ CHIỀU CAO vùng cuộn.
+ *
+ * Dải cuộn ngang nên chiều cao là thứ cố định: ô cao trọn vùng, trừ dòng tên rồi
+ * nhân 0.5625 để ra bề rộng 9:16.
+ *
+ * `1.25rem` là chiều cao ĐO ĐƯỢC của dòng tên: `mt-1` (4px) cộng một dòng `text-xs`
+ * (16px). Từng trừ 3.25rem — 2.75rem cho dòng tên và 0.5rem chừa vệt mờ ở mép dưới
+ * — cả hai đều là số của thời dải còn cuộn DỌC: dòng tên không cao tới thế, còn vệt
+ * mờ giờ nằm ở mép ngang. Thừa 32px đó đọc ra thành một khoảng trống dưới mỗi thẻ.
+ *
+ * Không còn phải chia bề rộng cho số cảnh như hồi xuống dòng — chính phép chia đó
+ * làm thêm một cảnh là mọi ô nhỏ đi, và ở màn cao thì "vừa một hàng" tự trói ô
+ * xuống 134px trong khi có chỗ cho 227px.
+ */
+const TILE_WIDTH = "w-[calc((100cqh-1.25rem)*0.5625)]";
+
 export function MainTimelineCard({
   files,
   sourceOf,
@@ -121,7 +138,7 @@ export function MainTimelineCard({
             mắt, còn độ dài thật thì phải cắt xong ở bàn dựng mới biết. */}
         {files.length > 0 && (
           <CardAction>
-            <Button variant="secondary" size="sm" onClick={onPick}>
+            <Button variant="secondary" onClick={onPick}>
               <PlusIcon />
               Thêm video
             </Button>
@@ -141,7 +158,7 @@ export function MainTimelineCard({
               </EmptyDescription>
             </EmptyHeader>
             <EmptyContent>
-              <Button variant="secondary" size="sm" onClick={onPick}>
+              <Button variant="secondary" onClick={onPick}>
                 <PlusIcon />
                 Chọn video
               </Button>
@@ -153,21 +170,37 @@ export function MainTimelineCard({
         ) : (
           <ScrollArea
             className="h-full"
+            orientation="horizontal"
             scrollbar={false}
             // `@container`: ô đo mình theo CHIỀU CAO CỦA VÙNG CUỘN NÀY, không
             // theo chiều cao màn. Đo theo `vh` thì ở màn 720px một hàng ô cao
             // hơn cả vùng chứa nó — dòng tên bị xén ngang giữa chữ ngay lần
             // đầu mở, dù chỉ có đúng một hàng và chẳng có gì để cuộn tới.
-            viewportClassName="scroll-fade-b [container-type:size]"
+            // `scroll-fade-r`, không phải `-b`: dải cuộn NGANG nên mép cụt nằm ở
+            // bên phải, không ở dưới. Vệt mờ dưới vừa chỉ sai hướng vừa đòi chừa
+            // 8px đáy — 8px đó nằm trong khoảng trống dưới thẻ. Và không dùng `-x`
+            // vì nó mờ cả mép trái, làm ô đầu dải nhạt đi vô cớ.
+            viewportClassName="scroll-fade-r [container-type:size]"
           >
             {/* `pb-6` chừa đúng chỗ cho vệt mờ ở mép dưới. Thiếu nó thì vệt mờ
                 phủ lên dòng tên của hàng cuối và tên tệp đọc ra nhờ nhờ. */}
-            <div className="flex flex-wrap items-start gap-2 pb-6">
-              <DndContext
-                sensors={sensors}
-                collisionDetection={closestCenter}
-                onDragEnd={handleDragEnd}
-              >
+            {/* `DndContext` bọc NGOÀI hàng ô, không nằm trong nó: nó cắm thêm hai
+                phần tử phụ (một rộng 0px, một rộng 1px, để đọc cho trình đọc màn
+                hình). Nằm trong hàng thì chúng cũng là hai flex item và ăn hai
+                khoảng cách 8px — đủ để đẩy ô "Thêm" xuống hàng dưới. */}
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              {/* MỘT hàng, cuộn NGANG — không xuống dòng. `w-max` để hàng dài
+                  hơn khung thay vì bị bó lại và tự xuống dòng.
+
+                  Xuống dòng thì ô phải chia bề rộng cho số cảnh, nên thêm một cảnh
+                  là MỌI ô nhỏ đi, và số hàng còn đổi theo chiều cao khối. Cuộn ngang
+                  thì ô cao đúng bằng chỗ có, bề rộng suy ra từ 9:16 — thêm cảnh chỉ
+                  làm dải dài thêm, đúng như một mạch phim vốn dài ra. */}
+              <div className="flex w-max items-start gap-2">
                 <SortableContext
                   items={files.map((item) => item.id)}
                   strategy={rectSortingStrategy}
@@ -183,7 +216,7 @@ export function MainTimelineCard({
                       shape="portrait"
                       moveTo="insert"
                       selected={file.id === selectedId}
-                      className="w-[clamp(6rem,calc((100cqh-2.75rem)*0.5625),12rem)]"
+                      className={TILE_WIDTH}
                       onOpen={() => onOpen(file.id)}
                       onReorder={(direction) => onReorder(file.id, direction)}
                       onMove={() => onMove(file.id)}
@@ -193,13 +226,13 @@ export function MainTimelineCard({
                     />
                   ))}
                 </SortableContext>
-              </DndContext>
-              <AddMediaTile
-                label="Thêm"
-                onClick={onPick}
-                className="aspect-[9/16] w-[clamp(6rem,calc((100cqh-2.75rem)*0.5625),12rem)]"
-              />
-            </div>
+                <AddMediaTile
+                  label="Thêm"
+                  onClick={onPick}
+                  className={cn("aspect-[9/16]", TILE_WIDTH)}
+                />
+              </div>
+            </DndContext>
           </ScrollArea>
         )}
       </CardContent>

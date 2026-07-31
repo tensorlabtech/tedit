@@ -50,7 +50,7 @@ export function BandRow({
   value: BandId;
   onChange: (next: BandId) => void;
 }) {
-  const canhBao = BANDS.find((band) => band.id === value)?.note;
+  const note = BANDS.find((band) => band.id === value)?.note;
   return (
     <>
       <ToggleGroup
@@ -58,8 +58,8 @@ export function BandRow({
         className="flex-wrap"
         value={[value]}
         onValueChange={(next) => {
-          const chon = next[0] as BandId | undefined;
-          if (chon) onChange(chon);
+          const selected = next[0] as BandId | undefined;
+          if (selected) onChange(selected);
         }}
       >
         {BANDS.map((band) => (
@@ -75,7 +75,7 @@ export function BandRow({
           phải rê chuột lên mới thấy thì đúng những người cần nó nhất lại không
           bao giờ thấy. Còn in sẵn ra một dòng thì nó đứng đó suốt buổi dựng
           trong khi 96% số chữ không dùng dải này. */}
-      {canhBao && <FieldDescription>{canhBao}</FieldDescription>}
+      {note && <FieldDescription>{note}</FieldDescription>}
     </>
   );
 }
@@ -93,8 +93,8 @@ export function AlignRow({
       className="flex-wrap"
       value={[value]}
       onValueChange={(next) => {
-        const chon = next[0] as AlignId | undefined;
-        if (chon) onChange(chon);
+        const selected = next[0] as AlignId | undefined;
+        if (selected) onChange(selected);
       }}
     >
       {ALIGNS.map((item) => (

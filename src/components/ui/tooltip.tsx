@@ -45,7 +45,18 @@ function TooltipContent({
         alignOffset={alignOffset}
         side={side}
         sideOffset={sideOffset}
-        className="isolate z-50"
+        /**
+         * `pointer-events-none`: bảng chú giải KHÔNG được bắt chuột.
+         *
+         * Không có nó thì nó là một vật cản nằm ngay cạnh cái nút vừa mở nó ra:
+         * con trỏ nhích tới là rời khỏi nút → chú giải đóng → con trỏ lại nằm trên
+         * nút → mở lại. Người dùng thấy nó nháy liên tục rồi biến mất, và càng
+         * đưa chuột về phía chú giải càng chắc chắn mất.
+         *
+         * Đặt ở lớp định vị chứ không ở popup: mũi tên là con của popup nên phải
+         * tắt cả cụm, tắt mỗi popup thì mũi tên vẫn cản.
+         */
+        className="pointer-events-none isolate z-50"
       >
         <TooltipPrimitive.Popup
           data-slot="tooltip-content"

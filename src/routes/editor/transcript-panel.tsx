@@ -46,8 +46,9 @@ export function TranscriptPanel({ editor }: { editor: EditorState }) {
    * này mà lần nào cũng kéo về một phần ba thì danh sách giật dưới tay, trong
    * khi người dùng đang nhìn đúng chỗ mình vừa bấm.
    */
-  const vungCuon = useRef<HTMLDivElement>(null);
-  const chonId = editor.selection?.kind === "text" ? editor.selection.id : null;
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const selectedId =
+    editor.selection?.kind === "text" ? editor.selection.id : null;
 
   /**
    * Lần cuối người dùng tự tay cuộn bảng này.
@@ -56,18 +57,18 @@ export function TranscriptPanel({ editor }: { editor: EditorState }) {
    * cũng phát ra `scroll`, nên nghe `scroll` thì mỗi lần tự cuộn lại tự nhận là
    * người dùng vừa cuộn, và cuộn theo tắt vĩnh viễn ngay sau lần đầu.
    */
-  const chamTay = useRef(0);
+  const lastTouchAt = useRef(0);
   useEffect(() => {
-    const khung = vungCuon.current?.closest<HTMLElement>(
+    const frame = scrollRef.current?.closest<HTMLElement>(
       "[data-slot=scroll-area-viewport]",
     );
-    if (!khung) return;
-    const ghi = () => (chamTay.current = Date.now());
-    khung.addEventListener("wheel", ghi, { passive: true });
-    khung.addEventListener("pointerdown", ghi);
+    if (!frame) return;
+    const mark = () => (lastTouchAt.current = Date.now());
+    frame.addEventListener("wheel", mark, { passive: true });
+    frame.addEventListener("pointerdown", mark);
     return () => {
-      khung.removeEventListener("wheel", ghi);
-      khung.removeEventListener("pointerdown", ghi);
+      frame.removeEventListener("wheel", mark);
+      frame.removeEventListener("pointerdown", mark);
     };
   }, []);
 
@@ -80,10 +81,9 @@ export function TranscriptPanel({ editor }: { editor: EditorState }) {
    * Bỏ chữ TỰ DO ra: bảng này chỉ có dòng LỜI NÓI, chữ tự do không có mặt nên
    * lấy trúng nó thì `querySelector` không tìm ra hàng nào và cuộn theo im luôn.
    */
-  const dongDangChay =
+  const runningRowId =
     editor.textElements.find(
-      (row) =>
-        !row.theoGio && editor.time >= row.start && editor.time < row.end,
+      (row) => !row.byTime && editor.time >= row.start && editor.time < row.end,
     )?.id ?? null;
 
   /**
@@ -111,30 +111,30 @@ export function TranscriptPanel({ editor }: { editor: EditorState }) {
    * bám theo vạch thì nhường — vừa tự cuộn tay xong mà cứ hai giây bị giật về
    * một lần là không đọc trước được đoạn nào.
    */
-  const mucTieu = chonId ?? dongDangChay;
-  const theoVach = !chonId;
+  const targetId = selectedId ?? runningRowId;
+  const followPlayhead = !selectedId;
   useEffect(() => {
-    if (!mucTieu) return;
-    if (theoVach && Date.now() - chamTay.current < 2000) return;
-    const khung = vungCuon.current?.closest<HTMLElement>(
+    if (!targetId) return;
+    if (followPlayhead && Date.now() - lastTouchAt.current < 2000) return;
+    const frame = scrollRef.current?.closest<HTMLElement>(
       "[data-slot=scroll-area-viewport]",
     );
-    const dong = vungCuon.current?.querySelector<HTMLElement>(
-      `[data-row="${mucTieu}"]`,
+    const row = scrollRef.current?.querySelector<HTMLElement>(
+      `[data-row="${targetId}"]`,
     );
-    if (!khung || !dong) return;
+    if (!frame || !row) return;
 
-    const khungBox = khung.getBoundingClientRect();
-    const dongBox = dong.getBoundingClientRect();
-    const tren = dongBox.top - khungBox.top;
+    const frameBox = frame.getBoundingClientRect();
+    const rowBox = row.getBoundingClientRect();
+    const top = rowBox.top - frameBox.top;
     // Vùng đọc thoải mái: chừa 10% trên và 25% dưới. Dòng nằm trong đó thì để yên.
-    if (tren >= khungBox.height * 0.1 && tren <= khungBox.height * 0.75) return;
+    if (top >= frameBox.height * 0.1 && top <= frameBox.height * 0.75) return;
 
-    khung.scrollTo({
-      top: khung.scrollTop + tren - khungBox.height / 3,
+    frame.scrollTo({
+      top: frame.scrollTop + top - frameBox.height / 3,
       behavior: "smooth",
     });
-  }, [mucTieu, theoVach]);
+  }, [targetId, followPlayhead]);
 
   /**
    * Chọn NHIỀU DÒNG để cắn một miếng to hơn một cụm.
@@ -146,10 +146,10 @@ export function TranscriptPanel({ editor }: { editor: EditorState }) {
    * Giữ ở ĐÂY chứ không nhét vào `selection` chung: đây là trạng thái tạm của
    * riêng bảng này, còn `selection` là "đang sửa cái gì" cho cả màn.
    */
-  const [neo, setNeo] = useState<string | null>(null);
-  const [den, setDen] = useState<string | null>(null);
-  // Gom chữ về câu chứa từ neo của nó. Chữ do người dùng tự thêm cũng vào đây —
-  // nó cũng neo vào một khoảng từ, nên cũng thuộc một câu.
+  const [anchor, setAnchor] = useState<string | null>(null);
+  const [focus, setFocus] = useState<string | null>(null);
+  // Gom chữ về câu chứa từ anchor của nó. Chữ do người dùng tự thêm cũng vào đây —
+  // nó cũng anchor vào một khoảng từ, nên cũng thuộc một câu.
   const rowsBySentence = useMemo(() => {
     const map = new Map<string, TextElement[]>();
     for (const element of editor.textElements) {
@@ -157,7 +157,7 @@ export function TranscriptPanel({ editor }: { editor: EditorState }) {
       // thì không chép lời ai. Nhét vào là lại phải bịa ra chỗ đặt ("dưới dòng
       // nào?") rồi dán đuôi "phủ mấy dòng" để chống chế — đúng vết xe của b-roll
       // vừa gỡ. Câu hỏi "tiêu đề nằm ở đâu" là câu hỏi về THỜI GIAN; dải trả lời.
-      if (element.theoGio) continue;
+      if (element.byTime) continue;
       const sentenceId = editor.wordsById.get(element.fromWordId)?.sentenceId;
       if (!sentenceId) continue;
       const list = map.get(sentenceId);
@@ -169,31 +169,31 @@ export function TranscriptPanel({ editor }: { editor: EditorState }) {
   }, [editor.textElements, editor.wordsById]);
 
   // Thứ tự đọc của các dòng — dải chọn tính theo thứ tự này, không theo id.
-  const thuTu = useMemo(
+  const ordered = useMemo(
     () =>
       editor.textElements
-        .filter((item) => !item.theoGio)
+        .filter((item) => !item.byTime)
         .sort((a, b) => a.start - b.start),
     [editor.textElements],
   );
 
-  const dai = useMemo(() => {
-    if (!neo || !den) return new Set<string>();
-    const i = thuTu.findIndex((item) => item.id === neo);
-    const j = thuTu.findIndex((item) => item.id === den);
+  const range = useMemo(() => {
+    if (!anchor || !focus) return new Set<string>();
+    const i = ordered.findIndex((item) => item.id === anchor);
+    const j = ordered.findIndex((item) => item.id === focus);
     if (i === -1 || j === -1) return new Set<string>();
     return new Set(
-      thuTu.slice(Math.min(i, j), Math.max(i, j) + 1).map((item) => item.id),
+      ordered.slice(Math.min(i, j), Math.max(i, j) + 1).map((item) => item.id),
     );
-  }, [neo, den, thuTu]);
+  }, [anchor, focus, ordered]);
 
-  const chonDuoc = thuTu.filter((item) => dai.has(item.id));
-  const boDai = async () => {
-    if (chonDuoc.length === 0) return;
-    const from = chonDuoc[0].start;
-    const to = chonDuoc[chonDuoc.length - 1].end;
-    setNeo(null);
-    setDen(null);
+  const selectable = ordered.filter((item) => range.has(item.id));
+  const extendTo = async () => {
+    if (selectable.length === 0) return;
+    const from = selectable[0].start;
+    const to = selectable[selectable.length - 1].end;
+    setAnchor(null);
+    setFocus(null);
     await editor.cutRange(from, to);
   };
 
@@ -205,19 +205,19 @@ export function TranscriptPanel({ editor }: { editor: EditorState }) {
           <Badge variant="secondary">{editor.words.length} từ</Badge>
         </CardAction>
       </CardHeader>
-      {chonDuoc.length > 1 && (
+      {selectable.length > 1 && (
         // Chỉ hiện khi thật sự có DẢI. Một dòng thì nút bỏ ngay trên dòng đó đã
         // đủ, thêm một thanh nữa chỉ là thêm một chỗ để phân vân.
         <div className="mx-4 flex items-center gap-2 rounded-lg bg-primary/10 px-3 py-1.5 text-xs">
           <span className="font-medium">
-            Đã chọn {chonDuoc.length} dòng · {formatTime(chonDuoc[0].start)} →{" "}
-            {formatTime(chonDuoc[chonDuoc.length - 1].end)}
+            Đã chọn {selectable.length} dòng · {formatTime(selectable[0].start)}{" "}
+            → {formatTime(selectable[selectable.length - 1].end)}
           </span>
           <Button
             variant="secondary"
             size="xs"
             className="ml-auto"
-            onClick={() => void boDai()}
+            onClick={() => void extendTo()}
           >
             Bỏ cả dải
           </Button>
@@ -225,8 +225,8 @@ export function TranscriptPanel({ editor }: { editor: EditorState }) {
             variant="ghost"
             size="xs"
             onClick={() => {
-              setNeo(null);
-              setDen(null);
+              setAnchor(null);
+              setFocus(null);
             }}
           >
             Thôi
@@ -238,7 +238,7 @@ export function TranscriptPanel({ editor }: { editor: EditorState }) {
           <Empty>
             <EmptyTitle>Chưa có lời nào</EmptyTitle>
             <EmptyDescription>
-              Dự án này chưa chép lời — bấm để máy nghe và ghi lại.
+              Dự án này chưa chép lời — bấm để máy nghe và mark lại.
             </EmptyDescription>
             <Button
               variant="secondary"
@@ -262,18 +262,29 @@ export function TranscriptPanel({ editor }: { editor: EditorState }) {
             scrollbar={false}
             viewportClassName="scroll-fade-b"
           >
-            <div ref={vungCuon} className="grid gap-1.5">
+            <div ref={scrollRef} className="grid gap-1.5">
               {editor.sentences.map((sentence, index) => {
                 // Khoảng lặng TRƯỚC câu này. Dưới một giây là nhịp thở, hiện ra
                 // chỉ làm loãng danh sách; ngưỡng 4 giây ở hàng "Cần bạn xem"
                 // giữ nguyên vì nó trả lời câu khác — "chỗ này dài bất thường".
-                const truoc = editor.sentences[index - 1];
-                const hoTruoc = truoc ? sentence.start - truoc.end : 0;
+                const previous = editor.sentences[index - 1];
+                const leadIn = previous ? sentence.start - previous.end : 0;
+                // Khe ĐANG BỊ CẮT thì hiện ra dù ngắn hơn một giây. Chặng cắt lặng
+                // làm việc từ 0,8 giây, nên với ngưỡng một giây có những chỗ đã bị
+                // rút mà không dòng nào nói tới — và dòng này là nơi duy nhất có
+                // nút lấy lại. Chưa cắt thì vẫn giữ ngưỡng một giây: một danh sách
+                // đầy dòng "(im lặng 0,3s)" là danh sách không đọc được.
+                const cut =
+                  previous &&
+                  editor.skipRanges.some(
+                    (span) =>
+                      span.start < sentence.start && span.end > previous.end,
+                  );
                 return (
                   <div key={sentence.id} className="grid gap-1.5">
-                    {hoTruoc >= 1 && truoc && (
+                    {previous && (leadIn >= 1 || cut) && (
                       <SilenceRow
-                        start={truoc.end}
+                        start={previous.end}
                         end={sentence.start}
                         editor={editor}
                       />
@@ -284,14 +295,14 @@ export function TranscriptPanel({ editor }: { editor: EditorState }) {
                         rows={rowsBySentence.get(sentence.id) ?? []}
                         editor={editor}
                         activeTime={editor.time}
-                        chonNhieu={dai}
-                        onPick={(row, noiDai) => {
-                          if (noiDai && neo) {
-                            setDen(row.id);
+                        inRangeIds={range}
+                        onPick={(row, extend) => {
+                          if (extend && anchor) {
+                            setFocus(row.id);
                             return;
                           }
-                          setNeo(row.id);
-                          setDen(null);
+                          setAnchor(row.id);
+                          setFocus(null);
                         }}
                       />
                     ))()}

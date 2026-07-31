@@ -85,8 +85,8 @@ export async function buildCaptionGroups(
   // vào hai bên của mối nối và chữ đứng lì suốt cả quãng bị bỏ.
   // Truyền mốc cuối là từ cuối cùng: `skippedSpans` sẽ coi phần dư sau đoạn cuối
   // là một quãng bỏ, mà ở đây không có gì sau từ cuối để bỏ.
-  const cuoi = words.length > 0 ? words[words.length - 1].end_sec : 0;
-  const cuts = skippedSpans(projectId, cuoi).flatMap((span) => [
+  const lastEnd = words.length > 0 ? words[words.length - 1].end_sec : 0;
+  const cuts = skippedSpans(projectId, lastEnd).flatMap((span) => [
     span.start,
     span.end,
   ]);
@@ -111,8 +111,8 @@ export async function buildCaptionGroups(
       const gap = word.start_sec - previous.end_sec;
       // Không bao giờ gộp hai câu vào một cụm. Câu sau viết hoa nên cụm ra thành
       // "còn quá non Mỗi năm" — đọc lên là hai mẩu ý dính nhau, vô nghĩa.
-      const doiCau = word.sentence_id !== previous.sentence_id;
-      const quaChoCat = cuts.some(
+      const newSentence = word.sentence_id !== previous.sentence_id;
+      const crossesCut = cuts.some(
         (at) => previous.end_sec <= at + 0.01 && word.start_sec >= at - 0.01,
       );
       // Nghỉ trên 0,35 giây là ranh giới ý — cắt ở đó nghe tự nhiên hơn là cắt
@@ -122,8 +122,8 @@ export async function buildCaptionGroups(
         charsWith(word) > MAX_CHARS ||
         span > MAX_SPAN ||
         gap > 0.35 ||
-        doiCau ||
-        quaChoCat
+        newSentence ||
+        crossesCut
       )
         flush();
     }

@@ -83,13 +83,13 @@ export function addMusic(
     ).p + 1;
   const id = newId("mus");
 
-  const co = db
+  const exists = db
     .prepare(
       "SELECT start_sec, end_sec FROM music_tracks WHERE project_id=? ORDER BY start_sec",
     )
     .all(projectId) as Array<{ start_sec: number; end_sec: number }>;
 
-  const trum = db
+  const covering = db
     .prepare(
       "SELECT id, start_sec, end_sec FROM music_tracks WHERE project_id=? AND start_sec<=? AND ?<end_sec",
     )
@@ -98,23 +98,23 @@ export function addMusic(
     | undefined;
 
   let start = Math.max(0, at);
-  if (trum) {
+  if (covering) {
     // Cắt bài cũ lại tại vạch — trừ khi cắt xong nó ngắn hơn mức tối thiểu, lúc
     // đó thà đẩy bài mới xuống sau còn hơn để lại một mẩu 0,3 giây kêu bụp một
     // cái rồi tắt.
-    if (at - trum.start_sec >= MIN_LENGTH) {
+    if (at - covering.start_sec >= MIN_LENGTH) {
       db.prepare("UPDATE music_tracks SET end_sec=? WHERE id=?").run(
         at,
-        trum.id,
+        covering.id,
       );
     } else {
-      start = trum.end_sec;
+      start = covering.end_sec;
     }
   }
-  const ke = co.find((row) => row.start_sec > start);
+  const neighbour = exists.find((row) => row.start_sec > start);
   let end = Math.min(
     start + Math.max(length, MIN_LENGTH),
-    ke?.start_sec ?? Infinity,
+    neighbour?.start_sec ?? Infinity,
     duration,
   );
   // Cuối video mà không còn chỗ thì lùi hẳn ra sau: thà thò quá đuôi phim một

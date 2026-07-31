@@ -30,10 +30,10 @@ const ROWS = [0.9, 0.55, 0.72];
  * thì thấy rõ, thu vào cái dấu 14px thì còn chưa tới một pixel. Dấu hiệu phải
  * ĐỌC ĐƯỢC, nên phóng phần thụt lên; tỉ lệ giữa các kiểu vẫn giữ nguyên.
  */
-const PHONG = 3.4;
+const UNIT = 3.4;
 
 export function AlignGlyph({ align }: { align: AlignId }) {
-  const canh =
+  const alignClass =
     align === "center"
       ? "items-center"
       : align === "right"
@@ -42,10 +42,10 @@ export function AlignGlyph({ align }: { align: AlignId }) {
   return (
     <span
       aria-hidden
-      className={cn("flex size-3.5 flex-col justify-center gap-[2px]", canh)}
+      className={cn("flex size-3.5 flex-col justify-center gap-[2px]", alignClass)}
     >
       {ROWS.map((rong, index) => {
-        const thut = Math.min(0.45, indentOf(align, index, ROWS.length) * PHONG);
+        const indent = Math.min(0.45, indentOf(align, index, ROWS.length) * UNIT);
         return (
           <span
             key={index}
@@ -53,10 +53,10 @@ export function AlignGlyph({ align }: { align: AlignId }) {
             style={{
               // Cắt bớt vạch đúng bằng phần thụt vào: không cắt thì vạch thụt
               // nhiều nhất chạy quá mép dấu và bị xén cụt.
-              width: `${Math.max(0.2, rong - thut) * 100}%`,
+              width: `${Math.max(0.2, rong - indent) * 100}%`,
               ...(align === "right"
-                ? { marginRight: `${thut * 100}%` }
-                : { marginLeft: `${thut * 100}%` }),
+                ? { marginRight: `${indent * 100}%` }
+                : { marginLeft: `${indent * 100}%` }),
             }}
           />
         );

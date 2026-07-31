@@ -8,6 +8,7 @@ import {
   FilmIcon,
   LayersIcon,
   PauseIcon,
+  PencilIcon,
   TypeIcon,
   XIcon,
 } from "lucide-react";
@@ -51,7 +52,13 @@ const MAX_LINES = 3;
  * vào chỗ chuyển cảnh) mà nhìn ra một khối chữ đồng nhất, phải đọc hết tiêu đề
  * mới biết đang nhắc chuyện gì.
  */
-type IssueKind = "nghe" | "chu" | "lang" | "tulieu" | "dechong" | "lechloi";
+type IssueKind =
+  | "unsure"
+  | "caption"
+  | "silence"
+  | "insert"
+  | "overlap"
+  | "mismatch";
 
 type Issue = {
   id: string;
@@ -67,6 +74,17 @@ type Issue = {
    * tìm sang dải, tự tách hai đầu, tự bỏ đoạn giữa — báo mà không giúp làm.
    */
   fix?: { label: string; icon: React.ReactNode; run: () => void };
+  /**
+   * Từ trong lời chép mà lời nhắc này nói về — có nó thì hàng soát cho sửa
+   * NGAY TẠI CHỖ, không phải sang bảng sửa chữ.
+   *
+   * Vì sao cần: sửa ở bảng sửa là sửa cả CỤM, mà máy chủ chỉ ghi ngược vào lời
+   * chép khi số tiếng còn khớp. Gõ "TensorLab" thay cho "Tenso Lab" là 5 tiếng
+   * cho 6 từ — lời chép giữ nguyên hai từ cũ, nên lời nhắc "nghe không chắc"
+   * còn nguyên và người dùng chỉ còn cách bấm "chữ này đúng" cho một chữ mà máy
+   * nghe SAI thật.
+   */
+  word?: { id: string; text: string };
 };
 
 type Measured = { lines: number; truncated: boolean; needsSplit: boolean };
@@ -87,12 +105,12 @@ function buildIssues(
     const sentence = editor.sentences.find(
       (item) => item.id === word.sentenceId,
     );
-    const cum = editor.textElements.find(
+    const group = editor.textElements.find(
       (item) => word.start >= item.start - 0.01 && word.end <= item.end + 0.01,
     );
     issues.push({
       id: `unsure-${word.id}`,
-      kind: "nghe",
+      kind: "unsure",
       title: `Nghe không chắc: “${word.text}”`,
       // Việc cần làm ở đây là TRẢ LỜI, không phải "bỏ qua".
       //
@@ -103,7 +121,7 @@ function buildIssues(
       fix: {
         label: "Chữ này đúng — máy nghe không sai",
         icon: <CheckIcon />,
-        run: () => void editor.xacNhanTu(word.id),
+        run: () => void editor.confirmWord(word.id),
       },
       // Trích NGẮN và bỏ mấy chữ nối ("trong câu", cặp ngoặc kép): dòng phụ chỉ
       // để định vị, mà nó xuống hai dòng thì cả hàng soát đọc ra một khối chữ.
@@ -111,7 +129,8 @@ function buildIssues(
         ? `${formatTime(word.start)} · ${sentence.text.slice(0, 30)}…`
         : formatTime(word.start),
       time: word.start,
-      selection: cum ? { kind: "text", id: cum.id } : null,
+      word: { id: word.id, text: word.text },
+      selection: group ? { kind: "text", id: group.id } : null,
     });
   }
 
@@ -128,7 +147,7 @@ function buildIssues(
     if (measured.needsSplit || measured.truncated) {
       issues.push({
         id: `overflow-${element.id}`,
-        kind: "chu",
+        kind: "caption",
         title: `Dài hơn ${MAX_LINES} dòng — nên tách thành hai chữ`,
         detail: element.content,
         time: from?.start ?? 0,
@@ -143,13 +162,13 @@ function buildIssues(
   // Xảy ra khi tệp video đổi sau lúc chép lời (thêm, bớt, hoặc dựng lại bản
   // ghép). Mọi thứ neo vào từ đều lệch theo, và bản xuất ra sai mà không chỗ nào
   // báo. Đây là lời nhắc DUY NHẤT không sửa được bằng tay — phải chép lại.
-  const cuoiCau = editor.sentences.at(-1)?.end ?? 0;
-  if (editor.duration > 0 && cuoiCau > editor.duration + 1) {
+  const sentenceEnd = editor.sentences.at(-1)?.end ?? 0;
+  if (editor.duration > 0 && sentenceEnd > editor.duration + 1) {
     issues.push({
       id: "lech-loi",
-      kind: "lechloi",
+      kind: "mismatch",
       title: "Bản chép lời không khớp video",
-      detail: `lời chạy tới ${formatTime(cuoiCau)} trong khi video chỉ dài ${formatTime(editor.duration)}`,
+      detail: `lời chạy tới ${formatTime(sentenceEnd)} trong khi video chỉ dài ${formatTime(editor.duration)}`,
       time: editor.duration,
       selection: null,
       fix: {
@@ -163,17 +182,17 @@ function buildIssues(
   // Chữ ĐÈ chữ trên khung hình. Khung sửa đã cảnh báo ngay dưới nút "Chỗ đặt";
   // dòng này là để bắt lại lúc SOÁT CUỐI — lúc đó người dùng không còn nhớ mình
   // đã dời cái nào xuống đâu.
-  const daBao = new Set<string>();
+  const reported = new Set<string>();
   for (const element of editor.textElements) {
-    for (const khac of editor.deLenNhau(element)) {
-      const khoa = [element.id, khac.id].sort().join("|");
-      if (daBao.has(khoa)) continue;
-      daBao.add(khoa);
+    for (const other of editor.deLenNhau(element)) {
+      const keyword = [element.id, other.id].sort().join("|");
+      if (reported.has(keyword)) continue;
+      reported.add(keyword);
       issues.push({
-        id: `overlap-${khoa}`,
-        kind: "dechong",
+        id: `overlap-${keyword}`,
+        kind: "overlap",
         title: "Chữ đè lên chữ",
-        detail: `${formatTime(element.start)} · “${element.content || "chữ trống"}” và “${khac.content || "chữ trống"}”`,
+        detail: `${formatTime(element.start)} · “${element.content || "chữ trống"}” và “${other.content || "chữ trống"}”`,
         time: element.start,
         selection: { kind: "text", id: element.id },
       });
@@ -188,7 +207,7 @@ function buildIssues(
     if (gap < LONG_SILENCE) return;
     issues.push({
       id: `silence-${sentence.id}`,
-      kind: "lang",
+      kind: "silence",
       title: `Lặng ${gap.toFixed(1)} giây`,
       detail: `sau câu ${formatTime(sentence.start)}`,
       time: sentence.end,
@@ -210,7 +229,7 @@ function buildIssues(
     if (!onCut) continue;
     issues.push({
       id: `insert-${insert.id}`,
-      kind: "tulieu",
+      kind: "insert",
       title: "Tư liệu rơi đúng chỗ chuyển cảnh",
       // Kèm số thứ tự: hai tư liệu khác nhau cùng giờ và cùng loại thì nhãn rút
       // gọn ra giống hệt nhau ("Video · 0:00"), và hàng soát đọc ra như bị lặp.
@@ -225,26 +244,26 @@ function buildIssues(
   // Xếp thuần theo thời gian thì "bản chép lời không khớp video" — thứ làm hỏng
   // cả bản xuất — nằm lẫn dưới năm chục dòng "nghe không chắc" và không ai thấy.
   // Lời nhắc mà không nhắc được thì bằng không có.
-  const nang: Record<IssueKind, number> = {
-    lechloi: 0,
-    dechong: 1,
-    chu: 2,
-    tulieu: 3,
-    lang: 4,
-    nghe: 5,
+  const severity: Record<IssueKind, number> = {
+    mismatch: 0,
+    overlap: 1,
+    caption: 2,
+    insert: 3,
+    silence: 4,
+    unsure: 5,
   };
   return issues.sort(
-    (a, b) => nang[a.kind] - nang[b.kind] || a.time - b.time,
+    (a, b) => severity[a.kind] - severity[b.kind] || a.time - b.time,
   );
 }
 
-const ICON_LOAI: Record<IssueKind, React.ReactNode> = {
-  nghe: <EarIcon />,
-  chu: <TypeIcon />,
-  lang: <PauseIcon />,
-  dechong: <LayersIcon />,
-  lechloi: <TriangleAlertIcon />,
-  tulieu: <FilmIcon />,
+const KIND_ICON: Record<IssueKind, React.ReactNode> = {
+  unsure: <EarIcon />,
+  caption: <TypeIcon />,
+  silence: <PauseIcon />,
+  overlap: <LayersIcon />,
+  mismatch: <TriangleAlertIcon />,
+  insert: <FilmIcon />,
 };
 
 /**
@@ -325,6 +344,8 @@ export function ReviewQueue({
   issues: Issue[];
   onBoQua: (id: string) => void;
 }) {
+  /** Mã từ đang mở ô sửa — mỗi lúc chỉ một, như mọi ô sửa khác của bàn dựng. */
+  const [editingWord, setEditingWord] = useState<string | null>(null);
   return (
     <Card className="h-full min-h-0">
       <CardHeader>
@@ -372,10 +393,25 @@ export function ReviewQueue({
                       thì ba dòng cùng loại thành ba viên kẹo xếp hàng, mà cột
                       này vốn là chỗ báo việc chứ không phải chỗ trang trí. */}
                   <ItemMedia variant="icon" className="text-muted-foreground">
-                    {ICON_LOAI[issue.kind]}
+                    {KIND_ICON[issue.kind]}
                   </ItemMedia>
                   <ItemContent>
-                    <ItemTitle className="truncate">{issue.title}</ItemTitle>
+                    {/* Đang sửa thì ô nhập THAY CHO tiêu đề, không mọc thêm một
+                        dòng: hàng soát vốn đã dày, thêm dòng là cả cột nhảy. */}
+                    {issue.word && editingWord === issue.word.id ? (
+                      <WordInput
+                        defaultValue={issue.word.text}
+                        onDone={(text) => {
+                          setEditingWord(null);
+                          const clean = text.trim();
+                          if (clean && clean !== issue.word?.text) {
+                            void editor.updateWord(issue.word!.id, clean);
+                          }
+                        }}
+                      />
+                    ) : (
+                      <ItemTitle className="truncate">{issue.title}</ItemTitle>
+                    )}
                     {/* MỘT dòng, cắt cụt. Cho nó xuống dòng thì ba lời nhắc đã
                         đủ dựng thành một bức tường chữ. */}
                     <ItemDescription className="truncate">
@@ -383,6 +419,22 @@ export function ReviewQueue({
                     </ItemDescription>
                   </ItemContent>
                   <ItemActions>
+                    {/* Sửa THẲNG từ trong lời chép — câu trả lời còn lại cho
+                        "máy nghe sai". Sửa xong thì cờ ngờ vực tự hạ và lời nhắc
+                        biến mất, không phải bấm "chữ này đúng" cho một chữ sai. */}
+                    {issue.word && editingWord !== issue.word.id && (
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        tooltip="Sửa chữ này trong bản chép lời"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setEditingWord(issue.word!.id);
+                        }}
+                      >
+                        <PencilIcon />
+                      </Button>
+                    )}
                     {/* Việc cần làm cũng là một BIỂU TƯỢNG có chú thích, như
                         nút bỏ qua bên cạnh. Một nút chữ đứng giữa hàng thì mỗi
                         dòng lại rộng hẹp một kiểu tuỳ câu chữ dài ngắn, và cột
@@ -405,7 +457,7 @@ export function ReviewQueue({
                         này đúng" đã là câu trả lời, và nó hạ hẳn cờ ngờ vực chứ
                         không chỉ giấu dòng nhắc. Bày cả hai thì thành hai nút
                         gần giống nhau mà kết quả khác hẳn. */}
-                    {issue.kind !== "nghe" && (
+                    {issue.kind !== "unsure" && (
                       <Button
                         variant="ghost"
                         size="icon-sm"
@@ -427,5 +479,38 @@ export function ReviewQueue({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Ô sửa một TỪ, nằm ngay trong hàng soát.
+ *
+ * Ô trần như ô sửa cụm chữ ở bảng Lời: cùng cỡ chữ, cùng dòng, không viền —
+ * chuyển sang sửa thì hàng không nhúc nhích một pixel nào.
+ */
+function WordInput({
+  defaultValue,
+  onDone,
+}: {
+  defaultValue: string;
+  onDone: (text: string) => void;
+}) {
+  const [draft, setDraft] = useState(defaultValue);
+  return (
+    <input
+      autoFocus
+      type="text"
+      value={draft}
+      onClick={(event) => event.stopPropagation()}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => onDone(draft)}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+        if (event.key === "Enter") onDone(draft);
+        // Esc là BỎ: trả lại đúng chữ cũ, không ghi gì.
+        if (event.key === "Escape") onDone(defaultValue);
+      }}
+      className="w-full border-0 bg-transparent p-0 text-sm leading-snug outline-none"
+    />
   );
 }

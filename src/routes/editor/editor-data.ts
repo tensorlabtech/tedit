@@ -75,6 +75,8 @@ export type Insert = {
   fromWordId: string;
   toWordId: string;
   mediaFileId?: string;
+  /** Tệp lấy từ kho dùng chung — hiện nhãn để phân biệt với tệp tự tải lên */
+  fromLibrary?: boolean;
 };
 
 import type {
@@ -103,7 +105,7 @@ export type TextElement = {
   fromWordId: string;
   toWordId: string;
   /** Neo theo giờ — mốc dưới đây là của chính nó, không suy từ từ nào */
-  theoGio?: boolean;
+  byTime?: boolean;
   /** Mốc trên dải: suy từ khoảng từ đã neo, hoặc chính mốc đã lưu nếu theo giờ */
   start: number;
   end: number;
@@ -178,7 +180,7 @@ export const CLIPS: Clip[] = [
 ];
 
 /** Dữ liệu mẫu cho trang thử — neo vào từ để trống vì không có bản chép lời. */
-const NEO = { fromWordId: "", toWordId: "" };
+const ANCHOR = { fromWordId: "", toWordId: "" };
 
 export const INSERTS: Insert[] = [
   {
@@ -188,7 +190,7 @@ export const INSERTS: Insert[] = [
     label: "man-hinh-code.mp4",
     reveal: "none",
     shape: "full",
-    ...NEO,
+    ...ANCHOR,
   },
   {
     id: "i2",
@@ -197,7 +199,7 @@ export const INSERTS: Insert[] = [
     label: "so-tay.jpg",
     reveal: "none",
     shape: "full",
-    ...NEO,
+    ...ANCHOR,
   },
   {
     id: "i3",
@@ -206,7 +208,7 @@ export const INSERTS: Insert[] = [
     label: "bien-do-thi.mp4",
     reveal: "none",
     shape: "full",
-    ...NEO,
+    ...ANCHOR,
   },
   {
     id: "i4",
@@ -215,7 +217,7 @@ export const INSERTS: Insert[] = [
     label: "anh-ky-niem.jpg",
     reveal: "none",
     shape: "full",
-    ...NEO,
+    ...ANCHOR,
   },
 ];
 
@@ -228,7 +230,7 @@ const TEXT_ELEMENT_SEEDS: Array<Omit<TextElement, "start" | "end">> = [
     content: "Ghi lại dấu mốc của ngày hôm nay thật kỹ",
     position: "middle",
     align: "center",
-    emphasis: "deu",
+    emphasis: "even",
     keywords: [],
   },
   {
@@ -238,7 +240,7 @@ const TEXT_ELEMENT_SEEDS: Array<Omit<TextElement, "start" | "end">> = [
     content: "Chúc mừng sinh nhật mình",
     position: "top",
     align: "center",
-    emphasis: "deu",
+    emphasis: "even",
     keywords: [],
     pinned: true,
   },
@@ -249,7 +251,7 @@ const TEXT_ELEMENT_SEEDS: Array<Omit<TextElement, "start" | "end">> = [
     content: "1 năm còn lại",
     position: "top",
     align: "center",
-    emphasis: "deu",
+    emphasis: "even",
     keywords: [],
   },
   {
@@ -259,7 +261,7 @@ const TEXT_ELEMENT_SEEDS: Array<Omit<TextElement, "start" | "end">> = [
     content: "Mình nghĩ 30 tuổi lớn lắm",
     position: "top",
     align: "center",
-    emphasis: "deu",
+    emphasis: "even",
     keywords: [],
     pinned: true,
   },
@@ -270,7 +272,7 @@ const TEXT_ELEMENT_SEEDS: Array<Omit<TextElement, "start" | "end">> = [
     content: "Lập công ty phần mềm",
     position: "middle",
     align: "center",
-    emphasis: "deu",
+    emphasis: "even",
     keywords: [],
   },
   {
@@ -280,7 +282,7 @@ const TEXT_ELEMENT_SEEDS: Array<Omit<TextElement, "start" | "end">> = [
     content: "Bớt trì hoãn",
     position: "bottom",
     align: "center",
-    emphasis: "deu",
+    emphasis: "even",
     keywords: [],
   },
   {
@@ -290,7 +292,7 @@ const TEXT_ELEMENT_SEEDS: Array<Omit<TextElement, "start" | "end">> = [
     content: "Có network",
     position: "middle",
     align: "center",
-    emphasis: "deu",
+    emphasis: "even",
     keywords: [],
   },
   {
@@ -300,7 +302,7 @@ const TEXT_ELEMENT_SEEDS: Array<Omit<TextElement, "start" | "end">> = [
     content: "All-in",
     position: "middle",
     align: "center",
-    emphasis: "deu",
+    emphasis: "even",
     keywords: [],
   },
 ];
@@ -345,7 +347,7 @@ export function formatTimeFine(seconds: number) {
  * Dấu PHẨY thập phân vì đây là tiếng Việt. `s` chứ không `giây` vì nhãn này hay
  * phải nằm trong một khối hẹp trên dải.
  */
-export const nhanImLang = (seconds: number) =>
+export const silenceLabel = (seconds: number) =>
   `(im lặng ${Math.max(0, seconds).toFixed(1).replace(".", ",")}s)`;
 
 /** Đuôi tệp video mà máy chủ nhận — dùng chung mọi nơi cần phân biệt ảnh/video. */

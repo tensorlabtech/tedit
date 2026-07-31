@@ -18,10 +18,10 @@ import { cn } from "@/lib/utils";
  * một câu mẫu nào đó. Nhưng chữ rỗng thì bốn ô trống trơn giống hệt nhau, mà đặt
  * chữ xong con trỏ nhảy thẳng vào ô nhập nên trạng thái rỗng có thật.
  */
-const CHU_MUON = "Còn đúng một năm nữa";
+const PLACEHOLDER_TEXT = "Còn đúng một năm nữa";
 
 /** Đủ lớn để mọi tiếng đã hiện xong — ô xem trước là ảnh tĩnh, không phải phim. */
-const XONG = 999;
+const DONE = 999;
 
 /**
  * Chọn DÁNG bằng cách nhìn, không bằng cách đọc.
@@ -65,7 +65,7 @@ export function TextShapeTiles({
   value: EmphasisId;
   onChange: (next: EmphasisId) => void;
 }) {
-  const chu = text.trim() || CHU_MUON;
+  const sample = text.trim() || PLACEHOLDER_TEXT;
   // Ô XÉN, không phải ô bóp.
   //
   // Bộ vẽ tính cỡ chữ theo DIỆN TÍCH muốn che của một khung 9:16 (xem
@@ -119,7 +119,7 @@ export function TextShapeTiles({
               <span className="@container absolute inset-x-0 top-1/2 block aspect-[9/16] -translate-y-1/2">
               <OverlayTextBlock
                 config={{
-                  text: chu,
+                  text: sample,
                   // Căn ngang giữ nguyên của chính chữ đang sửa: ô xem trước
                   // phải là bản thu nhỏ của THỨ SẼ RA, không phải của một cấu
                   // hình mẫu.
@@ -132,7 +132,7 @@ export function TextShapeTiles({
                   keywords,
                   insert: { kind: "none", shape: "wide" },
                 }}
-                seconds={XONG}
+                seconds={DONE}
               />
               </span>
             </TooltipTrigger>

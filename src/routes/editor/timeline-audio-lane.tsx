@@ -89,16 +89,16 @@ export function ClipWave({
           // quá nửa số cột cao chưa tới 2px và cả dải sóng bẹp thành một vạch.
           // Căn bậc hai kéo khoảng giữa lên (0,095 → 31%) mà vẫn giữ đúng thứ
           // tự to nhỏ; tai người cũng nghe độ to theo lối nén như vậy.
-          const cao = Math.max(4, Math.sqrt(value) * 100);
+          const height = Math.max(4, Math.sqrt(value) * 100);
           return (
             <rect
               key={index}
               x={index + 0.2}
-              y={100 - cao}
+              y={100 - height}
               // Hở 40% bề rộng ô: kín quá thì cả dải thành một mảng đặc, mà
               // thứ cần đọc là NHỊP — chỗ nào dày, chỗ nào thưa.
               width={0.6}
-              height={cao}
+              height={height}
               // Dưới ngưỡng nói thì nhạt hẳn đi: đó chính là chỗ cắt được mà
               // không mất tiếng ai.
               // Sóng lấy màu CHỮ của chính dải này (trắng trên nền sắc chủ

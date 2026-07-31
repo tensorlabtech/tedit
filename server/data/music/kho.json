@@ -1,0 +1,640 @@
+{
+  "license": "CC0-1.0",
+  "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "artist": "HoliznaCC0",
+  "source": "https://freemusicarchive.org/music/holiznacc0/",
+  "tracks": [
+    {
+      "file": "Amethyst 1.mp3",
+      "title": "Amethyst 1",
+      "album": "amethyst-chiptunes",
+      "tags": [
+        "chiptune",
+        "công nghệ",
+        "game",
+        "vui"
+      ],
+      "seconds": 127
+    },
+    {
+      "file": "Amethyst 2.mp3",
+      "title": "Amethyst 2",
+      "album": "amethyst-chiptunes",
+      "tags": [
+        "chiptune",
+        "công nghệ",
+        "game",
+        "vui"
+      ],
+      "seconds": 121
+    },
+    {
+      "file": "Amethyst 3.mp3",
+      "title": "Amethyst 3",
+      "album": "amethyst-chiptunes",
+      "tags": [
+        "chiptune",
+        "công nghệ",
+        "game",
+        "vui"
+      ],
+      "seconds": 155
+    },
+    {
+      "file": "Amethyst 4.mp3",
+      "title": "Amethyst 4",
+      "album": "amethyst-chiptunes",
+      "tags": [
+        "chiptune",
+        "công nghệ",
+        "game",
+        "vui"
+      ],
+      "seconds": 150
+    },
+    {
+      "file": "Amethyst 5.mp3",
+      "title": "Amethyst 5",
+      "album": "amethyst-chiptunes",
+      "tags": [
+        "chiptune",
+        "công nghệ",
+        "game",
+        "vui"
+      ],
+      "seconds": 208
+    },
+    {
+      "file": "August Never Lasts.mp3",
+      "title": "August Never Lasts",
+      "album": "summer-air-lo-fi",
+      "tags": [
+        "lo-fi",
+        "mùa hè",
+        "thư thái",
+        "ấm áp"
+      ],
+      "seconds": 158
+    },
+    {
+      "file": "Bubbles ( Lofi , Bright , Relaxed ).mp3",
+      "title": "Bubbles ( Lofi , Bright , Relaxed )",
+      "album": "public-domain-lofi",
+      "tags": [
+        "bright",
+        "lo-fi",
+        "lofi",
+        "relaxed",
+        "thư giãn"
+      ],
+      "seconds": 148
+    },
+    {
+      "file": "Calm Currents ( Lofi , Relax , Calm ).mp3",
+      "title": "Calm Currents ( Lofi , Relax , Calm )",
+      "album": "public-domain-lofi",
+      "tags": [
+        "calm",
+        "lo-fi",
+        "lofi",
+        "relax",
+        "thư giãn"
+      ],
+      "seconds": 148
+    },
+    {
+      "file": "Canon Event ( Lofi , Sad , Reflection ).mp3",
+      "title": "Canon Event ( Lofi , Sad , Reflection )",
+      "album": "public-domain-lofi",
+      "tags": [
+        "lo-fi",
+        "lofi",
+        "reflection",
+        "sad",
+        "thư giãn"
+      ],
+      "seconds": 153
+    },
+    {
+      "file": "Cold (Salt) Water.mp3",
+      "title": "Cold (Salt) Water",
+      "album": "ocean-memory-lo-fi-chill",
+      "tags": [
+        "chill",
+        "lo-fi",
+        "nhẹ nhàng",
+        "salt",
+        "trầm lắng"
+      ],
+      "seconds": 153
+    },
+    {
+      "file": "Currents We Used to Know.mp3",
+      "title": "Currents We Used to Know",
+      "album": "ocean-memory-lo-fi-chill",
+      "tags": [
+        "chill",
+        "lo-fi",
+        "nhẹ nhàng",
+        "trầm lắng"
+      ],
+      "seconds": 202
+    },
+    {
+      "file": "Extra Life I Never Used.mp3",
+      "title": "Extra Life I Never Used",
+      "album": "we-drove-all-night-game-soundtrack",
+      "tags": [
+        "game",
+        "kể chuyện",
+        "phiêu lưu"
+      ],
+      "seconds": 188
+    },
+    {
+      "file": "Faded in the Sunlight.mp3",
+      "title": "Faded in the Sunlight",
+      "album": "summer-air-lo-fi",
+      "tags": [
+        "lo-fi",
+        "mùa hè",
+        "thư thái",
+        "ấm áp"
+      ],
+      "seconds": 178
+    },
+    {
+      "file": "Feeling Human Again.mp3",
+      "title": "Feeling Human Again",
+      "album": "spring-woke-me-up",
+      "tags": [
+        "nhẹ nhõm",
+        "trong trẻo",
+        "tươi sáng"
+      ],
+      "seconds": 231
+    },
+    {
+      "file": "Foley Of Man.mp3",
+      "title": "Foley Of Man",
+      "album": "spring-woke-me-up",
+      "tags": [
+        "nhẹ nhõm",
+        "trong trẻo",
+        "tươi sáng"
+      ],
+      "seconds": 135
+    },
+    {
+      "file": "Fractured.mp3",
+      "title": "Fractured",
+      "album": "public-domain-lofi+public-domain-lofi",
+      "tags": [
+        "lo-fi",
+        "thư giãn"
+      ],
+      "seconds": 145
+    },
+    {
+      "file": "Ghost Town.mp3",
+      "title": "Ghost Town",
+      "album": "public-domain-lofi+public-domain-lofi",
+      "tags": [
+        "lo-fi",
+        "thư giãn"
+      ],
+      "seconds": 171
+    },
+    {
+      "file": "Hope On Repeat.mp3",
+      "title": "Hope On Repeat",
+      "album": "spring-woke-me-up",
+      "tags": [
+        "nhẹ nhõm",
+        "trong trẻo",
+        "tươi sáng"
+      ],
+      "seconds": 164
+    },
+    {
+      "file": "I Don't Understand A Thing.mp3",
+      "title": "I Don't Understand A Thing",
+      "album": "ocean-memory-lo-fi-chill",
+      "tags": [
+        "chill",
+        "lo-fi",
+        "nhẹ nhàng",
+        "trầm lắng"
+      ],
+      "seconds": 165
+    },
+    {
+      "file": "Lucid ( Lofi , Dreamy , Chill ).mp3",
+      "title": "Lucid ( Lofi , Dreamy , Chill )",
+      "album": "public-domain-lofi",
+      "tags": [
+        "chill",
+        "dreamy",
+        "lo-fi",
+        "lofi",
+        "thư giãn"
+      ],
+      "seconds": 145
+    },
+    {
+      "file": "Lullabies For The End Of The World #1.mp3",
+      "title": "Lullabies For The End Of The World #1",
+      "album": "lullabies-for-the-end-of-the-world",
+      "tags": [
+        "buồn",
+        "chậm",
+        "ru êm",
+        "tĩnh"
+      ],
+      "seconds": 165
+    },
+    {
+      "file": "Lullabies For The End Of The World #2.mp3",
+      "title": "Lullabies For The End Of The World #2",
+      "album": "lullabies-for-the-end-of-the-world",
+      "tags": [
+        "buồn",
+        "chậm",
+        "ru êm",
+        "tĩnh"
+      ],
+      "seconds": 144
+    },
+    {
+      "file": "Lullabies For The End Of The World #3.mp3",
+      "title": "Lullabies For The End Of The World #3",
+      "album": "lullabies-for-the-end-of-the-world",
+      "tags": [
+        "buồn",
+        "chậm",
+        "ru êm",
+        "tĩnh"
+      ],
+      "seconds": 193
+    },
+    {
+      "file": "Lullabies For The End Of The World #4.mp3",
+      "title": "Lullabies For The End Of The World #4",
+      "album": "lullabies-for-the-end-of-the-world",
+      "tags": [
+        "buồn",
+        "chậm",
+        "ru êm",
+        "tĩnh"
+      ],
+      "seconds": 169
+    },
+    {
+      "file": "Lullabies For The End Of The World #5.mp3",
+      "title": "Lullabies For The End Of The World #5",
+      "album": "lullabies-for-the-end-of-the-world",
+      "tags": [
+        "buồn",
+        "chậm",
+        "ru êm",
+        "tĩnh"
+      ],
+      "seconds": 145
+    },
+    {
+      "file": "Moon Unit ( Lofi , Reflection , Dreamy ).mp3",
+      "title": "Moon Unit ( Lofi , Reflection , Dreamy )",
+      "album": "public-domain-lofi",
+      "tags": [
+        "dreamy",
+        "lo-fi",
+        "lofi",
+        "reflection",
+        "thư giãn"
+      ],
+      "seconds": 172
+    },
+    {
+      "file": "ONLY HUMAN.mp3",
+      "title": "ONLY HUMAN",
+      "album": "phonk-aura-farming",
+      "tags": [
+        "dồn dập",
+        "mạnh",
+        "năng lượng",
+        "phonk"
+      ],
+      "seconds": 235
+    },
+    {
+      "file": "Ocean Memory.mp3",
+      "title": "Ocean Memory",
+      "album": "ocean-memory-lo-fi-chill",
+      "tags": [
+        "chill",
+        "lo-fi",
+        "nhẹ nhàng",
+        "trầm lắng"
+      ],
+      "seconds": 151
+    },
+    {
+      "file": "One Night In France ( Lofi, Nostalgic, Chill ).mp3",
+      "title": "One Night In France ( Lofi, Nostalgic, Chill )",
+      "album": "public-domain-lofi",
+      "tags": [
+        "chill",
+        "lo-fi",
+        "lofi",
+        "nostalgic",
+        "thư giãn"
+      ],
+      "seconds": 195
+    },
+    {
+      "file": "Pantheon.mp3",
+      "title": "Pantheon",
+      "album": "phonk-aura-farming",
+      "tags": [
+        "dồn dập",
+        "mạnh",
+        "năng lượng",
+        "phonk"
+      ],
+      "seconds": 192
+    },
+    {
+      "file": "Phonk Remix.mp3",
+      "title": "Phonk Remix",
+      "album": "phonk-aura-farming",
+      "tags": [
+        "dồn dập",
+        "mạnh",
+        "năng lượng",
+        "phonk"
+      ],
+      "seconds": 169
+    },
+    {
+      "file": "Phonk ish.mp3",
+      "title": "Phonk ish",
+      "album": "phonk-aura-farming",
+      "tags": [
+        "dồn dập",
+        "mạnh",
+        "năng lượng",
+        "phonk"
+      ],
+      "seconds": 146
+    },
+    {
+      "file": "Re Adusjtment.mp3",
+      "title": "Re Adusjtment",
+      "album": "phonk-aura-farming",
+      "tags": [
+        "dồn dập",
+        "mạnh",
+        "năng lượng",
+        "phonk"
+      ],
+      "seconds": 243
+    },
+    {
+      "file": "Roof Tops.mp3",
+      "title": "Roof Tops",
+      "album": "summer-air-lo-fi",
+      "tags": [
+        "lo-fi",
+        "mùa hè",
+        "thư thái",
+        "ấm áp"
+      ],
+      "seconds": 214
+    },
+    {
+      "file": "Ruby 1.mp3",
+      "title": "Ruby 1",
+      "album": "ruby-chiptunes",
+      "tags": [
+        "chiptune",
+        "công nghệ",
+        "game",
+        "vui"
+      ],
+      "seconds": 128
+    },
+    {
+      "file": "Ruby 2.mp3",
+      "title": "Ruby 2",
+      "album": "ruby-chiptunes",
+      "tags": [
+        "chiptune",
+        "công nghệ",
+        "game",
+        "vui"
+      ],
+      "seconds": 166
+    },
+    {
+      "file": "Ruby 3.mp3",
+      "title": "Ruby 3",
+      "album": "ruby-chiptunes",
+      "tags": [
+        "chiptune",
+        "công nghệ",
+        "game",
+        "vui"
+      ],
+      "seconds": 120
+    },
+    {
+      "file": "Ruby 4.mp3",
+      "title": "Ruby 4",
+      "album": "ruby-chiptunes",
+      "tags": [
+        "chiptune",
+        "công nghệ",
+        "game",
+        "vui"
+      ],
+      "seconds": 158
+    },
+    {
+      "file": "Ruby 5.mp3",
+      "title": "Ruby 5",
+      "album": "ruby-chiptunes",
+      "tags": [
+        "chiptune",
+        "công nghệ",
+        "game",
+        "vui"
+      ],
+      "seconds": 149
+    },
+    {
+      "file": "Seasonal Depression.mp3",
+      "title": "Seasonal Depression",
+      "album": "spring-woke-me-up",
+      "tags": [
+        "nhẹ nhõm",
+        "trong trẻo",
+        "tươi sáng"
+      ],
+      "seconds": 141
+    },
+    {
+      "file": "Side Quest to Nowhere.mp3",
+      "title": "Side Quest to Nowhere",
+      "album": "we-drove-all-night-game-soundtrack",
+      "tags": [
+        "game",
+        "kể chuyện",
+        "phiêu lưu"
+      ],
+      "seconds": 237
+    },
+    {
+      "file": "Soft Reset.mp3",
+      "title": "Soft Reset",
+      "album": "we-drove-all-night-game-soundtrack",
+      "tags": [
+        "game",
+        "kể chuyện",
+        "phiêu lưu"
+      ],
+      "seconds": 186
+    },
+    {
+      "file": "Spring In Sight.mp3",
+      "title": "Spring In Sight",
+      "album": "spring-woke-me-up",
+      "tags": [
+        "nhẹ nhõm",
+        "trong trẻo",
+        "tươi sáng"
+      ],
+      "seconds": 132
+    },
+    {
+      "file": "Still Life ( Lofi , Chill , Nostalgic ).mp3",
+      "title": "Still Life ( Lofi , Chill , Nostalgic )",
+      "album": "public-domain-lofi",
+      "tags": [
+        "chill",
+        "lo-fi",
+        "lofi",
+        "nostalgic",
+        "thư giãn"
+      ],
+      "seconds": 135
+    },
+    {
+      "file": "Still Waiting.. Player 2.mp3",
+      "title": "Still Waiting.. Player 2",
+      "album": "we-drove-all-night-game-soundtrack",
+      "tags": [
+        "game",
+        "kể chuyện",
+        "phiêu lưu"
+      ],
+      "seconds": 182
+    },
+    {
+      "file": "Summer Felt Longer Then.mp3",
+      "title": "Summer Felt Longer Then",
+      "album": "summer-air-lo-fi",
+      "tags": [
+        "lo-fi",
+        "mùa hè",
+        "thư thái",
+        "ấm áp"
+      ],
+      "seconds": 228
+    },
+    {
+      "file": "The Last Long Day.mp3",
+      "title": "The Last Long Day",
+      "album": "summer-air-lo-fi",
+      "tags": [
+        "lo-fi",
+        "mùa hè",
+        "thư thái",
+        "ấm áp"
+      ],
+      "seconds": 145
+    },
+    {
+      "file": "Tokyo Sunset ( Lofi , Peaceful , Soft ).mp3",
+      "title": "Tokyo Sunset ( Lofi , Peaceful , Soft )",
+      "album": "public-domain-lofi",
+      "tags": [
+        "lo-fi",
+        "lofi",
+        "peaceful",
+        "soft",
+        "thư giãn"
+      ],
+      "seconds": 139
+    },
+    {
+      "file": "Toy Box.mp3",
+      "title": "Toy Box",
+      "album": "spring-woke-me-up",
+      "tags": [
+        "nhẹ nhõm",
+        "trong trẻo",
+        "tươi sáng"
+      ],
+      "seconds": 156
+    },
+    {
+      "file": "Tranquil Mindscape ( Lofi , Happy , Reflection ).mp3",
+      "title": "Tranquil Mindscape ( Lofi , Happy , Reflection )",
+      "album": "public-domain-lofi",
+      "tags": [
+        "happy",
+        "lo-fi",
+        "lofi",
+        "reflection",
+        "thư giãn"
+      ],
+      "seconds": 154
+    },
+    {
+      "file": "Washed Up.mp3",
+      "title": "Washed Up",
+      "album": "ocean-memory-lo-fi-chill",
+      "tags": [
+        "chill",
+        "lo-fi",
+        "nhẹ nhàng",
+        "trầm lắng"
+      ],
+      "seconds": 235
+    },
+    {
+      "file": "We Drove All Night.mp3",
+      "title": "We Drove All Night",
+      "album": "we-drove-all-night-game-soundtrack",
+      "tags": [
+        "game",
+        "kể chuyện",
+        "phiêu lưu"
+      ],
+      "seconds": 158
+    },
+    {
+      "file": "When Time Called Me Darling ( Lofi, Relaxing, Chill).mp3",
+      "title": "When Time Called Me Darling ( Lofi, Relaxing, Chill)",
+      "album": "public-domain-lofi",
+      "tags": [
+        "chill",
+        "lo-fi",
+        "lofi",
+        "relaxing",
+        "thư giãn"
+      ],
+      "seconds": 215
+    }
+  ]
+}

@@ -6,10 +6,81 @@ Nền tảng UI dựng lại từ đầu: React 19 + Vite + Tailwind 4 + shadcn/
 
 ```bash
 npm install
-npm run dev     # http://localhost:5173 → tự chuyển sang /_dev/design-system
-npm run build   # tsc + vite build
+npm run dev:all          # web (5173) + API (5190)
+npm run build            # tsc + vite build
 npm run lint
+npm run check:ownership  # kiểm luật phân quyền trên CSDL tạm
 ```
+
+Mở `http://localhost:5173`. Chưa đăng nhập thì mọi đường dẫn đều chuyển về
+`/login`.
+
+## Đăng nhập
+
+Đăng nhập bằng Google, phiên lưu trong cookie `httpOnly`. Chỉ email có trong
+`TEDDIT_ALLOWED_EMAILS` vào được — **để rỗng là khoá sạch, không phải mở sạch**:
+mỗi lượt dựng đều tiêu tiền thật nên hướng mặc định phải là đóng.
+
+Chép `.env.example` sang `.env` rồi làm ba việc:
+
+1. Sinh khoá ký phiên: `openssl rand -base64 32` → `BETTER_AUTH_SECRET`
+2. Google Cloud Console → *APIs & Services* → *Credentials* → *Create
+   credentials* → *OAuth client ID* → **Web application**. Trong
+   **Authorized redirect URIs** khai đúng chuỗi này:
+
+   ```
+   http://localhost:5173/api/auth/callback/google
+   ```
+
+   Lấy client ID + secret về đặt vào `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
+3. Thêm email của mình vào `TEDDIT_ALLOWED_EMAILS`.
+
+Thiếu biến nào thì máy chủ **dừng ngay lúc khởi động** kèm tên biến còn thiếu —
+cố ý như vậy: chạy tiếp với khoá phiên rỗng thì cookie ai cũng làm giả được, mà
+nhìn bên ngoài máy chủ vẫn như đang chạy tốt.
+
+Cổng `5173` chứ không phải `5190`: trình duyệt đứng ở Vite rồi Vite chuyển tiếp
+`/api` và `/files` sang Fastify (`vite.config.ts`). Cookie phiên chỉ được gửi khi
+trang và API **cùng một gốc**, và thẻ `<img>`/`<video>` thì không gắn được tiêu đề
+nào — chúng chỉ mang cookie.
+
+### Lúc chạy thật
+
+Có `dist/` thì Fastify trả luôn bản build, nên trang và API cùng một gốc mà không
+cần chuyển tiếp gì. Đường dẫn lạ trả `index.html` để React Router tự xử — trừ
+`/api/` và `/files/` vẫn trả 404 thật, vì trả HTML cho một lời gọi API chỉ biến
+"không có dữ liệu" thành lỗi phân tích JSON ở chỗ chẳng liên quan.
+
+```bash
+npm run build
+BETTER_AUTH_URL=https://ten-mien-cua-ban node --import tsx server/main.ts
+```
+
+Fastify chỉ nghe `127.0.0.1:5190`; đặt Caddy/nginx trước để cắt HTTPS rồi chuyển
+tiếp vào cổng đó. Đừng mở `0.0.0.0` — cookie phiên đi qua đường chưa mã hoá thì
+ai chặn được đường truyền cũng đọc được.
+
+`BETTER_AUTH_URL` dùng `https://` thì cookie tự bật cờ `secure`
+(`USE_SECURE_COOKIES` ở `server/env.ts`) — suy từ địa chỉ công khai chứ không từ
+giao thức của request, vì sau lớp chuyển tiếp thì Fastify chỉ thấy `http`.
+
+Trong Google Console khai **cả hai** đường quay về, một cho máy mình một cho tên
+miền — Google cho phép nhiều dòng:
+
+```
+http://localhost:5173/api/auth/callback/google
+https://ten-mien-cua-ban/api/auth/callback/google
+```
+
+### Phân quyền
+
+Dữ liệu chia theo `projects.owner_id`; mọi bảng khác đều có `project_id` nên suy
+ra chủ của bất cứ hàng nào chỉ mất một join. Luật nằm gọn trong
+`server/ownership.ts` và được áp ở **một** cổng (`server/auth-guard.ts`) theo dạng
+đường dẫn, không rắc vào từng route — route thêm về sau mặc định đã bị khoá.
+
+Dự án dựng trước khi có đăng nhập có `owner_id` rỗng nên **không hiện với ai**;
+dữ liệu vẫn nằm trong CSDL.
 
 ## Cấu trúc
 

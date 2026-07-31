@@ -23,8 +23,8 @@ import {
   BANDS,
   EMPHASES,
   MAX_LINES,
-  fitCum,
-  splitCum,
+  fitGroup,
+  splitGroup,
   type AlignId,
   type BandId,
   type EmphasisId,
@@ -41,10 +41,10 @@ import { useRevealLoop } from "./use-reveal-loop";
  * khiển, và khung bên phải là kết quả thật của đúng những lựa chọn đó.
  */
 
-const MAU = "Mình nghĩ 30 tuổi là lớn lắm";
+const SAMPLES = "Mình nghĩ 30 tuổi là lớn lắm";
 
 /** Một dòng điều khiển: nhãn, lời giải thích, và bộ chọn. */
-function Hang({
+function Row({
   label,
   hint,
   children,
@@ -63,19 +63,19 @@ function Hang({
 }
 
 export function OverlayPanel() {
-  const [text, setText] = useState(MAU);
+  const [text, setText] = useState(SAMPLES);
   // HAI trục, hai giá trị. Trước dùng một `layout` cho cả hai hộp chọn, nên bấm
   // hộp dưới là mất lựa chọn của hộp trên — bày ra hai lựa chọn mà máy chỉ giữ một.
   const [align, setAlign] = useState<AlignId>("center");
-  const [emphasis, setEmphasis] = useState<EmphasisId>("deu");
+  const [emphasis, setEmphasis] = useState<EmphasisId>("even");
   const [band, setBand] = useState<BandId>("top");
   const [keywords, setKeywords] = useState<string[]>(["30", "tuổi"]);
   const seconds = useRevealLoop();
   const media = useDemoMedia();
 
   const words = text.trim().split(/\s+/).filter(Boolean);
-  const cum = splitCum(text);
-  const [dau, ...sau] = cum;
+  const group = splitGroup(text);
+  const [dau, ...sau] = group;
   const config: OverlayConfig = {
     text: dau ?? "",
     align,
@@ -85,7 +85,7 @@ export function OverlayPanel() {
     // Tư liệu chèn có thẻ riêng bên dưới; bày cả ở đây là một control hai chỗ.
     insert: { kind: "none", shape: "wide" },
   };
-  const fitted = fitCum(config.text, availOf(band));
+  const fitted = fitGroup(config.text, availOf(band));
 
   /**
    * Số đo THẬT của bản in ra, hỏi thẳng máy chủ.
@@ -98,7 +98,7 @@ export function OverlayPanel() {
     { lines: number; size: number } | "loi" | null
   >(null);
   useEffect(() => {
-    if (emphasis !== "deu" || !config.text.trim()) {
+    if (emphasis !== "even" || !config.text.trim()) {
       setThatSu(null);
       return;
     }
@@ -126,7 +126,7 @@ export function OverlayPanel() {
           <CardTitle>Làm một overlay</CardTitle>
           <CardAction>
             <Badge variant="secondary">
-              {cum.length > 1 ? `${cum.length} cụm` : `${words.length} tiếng`}
+              {group.length > 1 ? `${group.length} cụm` : `${words.length} tiếng`}
             </Badge>
           </CardAction>
         </CardHeader>
@@ -136,7 +136,7 @@ export function OverlayPanel() {
             kia. Máy lo cỡ chữ và bẻ dòng: người chọn ý, máy chọn số đo.
           </p>
           <FieldSet>
-            <Hang
+            <Row
               label="1 · Chữ"
               hint={`Gõ lời cần hiện. Quá ${MAX_LINES} dòng thì máy tự tách thành nhiều cụm hiện lần lượt, không co chữ lại.`}
             >
@@ -165,9 +165,9 @@ export function OverlayPanel() {
                     " ← LỆCH với khung xem"}
                 </FieldDescription>
               ) : null}
-            </Hang>
+            </Row>
 
-            <Hang
+            <Row
               label="2 · Căn — các hàng nằm đâu"
               hint={
                 ALIGNS.find((item) => item.id === align)?.note ??
@@ -187,9 +187,9 @@ export function OverlayPanel() {
                   </ToggleGroupItem>
                 ))}
               </ToggleGroup>
-            </Hang>
+            </Row>
 
-            <Hang
+            <Row
               label="3 · Nhấn — tiếng nào to hơn"
               hint={
                 EMPHASES.find((item) => item.id === emphasis)?.note ??
@@ -209,9 +209,9 @@ export function OverlayPanel() {
                   </ToggleGroupItem>
                 ))}
               </ToggleGroup>
-            </Hang>
+            </Row>
 
-            <Hang
+            <Row
               label="4 · Vị trí"
               hint="Ba chỗ. Giữa là chỗ có mặt người nói — chỉ dùng khi thật sự cần. Hai chỗ dưới chừa lề phải rộng hơn vì cột nút của TikTok nằm bên đó."
             >
@@ -228,9 +228,9 @@ export function OverlayPanel() {
                   </ToggleGroupItem>
                 ))}
               </ToggleGroup>
-            </Hang>
+            </Row>
 
-            <Hang
+            <Row
               label="5 · Từ khoá"
               hint="Bấm vào tiếng để đánh dấu. Tiếng được đánh dấu thì đậm hơn, và là tiếng được phóng to ở các bố cục theo tiếng."
             >
@@ -246,7 +246,7 @@ export function OverlayPanel() {
                   </ToggleGroupItem>
                 ))}
               </ToggleGroup>
-            </Hang>
+            </Row>
           </FieldSet>
         </CardContent>
       </Card>
@@ -255,9 +255,9 @@ export function OverlayPanel() {
         <CardHeader>
           <CardTitle>Thấy ngay</CardTitle>
           {/* Số cụm thì bảng bên trái không nói, nên vẫn phải có một chỗ. */}
-          {cum.length > 1 && (
+          {group.length > 1 && (
             <CardAction>
-              <Badge variant="secondary">đang xem cụm 1/{cum.length}</Badge>
+              <Badge variant="secondary">đang xem cụm 1/{group.length}</Badge>
             </CardAction>
           )}
         </CardHeader>

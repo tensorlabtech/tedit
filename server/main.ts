@@ -1,11 +1,17 @@
-import { createWriteStream, existsSync } from "node:fs";
-import { rm, unlink } from "node:fs/promises";
+import { createReadStream, createWriteStream, existsSync } from "node:fs";
+import { mkdir, rm, unlink } from "node:fs/promises";
 import { basename, extname, join, resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
 
 import multipart from "@fastify/multipart";
 import fastifyStatic from "@fastify/static";
+import { fromNodeHeaders } from "better-auth/node";
 import Fastify from "fastify";
+
+import { auth } from "./auth";
+import { authGuard } from "./auth-guard";
+import { PROJECT_ROOT, PUBLIC_URL } from "./env";
+import { assertInProject } from "./ownership";
 
 import { buildEnvelope, readEnvelope } from "./audio-envelope";
 import { db, newId } from "./db";
@@ -32,7 +38,29 @@ import {
   restoreMusic,
   updateMusic,
 } from "./music-tracks";
-import { runExport, runTranscribe, setJob } from "./pipeline";
+import {
+  ASSETS,
+  copyIntoProject,
+  fingerprint,
+  findDuplicate,
+  kindOf,
+  listAssets,
+  rememberAsset,
+  safeAssetName,
+  setAssetStar,
+  updateAsset,
+} from "./asset-library";
+import {
+  AUDIO as AUDIO_LIB,
+  LIBRARY,
+  listLibrary,
+  rememberUpload,
+  safeName,
+  setStar,
+} from "./music-library";
+import { retryAiStep, runExport, runTranscribe, setJob } from "./pipeline";
+import { failRunningStep, pipelineState } from "./pipeline-steps";
+import { readSettings, writeSettings } from "./settings";
 import { seedSegmentsByCaption } from "./segment-seed";
 import { OUT_HEIGHT, OUT_WIDTH } from "./render";
 import {
@@ -60,19 +88,49 @@ const app = Fastify({ bodyLimit: 4 * 1024 * 1024 * 1024 });
 await app.register(multipart, {
   limits: { fileSize: 4 * 1024 * 1024 * 1024, files: 20 },
 });
-await app.register(fastifyStatic, { root: DATA_ROOT, prefix: "/files/" });
-app.addHook("onSend", async (_request, reply) => {
-  reply.header("access-control-allow-origin", "*");
-  reply.header("access-control-allow-headers", "content-type");
-  // PUT có trong danh sách: thiếu nó thì trình duyệt chặn ở bước hỏi trước
-  // (preflight) và lệnh ghi chết với "Failed to fetch" — không phải lỗi máy chủ,
-  // nên máy chủ không có gì trong nhật ký để mà dò.
-  reply.header(
-    "access-control-allow-methods",
-    "GET,POST,PUT,PATCH,DELETE,OPTIONS",
-  );
+/**
+ * Cửa đăng nhập. Better Auth tự lo mọi đường dưới `/api/auth/`.
+ *
+ * Dựng một `Request` chuẩn web từ request của Fastify vì Better Auth nhận đúng
+ * kiểu đó. Gốc lấy từ `PUBLIC_URL` chứ KHÔNG từ tiêu đề `Host`: sau lớp chuyển
+ * tiếp (Vite lúc phát triển, Caddy lúc chạy thật) thì `Host` là thứ khách gửi
+ * lên và sửa được, mà gốc này quyết định đường Google trả người dùng về — để nó
+ * cho khách đặt là mở đường chuyển hướng người dùng sang chỗ khác.
+ */
+app.route({
+  method: ["GET", "POST"],
+  url: "/api/auth/*",
+  async handler(request, reply) {
+    const url = new URL(request.url, PUBLIC_URL);
+    const response = await auth.handler(
+      new Request(url, {
+        method: request.method,
+        headers: fromNodeHeaders(request.raw.headers),
+        ...(request.body ? { body: JSON.stringify(request.body) } : {}),
+      }),
+    );
+    reply.status(response.status);
+    // `headers.forEach` chứ không `Object.fromEntries`: một lượt đăng nhập đặt
+    // NHIỀU `set-cookie`, mà gộp vào object thì chỉ còn cái cuối.
+    response.headers.forEach((value, key) => reply.header(key, value));
+    return reply.send(response.body ? await response.text() : null);
+  },
 });
-app.options("/*", async (_request, reply) => reply.code(204).send());
+
+/**
+ * Khoá toàn bộ `/api/` và `/files/`.
+ *
+ * Gắn TRƯỚC `fastifyStatic`: móc thêm vào sau chỉ áp cho route của chính thực thể
+ * này, không lan sang plugin đã đăng ký xong — mà `/files/` chính là chỗ hở to
+ * nhất, nên gắn sai thứ tự là khoá tất cả trừ đúng cái cần khoá.
+ *
+ * Dùng `onRequest` chứ không `preHandler` để chặn TRƯỚC lúc đọc thân request:
+ * người chưa đăng nhập gửi tệp 4GB thì bị chối ngay ở tiêu đề, không phải chờ
+ * nhận hết tệp rồi mới nói không.
+ */
+app.addHook("onRequest", authGuard);
+
+await app.register(fastifyStatic, { root: DATA_ROOT, prefix: "/files/" });
 
 const VIDEO = /\.(mp4|mov|m4v|webm|mkv|avi)$/i;
 const IMAGE = /\.(jpe?g|png|webp|heic)$/i;
@@ -82,9 +140,25 @@ app.post("/api/projects", async (request) => {
   const body = (request.body ?? {}) as { title?: string };
   const id = newId("prj");
   ensureProjectDirs(id);
+  // Dự án mới thừa hưởng CÀI ĐẶT của người tạo. Chép vào dự án chứ không đọc lúc
+  // dựng là có chủ ý: đổi cài đặt về sau thì dự án cũ giữ nguyên thứ nó đã dựng,
+  // chỉ dự án mới mới theo số mới.
+  const setting = readSettings(request.viewer!.id);
   db.prepare(
-    "INSERT INTO projects (id, title, status, created_at) VALUES (?,?,?,?)",
-  ).run(id, body.title?.trim() || "Dự án mới", "draft", Date.now());
+    `INSERT INTO projects (id, title, status, created_at, owner_id, profile, min_silence, want_captions, want_music, insert_source)
+     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+  ).run(
+    id,
+    body.title?.trim() || "Dự án mới",
+    "draft",
+    Date.now(),
+    request.viewer!.id,
+    setting.profile,
+    setting.minSilence,
+    setting.wantCaptions ? 1 : 0,
+    setting.wantMusic ? 1 : 0,
+    setting.insertSource,
+  );
   return { id };
 });
 
@@ -97,21 +171,80 @@ app.post("/api/projects", async (request) => {
  */
 app.patch("/api/projects/:id", async (request, reply) => {
   const { id } = request.params as { id: string };
-  const body = (request.body ?? {}) as { title?: string };
-  const title = body.title?.trim();
-  // Tên rỗng thì trả về mặc định, không lưu chuỗi rỗng: một ô không có chữ nào
-  // trên danh sách còn khó nhận ra hơn mười ô trùng tên.
-  const clean = (title || "Dự án mới").slice(0, 120);
+  const body = (request.body ?? {}) as {
+    title?: string;
+    profile?: string;
+    minSilence?: number;
+    wantCaptions?: boolean;
+    wantMusic?: boolean;
+    insertSource?: string;
+  };
+  const sets: string[] = [];
+  const values: Array<string | number> = [];
+
+  if (body.title !== undefined) {
+    // Tên rỗng thì trả về mặc định, không lưu chuỗi rỗng: một ô không có chữ
+    // nào trên danh sách còn khó nhận ra hơn mười ô trùng tên.
+    sets.push("title=?");
+    values.push((body.title.trim() || "Dự án mới").slice(0, 120));
+  }
+  if (body.profile !== undefined) {
+    // LỜI DẶN: video nói về gì, có tên riêng nào. Hai chặng đọc nó — mồi từ vựng
+    // cho máy nghe (`asr-bias.ts`) và chặng sửa lời (`ai-fix-transcript.ts`) —
+    // và với tên riêng thì đây là nguồn duy nhất: không ngữ cảnh nào cho máy
+    // đoán ra tên một công ty chưa ai nghe. Đo thật khi ô này còn rỗng:
+    // "TensorLab" chép ra "Tensolab".
+    //
+    // Trần 600 ký tự khớp trần mồi của whisper (xem `MAX_CHARS` ở `asr-bias`):
+    // dài hơn thì phần đuôi bị cắt ÂM THẦM, mà đuôi mới là chỗ đặt từ vựng.
+    sets.push("profile=?");
+    values.push(body.profile.trim().slice(0, 600));
+  }
+  if (typeof body.minSilence === "number") {
+    // Kẹp trong khoảng có nghĩa: dưới 0 là vô nghĩa, trên 3 giây thì gần như
+    // không quãng nghỉ nào bị rút và cài đặt thành vô tác dụng.
+    sets.push("min_silence=?");
+    values.push(Math.min(3, Math.max(0, body.minSilence)));
+  }
+  // Hai cờ chỉ đọc bởi mạch tự động, nên đổi lúc nào cũng được — nhưng đổi SAU
+  // khi mạch đã chạy thì không có tác dụng gì với bản đã dựng.
+  if (typeof body.wantCaptions === "boolean") {
+    sets.push("want_captions=?");
+    values.push(body.wantCaptions ? 1 : 0);
+  }
+  if (typeof body.wantMusic === "boolean") {
+    sets.push("want_music=?");
+    values.push(body.wantMusic ? 1 : 0);
+  }
+  // Nguồn tư liệu chốt theo TỪNG dự án: video này toàn cảnh quay sẵn thì mở cả
+  // kho, video sau chỉ dùng đúng mấy tệp vừa nạp thì khoá lại — mà không phải
+  // sang trang Cài đặt đổi qua đổi lại.
+  if (
+    body.insertSource === "project" ||
+    body.insertSource === "starred" ||
+    body.insertSource === "library"
+  ) {
+    sets.push("insert_source=?");
+    values.push(body.insertSource);
+  }
+  if (sets.length === 0) {
+    return reply.code(400).send({ error: "Không có gì để đổi" });
+  }
+
   const found = db
-    .prepare("UPDATE projects SET title=? WHERE id=?")
-    .run(clean, id);
+    .prepare(`UPDATE projects SET ${sets.join(", ")} WHERE id=?`)
+    .run(...values, id);
   if (found.changes === 0) {
     return reply.code(404).send({ error: "Không có dự án này" });
   }
-  return { id, title: clean };
+  return db
+    .prepare(
+      "SELECT id, title, profile, min_silence, want_captions, want_music, insert_source FROM projects WHERE id=?",
+    )
+    .get(id);
 });
 
-app.get("/api/projects", async () =>
+app.get("/api/projects", async (request) =>
   db
     .prepare(
       // Ảnh đại diện lấy từ video chính ĐẦU TIÊN: đó là khung mở đầu của video
@@ -125,9 +258,10 @@ app.get("/api/projects", async () =>
                 WHERE m.project_id = p.id AND m.thumb_path IS NOT NULL
                 ORDER BY (m.role <> 'main'), m.position LIMIT 1) AS thumb_path
        FROM projects p
+       WHERE p.owner_id = ?
        ORDER BY p.created_at DESC`,
     )
-    .all(),
+    .all(request.viewer!.id),
 );
 
 /**
@@ -142,19 +276,19 @@ app.get("/api/projects", async () =>
  * dùng đã chọn `Đều nhau` cho một chữ thì đó là lựa chọn của họ, không phải chỗ
  * để mình sửa lưng.
  */
-function doiDangChuMacDinh(projectId: string) {
-  const xong = db
+function seedDefaultCaptionStyle(projectId: string) {
+  const existing = db
     .prepare("SELECT caption_style FROM projects WHERE id=?")
     .get(projectId) as { caption_style: number | null } | undefined;
-  if (xong?.caption_style) return;
+  if (existing?.caption_style) return;
 
   const words = db
     .prepare("SELECT id, text FROM words WHERE project_id=? ORDER BY start_sec")
     .all(projectId) as Array<{ id: string; text: string }>;
-  const viTri = new Map(words.map((word, index) => [word.id, index]));
+  const wordIndex = new Map(words.map((word, index) => [word.id, index]));
   const rows = db
     .prepare(
-      "SELECT id, content, from_word_id, to_word_id FROM elements WHERE project_id=? AND kind='text' AND emphasis='deu' AND from_word_id IS NOT NULL",
+      "SELECT id, content, from_word_id, to_word_id FROM elements WHERE project_id=? AND kind='text' AND emphasis='even' AND from_word_id IS NOT NULL",
     )
     .all(projectId) as Array<{
     id: string;
@@ -163,41 +297,43 @@ function doiDangChuMacDinh(projectId: string) {
     to_word_id: string;
   }>;
 
-  const doi = db.prepare("UPDATE elements SET emphasis='dan-nho' WHERE id=?");
+  const setEmphasis = db.prepare(
+    "UPDATE elements SET emphasis='taper' WHERE id=?",
+  );
   db.transaction(() => {
     for (const row of rows) {
-      const from = viTri.get(row.from_word_id);
-      const to = viTri.get(row.to_word_id);
+      const from = wordIndex.get(row.from_word_id);
+      const to = wordIndex.get(row.to_word_id);
       if (from === undefined || to === undefined || to < from) continue;
-      const loi = words
+      const joined = words
         .slice(from, to + 1)
         .map((word) => word.text)
         .join(" ");
-      if (loi !== row.content) continue;
-      doi.run(row.id);
+      if (joined !== row.content) continue;
+      setEmphasis.run(row.id);
     }
     db.prepare("UPDATE projects SET caption_style=1 WHERE id=?").run(projectId);
   })();
 }
 
 /** Xem chú thích ở chỗ gọi trong `GET /api/projects/:id`. */
-function hopNhatBoQuaNgheKhongChac(projectId: string) {
+function mergeDismissedUnsureIssues(projectId: string) {
   const rows = db
     .prepare(
       "SELECT issue_id FROM dismissed_issues WHERE project_id=? AND issue_id LIKE 'unsure-%'",
     )
     .all(projectId) as Array<{ issue_id: string }>;
   if (rows.length === 0) return;
-  const haCo = db.prepare(
+  const clearUnsure = db.prepare(
     "UPDATE words SET confidence=1 WHERE id=? AND project_id=?",
   );
-  const xoa = db.prepare(
+  const deleteIssue = db.prepare(
     "DELETE FROM dismissed_issues WHERE project_id=? AND issue_id=?",
   );
   db.transaction(() => {
     for (const row of rows) {
-      haCo.run(row.issue_id.slice("unsure-".length), projectId);
-      xoa.run(projectId, row.issue_id);
+      clearUnsure.run(row.issue_id.slice("unsure-".length), projectId);
+      deleteIssue.run(projectId, row.issue_id);
     }
   })();
 }
@@ -206,11 +342,26 @@ function hopNhatBoQuaNgheKhongChac(projectId: string) {
 // trình này, tiến trình chết là việc chết. Hàng còn ghi `running` là xác, dọn
 // ngay để lần bấm sau không bị chốt chặn lại.
 {
-  const xac = db
+  const cleaned = db
     .prepare("UPDATE jobs SET status='error', message=? WHERE status='running'")
     .run("Bị ngắt giữa chừng — bấm lại giúp mình");
-  if (xac.changes > 0) {
-    app.log.info(`dọn ${xac.changes} việc dở dang từ lần chạy trước`);
+  // Chặng cũng phải dọn theo, không thì màn chờ mở ra thấy một con quay của
+  // việc đã chết cùng tiến trình trước và quay mãi mãi.
+  //
+  // Dọn cả chặng CÒN CHỜ, không chỉ chặng ĐANG CHẠY. Chặng chờ mới là chỗ chết
+  // người: nó không có con quay lẫn nút Thử lại nên trông y hệt một chặng sắp tới,
+  // trong khi không còn lượt nào đánh thức nó nữa — `settled` mãi không đạt và cổng
+  // vào bàn dựng khoá vĩnh viễn, không một đường nào mở ra. Đo thật: một dự án treo
+  // ở 10/11 với `music` nằm chờ. Và vì `tsx watch` dựng lại máy chủ mỗi lần lưu tệp,
+  // lúc phát triển thì đây là chuyện thường xuyên chứ không phải hiếm.
+  //
+  // Quét cả bảng là đúng: vừa vào tiến trình mới thì không việc nào còn sống, nên
+  // mọi hàng `waiting` đều là xác của lượt trước.
+  db.prepare(
+    "UPDATE steps SET status='failed', error=?, updated_at=? WHERE status IN ('running','waiting')",
+  ).run("Bị ngắt giữa chừng", Date.now());
+  if (cleaned.changes > 0) {
+    app.log.info(`dọn ${cleaned.changes} việc dở dang từ lần chạy trước`);
   }
 }
 
@@ -229,14 +380,14 @@ app.get("/api/projects/:id", async (request, reply) => {
   // bảo "chỗ này đáng ngờ". Giờ chỉ còn một câu trả lời ("chữ này đúng") và nó
   // ghi vào đúng chỗ giữ sự thật; mấy dòng bỏ-qua cũ phải chuyển theo, không thì
   // người dùng không còn nút nào để dọn chúng.
-  hopNhatBoQuaNgheKhongChac(id);
+  mergeDismissedUnsureIssues(id);
   // Bốn dải cũ rút còn ba: `upper` và `lower` đều nằm quanh khoảng giữa khung nên
   // gộp về `middle`. Bốn dải liên tiếp phủ gần kín chiều dọc, đặt chữ ở hai dải
   // giữa là che đúng mặt người nói — thứ mà cả video đang nói về.
   db.prepare(
     "UPDATE elements SET position_band='middle' WHERE project_id=? AND position_band IN ('upper','lower')",
   ).run(id);
-  doiDangChuMacDinh(id);
+  seedDefaultCaptionStyle(id);
   // Thêm video chính sau khi đã chia đoạn thì phần thêm chưa thuộc đoạn nào —
   // nối thêm một đoạn ở đuôi, không thì nó lặng lẽ mất khỏi bản xuất.
   extendToDuration(
@@ -259,7 +410,7 @@ app.get("/api/projects/:id", async (request, reply) => {
   // hết chữ đi mà mở lại nó tự mọc lại thì người dùng không xoá được gì cả.
   //
   // Cờ `subtitles` cũ tính là "đã muốn có chữ", nên gieo luôn cho họ.
-  const gieo = db
+  const seeded = db
     .prepare(
       "SELECT captions_seeded, subtitles, subtitle_band FROM projects WHERE id=?",
     )
@@ -270,7 +421,7 @@ app.get("/api/projects/:id", async (request, reply) => {
         subtitle_band: string | null;
       }
     | undefined;
-  const coLoi = db
+  const wordCount = db
     .prepare("SELECT COUNT(*) AS n FROM sentences WHERE project_id=?")
     .get(id) as { n: number };
   // ĐANG chép lời thì chưa gieo gì cả.
@@ -280,15 +431,16 @@ app.get("/api/projects/:id", async (request, reply) => {
   // kéo chúng sang từ gần nhất theo thời gian, và nội dung chữ không còn khớp
   // lời ở chỗ đó nữa. Đo thật một lần: 67 trên 69 chữ lệch. Chỉ cần người dùng
   // mở lại trang trong lúc đang chép là dính.
-  const dangChep = db
-    .prepare(
-      "SELECT status FROM jobs WHERE project_id=? AND kind='transcribe'",
-    )
+  const transcribeJob = db
+    .prepare("SELECT status FROM jobs WHERE project_id=? AND kind='transcribe'")
     .get(id) as { status: string } | undefined;
-  const ranh = dangChep?.status !== "running";
+  const idle = transcribeJob?.status !== "running";
 
-  if (ranh && !gieo?.captions_seeded && coLoi.n > 0) {
-    await createCaptionElements(id, (gieo?.subtitle_band ?? "bottom") as Band);
+  if (idle && !seeded?.captions_seeded && wordCount.n > 0) {
+    await createCaptionElements(
+      id,
+      (seeded?.subtitle_band ?? "bottom") as Band,
+    );
     db.prepare(
       "UPDATE projects SET captions_seeded=1, subtitles=0 WHERE id=?",
     ).run(id);
@@ -296,7 +448,7 @@ app.get("/api/projects/:id", async (request, reply) => {
   // Dựng lại đoạn theo cụm chữ và khoảng lặng — cũng một lần cho mỗi dự án.
   // Đoạn cũ chia theo "10 giây một khối" nên dải phim và bảng Lời chia theo hai
   // nhịp khác nhau, và bỏ một cụm phải tách đoạn ra ở hai đầu trước.
-  const chiaDoan = db
+  const seedState = db
     .prepare("SELECT segments_by_caption FROM projects WHERE id=?")
     .get(id) as { segments_by_caption: number | null } | undefined;
   // Số phiên bản, không phải cờ bật/tắt: mỗi lần luật chia đoạn đổi thì dự án
@@ -304,27 +456,37 @@ app.get("/api/projects/:id", async (request, reply) => {
   //   1 → chia theo cụm, nhưng còn cắt vào giữa những chữ dài
   //   2 → không cắt vào giữa chữ nữa
   //   3 → chẻ trước những chữ chép nguyên lời mà dài hơn một cụm
-  if (ranh && (chiaDoan?.segments_by_caption ?? 0) < 3 && coLoi.n > 0) {
+  //   4 → phần nới mép theo tiếng thật không ăn sang cụm bên cạnh nữa
+  if (idle && (seedState?.segments_by_caption ?? 0) < 4 && wordCount.n > 0) {
     await splitVerbatimCaptions(id);
-    const tong = (
+    const total = (
       db
         .prepare(
           "SELECT COALESCE(SUM(duration),0) AS total FROM media_files WHERE project_id=? AND role='main'",
         )
         .get(id) as { total: number }
     ).total;
-    await seedSegmentsByCaption(id, tong);
-    db.prepare("UPDATE projects SET segments_by_caption=3 WHERE id=?").run(id);
+    await seedSegmentsByCaption(id, total);
+    db.prepare("UPDATE projects SET segments_by_caption=4 WHERE id=?").run(id);
   }
 
   return {
     project,
     music: listMusic(id),
-    files: db
-      .prepare(
-        "SELECT * FROM media_files WHERE project_id=? ORDER BY role, position",
-      )
-      .all(id),
+    // `kind` do MÁY CHỦ chốt, suy từ đuôi của đường dẫn thật trên đĩa. Giao diện
+    // từng tự đoán bằng đuôi của `name`, mà `name` là chữ người dùng đặt — tệp
+    // nào mất đuôi thì bị vẽ như một tấm ảnh, và khung xem trước dựng thẻ `<img>`
+    // cho một tệp video rồi ra ô hỏng.
+    files: (
+      db
+        .prepare(
+          "SELECT * FROM media_files WHERE project_id=? ORDER BY role, position",
+        )
+        .all(id) as Array<Record<string, unknown>>
+    ).map((row) => ({
+      ...row,
+      kind: kindOf(String(row.stored_path ?? "")) ?? "video",
+    })),
     sentences: db
       .prepare("SELECT * FROM sentences WHERE project_id=? ORDER BY position")
       .all(id),
@@ -336,6 +498,10 @@ app.get("/api/projects/:id", async (request, reply) => {
     elements: db.prepare("SELECT * FROM elements WHERE project_id=?").all(id),
     segments: listSegments(id),
     jobs: db.prepare("SELECT * FROM jobs WHERE project_id=?").all(id),
+    // Màn chờ đọc từ đây. Gửi kèm `settled`/`blocked` thay vì để client tự suy:
+    // luật "chặng bỏ qua vẫn tính là xong" chỉ nên có MỘT bản, và nó là bản
+    // quyết định cổng vào bàn dựng nên phải nằm cùng chỗ với dữ liệu.
+    pipeline: pipelineState(id),
     effects: db
       .prepare(
         "SELECT id, start_sec, end_sec, kind FROM effects WHERE project_id=? ORDER BY start_sec",
@@ -421,8 +587,28 @@ app.post("/api/projects/:id/files", async (request, reply) => {
   const saved: unknown[] = [];
   const rejected: Array<{ name: string; reason: string }> = [];
 
+  /**
+   * Thứ tự NGƯỜI DÙNG chọn, do màn nạp tệp gửi kèm.
+   *
+   * Không suy ra được ở đây: mỗi tệp đi một request riêng và chúng chạy đua nhau,
+   * nên "tệp nào tới trước" là thứ tự tệp nào NHẸ NHẤT, không phải thứ tự người
+   * dùng xếp. Đo thật trên một dự án 6 cảnh: người dùng chọn main-1…main-6, mốc
+   * lưu ra là 5-1-2-4-3-6 và độ dài lần lượt 8,0 · 6,1 · 10,0 · 38,7 · 42,0 · 13,1
+   * giây — đúng thứ tự từ nhẹ tới nặng. Mà thứ tự này là thứ tự CẢNH TRONG PHIM.
+   *
+   * Chỉ có màn nạp tệp biết thứ tự thật, nên nó phải nói ra. Thiếu thì rơi về lối
+   * cũ `MAX+1` — tải lên bằng công cụ khác vẫn chạy, chỉ là không giữ được thứ tự.
+   */
+  let order: number | null = null;
+
   for await (const part of request.parts()) {
-    if (part.type !== "file") continue;
+    if (part.type !== "file") {
+      if (part.fieldname === "order") {
+        const value = Number((part as { value?: unknown }).value);
+        if (Number.isFinite(value)) order = Math.max(0, Math.trunc(value));
+      }
+      continue;
+    }
     const name = basename(part.filename ?? "khong-ten");
     const isVideo = VIDEO.test(name);
     const isImage = IMAGE.test(name);
@@ -480,7 +666,12 @@ app.post("/api/projects/:id/files", async (request, reply) => {
     }
 
     const role = isVideo && info.hasAudio ? "main" : "insert";
+    // Số của người dùng dùng chung cho CẢ HAI vai, nên trong một vai nó có thể
+    // nhảy cóc (0, 2, 5…). Không sao: mọi chỗ đọc đều `ORDER BY position` chứ
+    // không đòi số liền nhau. Đánh lại số cho liền chỉ tổ phải biết vai của tệp
+    // trước khi đo được nó có tiếng hay không — mà vai thì tới đây mới biết.
     const position =
+      order ??
       (
         db
           .prepare(
@@ -531,7 +722,11 @@ app.get("/api/files/:fileId/raw", async (request, reply) => {
 
 app.patch("/api/files/:fileId", async (request, reply) => {
   const { fileId } = request.params as { fileId: string };
-  const body = request.body as { role?: string; position?: number };
+  const body = request.body as {
+    role?: string;
+    position?: number;
+    description?: string;
+  };
   const file = db
     .prepare("SELECT * FROM media_files WHERE id=?")
     .get(fileId) as { has_audio: number; role: string } | undefined;
@@ -553,6 +748,19 @@ app.patch("/api/files/:fileId", async (request, reply) => {
   if (typeof body.position === "number") {
     db.prepare("UPDATE media_files SET position=? WHERE id=?").run(
       body.position,
+      fileId,
+    );
+  }
+  // Mô tả tư liệu chèn. Người dùng viết thì máy KHÔNG đọc lại: chặng đọc tư liệu
+  // chỉ chạm tệp nào cột này còn rỗng, nên viết vào đây là thắng luôn máy — và
+  // đúng ra phải thế, máy chỉ tả được thứ nhìn thấy còn ý nghĩa thì người biết.
+  //
+  // Xoá trắng thì trả tệp về cho máy đọc ở lượt dựng sau. Ghi `NULL` chứ không
+  // ghi chuỗi rỗng cho khớp với điều kiện `IS NULL OR =''` bên chặng đó.
+  if (typeof body.description === "string") {
+    const clean = body.description.trim().slice(0, 600);
+    db.prepare("UPDATE media_files SET description=? WHERE id=?").run(
+      clean || null,
       fileId,
     );
   }
@@ -600,6 +808,235 @@ app.post("/api/projects/:id/music", async (request, reply) => {
     return track ?? reply.code(500).send({ error: "Không lưu được bài nhạc" });
   }
   return reply.code(400).send({ error: "Không có tệp nào" });
+});
+
+/**
+ * KHO TƯ LIỆU DÙNG CHUNG — ảnh và video chèn cho mọi dự án.
+ *
+ * Khác tư liệu của MỘT dự án (`media_files` với role='insert'): thứ ở đây chưa
+ * thuộc dự án nào, và đặt vào dự án là CHÉP một bản sang thư mục của dự án đó.
+ * Chép chứ không trỏ chung: xoá dự án là xoá cả thư mục của nó, mà trỏ chung thì
+ * cú xoá ấy rút mất tệp khỏi kho và mọi dự án khác dùng nó cùng gãy.
+ */
+
+/**
+ * CÀI ĐẶT của người đang đăng nhập.
+ *
+ * Là MẶC ĐỊNH cho dự án tạo về sau, không áp ngược lên dự án đã dựng: đổi một nút
+ * ở đây mà bản dựng hôm qua tự đổi theo thì người dùng mất công sửa cả buổi.
+ */
+app.get("/api/settings", async (request) => readSettings(request.viewer!.id));
+
+app.patch("/api/settings", async (request) =>
+  writeSettings(request.viewer!.id, (request.body ?? {}) as never),
+);
+
+app.get("/api/library/assets", async (request) =>
+  listAssets(request.viewer!.id),
+);
+
+app.post("/api/library/assets", async (request) => {
+  await mkdir(ASSETS, { recursive: true });
+  let title = "";
+  let tags: string[] = [];
+  let description = "";
+  const saved: unknown[] = [];
+  const trung: Array<{ name: string; sameAs: string }> = [];
+
+  for await (const part of request.parts()) {
+    if (part.type !== "file") {
+      const value = String((part as { value?: unknown }).value ?? "");
+      if (part.fieldname === "title") title = value.trim().slice(0, 160);
+      if (part.fieldname === "description")
+        description = value.trim().slice(0, 600);
+      if (part.fieldname === "tags") {
+        tags = value
+          .split(",")
+          .map((tag) => tag.trim().slice(0, 30))
+          .filter(Boolean)
+          .slice(0, 12);
+      }
+      continue;
+    }
+    const name = basename(part.filename ?? "tu-lieu");
+    if (!kindOf(name)) {
+      await part.toBuffer();
+      trung.push({ name, sameAs: "" });
+      continue;
+    }
+    const file = safeAssetName(name);
+    const target = join(ASSETS, file);
+    await pipeline(part.file, createWriteStream(target));
+
+    // CHỐNG TRÙNG theo nội dung, không theo tên. Cùng một tấm ảnh tải lại lần hai
+    // thì tên khác mà vân tay y hệt — giữ cả hai là kho phình ra, và chặng ghép
+    // tư liệu sẽ đặt hai bản của cùng một hình vào hai chỗ khác nhau.
+    const hash = fingerprint(target);
+    const daCo = findDuplicate(hash);
+    if (daCo) {
+      await unlink(target).catch(() => {});
+      trung.push({ name, sameAs: daCo });
+      continue;
+    }
+
+    const info = await probe(target).catch(() => null);
+    const seconds = kindOf(file) === "video" ? (info?.duration ?? 0) : 0;
+    rememberAsset({
+      file,
+      title: title || file.replace(/\.[^.]+$/, ""),
+      tags,
+      description,
+      seconds,
+      hash,
+      uploadedBy: request.viewer!.id,
+    });
+    saved.push(file);
+  }
+
+  // Trả về CẢ danh sách mới lẫn danh sách bị bỏ vì trùng: người dùng thả mười tệp
+  // mà chỉ thấy bảy cái hiện ra thì phải biết ba cái kia đi đâu.
+  return {
+    assets: listAssets(request.viewer!.id),
+    added: saved.length,
+    duplicates: trung,
+  };
+});
+
+app.patch("/api/library/assets/:file", async (request) => {
+  const { file } = request.params as { file: string };
+  const body = (request.body ?? {}) as {
+    title?: string;
+    tags?: string[];
+    description?: string;
+  };
+  updateAsset(decodeURIComponent(file), body);
+  return { ok: true };
+});
+
+app.put("/api/library/assets/:file/star", async (request) => {
+  const { file } = request.params as { file: string };
+  const body = (request.body ?? {}) as { on?: boolean };
+  setAssetStar(request.viewer!.id, decodeURIComponent(file), body.on !== false);
+  return { ok: true };
+});
+
+/**
+ * Đặt một tư liệu TỪ KHO vào dự án.
+ *
+ * CHÉP một bản sang thư mục của dự án, không trỏ chung vào tệp trong kho: xoá dự
+ * án là xoá cả thư mục của nó, mà trỏ chung thì cú xoá ấy rút mất tệp khỏi kho và
+ * mọi dự án khác đang dùng nó cùng gãy.
+ *
+ * Chỉ nhận TÊN TỆP. Cho client truyền đường dẫn là mở một cửa trỏ vào bất kỳ tệp
+ * nào trên máy chủ.
+ */
+app.post("/api/projects/:id/assets/from-library", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const body = (request.body ?? {}) as { file?: string };
+  const file = basename(body.file ?? "");
+  if (!file || !kindOf(file))
+    return reply.code(400).send({ error: "Thiếu tên tư liệu" });
+
+  const row = await copyIntoProject(id, file);
+  if (!row) return reply.code(404).send({ error: "Kho không có tư liệu này" });
+  return row;
+});
+
+/**
+ * KHO NHẠC DÙNG CHUNG — danh mục để nghe thử và chọn.
+ *
+ * Khác `POST /api/projects/:id/music`: đường kia nhận một bài rồi đặt THẲNG vào
+ * một dự án. Còn kho thì nằm ngoài mọi dự án, ai cũng thấy như nhau.
+ */
+app.get("/api/library/music", async (request) =>
+  listLibrary(request.viewer!.id),
+);
+
+app.post("/api/library/music", async (request, reply) => {
+  let title = "";
+  let tags: string[] = [];
+  let saved: { file: string; seconds: number } | null = null;
+
+  for await (const part of request.parts()) {
+    if (part.type !== "file") {
+      const value = String((part as { value?: unknown }).value ?? "");
+      if (part.fieldname === "title") title = value.trim().slice(0, 120);
+      if (part.fieldname === "tags") {
+        tags = value
+          .split(",")
+          .map((tag) => tag.trim().slice(0, 30))
+          .filter(Boolean)
+          .slice(0, 12);
+      }
+      continue;
+    }
+    const name = basename(part.filename ?? "nhac.mp3");
+    if (!AUDIO_LIB.test(name)) {
+      // Đọc hết luồng rồi mới chối, không thì phần sau của multipart lệch khung.
+      await part.toBuffer();
+      return reply.code(400).send({ error: "Không nhận định dạng nhạc này" });
+    }
+    const file = safeName(name);
+    const target = join(LIBRARY, file);
+    await pipeline(part.file, createWriteStream(target));
+    const length = (await probe(target).catch(() => null))?.duration ?? 0;
+    // Tệp không đọc được thời lượng thì không phải nhạc — vứt ngay, đừng để kho
+    // mọc ra một bài câm mà tới lúc xuất video mới vỡ.
+    if (!(length > 1)) {
+      await unlink(target).catch(() => {});
+      return reply.code(400).send({ error: "Tệp hỏng, không đọc được nhạc" });
+    }
+    saved = { file, seconds: length };
+  }
+
+  if (!saved) return reply.code(400).send({ error: "Không có tệp nào" });
+  rememberUpload(
+    saved.file,
+    title || saved.file.replace(/\.[^.]+$/, ""),
+    tags,
+    saved.seconds,
+    request.viewer!.id,
+  );
+  return listLibrary(request.viewer!.id).find(
+    (track) => track.file === saved!.file,
+  );
+});
+
+app.put("/api/library/music/:file/star", async (request) => {
+  const { file } = request.params as { file: string };
+  const body = (request.body ?? {}) as { on?: boolean };
+  setStar(request.viewer!.id, decodeURIComponent(file), body.on !== false);
+  return { ok: true };
+});
+
+/**
+ * Đặt một bài TỪ KHO vào dự án, tại vạch.
+ *
+ * Không cho client tự truyền đường dẫn: nó sẽ thành một cửa trỏ vào bất kỳ tệp
+ * nào trên máy chủ. Chỉ nhận TÊN TỆP, rồi tự ghép với thư mục kho.
+ */
+app.post("/api/projects/:id/music/from-library", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const body = (request.body ?? {}) as { file?: string; at?: number };
+  const file = basename(body.file ?? "");
+  if (!file || !AUDIO_LIB.test(file)) {
+    return reply.code(400).send({ error: "Thiếu tên bài" });
+  }
+  const source = join(LIBRARY, file);
+  if (!existsSync(source)) {
+    return reply.code(404).send({ error: "Kho không có bài này" });
+  }
+  const length = (await probe(source).catch(() => null))?.duration ?? 0;
+  const at = Number(body.at ?? 0);
+  const track = addMusic(
+    id,
+    file,
+    source,
+    mainDuration(id),
+    length,
+    Number.isFinite(at) ? Math.max(0, at) : 0,
+  );
+  return track ?? reply.code(409).send({ error: "Chỗ này đã có nhạc" });
 });
 
 app.patch("/api/music/:trackId", async (request, reply) => {
@@ -690,23 +1127,23 @@ app.patch("/api/words/:wordId", async (request, reply) => {
   }
   // Đọc chữ CŨ trước khi ghi đè: đó là thứ duy nhất cho biết chữ trên màn nào
   // còn nguyên như máy sinh ra và nên sửa theo.
-  const truoc = db
+  const previous = db
     .prepare("SELECT project_id, text FROM words WHERE id=?")
     .get(wordId) as { project_id: string; text: string } | undefined;
   // Không có từ này thì phải NÓI. Trả 200 cho một mã không tồn tại là nói dối:
   // màn hình đã đổi chữ theo kiểu lạc quan, máy chủ im lặng không ghi gì, và
   // lần mở sau cú sửa biến mất mà không ai báo. Xảy ra thật khi một tab cũ còn
   // giữ mã từ của bản chép lời đã bị thay.
-  if (!truoc) return reply.code(404).send({ error: "Không có từ này" });
+  if (!previous) return reply.code(404).send({ error: "Không có từ này" });
   db.prepare("UPDATE words SET text=?, confidence=1 WHERE id=?").run(
     body.text.trim(),
     wordId,
   );
   {
     refreshCaptionsAfterWordEdit(
-      truoc.project_id,
+      previous.project_id,
       wordId,
-      truoc.text,
+      previous.text,
       body.text.trim(),
     );
   }
@@ -780,10 +1217,10 @@ app.patch("/api/segments/:segmentId", async (request, reply) => {
   };
   // Cùng lý do với `PATCH /api/words/:id`: mã không tồn tại thì trả 404, đừng
   // báo thành công rồi không ghi gì.
-  const co = db
+  const exists = db
     .prepare("SELECT id FROM segments WHERE id=?")
     .get(segmentId) as { id: string } | undefined;
-  if (!co) return reply.code(404).send({ error: "Không có đoạn này" });
+  if (!exists) return reply.code(404).send({ error: "Không có đoạn này" });
   if (typeof body.removed === "boolean")
     setSegmentRemoved(segmentId, body.removed);
   if (typeof body.label === "string") renameSegment(segmentId, body.label);
@@ -861,27 +1298,31 @@ app.post("/api/projects/:id/elements", async (request, reply) => {
   // bỏ câu phía trước thì vẫn dính đúng chỗ.
   // Neo theo GIỜ: chữ tự do (tiêu đề, con số) — nó thuộc về một khoảnh khắc,
   // không chép tiếng nào, nên bắt nó chọn một câu là bịa ra quan hệ không có.
-  const theoTu = Boolean(body.fromWordId && body.toWordId);
-  const theoGio =
-    typeof body.start === "number" && typeof body.end === "number";
-  if (!body.kind || (!theoTu && !theoGio)) {
+  const byWord = Boolean(body.fromWordId && body.toWordId);
+  const byTime = typeof body.start === "number" && typeof body.end === "number";
+  if (!body.kind || (!byWord && !byTime)) {
     return reply.code(400).send({ error: "Thiếu loại hoặc khoảng" });
   }
-  if (theoGio && (body.end as number) <= (body.start as number)) {
+  if (byTime && (body.end as number) <= (body.start as number)) {
     return reply.code(400).send({ error: "Khoảng rỗng" });
   }
+  // Ba mã này tới từ thân request nên cổng chặn không thấy: phải tự đối chiếu
+  // chúng có thuộc đúng dự án đang sửa hay không.
+  assertInProject(id, "file", body.mediaFileId);
+  assertInProject(id, "word", body.fromWordId);
+  assertInProject(id, "word", body.toWordId);
   const elementId = newId("e");
   db.prepare(
     `INSERT INTO elements (id, project_id, kind, from_word_id, to_word_id, start_sec, end_sec, content, position_band, media_file_id, align, emphasis, reveal, shape)
-     VALUES (?,?,?,?,?,?,?,?,?,?,'center','dan-nho','none','full')`,
+     VALUES (?,?,?,?,?,?,?,?,?,?,'center','taper','none','full')`,
   ).run(
     elementId,
     id,
     body.kind,
-    theoTu ? body.fromWordId : null,
-    theoTu ? body.toWordId : null,
-    theoTu ? null : body.start,
-    theoTu ? null : body.end,
+    byWord ? body.fromWordId : null,
+    byWord ? body.toWordId : null,
+    byWord ? null : body.start,
+    byWord ? null : body.end,
     body.content ?? null,
     body.band ?? "top",
     body.mediaFileId ?? null,
@@ -891,6 +1332,51 @@ app.post("/api/projects/:id/elements", async (request, reply) => {
 
 /** Khối chữ ngắn hơn mức này thì đọc không kịp — cũng là sàn lúc kéo hai đầu. */
 const MIN_TEXT_LENGTH = 0.4;
+
+/**
+ * Áp một KIỂU cho toàn bộ chữ chạy theo lời của dự án.
+ *
+ * Đo trên một dự án thật: 82% cụm giữ dáng mặc định, 88% giữ chỗ đặt, 90% giữ
+ * căn ngang. Nghĩa là người dùng gần như không đổi từng cụm — họ muốn đổi PHONG
+ * CÁCH của cả video. Mà bảng sửa chỉ sửa được một cụm, nên việc đó là 51 cú bấm
+ * y hệt nhau.
+ *
+ * Chỉ áp cho chữ neo theo TỪ. Chữ tự do là tiêu đề, con số, nhãn — người dùng
+ * đặt tay từng cái với ý riêng, gộp nó vào một cú "áp cho tất cả" là xoá mất
+ * đúng những chỗ đã bỏ công nhất.
+ */
+app.patch("/api/projects/:id/elements/style", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const body = (request.body ?? {}) as {
+    band?: string;
+    align?: string;
+    emphasis?: string;
+  };
+  const sets: string[] = [];
+  const values: string[] = [];
+  if (body.band) {
+    sets.push("position_band=?");
+    values.push(body.band);
+  }
+  if (body.align) {
+    sets.push("align=?");
+    values.push(body.align);
+  }
+  if (body.emphasis) {
+    sets.push("emphasis=?");
+    values.push(body.emphasis);
+  }
+  if (sets.length === 0) {
+    return reply.code(400).send({ error: "Không có kiểu nào để áp" });
+  }
+  const result = db
+    .prepare(
+      `UPDATE elements SET ${sets.join(", ")}
+       WHERE project_id=? AND kind='text' AND start_sec IS NULL`,
+    )
+    .run(...values, id);
+  return { changed: result.changes };
+});
 
 app.patch("/api/elements/:elementId", async (request, reply) => {
   const { elementId } = request.params as { elementId: string };
@@ -922,18 +1408,25 @@ app.patch("/api/elements/:elementId", async (request, reply) => {
     | undefined;
   if (!current) return reply.code(404).send({ error: "Không có phần tử này" });
 
+  // Ba mã neo tới từ thân request. Dự án suy ra từ chính phần tử đang sửa — cổng
+  // chặn đã xác nhận phần tử đó thuộc người gọi, nên đây chỉ còn việc buộc mấy
+  // mã neo phải cùng dự án với nó.
+  assertInProject(current.project_id, "sentence", body.sentenceId);
+  assertInProject(current.project_id, "word", body.fromWordId);
+  assertInProject(current.project_id, "word", body.toWordId);
+
   // Kéo hai đầu khối chữ tự do. Chặn hai mép chạm nhau ở MÁY CHỦ chứ không chỉ
   // ở màn hình — màn hình có thể là bản cũ, còn đây là cửa duy nhất.
   if (typeof body.start === "number" || typeof body.end === "number") {
-    const moc = db
+    const marks = db
       .prepare("SELECT start_sec, end_sec FROM elements WHERE id=?")
       .get(elementId) as { start_sec: number | null; end_sec: number | null };
-    const dau = body.start ?? moc.start_sec ?? 0;
-    const cuoi = body.end ?? moc.end_sec ?? 0;
-    if (cuoi - dau >= MIN_TEXT_LENGTH) {
+    const first = body.start ?? marks.start_sec ?? 0;
+    const last = body.end ?? marks.end_sec ?? 0;
+    if (last - first >= MIN_TEXT_LENGTH) {
       db.prepare("UPDATE elements SET start_sec=?, end_sec=? WHERE id=?").run(
-        Math.max(0, dau),
-        cuoi,
+        Math.max(0, first),
+        last,
         elementId,
       );
     }
@@ -992,8 +1485,8 @@ app.patch("/api/elements/:elementId", async (request, reply) => {
     ["to_word_id", body.toWordId],
   ] as const) {
     if (typeof giaTri !== "string") continue;
-    const co = db.prepare("SELECT 1 FROM words WHERE id=?").get(giaTri);
-    if (co) {
+    const exists = db.prepare("SELECT 1 FROM words WHERE id=?").get(giaTri);
+    if (exists) {
       db.prepare(`UPDATE elements SET ${cot}=? WHERE id=?`).run(
         giaTri,
         elementId,
@@ -1030,13 +1523,15 @@ app.delete("/api/elements/:elementId", async (request) => {
 app.post("/api/projects/:id/captions", async (request, reply) => {
   const { id } = request.params as { id: string };
   const body = (request.body ?? {}) as { sentenceId?: string };
-  const cau = body.sentenceId
+  // Mã câu tới từ thân request — cổng chặn không thấy nó.
+  assertInProject(id, "sentence", body.sentenceId);
+  const sentence = body.sentenceId
     ? (db
         .prepare("SELECT start_sec, end_sec FROM sentences WHERE id=?")
         .get(body.sentenceId) as
         { start_sec: number; end_sec: number } | undefined)
     : undefined;
-  if (body.sentenceId && !cau) {
+  if (body.sentenceId && !sentence) {
     return reply.code(404).send({ error: "Không có câu này" });
   }
   const band = ((
@@ -1046,7 +1541,7 @@ app.post("/api/projects/:id/captions", async (request, reply) => {
   const created = await createCaptionElements(
     id,
     band,
-    cau ? { start: cau.start_sec, end: cau.end_sec } : undefined,
+    sentence ? { start: sentence.start_sec, end: sentence.end_sec } : undefined,
   );
   return { created };
 });
@@ -1131,18 +1626,19 @@ function startJob(
   kind: string,
   run: () => Promise<unknown>,
 ) {
-  const dangChay = db
+  const running = db
     .prepare(
       "SELECT status, updated_at FROM jobs WHERE project_id=? AND kind=? AND status='running'",
     )
-    .get(projectId, kind) as
-    | { status: string; updated_at: number }
-    | undefined;
-  if (dangChay && Date.now() - dangChay.updated_at < JOB_STALE_MS) return false;
+    .get(projectId, kind) as { status: string; updated_at: number } | undefined;
+  if (running && Date.now() - running.updated_at < JOB_STALE_MS) return false;
 
   setJob(projectId, kind, "running", 0, "Đang xếp hàng");
   void run().catch((error: Error) => {
     setJob(projectId, kind, "error", 0, error.message.slice(0, 300));
+    // Đánh hỏng luôn chặng đang chạy, không thì màn chờ để nó quay mãi: người
+    // dùng ngồi nhìn một con quay của việc đã chết từ lâu.
+    failRunningStep(projectId, error.message.slice(0, 200));
   });
   return true;
 }
@@ -1151,6 +1647,39 @@ app.post("/api/projects/:id/transcribe", async (request, reply) => {
   const { id } = request.params as { id: string };
   if (!startJob(id, "transcribe", () => runTranscribe(id))) {
     return reply.code(409).send({ error: "Đang chép lời rồi" });
+  }
+  return reply.code(202).send({ status: "running" });
+});
+
+/**
+ * Chạy lại từ một chặng.
+ *
+ * Dùng chung ngăn việc `transcribe`: chạy lại một chặng giữa lúc cả mạch đang chạy
+ * thì hai bên ghi lên cùng một bảng chặng và kết quả đọc ra lộn xộn.
+ */
+app.post("/api/projects/:id/steps/:key/retry", async (request, reply) => {
+  const { id, key } = request.params as { id: string; key: string };
+  if (
+    !startJob(id, "transcribe", async () => {
+      // Chặng đầu (`prepare`, `transcribe`, `captions`) không chạy lẻ được — chúng
+      // đẻ ra dữ liệu mà mọi chặng sau dựa vào. Nhưng nút Thử lại VẪN hiện ở đó, và
+      // trước đây bấm vào chỉ nhận 400 rồi chẳng gì xảy ra: một cái nút chết ở đúng
+      // chỗ người dùng đang bị chặn. Dựng lại cả mạch là đường duy nhất còn lại, và
+      // lúc ấy không mất gì của người dùng — bàn dựng vẫn đang khoá vì chặng bắt
+      // buộc đang hỏng.
+      if (await retryAiStep(id, key)) {
+        // ĐÓNG việc lại. `startJob` chỉ mở nó ra; chặng `transcribe` bình thường tự
+        // gọi `setJob(..., "done")` ở cuối, còn phép chạy lẻ này thì không — và việc
+        // treo ở "running" chặn mọi lượt `startJob` sau đó bằng 409, kể cả nút Thử
+        // lại lần hai và cả lượt xuất video. Đo thật: chặng chạy xong từ lâu mà việc
+        // vẫn "running · Đang xếp hàng".
+        setJob(id, "transcribe", "done", 100, "Xong");
+        return;
+      }
+      await runTranscribe(id);
+    })
+  ) {
+    return reply.code(409).send({ error: "Đang có việc chạy rồi" });
   }
   return reply.code(202).send({ status: "running" });
 });
@@ -1172,7 +1701,66 @@ app.get("/api/projects/:id/jobs/:kind", async (request, reply) => {
   return job;
 });
 
+/**
+ * Trả bản build của trang — CHỈ khi `dist/` có thật.
+ *
+ * Lúc chạy thật đây là cách duy nhất trang tới được người dùng: không có Vite
+ * nào trên máy chủ, nên thiếu khối này thì tên miền trả về rỗng. Và vì trang và
+ * API cùng một gốc, cookie phiên đi kèm mọi request mà không cần CORS.
+ *
+ * Lúc phát triển thì `dist/` thường là bản cũ. Không sao: trình duyệt đứng ở
+ * Vite (5173), còn Fastify (5190) chỉ nhận request đã qua chuyển tiếp — nên bản
+ * cũ ở đây không ai nhìn thấy. Vẫn kiểm `existsSync` để máy chưa build lần nào
+ * cũng khởi động được.
+ *
+ * `decorateReply: false`: `@fastify/static` chỉ được gắn `reply.sendFile` MỘT
+ * lần cho cả thực thể, mà lần gắn ở `/files/` phía trên đã dùng chỗ đó.
+ */
+const WEB_ROOT = join(PROJECT_ROOT, "dist");
+const hasWebBuild = existsSync(join(WEB_ROOT, "index.html"));
+
+if (hasWebBuild) {
+  await app.register(fastifyStatic, {
+    root: WEB_ROOT,
+    prefix: "/",
+    decorateReply: false,
+    // Tắt wildcard để đường dẫn không khớp tệp nào rơi xuống `setNotFoundHandler`
+    // bên dưới, thay vì `@fastify/static` tự trả 404 và chặn mất bước đó.
+    wildcard: false,
+  });
+
+  /**
+   * Mọi đường dẫn lạ đều trả `index.html` để React Router tự xử.
+   *
+   * Cần vì đường dẫn nằm bên trong trang: mở thẳng `/editor/prj_abc` hay bấm tải
+   * lại ở đó thì máy chủ được hỏi trước React, mà máy chủ không có tệp nào tên
+   * vậy — không có nhánh này thì tải lại trang giữa lúc đang dựng là ra 404.
+   *
+   * `/api/` và `/files/` KHÔNG rơi vào đây: chúng phải trả 404 thật. Trả HTML cho
+   * một lời gọi API là biến "không có dữ liệu này" thành một lỗi phân tích JSON ở
+   * phía trình duyệt, và chỗ báo lỗi khi đó chỉ vào đúng dòng vô can.
+   */
+  app.setNotFoundHandler((request, reply) => {
+    const path = request.url.split("?")[0];
+    if (path.startsWith("/api/") || path.startsWith("/files/")) {
+      return reply.code(404).send({ error: "Không tìm thấy" });
+    }
+    return reply
+      .type("text/html")
+      .send(createReadStream(join(WEB_ROOT, "index.html")));
+  });
+}
+
 const port = Number(process.env.PORT ?? 5190);
+/**
+ * Chỉ nghe trên máy nội bộ. Lúc chạy thật thì Caddy/nginx đứng trước và nói
+ * chuyện với cổng này; mở ra `0.0.0.0` là phơi thẳng cổng chưa có HTTPS ra
+ * internet, mà cookie phiên đi qua đường không mã hoá thì ai chặn được đường
+ * truyền cũng đọc được nó.
+ */
 await app.listen({ port, host: "127.0.0.1" });
-app.log.info(`API chạy ở http://127.0.0.1:${port}`);
+app.log.info(
+  `API chạy ở http://127.0.0.1:${port}` +
+    (hasWebBuild ? " (kèm bản build của trang)" : " (chưa có dist/, chỉ API)"),
+);
 export { app };

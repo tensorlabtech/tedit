@@ -108,14 +108,14 @@ async function segmentLength(path: string) {
     format?: { duration?: string };
     streams?: Array<{ codec_type: string; duration?: string }>;
   };
-  const so = (value?: string) => {
+  const num = (value?: string) => {
     const n = Number(value);
     return Number.isFinite(n) && n > 0 ? n : 0;
   };
-  const dai = (data.streams ?? [])
+  const durations = (data.streams ?? [])
     .filter((s) => s.codec_type === "video" || s.codec_type === "audio")
-    .map((s) => so(s.duration));
-  return Math.max(...dai, so(data.format?.duration));
+    .map((s) => num(s.duration));
+  return Math.max(...durations, num(data.format?.duration));
 }
 
 export async function buildBase(projectId: string, sources: string[]) {
@@ -131,12 +131,12 @@ export async function buildBase(projectId: string, sources: string[]) {
 
   const parts = sources
     .map((_, index) => {
-      const dai = lengths[index].toFixed(3);
+      const duration = lengths[index].toFixed(3);
       // `fps` đặt TRƯỚC scale để chuẩn hoá nhịp khung ngay từ đầu: video nhịp
       // thay đổi (iPhone hay quay vậy) mà chuẩn hoá muộn thì tiếng lệch dần.
       // `aresample=async=1` bù trôi tiếng ở chỗ nhịp gãy.
       //
-      // `tpad`/`apad` đệm cho ĐỦ rồi `trim`/`atrim` cắt về đúng `dai`. Đệm mà
+      // `tpad`/`apad` đệm cho ĐỦ rồi `trim`/`atrim` cắt về đúng `duration`. Đệm mà
       // không cắt là lỗi cũ: `tpad ... stop_duration=30` nhồi 30 giây khung
       // đứng vào ĐUÔI MỖI mảnh. Với một video thì `-shortest` cắt hộ nên không
       // ai thấy; với ba video thì hai chỗ nối đầu tiên mỗi chỗ ăn nguyên 30 giây
@@ -146,9 +146,9 @@ export async function buildBase(projectId: string, sources: string[]) {
       return (
         `[${index}:v]fps=${FPS},scale=${OUT_WIDTH}:${OUT_HEIGHT}:force_original_aspect_ratio=increase,` +
         `crop=${OUT_WIDTH}:${OUT_HEIGHT},setsar=1,tpad=stop_mode=clone:stop_duration=5,` +
-        `trim=duration=${dai},setpts=PTS-STARTPTS[v${index}];` +
+        `trim=duration=${duration},setpts=PTS-STARTPTS[v${index}];` +
         `[${index}:a]aresample=48000:async=1:first_pts=0,aformat=channel_layouts=stereo,` +
-        `apad,atrim=duration=${dai},asetpts=PTS-STARTPTS[a${index}]`
+        `apad,atrim=duration=${duration},asetpts=PTS-STARTPTS[a${index}]`
       );
     })
     .join(";");
@@ -212,18 +212,18 @@ export async function cutRanges(
       // ra tiếng "bụp" ngay chỗ cắt. Đo một bản cắt thẳng: mức rơi từ −28dB
       // xuống −62dB trong đúng một ô 10ms. Vuốt ngắn hơn một khung hình thì
       // không ai nghe thấy là đã vuốt, mà bước nhảy thì biến mất.
-      const dai = Math.max(0, range.end - range.start);
-      const fade = Math.min(0.008, dai / 4);
-      const vuot =
+      const duration = Math.max(0, range.end - range.start);
+      const fade = Math.min(0.008, duration / 4);
+      const fadeOut =
         fade > 0
           ? `afade=t=in:st=0:d=${fade.toFixed(3)},` +
-            `afade=t=out:st=${Math.max(0, dai - fade).toFixed(3)}:d=${fade.toFixed(3)},`
+            `afade=t=out:st=${Math.max(0, duration - fade).toFixed(3)}:d=${fade.toFixed(3)},`
           : "";
       return (
         `[0:v]trim=start=${range.start.toFixed(3)}:end=${range.end.toFixed(3)},` +
         `setpts=PTS-STARTPTS[v${index}];` +
         `[0:a]atrim=start=${range.start.toFixed(3)}:end=${range.end.toFixed(3)},` +
-        `asetpts=PTS-STARTPTS,${vuot}` +
+        `asetpts=PTS-STARTPTS,${fadeOut}` +
         `anull[a${index}]`
       );
     })
@@ -333,21 +333,21 @@ export async function mixMusic(
   for (const [index, cue] of cues.entries()) {
     inputs.push("-stream_loop", "-1", "-i", cue.path);
     const fade = Math.min(FADE, cue.length / 3);
-    const nhan = `bg${index}`;
+    const label = `bg${index}`;
     filters.push(
       `[${index + 1}:a]` +
         `atrim=0:${cue.length.toFixed(3)},asetpts=PTS-STARTPTS,` +
         `volume=${cue.volume.toFixed(3)},` +
         `afade=t=in:st=0:d=${fade.toFixed(3)},` +
         `afade=t=out:st=${Math.max(0, cue.length - fade).toFixed(3)}:d=${fade.toFixed(3)},` +
-        `adelay=${Math.round(cue.start * 1000)}:all=1[${nhan}]`,
+        `adelay=${Math.round(cue.start * 1000)}:all=1[${label}]`,
     );
   }
   // `normalize=0` là bắt buộc: mặc định `amix` chia đều biên độ cho số luồng,
   // nên thêm nhạc lại làm GIỌNG NÓI nhỏ đi 6dB. Mức nhạc điều bằng `volume`.
-  const nhanNhac = cues.map((_, index) => `[bg${index}]`).join("");
+  const musicLabels = cues.map((_, index) => `[bg${index}]`).join("");
   filters.push(
-    `[0:a]${nhanNhac}amix=inputs=${cues.length + 1}:duration=first:dropout_transition=0:normalize=0[aout]`,
+    `[0:a]${musicLabels}amix=inputs=${cues.length + 1}:duration=first:dropout_transition=0:normalize=0[aout]`,
   );
 
   await ffmpeg([
@@ -611,19 +611,19 @@ export function junctionHalves(kind: JunctionId): [number, number] {
  * thành một thứ khác.
  */
 export function effectPeak(start: number, end: number, kind: JunctionId) {
-  const [truoc, sau] = junctionHalves(kind);
-  return start + (end - start) * (truoc / (truoc + sau));
+  const [before, after] = junctionHalves(kind);
+  return start + (end - start) * (before / (before + after));
 }
 
 /** Xung 0..1 của từng hiệu ứng, mỗi cái mang quãng của riêng nó. */
 function pulseExpr(spans: Array<{ start: number; end: number; peak: number }>) {
   const shape = (span: { start: number; end: number; peak: number }) => {
     // Chống chia cho 0: quãng ngắn quá thì kẹp lại còn một khung ở mỗi nửa.
-    const truoc = Math.max(0.04, span.peak - span.start).toFixed(3);
-    const sau = Math.max(0.04, span.end - span.peak).toFixed(3);
+    const before = Math.max(0.04, span.peak - span.start).toFixed(3);
+    const after = Math.max(0.04, span.end - span.peak).toFixed(3);
     const at = span.peak.toFixed(3);
-    const a = `if(between(t,${at}-${truoc},${at}),1-(${at}-t)/${truoc},0)`;
-    const b = `if(between(t,${at},${at}+${sau}),1-(t-${at})/${sau},0)`;
+    const a = `if(between(t,${at}-${before},${at}),1-(${at}-t)/${before},0)`;
+    const b = `if(between(t,${at},${at}+${after}),1-(t-${at})/${after},0)`;
     return `max(${a},${b})`;
   };
   return spans.map(shape).reduce((a, b) => `max(${a},${b})`);
@@ -689,25 +689,25 @@ export async function burnElements(
   // `eq`), không nhét chung một biểu thức được. Nhưng chúng không giẫm chân nhau:
   // mỗi bộ lọc chỉ động vào cửa sổ quanh quãng của chính nó, ngoài đó trả về
   // đúng khung gốc.
-  const theoKieu = new Map<
+  const byKind = new Map<
     JunctionId,
     Array<{ start: number; end: number; peak: number }>
   >();
   for (const item of effects) {
     if (item.kind === "none" || item.end <= item.start) continue;
-    const list = theoKieu.get(item.kind) ?? [];
+    const list = byKind.get(item.kind) ?? [];
     list.push({
       start: item.start,
       end: item.end,
       peak: effectPeak(item.start, item.end, item.kind),
     });
-    theoKieu.set(item.kind, list);
+    byKind.set(item.kind, list);
   }
-  let noiIndex = 0;
-  for (const [kind, mocs] of theoKieu) {
-    const chain = junctionFilter(mocs, kind);
+  let junctionIndex = 0;
+  for (const [kind, spans] of byKind) {
+    const chain = junctionFilter(spans, kind);
     if (!chain) continue;
-    const label = `[noi${noiIndex++}]`;
+    const label = `[junction${junctionIndex++}]`;
     filters.push(`${stream}${chain}${label}`);
     stream = label;
   }
@@ -736,7 +736,7 @@ export async function burnElements(
       text.content!,
       text.keywords ?? [],
       text.align ?? "center",
-      text.emphasis ?? "deu",
+      text.emphasis ?? "even",
       text.band ?? "top",
       OUT_WIDTH,
       OUT_HEIGHT,
@@ -803,9 +803,9 @@ export async function burnElements(
     );
     // `format=rgb` khi chồng: để mặc định thì ffmpeg chồng trong không gian dải
     // hẹp và chữ trắng mất độ sáng.
-    filters.push(`${stream}[glow]overlay=format=rgb[nen]`);
-    filters.push(`[nen][txtmain]overlay=format=rgb[ra]`);
-    stream = "[ra]";
+    filters.push(`${stream}[glow]overlay=format=rgb[bg]`);
+    filters.push(`[bg][txtmain]overlay=format=rgb[out]`);
+    stream = "[out]";
   }
 
   if (filters.length === 0) {

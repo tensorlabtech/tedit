@@ -192,26 +192,26 @@ export function trimSegment(id: string, edge: "start" | "end", at: number) {
   // khi đoạn 2 vẫn bắt đầu ở 1,34 — chồng 1,08 giây. Từ đó mọi phép tính về sau
   // đều sai: khoảng giữ lại đếm hai lần, mốc chỗ nối lệch, độ dài xuất ra vống
   // lên. Không chỗ nào báo.
-  const canh = db
+  const neighbour = db
     .prepare(
       edge === "start"
-        ? "SELECT end_sec AS moc FROM segments WHERE project_id=? AND end_sec<=? ORDER BY end_sec DESC LIMIT 1"
-        : "SELECT start_sec AS moc FROM segments WHERE project_id=? AND start_sec>=? ORDER BY start_sec ASC LIMIT 1",
+        ? "SELECT end_sec AS boundary FROM segments WHERE project_id=? AND end_sec<=? ORDER BY end_sec DESC LIMIT 1"
+        : "SELECT start_sec AS boundary FROM segments WHERE project_id=? AND start_sec>=? ORDER BY start_sec ASC LIMIT 1",
     )
     .get(
       row.project_id,
       edge === "start" ? row.start_sec : row.end_sec,
-    ) as { moc: number } | undefined;
+    ) as { boundary: number } | undefined;
 
   if (edge === "start") {
-    const san = Math.max(0, canh?.moc ?? 0);
-    const value = Math.min(Math.max(at, san), row.end_sec - MIN_LENGTH);
+    const floor = Math.max(0, neighbour?.boundary ?? 0);
+    const value = Math.min(Math.max(at, floor), row.end_sec - MIN_LENGTH);
     db.prepare("UPDATE segments SET start_sec=? WHERE id=?").run(value, id);
   } else {
-    const tran = canh?.moc ?? Number.POSITIVE_INFINITY;
+    const ceiling = neighbour?.boundary ?? Number.POSITIVE_INFINITY;
     const value = Math.min(
       Math.max(at, row.start_sec + MIN_LENGTH),
-      tran,
+      ceiling,
     );
     db.prepare("UPDATE segments SET end_sec=? WHERE id=?").run(value, id);
   }
@@ -397,9 +397,9 @@ export function extendToDuration(projectId: string, total: number) {
   if (!(total > 0)) return false;
   const segs = listSegments(projectId);
   if (segs.length === 0) return false;
-  const cuoi = segs[segs.length - 1];
-  if (total - cuoi.end_sec <= 0.05) return false;
-  insert(projectId, cuoi.position + 1, cuoi.end_sec, total, null);
+  const last = segs[segs.length - 1];
+  if (total - last.end_sec <= 0.05) return false;
+  insert(projectId, last.position + 1, last.end_sec, total, null);
   renumber(projectId);
   return true;
 }

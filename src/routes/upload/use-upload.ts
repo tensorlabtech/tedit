@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import type { PickerItem } from "@/components/media-picker-item";
 import { toast } from "@/components/ui/toast";
-import { api } from "@/lib/api";
+import { ApiError, api, type ApiSettings } from "@/lib/api";
 
 import { makeThumbnail } from "./make-thumbnail";
 import {
@@ -10,6 +11,7 @@ import {
   rejectionReason,
   type MediaFile,
   type MediaRole,
+  suggestedTitle,
 } from "./upload-data";
 import { useWorkInProgressGuards } from "./use-work-in-progress-guards";
 
@@ -29,6 +31,38 @@ export function useUpload(openingProjectId?: string) {
   );
   /** Đang lấy lại dự án dở — chưa biết mạch có gì nên đừng vội bày ô rỗng */
   const [restoring, setRestoring] = useState(Boolean(openingProjectId));
+  /**
+   * LỜI DẶN: video nói về gì, có tên riêng nào.
+   *
+   * Hai chặng đọc nó — mồi từ vựng cho máy nghe và chặng sửa lời — và với tên
+   * riêng thì đây là nguồn duy nhất. Đo khi ô này còn rỗng: "TensorLab" chép ra
+   * "Tensolab", còn chặng sửa lời không có gì để mà tin.
+   */
+  const [profile, setProfileState] = useState("");
+  const [title, setTitle] = useState(suggestedTitle());
+  /**
+   * Quãng lặng dài hơn ngần này giây thì chặng `silence` tự rút lại.
+   *
+   * `0` là một lựa chọn THẬT — "đừng tự rút, tôi tự cắt ở bàn dựng" — nên đừng
+   * coi nó là chưa đặt.
+   */
+  const [minSilence, setMinSilence] = useState(0.8);
+  /**
+   * Máy được lấy tư liệu ở đâu cho DỰ ÁN NÀY.
+   *
+   * `null` khi chưa nạp xong dự án — khác hẳn với "chỉ tư liệu của dự án". Vẽ ô
+   * chọn bằng một giá trị đoán trước rồi đổi khi dữ liệu về là ô nhảy một nhịp
+   * ngay trước mắt người dùng, và ai bấm đúng lúc đó thì ghi đè mất lựa chọn cũ.
+   */
+  const [insertSource, setInsertSource] = useState<
+    ApiSettings["insertSource"] | null
+  >(null);
+  // Bản sao đồng bộ: `ensureProject` chạy trong một lời hứa đã đóng băng giá trị
+  // của lượt dựng cũ, mà nó cần cái tên VỪA gõ.
+  const titleRef = useRef(suggestedTitle());
+  // Bản sao đồng bộ: nhịp hỏi tiến độ chạy trong `setInterval` nên nó nhìn thấy
+  // `profile` của lượt dựng đã đóng băng, không phải giá trị vừa gõ.
+  const profileRef = useRef("");
   /**
    * Chép lời xong thì ra bao nhiêu câu; `null` là chưa hỏi.
    *
@@ -76,14 +110,95 @@ export function useUpload(openingProjectId?: string) {
   const ensureProject = useCallback(async () => {
     if (projectRef.current) return projectRef.current;
     if (!creating.current) {
-      creating.current = api.createProject("Dự án mới").then(({ id }) => {
+      // Tên ĐANG hiện trên đầu trang, không phải chữ "Dự án mới" cứng: đặt tên
+      // trước khi thả tệp là chuyện thường (nhất là từ khi máy nghe đọc cái tên
+      // làm mồi từ vựng), mà lúc đó chưa có dự án nào để ghi vào. Ghi cứng thì tên
+      // vừa gõ mất lặng lẽ, trong khi đầu trang vẫn bày nó ra.
+      creating.current = api.createProject(titleRef.current).then(({ id }) => {
         projectRef.current = id;
         setProjectId(id);
+        // Lời dặn gõ TRƯỚC khi thả tệp cũng phải theo vào dự án vừa tạo. Ô đó hiện
+        // ngay từ đầu và người ta hay gõ nó lúc đang chờ tệp, nên `saveProfile` lúc
+        // ấy chưa có dự án nào để ghi vào — chỉ giữ trong `profileRef`.
+        if (profileRef.current.trim()) {
+          void api
+            .updateProject(id, { profile: profileRef.current })
+            .catch(() => {
+              /* ô vẫn còn chữ, rời ô lần nữa là ghi lại */
+            });
+        }
         return id;
       });
     }
     return creating.current;
   }, []);
+
+  /**
+   * Dự án trên máy chủ KHÔNG CÒN — bỏ mã cũ và dựng một dự án mới tại chỗ.
+   *
+   * Xảy ra thật: một tab để mở sẵn ở `/upload/:id`, dự án bị xoá ở nơi khác, rồi
+   * người dùng thả tệp vào. Mã cũ vẫn nằm trong tay màn hình nên mọi lượt tải
+   * đều rơi vào hư không, và cả sáu ô video hiện một dòng đỏ *"Không có dự án
+   * này"* — một câu chỉ đúng về mặt máy móc, còn người đọc thì không có việc gì
+   * làm với nó.
+   *
+   * Không đá người dùng về trang chủ: tệp họ vừa thả vẫn còn trong tay, dựng lại
+   * mã dự án rồi tải tiếp là xong, và họ không mất gì cả.
+   */
+  const remakeProject = useCallback(async () => {
+    projectRef.current = null;
+    creating.current = null;
+    // Mã trên đường dẫn cũng phải đổi theo, không thì tải lại trang là quay về
+    // đúng cái dự án đã chết.
+    setTranscribe(null);
+    setSentenceCount(null);
+    const id = await ensureProject();
+    window.history.replaceState(null, "", `/upload/${id}`);
+
+    // Mọi tệp đã tải lên dự án cũ CŨNG chết theo nó.
+    //
+    // Bỏ qua bước này thì màn hình bày sáu ô "đã xong" cho một dự án chỉ có một
+    // tệp: đo được ngay sau lần dựng lại đầu tiên — khung xem đếm "Cảnh 1/2"
+    // trong khi máy chủ chỉ giữ đúng một cảnh, và bản xuất ra sẽ thiếu.
+    //
+    // Còn `File` gốc trong tay thì tải lại — người dùng không mất gì. Không còn
+    // (mở lại một dự án cũ thì trong trình duyệt chỉ có đường dẫn máy chủ) thì
+    // nói thẳng là mất, chứ đừng để một ô xanh nói dối.
+    for (const item of latest.current) {
+      if (!item.serverId) continue;
+      const source = sources.current.get(item.id);
+      if (source) {
+        patch(item.id, {
+          status: "uploading",
+          progress: 0,
+          serverId: undefined,
+          error: undefined,
+        });
+        void uploadRef.current?.(
+          { ...item, status: "uploading", progress: 0, serverId: undefined },
+          source,
+          item.role,
+        );
+      } else {
+        patch(item.id, {
+          status: "error",
+          serverId: undefined,
+          error: "Dự án cũ đã mất, thả lại tệp này",
+        });
+      }
+    }
+    return id;
+  }, [ensureProject, patch]);
+
+  /**
+   * `upload` khai báo sau `remakeProject` mà `remakeProject` phải gọi được nó —
+   * một vòng tròn, nên đi qua một ref thay vì xếp lại thứ tự khai báo (xếp lại
+   * thì `upload` mất `remakeProject` trong tay và vòng tròn chỉ đổi chiều).
+   */
+  const uploadRef = useRef<
+    | ((item: MediaFile, file: File, forcedRole?: MediaRole) => Promise<void>)
+    | null
+  >(null);
 
   /**
    * Dựng lại màn từ dự án đã có trên máy chủ.
@@ -134,6 +249,9 @@ export function useUpload(openingProjectId?: string) {
               hasAudio: file.has_audio === 1,
               width: file.width ?? undefined,
               height: file.height ?? undefined,
+              description: file.description ?? undefined,
+              libraryFile: file.library_file ?? undefined,
+              kind: file.kind,
             };
           });
         commit(restored);
@@ -141,15 +259,43 @@ export function useUpload(openingProjectId?: string) {
         // thì lời nhắc "không nghe được câu nào" phải có mặt ngay, chứ không
         // đợi tới lần chép sau mới hiện.
         setSentenceCount(data.sentences.length);
-      })
-      .catch(() => {
-        if (alive) {
-          toast.add({
-            title: "Không mở lại được dự án",
-            description: "Máy chủ không trả lời — thử tải lại trang",
-            type: "error",
-          });
+        setTitle(data.project.title);
+        setMinSilence(data.project.min_silence ?? 0.8);
+        setInsertSource(
+          (data.project.insert_source as ApiSettings["insertSource"]) ??
+            "starred",
+        );
+        titleRef.current = data.project.title;
+        setProfileState(data.project.profile ?? "");
+        profileRef.current = data.project.profile ?? "";
+        setTranscribedProfile(data.project.profile_at_transcribe ?? null);
+        // Mốc mạch cảnh đã chép, do máy chủ đóng — nhờ nó mà lời nhắc "mạch đổi sau
+        // khi chép lời" sống qua lần tải trang.
+        if (data.project.main_files_at_transcribe) {
+          transcribedKey.current = data.project.main_files_at_transcribe;
         }
+      })
+      .catch((error) => {
+        if (!alive) return;
+        // Dự án ĐÃ MẤT là chuyện khác hẳn máy chủ đang lỗi: tải lại trang bao
+        // nhiêu lần cũng không dựng lại được nó. Dọn mã chết đi và mời làm mạch
+        // mới, ngay tại đây — nếu không thì mọi tệp thả vào sau đó đều rơi vào hư
+        // không, và mỗi ô video hiện một dòng đỏ "Không có dự án này".
+        if (error instanceof ApiError && error.status === 404) {
+          projectRef.current = null;
+          window.history.replaceState(null, "", "/upload");
+          toast.add({
+            title: "Dự án này không còn",
+            description: "Thả tệp vào để bắt đầu một mạch mới",
+            type: "warning",
+          });
+          return;
+        }
+        toast.add({
+          title: "Không mở lại được dự án",
+          description: "Máy chủ không trả lời — thử tải lại trang",
+          type: "error",
+        });
       })
       .finally(() => alive && setRestoring(false));
     return () => {
@@ -180,12 +326,34 @@ export function useUpload(openingProjectId?: string) {
   }, [openingProjectId]);
 
   const upload = useCallback(
-    async (item: MediaFile, file: File, forcedRole?: MediaRole) => {
+    async (
+      item: MediaFile,
+      file: File,
+      forcedRole?: MediaRole,
+      /**
+       * Chỗ tệp này đứng trong danh sách đang hiện. Phải gửi kèm vì các lượt tải
+       * chạy SONG SONG — thiếu nó thì thứ tự cảnh trong phim thành thứ tự tệp nào
+       * tải xong trước, tức tệp nào nhẹ nhất.
+       */
+      order?: number,
+    ) => {
+      const send = (id: string) =>
+        api.uploadFiles(
+          id,
+          [file],
+          (percent) => {
+            if (cancelled.current.has(item.id)) return;
+            patch(item.id, { progress: percent, status: "uploading" });
+          },
+          order,
+        );
       try {
         const id = await ensureProject();
-        const result = await api.uploadFiles(id, [file], (percent) => {
-          if (cancelled.current.has(item.id)) return;
-          patch(item.id, { progress: percent, status: "uploading" });
+        // Dự án chết thì dựng lại rồi gửi tiếp — MỘT lần, không lặp: dựng lại mà
+        // vẫn 404 nghĩa là lỗi ở chỗ khác, thử mãi chỉ làm ô video treo.
+        const result = await send(id).catch(async (error) => {
+          if (!(error instanceof ApiError) || error.status !== 404) throw error;
+          return send(await remakeProject());
         });
         if (cancelled.current.has(item.id)) return;
         const saved = result.saved[0];
@@ -204,6 +372,7 @@ export function useUpload(openingProjectId?: string) {
           hasAudio: saved.has_audio === 1,
           width: saved.width ?? undefined,
           height: saved.height ?? undefined,
+          description: saved.description ?? undefined,
         };
 
         // Cảnh báo không chặn việc dựng, nhưng phải nói ra: mất tiếng vì codec
@@ -240,19 +409,77 @@ export function useUpload(openingProjectId?: string) {
         });
       }
     },
-    [ensureProject, patch],
+    [ensureProject, patch, remakeProject],
   );
+
+  uploadRef.current = upload;
 
   /**
    * @param forcedRole Cột người dùng thả vào. Bỏ trống thì để máy tự xếp theo
    * định dạng và việc có tiếng hay không.
    */
+  /**
+   * Lấy tư liệu TỪ KHO DÙNG CHUNG về dự án đang nạp.
+   *
+   * Không đi qua đường tải lên: tệp đã nằm trên đĩa máy chủ rồi, máy chủ chỉ chép
+   * một bản sang thư mục dự án và mang theo luôn MÔ TẢ đã viết. Nên ở đây không
+   * có nhịp `uploading`, không có thanh tiến độ — ô hiện ra là đã xong.
+   *
+   * Chép TỪNG TỆP MỘT chứ không `Promise.all`: thứ tự trong dự án là thứ tự
+   * người dùng vừa bấm, mà chạy song song thì tệp nào máy chủ xong trước sẽ giành
+   * chỗ đứng trước.
+   */
+  const addFromLibrary = useCallback(
+    async (chosen: string[]) => {
+      const id = await ensureProject();
+      const added: MediaFile[] = [];
+      const failed: string[] = [];
+
+      for (const file of chosen) {
+        try {
+          const row = await api.addAssetFromLibrary(id, file);
+          nextId.current += 1;
+          added.push({
+            id: `f${nextId.current}`,
+            name: row.name,
+            size: row.size,
+            thumbnail: row.thumb_path ? api.fileUrl(row.thumb_path) : undefined,
+            remoteUrl: api.mediaUrl(row.id),
+            role: row.role,
+            status: "done",
+            progress: 100,
+            serverId: row.id,
+            duration: row.duration ?? undefined,
+            hasAudio: row.has_audio === 1,
+            width: row.width ?? undefined,
+            height: row.height ?? undefined,
+            description: row.description ?? undefined,
+            libraryFile: row.library_file ?? undefined,
+            kind: row.kind,
+          });
+        } catch {
+          failed.push(file);
+        }
+      }
+
+      if (added.length > 0) commit([...latest.current, ...added]);
+      if (failed.length > 0) {
+        toast.add({
+          title: `Không lấy được ${failed.length} tư liệu`,
+          description: failed.join(", "),
+          type: "error",
+        });
+      }
+    },
+    [ensureProject],
+  );
+
   const addFiles = useCallback(
     (incoming: File[], forcedRole?: MediaRole): IntakeResult => {
       const rejected: IntakeResult["rejected"] = [];
       const before = latest.current.length;
       const next = [...latest.current];
-      const queued: Array<[MediaFile, File]> = [];
+      const queued: Array<[MediaFile, File, number]> = [];
 
       for (const file of incoming) {
         const reason = rejectionReason(file.name, file.size);
@@ -274,12 +501,14 @@ export function useUpload(openingProjectId?: string) {
         };
         next.push(item);
         sources.current.set(item.id, file);
-        queued.push([item, file]);
+        // Chỗ đứng trong danh sách ĐANG HIỆN, tính cả tệp có từ trước — đây chính
+        // là thứ tự người dùng nhìn thấy, và là thứ tự phải giữ tới lúc ghép phim.
+        queued.push([item, file, next.length - 1]);
       }
 
       commit(next);
 
-      for (const [item, file] of queued) {
+      for (const [item, file, order] of queued) {
         void makeThumbnail(file).then((probe) => {
           // Chỉ ghi đè trường ĐO ĐƯỢC: tệp hỏng trả về rỗng, mà ghi rỗng đè lên
           // thì cỡ khung máy chủ vừa gửi về bị xoá và nhãn hướng khung mất theo.
@@ -291,7 +520,7 @@ export function useUpload(openingProjectId?: string) {
           }
           if (Object.keys(measured).length > 0) patch(item.id, measured);
         });
-        void upload(item, file, forcedRole);
+        void upload(item, file, forcedRole, order);
       }
 
       return { accepted: next.length - before, rejected };
@@ -305,30 +534,38 @@ export function useUpload(openingProjectId?: string) {
    * Bấm nhầm nút gỡ một video 500MB mà không hoàn tác được thì người dùng phải
    * ngồi tải lại từ đầu. Giữ nguyên `File` gốc và vị trí cũ để dựng lại y hệt.
    */
-  const removeFile = useCallback((id: string) => {
-    const list = latest.current;
-    const index = list.findIndex((item) => item.id === id);
-    const gone = list[index];
-    if (!gone) return () => {};
-    const source = sources.current.get(id);
+  const removeFile = useCallback(
+    (id: string) => {
+      const list = latest.current;
+      const index = list.findIndex((item) => item.id === id);
+      const gone = list[index];
+      if (!gone) return () => {};
+      const source = sources.current.get(id);
 
-    if (gone.serverId) void api.deleteFile(gone.serverId).catch(() => {});
-    cancelled.current.add(id);
-    commit(list.filter((item) => item.id !== id));
+      if (gone.serverId) void api.deleteFile(gone.serverId).catch(() => {});
+      cancelled.current.add(id);
+      commit(list.filter((item) => item.id !== id));
 
-    return () => {
-      // Ảnh xem trước chỉ thu hồi khi người dùng đã bỏ hẳn ý định hoàn tác,
-      // nên `URL.revokeObjectURL` không nằm ở nhánh gỡ.
-      const current = latest.current;
-      if (current.some((item) => item.id === id)) return;
-      cancelled.current.delete(id);
-      const next = [...current];
-      next.splice(Math.min(index, next.length), 0, gone);
-      commit(next);
-      // Tệp đã lên máy chủ thì bản trên đó vừa bị xoá — phải tải lại.
-      if (source) void upload({ ...gone, status: "uploading", progress: 0 }, source, gone.role);
-    };
-  }, [upload]);
+      return () => {
+        // Ảnh xem trước chỉ thu hồi khi người dùng đã bỏ hẳn ý định hoàn tác,
+        // nên `URL.revokeObjectURL` không nằm ở nhánh gỡ.
+        const current = latest.current;
+        if (current.some((item) => item.id === id)) return;
+        cancelled.current.delete(id);
+        const next = [...current];
+        next.splice(Math.min(index, next.length), 0, gone);
+        commit(next);
+        // Tệp đã lên máy chủ thì bản trên đó vừa bị xoá — phải tải lại.
+        if (source)
+          void upload(
+            { ...gone, status: "uploading", progress: 0 },
+            source,
+            gone.role,
+          );
+      };
+    },
+    [upload],
+  );
 
   /** Đổi cột. Trả về `null` nếu đổi được, ngược lại là lý do để hiện cho người dùng. */
   const setRole = useCallback((id: string, role: MediaRole) => {
@@ -410,6 +647,102 @@ export function useUpload(openingProjectId?: string) {
     [patch, upload],
   );
 
+  /**
+   * Ghi lời dặn xuống máy chủ.
+   *
+   * Chỉ ghi lúc RỜI Ô, không ghi từng phím: mỗi lần ghi là một lượt gọi máy chủ,
+   * mà ô này người ta gõ liền một câu dài.
+   */
+  const saveProfile = useCallback(async (next: string) => {
+    setProfileState(next);
+    profileRef.current = next;
+    const id = projectRef.current;
+    if (!id) return;
+    await api.updateProject(id, { profile: next }).catch(() => {
+      toast.add({
+        title: "Không lưu được lời dặn",
+        description: "Máy chủ không trả lời — thử lại giúp mình",
+        type: "error",
+      });
+    });
+  }, []);
+
+  /**
+   * Ghi nội dung một tư liệu chèn.
+   *
+   * Xoá trắng cũng là một ý kiến: nó trả tệp về cho máy đọc ở lượt dựng sau.
+   */
+  const saveDescription = useCallback(
+    async (itemId: string, description: string) => {
+      const clean = description.trim();
+      patch(itemId, { description: clean || undefined });
+      const serverId = latest.current.find(
+        (entry) => entry.id === itemId,
+      )?.serverId;
+      if (!serverId) return;
+      await api.setFileDescription(serverId, clean).catch(() => {
+        toast.add({
+          title: "Không lưu được mô tả",
+          description: "Máy chủ không trả lời — thử lại giúp mình",
+          type: "error",
+        });
+      });
+    },
+    [patch],
+  );
+
+  /** Ghi ngưỡng tự rút khoảng lặng. Kéo xong mới ghi, không ghi từng nhịp kéo. */
+  const saveMinSilence = useCallback(async (next: number) => {
+    setMinSilence(next);
+    const id = projectRef.current;
+    if (!id) return;
+    await api.updateProject(id, { minSilence: next }).catch(() => {
+      toast.add({
+        title: "Không lưu được cài đặt",
+        description: "Máy chủ không trả lời — thử lại giúp mình",
+        type: "error",
+      });
+    });
+  }, []);
+
+  /** Ghi nguồn tư liệu máy được lấy. Ô chọn nên ghi ngay, không có nhịp kéo nào. */
+  const saveInsertSource = useCallback(
+    async (next: ApiSettings["insertSource"]) => {
+      const truoc = insertSource;
+      setInsertSource(next);
+      const id = projectRef.current;
+      if (!id) return;
+      await api.updateProject(id, { insertSource: next }).catch(() => {
+        // Trả về giá trị CŨ khi ghi hỏng: để ô hiện lựa chọn mới trong khi máy
+        // chủ vẫn giữ cái cũ là nói dối, và lượt dựng sau sẽ không theo cái đang
+        // hiện trên màn.
+        setInsertSource(truoc);
+        toast.add({
+          title: "Không lưu được cài đặt",
+          description: "Máy chủ không trả lời — thử lại giúp mình",
+          type: "error",
+        });
+      });
+    },
+    [insertSource],
+  );
+
+  /** Ghi tên dự án. Cũng chỉ ghi lúc RỜI Ô, cùng lý do như lời dặn. */
+  const saveTitle = useCallback(async (next: string) => {
+    const clean = next.trim() || suggestedTitle();
+    setTitle(clean);
+    titleRef.current = clean;
+    const id = projectRef.current;
+    if (!id) return;
+    await api.updateProject(id, { title: clean }).catch(() => {
+      toast.add({
+        title: "Không lưu được tên dự án",
+        description: "Máy chủ không trả lời — thử lại giúp mình",
+        type: "error",
+      });
+    });
+  }, []);
+
   const clear = useCallback(() => commit([]), []);
 
   /**
@@ -422,6 +755,30 @@ export function useUpload(openingProjectId?: string) {
 
   const mainFiles = files.filter((item) => item.role === "main");
   const insertFiles = files.filter((item) => item.role === "insert");
+  /**
+   * Tư liệu chèn nắn về dạng lưới của hộp chọn dùng chung.
+   *
+   * Nắn ở đây chứ không dùng `pickerItemFromApiFile`: màn này giữ tệp ở dạng
+   * RIÊNG của nó (`MediaFile`) vì tệp còn có thể đang tải dở, và ảnh thu nhỏ thì
+   * dựng ngay trong trình duyệt từ `File` gốc — không đợi máy chủ.
+   */
+  const insertItems: PickerItem[] = insertFiles.map((item) => ({
+    key: item.id,
+    thumbUrl: item.thumbnail,
+    // Ảnh thu nhỏ ở màn này do trình duyệt tự dựng từ `File` gốc — luôn là ảnh.
+    thumbKind: "image" as const,
+    previewUrl: item.remoteUrl ?? item.thumbnail ?? "",
+    name: item.name,
+    isVideo: item.kind ? item.kind === "video" : isVideo(item.name),
+    seconds: item.duration ?? 0,
+    width: item.width,
+    height: item.height,
+    search: `${item.name} ${item.description ?? ""}`.toLowerCase(),
+  }));
+  /** Tệp kho đã nằm trong dự án — hộp chọn từ kho lấy để đánh dấu "đã có". */
+  const libraryFilesInProject = files
+    .map((item) => item.libraryFile)
+    .filter((file): file is string => !!file);
   /** Video chính đã lên tới nơi và đọc được — chỉ những tệp này mới dựng được. */
   const readyMainFiles = mainFiles.filter((item) => item.status === "done");
   const uploadingFiles = files.filter((item) => item.status === "uploading");
@@ -436,7 +793,8 @@ export function useUpload(openingProjectId?: string) {
   const totalBytes = files.reduce((sum, item) => sum + item.size, 0);
   const doneBytes = files.reduce(
     (sum, item) =>
-      sum + (item.status === "done" ? item.size : item.size * (item.progress / 100)),
+      sum +
+      (item.status === "done" ? item.size : item.size * (item.progress / 100)),
     0,
   );
   const uploadProgress =
@@ -458,10 +816,34 @@ export function useUpload(openingProjectId?: string) {
    * video không có chữ nào. Giữ lại chìa khoá này để nói ra ngay tại đây.
    */
   const transcribedKey = useRef<string | null>(null);
+  /**
+   * Lời dặn tại lúc chép lời, do MÁY CHỦ đóng mốc.
+   *
+   * Sửa lời dặn xong thì bản chép CŨ vẫn còn nguyên chỗ nghe sai, mà không có gì
+   * báo: người ta gõ đúng tên công ty vào rồi mở bàn dựng, và thấy y nguyên cái
+   * tên viết sai. Đo được lời dặn đổi đúng cái đó: cùng một đoạn tiếng,
+   * "Tensolab" thành "TensorLab" — nhưng chỉ khi chép lại.
+   *
+   * Mốc nằm ở máy chủ chứ không ở một `ref` trong màn hình: sửa lời dặn rồi tải
+   * lại trang thì mọi thứ giữ trong bộ nhớ đều mất, và lời nhắc "chép lại" biến
+   * mất đúng lúc nó còn đúng.
+   */
+  const [transcribedProfile, setTranscribedProfile] = useState<string | null>(
+    null,
+  );
+  /**
+   * Chìa khoá mạch cảnh — dùng ID MÁY CHỦ, không phải id tạm của màn hình.
+   *
+   * Máy chủ đóng mốc `main_files_at_transcribe` bằng chính id của nó; so hai chuỗi
+   * khác hệ id thì lần nào cũng "khác nhau" và lời nhắc kêu oan mãi.
+   */
   const mainKeyOf = (list: MediaFile[]) =>
     list
-      .filter((item) => item.role === "main" && item.status === "done")
-      .map((item) => item.id)
+      .filter(
+        (item) =>
+          item.role === "main" && item.status === "done" && item.serverId,
+      )
+      .map((item) => item.serverId)
       .join(",");
 
   const startTranscribe = useCallback(async () => {
@@ -479,6 +861,7 @@ export function useUpload(openingProjectId?: string) {
         const job = await api.getJob(projectId, "transcribe");
         if (job.status === "done" && transcribedKey.current === null) {
           transcribedKey.current = mainKeyOf(latest.current);
+          setTranscribedProfile(profileRef.current);
           // Hỏi luôn xem chép ra được bao nhiêu câu. Không đọc thông báo của
           // việc để đoán: đổi một chữ ở máy chủ là màn hình đọc sai — con số
           // thì không nói dối được.
@@ -505,14 +888,33 @@ export function useUpload(openingProjectId?: string) {
     files,
     mainFiles,
     insertFiles,
+    insertItems,
+    libraryFilesInProject,
     readyMainFiles,
     mainDuration,
     projectId,
     restoring,
+    title,
+    saveTitle,
+    saveDescription,
+    profile,
+    saveProfile,
+    minSilence,
+    /**
+     * Đổi con số TRONG LÚC kéo, chưa ghi xuống máy chủ.
+     *
+     * Thanh kéo cần số nhảy theo tay để người ta thấy mình đang chọn gì; ghi thì
+     * đợi thả tay, vì một lượt kéo là hàng chục nhịp.
+     */
+    setMinSilenceDraft: setMinSilence,
+    saveMinSilence,
+    insertSource,
+    saveInsertSource,
     /** Máy chép lời chạy xong mà không nghe ra câu nào */
     noSpeechFound: transcribe?.status === "done" && sentenceCount === 0,
     transcribe,
     addFiles,
+    addFromLibrary,
     removeFile,
     setRole,
     moveFile,
@@ -520,6 +922,11 @@ export function useUpload(openingProjectId?: string) {
     cancelUpload,
     retryUpload,
     startTranscribe,
+    /** Lời dặn đã sửa sau khi chép lời — chép lại thì tên riêng ra đúng hơn */
+    briefStale:
+      transcribe?.status === "done" &&
+      transcribedProfile !== null &&
+      transcribedProfile !== profile,
     /** Lời đã chép không còn khớp mạch hiện tại — thêm hoặc bớt cảnh sau khi chép xong */
     transcriptStale:
       transcribe?.status === "done" &&

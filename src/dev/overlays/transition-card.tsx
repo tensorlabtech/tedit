@@ -40,29 +40,29 @@ export function TransitionCard() {
 
   // Vòng lặp 4 giây, chỗ nối ở giây 2: nửa đầu là đoạn trước, nửa sau là đoạn sau.
   const CUT_AT = 2;
-  const sau = seconds >= CUT_AT;
-  const tuNoi = seconds - CUT_AT;
+  const after = seconds >= CUT_AT;
+  const fromJunction = seconds - CUT_AT;
   // "Vào" thì dâng lên rồi rơi quanh chỗ nối; "ra" thì bắt đầu ở đỉnh rồi hạ dần.
   // Cùng hình dạng với `zoomPunchFilter` của `server/render.ts`.
   /** Xung tại chỗ nối — cùng hình dạng với `pulseExpr` của máy chủ. */
-  const xung = (seconds: number, motBen: boolean) =>
-    motBen
-      ? sau && tuNoi < seconds
-        ? 1 - tuNoi / seconds
+  const pulse = (seconds: number, oneSide: boolean) =>
+    oneSide
+      ? after && fromJunction < seconds
+        ? 1 - fromJunction / seconds
         : 0
-      : Math.max(0, 1 - Math.abs(tuNoi) / seconds);
+      : Math.max(0, 1 - Math.abs(fromJunction) / seconds);
 
   const zoom =
     kind === "zoom-in"
-      ? xung(PUNCH_SECONDS, false)
+      ? pulse(PUNCH_SECONDS, false)
       : kind === "zoom-out"
-        ? xung(PUNCH_SECONDS, true)
+        ? pulse(PUNCH_SECONDS, true)
         : 0;
   const sang =
     kind === "flash"
-      ? xung(FLASH_SECONDS, false) * FLASH_AMOUNT
+      ? pulse(FLASH_SECONDS, false) * FLASH_AMOUNT
       : kind === "dip"
-        ? -xung(DIP_SECONDS, false)
+        ? -pulse(DIP_SECONDS, false)
         : 0;
 
   return (
@@ -71,7 +71,7 @@ export function TransitionCard() {
         <CardTitle>Chỗ nối giữa hai đoạn</CardTitle>
         <CardAction>
           <Badge variant="secondary">
-            {sau ? "sau chỗ nối" : "trước chỗ nối"}
+            {after ? "sau chỗ nối" : "trước chỗ nối"}
           </Badge>
         </CardAction>
       </CardHeader>
@@ -120,7 +120,7 @@ export function TransitionCard() {
                     khi hai bên là chất liệu thật, còn ảnh tĩnh thì không biết cú
                     nhấn có thấy được hay không. */}
                 {media.main ? (
-                  <SegmentClip src={media.main} at={sau ? 24 : 3} />
+                  <SegmentClip src={media.main} at={after ? 24 : 3} />
                 ) : (
                   <img
                     src="/dev-overlays/nen.jpg"

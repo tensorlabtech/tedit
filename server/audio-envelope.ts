@@ -103,7 +103,7 @@ export async function readEnvelope(
 }
 
 /** Ô nào của đường bao đang có tiếng người. */
-const coTieng = (envelope: AudioEnvelope, index: number) =>
+const hasSpeech = (envelope: AudioEnvelope, index: number) =>
   (envelope.values[index] ?? 0) > envelope.speechLevel;
 
 /**
@@ -123,7 +123,7 @@ export function speechEndsAt(
   let last = index - 1;
   let miss = 0;
   while (index <= stop) {
-    if (coTieng(envelope, index)) {
+    if (hasSpeech(envelope, index)) {
       last = index;
       miss = 0;
     } else if (++miss >= 3) {
@@ -150,7 +150,7 @@ export function speechStartsAt(
   let first = index + 1;
   let miss = 0;
   while (index >= stop) {
-    if (coTieng(envelope, index)) {
+    if (hasSpeech(envelope, index)) {
       first = index;
       miss = 0;
     } else if (++miss >= 3) {

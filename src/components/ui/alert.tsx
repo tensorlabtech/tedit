@@ -11,6 +11,19 @@ const alertVariants = cva(
         default: "bg-card text-card-foreground",
         destructive:
           "bg-card text-destructive *:data-[slot=alert-description]:text-destructive/90 *:[svg]:text-current",
+        /**
+         * Hai biến thể CÓ MÀU — nền nhạt, viền và icon cùng sắc.
+         *
+         * `default` là thẻ trắng viền xám: nó trông y như một Card, nên một câu quan
+         * trọng đặt trong đó vẫn đọc ra như phần chú thích ở chân trang. Có màu thì
+         * mắt bắt được ngay đây là lời nhắn, không phải một khối nội dung nữa.
+         *
+         * Không thêm màu vào `default`: nhiều chỗ đang dùng nó đúng như một khối
+         * trung tính, đổi nền ở đó là nhuộm cả những nơi không xin.
+         */
+        info: "border-primary/30 bg-primary/8 text-foreground *:data-[slot=alert-description]:text-foreground/75 *:[svg]:text-primary",
+        success:
+          "border-success/30 bg-success/8 text-foreground *:data-[slot=alert-description]:text-foreground/75 *:[svg]:text-success",
       },
     },
     defaultVariants: {

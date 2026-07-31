@@ -41,9 +41,22 @@ export async function seedSegmentsByCaption(
 
   const envelope = await readEnvelope(projectId);
 
-  const moc: Array<{ start: number; end: number }> = [];
+  const spans: Array<{ start: number; end: number }> = [];
   let cursor = 0;
-  for (const group of groups) {
+  for (const [index, group] of groups.entries()) {
+    // Phần nới KHÔNG được ăn sang cụm bên cạnh.
+    //
+    // Đây là chỗ bản đầu làm sai và hậu quả lộ ra bằng mắt: khi hai cụm nói
+    // liền nhau không có quãng lặng, `speechEndsAt` chạy hết 0,4 giây cho phép
+    // và mép đoạn cắm vào giữa cụm sau. Đo trên một dự án thật: mép chữ lệch
+    // mép đoạn trung vị 0,60 giây — 120px ở mức phóng thường — nên gần như mọi
+    // cụm chữ đều vắt qua một ranh giới đoạn, và dải đọc ra loạn hẳn.
+    //
+    // Nới chỉ có nghĩa ở chỗ SẮP THÀNH QUÃNG LẶNG: đó là chỗ người dùng sẽ bấm
+    // bỏ, và là chỗ duy nhất cần chừa đuôi tiếng. Hai cụm dính nhau thì không
+    // có quãng lặng nào để cắt, nên cũng không có gì phải chừa.
+    const previous = groups[index - 1];
+    const next = groups[index + 1];
     // Mép cụm nới ra tới chỗ TIẾNG THẬT tắt, không dừng ở mốc máy chép lời báo.
     //
     // Máy chép lời đóng mốc sớm: đo trên một bản 66 giây, đuôi tiếng còn kéo
@@ -53,55 +66,62 @@ export async function seedSegmentsByCaption(
     // tiếng bị chặt ngang. Nới mép cụm ra thì phần tiếng đó thuộc về đoạn CÓ
     // LỜI, và quãng lặng chỉ còn đúng phần không ai nói.
     const start = envelope
-      ? Math.max(cursor, speechStartsAt(envelope, group.start, SPEECH_MARGIN))
+      ? Math.max(
+          cursor,
+          previous?.end ?? 0,
+          speechStartsAt(envelope, group.start, SPEECH_MARGIN),
+        )
       : group.start;
     const end = envelope
-      ? speechEndsAt(envelope, group.end, SPEECH_MARGIN)
+      ? Math.min(
+          speechEndsAt(envelope, group.end, SPEECH_MARGIN),
+          next?.start ?? Number.POSITIVE_INFINITY,
+        )
       : group.end;
 
     // Khoảng lặng trước cụm này. Dưới 0,25 giây thì không phải quãng lặng, chỉ
     // là kẽ hở giữa hai tiếng — đẻ ra một đoạn cho nó là làm dải vụn vô ích.
     if (start - cursor > 0.25) {
-      moc.push({ start: cursor, end: start });
+      spans.push({ start: cursor, end: start });
     }
-    moc.push({
+    spans.push({
       start: Math.max(cursor, start),
       end: Math.max(end, Math.max(cursor, start) + 0.05),
     });
-    cursor = moc[moc.length - 1].end;
+    cursor = spans[spans.length - 1].end;
   }
   if (totalDuration - cursor > 0.25) {
-    moc.push({ start: cursor, end: totalDuration });
+    spans.push({ start: cursor, end: totalDuration });
   }
-  gopChoVuaChu(projectId, moc);
+  mergeSpansCuttingText(projectId, spans);
   // Mép đầu và mép cuối phải chạm hai đầu video, không thì hai mẩu ở rìa rơi ra
   // ngoài mọi đoạn và biến mất khỏi bản xuất.
-  moc[0].start = 0;
-  moc[moc.length - 1].end = Math.max(moc[moc.length - 1].end, totalDuration);
+  spans[0].start = 0;
+  spans[spans.length - 1].end = Math.max(spans[spans.length - 1].end, totalDuration);
 
   const insert = db.prepare(
     "INSERT INTO segments (id, project_id, position, start_sec, end_sec, label, removed) VALUES (?,?,?,?,?,NULL,?)",
   );
   // Giữ nguyên những gì ĐANG BỊ BỎ: dựng lại đoạn mà quên chúng thì mọi nhát
   // cắt người dùng đã làm lặng lẽ quay về video.
-  const daBo = daBoTruoc(projectId);
+  const removed = daBoTruoc(projectId);
 
   db.transaction(() => {
     db.prepare("DELETE FROM segments WHERE project_id=?").run(projectId);
-    moc.forEach((span, index) => {
-      const giua = (span.start + span.end) / 2;
-      const bo = daBo.some((cu) => giua >= cu.start && giua < cu.end);
+    spans.forEach((span, index) => {
+      const mid = (span.start + span.end) / 2;
+      const skipped = removed.some((cu) => mid >= cu.start && mid < cu.end);
       insert.run(
         newId("seg"),
         projectId,
         index,
         span.start,
         span.end,
-        bo ? 1 : 0,
+        skipped ? 1 : 0,
       );
     });
   })();
-  return moc.length;
+  return spans.length;
 }
 
 /**
@@ -117,11 +137,11 @@ export async function seedSegmentsByCaption(
  * chỉ năm chữ mà phủ mười bốn tiếng nói). Gộp đoạn thì không mất gì — đoạn chỉ
  * là chỗ cắt, mà hai đoạn dính nhau gộp lại vẫn ra đúng ngần ấy video.
  */
-function gopChoVuaChu(
+function mergeSpansCuttingText(
   projectId: string,
-  moc: Array<{ start: number; end: number }>,
+  spans: Array<{ start: number; end: number }>,
 ) {
-  const chu = db
+  const texts = db
     .prepare(
       `SELECT wf.start_sec AS start, wt.end_sec AS end
        FROM elements e
@@ -130,16 +150,16 @@ function gopChoVuaChu(
        WHERE e.project_id = ? AND e.kind = 'text'`,
     )
     .all(projectId) as Array<{ start: number; end: number }>;
-  if (chu.length === 0) return;
+  if (texts.length === 0) return;
 
-  for (let i = moc.length - 1; i > 0; i -= 1) {
-    const ranh = moc[i].start;
-    const catGiuaChu = chu.some(
-      (item) => ranh > item.start + 0.02 && ranh < item.end - 0.02,
+  for (let i = spans.length - 1; i > 0; i -= 1) {
+    const boundary = spans[i].start;
+    const cutsThroughText = texts.some(
+      (item) => boundary > item.start + 0.02 && boundary < item.end - 0.02,
     );
-    if (!catGiuaChu) continue;
-    moc[i - 1].end = moc[i].end;
-    moc.splice(i, 1);
+    if (!cutsThroughText) continue;
+    spans[i - 1].end = spans[i].end;
+    spans.splice(i, 1);
   }
 }
 

@@ -82,8 +82,8 @@ const MAX_SCALE = 0.15;
 export const LINE_HEIGHT = 1;
 const MIN_SCALE = 0.09;
 
-export type AlignId = "left" | "center" | "right" | "stair" | "so-le";
-export type EmphasisId = "deu" | "tu-khoa-to" | "xen-co" | "dan-nho";
+export type AlignId = "left" | "center" | "right" | "stair" | "stagger";
+export type EmphasisId = "even" | "keyword-large" | "mixed-size" | "taper";
 export type BandId = "top" | "middle" | "bottom";
 
 export const ALIGNS: Array<{ id: AlignId; label: string; note: string }> = [
@@ -91,24 +91,24 @@ export const ALIGNS: Array<{ id: AlignId; label: string; note: string }> = [
   { id: "left", label: "Trái", note: "Mọi hàng bám lề trái" },
   { id: "right", label: "Phải", note: "Mọi hàng bám lề phải" },
   { id: "stair", label: "Bậc thang", note: "Hàng sau thụt vào dần" },
-  { id: "so-le", label: "So le", note: "Mỗi hàng lệch một mức khác nhau" },
+  { id: "stagger", label: "So le", note: "Mỗi hàng lệch một mức khác nhau" },
 ];
 
 export const EMPHASES: Array<{ id: EmphasisId; label: string; note: string }> =
   [
-    { id: "deu", label: "Đều nhau", note: "Mọi tiếng cùng một cỡ" },
+    { id: "even", label: "Đều nhau", note: "Mọi tiếng cùng một cỡ" },
     {
-      id: "tu-khoa-to",
+      id: "keyword-large",
       label: "Từ khoá to hẳn",
       note: "Đoạn từ khoá phóng to, phần còn lại lùi về cỡ nhỏ",
     },
     {
-      id: "xen-co",
+      id: "mixed-size",
       label: "Xen cỡ",
       note: "To nhỏ đan nhau ngay trong một hàng",
     },
     {
-      id: "dan-nho",
+      id: "taper",
       label: "Dẫn nhỏ · ý to",
       note: "Hàng đầu nhỏ và mờ, hàng sau mới là ý chính",
     },
@@ -179,14 +179,14 @@ export const widthOf = (text: string, size: number) =>
  * khác nhau — mà đó là điều bảng dev này sinh ra để bắt.
  */
 function wrapAt(words: string[], size: number, avail: number) {
-  const rong = (list: string[]) =>
+  const width = (list: string[]) =>
     list.reduce((sum, item) => sum + widthOf(item, size), 0) +
     Math.max(0, list.length - 1) * size * WORD_GAP;
   const lines: string[] = [];
   let current: string[] = [];
   for (const word of words) {
     const next = [...current, word];
-    if (current.length > 0 && rong(next) > avail) {
+    if (current.length > 0 && width(next) > avail) {
       lines.push(current.join(" "));
       current = [word];
       continue;
@@ -215,7 +215,7 @@ export type Fitted = {
  * ra ít dòng hơn thật. Bảng dev quên đúng chỗ đó và báo "LỆCH với khung xem"
  * trong khi khung xem không hề lệch — chính cái thước bị sai.
  */
-export function fitCum(text: string, avail: number): Fitted {
+export function fitGroup(text: string, avail: number): Fitted {
   const words = text.trim().split(/\s+/).filter(Boolean);
   if (words.length === 0)
     return { lines: [], size: MAX_SCALE, needsSplit: false };
@@ -240,14 +240,14 @@ export function fitCum(text: string, avail: number): Fitted {
  * Chia đôi rồi thử lại: chia theo TIẾNG nên không bao giờ cắt giữa một tiếng, và
  * hai nửa luôn còn nghĩa hơn là cắt phần đuôi đi.
  */
-export function splitCum(text: string, avail = 0.9, depth = 0): string[] {
+export function splitGroup(text: string, avail = 0.9, depth = 0): string[] {
   const words = text.trim().split(/\s+/).filter(Boolean);
   if (words.length < 2 || depth >= 3) return [words.join(" ")];
-  if (!fitCum(text, avail).needsSplit) return [words.join(" ")];
+  if (!fitGroup(text, avail).needsSplit) return [words.join(" ")];
   const mid = Math.ceil(words.length / 2);
   return [
-    ...splitCum(words.slice(0, mid).join(" "), avail, depth + 1),
-    ...splitCum(words.slice(mid).join(" "), avail, depth + 1),
+    ...splitGroup(words.slice(0, mid).join(" "), avail, depth + 1),
+    ...splitGroup(words.slice(mid).join(" "), avail, depth + 1),
   ];
 }
 
@@ -279,7 +279,7 @@ export function fitRow(text: string, avail: number, rows: number) {
 export function indentOf(align: AlignId, index: number, rowCount: number) {
   if (index === 0) return 0;
   if (align === "left" || align === "center" || align === "right") return 0;
-  if (align === "so-le") return [0, 0.14, 0.04][index % 3];
+  if (align === "stagger") return [0, 0.14, 0.04][index % 3];
   return Math.min(0.055, 0.11 / Math.max(1, rowCount - 1)) * index;
 }
 

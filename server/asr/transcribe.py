@@ -7,8 +7,15 @@ import json
 import sys
 
 import mlx_whisper
+import mlx_whisper.decoding
+from dataclasses import replace
 
 MODEL = "mlx-community/whisper-large-v3-turbo"
+
+# KHÔNG đặt beam_size ở đây: mlx-whisper chưa cài beam search, nó ném thẳng
+# NotImplementedError ở decoding.py ("Beam search decoder is not yet
+# implemented"). Muốn tìm theo chùm — và muốn lấy n-best để sửa lỗi tốt hơn —
+# thì phải đổi sang faster-whisper/CTranslate2, đó là một quyết định khác.
 
 # Mồi cho bộ giải mã — một câu tiếng Việt viết chuẩn, KHÔNG có từ chuyên ngành.
 #
@@ -32,6 +39,30 @@ def main() -> int:
         return 1
     audio_path = sys.argv[1]
     language = sys.argv[2] if len(sys.argv) > 2 else "vi"
+    # Đoạn mồi từ vựng do phía Node dựng (xem server/asr-bias.ts). Không truyền
+    # thì dùng câu mặc định, tức là đúng hành vi cũ.
+    prompt = sys.argv[3] if len(sys.argv) > 3 else PROMPT
+
+    # Bơm lại đoạn mồi ở MỌI cửa sổ 30 giây.
+    #
+    # mlx_whisper chỉ dùng initial_prompt cho cửa sổ ĐẦU: khi
+    # condition_on_previous_text=False, nó đặt prompt_reset_since = len(all_tokens)
+    # sau mỗi cửa sổ (transcribe.py:531), nên từ giây 30 trở đi máy nghe không còn
+    # được mồi gì. Đo thật: "network" nằm ở giây 93 và vẫn ra "nem quốc" dù mồi đã
+    # có sẵn từ đó.
+    #
+    # Không bật condition_on_previous_text=True để chữa: cách ấy mồi bằng chính
+    # lời vừa chép, mà lời ấy có thể đã sai — whisper nổi tiếng với vòng lặp lặp
+    # chữ khi bật cờ này.
+    _OrigTask = mlx_whisper.decoding.DecodingTask
+    _orig_init = _OrigTask.__init__
+
+    def _init_with_bias(self, model, options):
+        if prompt and not getattr(options, "prompt", None):
+            options = replace(options, prompt=prompt)
+        _orig_init(self, model, options)
+
+    _OrigTask.__init__ = _init_with_bias
 
     result = mlx_whisper.transcribe(
         audio_path,
@@ -39,7 +70,7 @@ def main() -> int:
         language=language,
         word_timestamps=True,
         condition_on_previous_text=False,
-        initial_prompt=PROMPT,
+        initial_prompt=prompt,
     )
 
     segments = []

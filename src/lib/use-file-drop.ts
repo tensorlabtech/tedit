@@ -20,7 +20,8 @@ export function useFileDrop(onFiles: (files: File[]) => void) {
     onDragEnter: (event: React.DragEvent) => {
       // Chỉ sáng khi thứ đang kéo là TỆP từ ngoài vào; kéo một ô trong dải để
       // đổi thứ tự cũng bắn `dragenter` và làm cả thẻ nhấp nháy theo.
-      if (!Array.from(event.dataTransfer?.types ?? []).includes("Files")) return;
+      if (!Array.from(event.dataTransfer?.types ?? []).includes("Files"))
+        return;
       event.preventDefault();
       depth.current += 1;
       setOver(true);

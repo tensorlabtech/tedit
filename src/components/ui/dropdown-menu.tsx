@@ -45,7 +45,7 @@ function DropdownMenuContent({
            nút mở là một ô chọn dài, nhưng bảng mở bằng một icon `⋮` 28px thì
            co xuống `min-w-32` (128px) và mọi mục dài hơn thế đều xuống dòng —
            "Chuyển sang tư liệu chèn" gãy làm hai. */
-        "z-50 max-h-(--available-height) w-auto min-w-[max(8rem,var(--anchor-width))] origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-popover p-2 text-popover-foreground shadow-md ring-1 ring-foreground/10 duration-100 outline-none data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:overflow-hidden data-closed:fade-out-0 data-closed:zoom-out-95",
+            "z-50 max-h-(--available-height) w-auto min-w-[max(8rem,var(--anchor-width))] origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-popover p-2 text-popover-foreground shadow-md ring-1 ring-foreground/10 duration-100 outline-none data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:overflow-hidden data-closed:fade-out-0 data-closed:zoom-out-95",
             className,
           )}
           {...props}
@@ -200,12 +200,19 @@ function DropdownMenuRadioItem({
   className,
   children,
   inset,
+  // ĐÓNG menu sau khi chọn. Mặc định của thư viện là giữ menu mở — hợp với mục
+  // tick nhiều lựa chọn, nhưng nhóm radio thì chọn một cái là xong việc, mà menu
+  // vẫn đứng đó thì người dùng tưởng cú bấm chưa ăn và bấm lại lần nữa.
+  //
+  // Vẫn cho chỗ gọi ghi đè, phòng khi có menu cần chỉnh liên tiếp nhiều nấc.
+  closeOnClick = true,
   ...props
 }: MenuPrimitive.RadioItem.Props & {
   inset?: boolean;
 }) {
   return (
     <MenuPrimitive.RadioItem
+      closeOnClick={closeOnClick}
       data-slot="dropdown-menu-radio-item"
       data-inset={inset}
       className={cn(

@@ -65,7 +65,7 @@ export function InsertCard() {
   const media = useDemoMedia();
 
   const found = SHAPES.find((item) => item.id === shape) ?? SHAPES[2];
-  const noiDung =
+  const content =
     kind === "video" ? (
       <video
         src={media.insert ?? "/dev-overlays/mau-video.mp4"}
@@ -157,7 +157,7 @@ export function InsertCard() {
                   className="absolute inset-0 overflow-hidden"
                   style={revealStyleOf(reveal, seconds)}
                 >
-                  {noiDung}
+                  {content}
                 </div>
               ) : (
                 <div className="absolute inset-x-[8%] top-[13%] overflow-hidden rounded-[3cqw]">
@@ -167,7 +167,7 @@ export function InsertCard() {
                       ...revealStyleOf(reveal, seconds),
                     }}
                   >
-                    {noiDung}
+                    {content}
                   </div>
                 </div>
               )}

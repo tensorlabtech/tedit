@@ -2,9 +2,21 @@ import {
   ChevronDownIcon,
   ChevronUpIcon,
   MergeIcon,
+  SplitIcon,
   Trash2Icon,
+  WandSparklesIcon,
 } from "lucide-react";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -17,6 +29,7 @@ import {
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
+import { toast } from "@/components/ui/toast";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 import { type BandId, type EmphasisId } from "@/dev/overlays/overlay-model";
@@ -50,9 +63,9 @@ import type { EditorState } from "./use-editor";
  * · CĂN NGANG và TỪ KHOÁ — hai thứ dùng 2–3%, lui vào "Tinh chỉnh".
  */
 /** Lùi trước khi chạy, để mắt kịp bắt nhịp trước khi chữ bắt đầu hiện. */
-const LUI = 0.2;
+const LEAD_IN = 0.2;
 /** Chạy thêm một nhịp sau khi chữ hết, cho thấy nó tắt đi thế nào. */
-const NGAN = 0.3;
+const TAIL = 0.3;
 
 export function TextPane({
   editor,
@@ -61,7 +74,7 @@ export function TextPane({
 }: {
   editor: EditorState;
   element: TextElement;
-  onPreview: (at: number, denKhi?: number) => void;
+  onPreview: (at: number, until?: number) => void;
 }) {
   /**
    * Đổi một lựa chọn là CHẠY THỬ ngay đúng cụm chữ này.
@@ -73,18 +86,40 @@ export function TextPane({
    * Chữ hiện ra theo TỪNG TIẾNG, nên cả ba trục đều đáng xem lại: đổi dáng là
    * đổi cỡ từng tiếng, đổi dải hay đổi căn là đổi chỗ chúng bay tới.
    */
-  const chayThu = () =>
-    onPreview(element.start - LUI, element.end + NGAN);
+  const playPreview = () =>
+    onPreview(element.start - LEAD_IN, element.end + TAIL);
   const from = editor.wordsById.get(element.fromWordId);
   const deChong = editor.deLenNhau(element);
   // Chỉ chữ CHẠY THEO LỜI mới gộp được, và phải còn cụm nào ở sau nó: chữ tự do
   // neo theo giây, nhập nó với một cụm neo theo từ là trộn hai kiểu neo.
-  const coCumSau =
-    !element.theoGio &&
+  const hasNextGroup =
+    !element.byTime &&
     editor.textElements.some(
-      (item) => !item.theoGio && item.start >= element.end - 0.001,
+      (item) => !item.byTime && item.start >= element.end - 0.001,
     );
-  const tieng = element.content.trim().split(/\s+/).filter(Boolean);
+  const syllable = element.content.trim().split(/\s+/).filter(Boolean);
+  /**
+   * Chữ này còn KHỚP LỜI hay đã viết lại — và nói ra.
+   *
+   * Luật của máy chủ: sửa một cụm mà số tiếng vẫn khớp khoảng từ nó neo vào thì
+   * lời chép bên dưới đổi theo, và chữ hiện ra theo mốc nói THẬT. Số tiếng lệch
+   * đi thì lời chép giữ nguyên thứ người ta đã nói, còn chữ rải đều trong đúng
+   * khoảng của cụm.
+   *
+   * Luật ấy đúng nhưng ẩn hoàn toàn: người dùng gõ "TensorLab" xong không biết
+   * lời chép bên dưới vẫn còn "Tenso" và "Lab", cũng không biết nhịp chữ vừa
+   * chuyển từ mốc thật sang rải đều. Một dòng là đủ nói.
+   */
+  const spokenWords = element.byTime
+    ? 0
+    : editor.words.filter(
+        (word) =>
+          word.start >= element.start - 0.01 && word.end <= element.end + 0.01,
+      ).length;
+  const matchesSpeech = !element.byTime && spokenWords === syllable.length;
+  // Tách được khi cụm phủ từ hai TỪ trở lên: mỗi nửa phải còn ít nhất một từ để
+  // neo vào. Chữ tự do không tách — nó không neo vào từ nào.
+  const canSplit = !element.byTime && spokenWords >= 2;
   /**
    * Từ khoá CHỈ có nghĩa ở hai dáng.
    *
@@ -100,8 +135,8 @@ export function TextPane({
    * in đậm hơn". Đọc lại mã dựng thì không có chỗ nào đổi nét chữ — lý lẽ ấy
    * sai. Một hàng điều khiển không đổi được gì thì bày ra chỉ để lừa.
    */
-  const dungTuKhoa =
-    element.emphasis === "tu-khoa-to" || element.emphasis === "xen-co";
+  const usesKeywords =
+    element.emphasis === "keyword-large" || element.emphasis === "mixed-size";
 
   return (
     <Card className="h-full min-h-0">
@@ -113,7 +148,7 @@ export function TextPane({
         <CardTitle>
           Chữ trên màn
           <span className="ml-2 font-normal text-muted-foreground">
-            {element.theoGio
+            {element.byTime
               ? `${formatTime(element.start)} → ${formatTime(element.end)}`
               : `câu ${from ? formatTime(from.start) : "?"}`}
           </span>
@@ -122,7 +157,7 @@ export function TextPane({
             là chuyện thường — không có hai nút này thì cách duy nhất để sửa là
             xoá rồi dựng lại. Chữ TỰ DO không có: nó không thuộc câu nào để dời,
             khoảng của nó đổi bằng cách kéo hai đầu trên dải. */}
-        {!element.theoGio && (
+        {!element.byTime && (
           <CardAction>
             <Button
               variant="ghost"
@@ -185,6 +220,15 @@ export function TextPane({
               }}
             />
 
+            {/* Đứng ngay dưới ô nhập vì nó nói về chính thứ vừa gõ. */}
+            {!element.byTime && (
+              <p className="-mt-1.5 text-xs text-muted-foreground">
+                {matchesSpeech
+                  ? `${syllable.length} tiếng · khớp lời, chữ chạy theo nhịp nói thật`
+                  : `${syllable.length} tiếng cho ${spokenWords} từ đã nói · chữ rải đều trong khoảng`}
+              </p>
+            )}
+
             <Field>
               <FieldLabel>Dáng</FieldLabel>
               <TextShapeTiles
@@ -194,7 +238,7 @@ export function TextPane({
                 value={element.emphasis}
                 onChange={(next) => {
                   editor.updateTextElement(element.id, { emphasis: next });
-                  chayThu();
+                  playPreview();
                 }}
               />
             </Field>
@@ -212,7 +256,7 @@ export function TextPane({
                 value={element.position as BandId}
                 onChange={(next) => {
                   editor.updateTextElement(element.id, { position: next });
-                  chayThu();
+                  playPreview();
                 }}
               />
             </Field>
@@ -223,7 +267,7 @@ export function TextPane({
                 value={element.align}
                 onChange={(next) => {
                   editor.updateTextElement(element.id, { align: next });
-                  chayThu();
+                  playPreview();
                 }}
               />
             </Field>
@@ -239,7 +283,7 @@ export function TextPane({
               </FieldDescription>
             )}
 
-            {dungTuKhoa && (
+            {usesKeywords && (
             <Field>
               <FieldLabel>Từ khoá</FieldLabel>
               <ToggleGroup
@@ -253,7 +297,7 @@ export function TextPane({
                   })
                 }
               >
-                {tieng.map((word, index) => (
+                {syllable.map((word, index) => (
                   <ToggleGroupItem key={`${word}-${index}`} value={word}>
                     {word}
                   </ToggleGroupItem>
@@ -266,18 +310,85 @@ export function TextPane({
       </CardContent>
 
       <CardFooter>
+      {/* Lấy kiểu của cụm này làm kiểu chung.
+
+          Đo trên một dự án thật: 82% cụm giữ dáng mặc định, 88% giữ chỗ đặt,
+          90% giữ căn ngang — người dùng không sửa từng cụm, họ muốn đổi phong
+          cách CẢ VIDEO. Không có nút này thì việc đó là năm chục cú bấm y hệt.
+
+          Ở CHÂN BẢNG chứ không trong vùng cuộn: đặt sau hàng "Căn ngang" thì
+          nó rơi xuống dưới mép vùng nhìn thấy 43px, và một cái nút phải cuộn
+          mới thấy thì coi như không có.
+
+          Hỏi lại một lần vì nó đè lên mọi cụm, kể cả những cụm đã sửa tay; và
+          nói rõ con số để người dùng biết mình vừa đổi bao nhiêu. */}
+          {!element.byTime && editor.textElements.length > 1 && (
+            <AlertDialog>
+              <AlertDialogTrigger
+                render={<Button variant="secondary" size="sm" />}
+              >
+                <WandSparklesIcon data-icon="inline-start" />
+                Áp cho tất cả
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogTitle>Áp cho tất cả chữ?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Dáng, chỗ đặt và căn ngang của cụm này sẽ thay cho mọi cụm
+                  chữ chạy theo lời — kể cả những cụm bạn đã sửa riêng. Chữ tự
+                  do (tiêu đề, con số) không đổi.
+                </AlertDialogDescription>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Thôi</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() =>
+                      void editor
+                        .applyTextStyleToAll({
+                          band: element.position,
+                          align: element.align,
+                          emphasis: element.emphasis,
+                        })
+                        .then((changed) => {
+                          if (changed > 0) {
+                            toast.add({
+                              title: `Đã áp kiểu cho ${changed} cụm chữ`,
+                              type: "success",
+                            });
+                          }
+                        })
+                    }
+                  >
+                    Áp cho tất cả
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
         {/* Gộp đứng cạnh Xoá vì hai nút cùng trả lời một cảnh: cụm này không
             đứng một mình được. Một cái tên nước ngoài bị nghe thành hai tiếng
             rơi vào hai cụm thì sửa riêng từng cụm không bao giờ ghép lại được —
             phải nhập chúng làm một rồi mới gõ đúng tên. */}
-        {coCumSau && (
+        {hasNextGroup && (
           <Button
             variant="secondary"
             size="sm"
             onClick={() => void editor.mergeTextWithNext(element.id)}
           >
             <MergeIcon data-icon="inline-start" />
-            Gộp với cụm sau
+            Gộp cụm sau
+          </Button>
+        )}
+        {/* Tách đứng cạnh Gộp vì hai nút là một cặp: gộp mà không tách được thì
+            cú gộp là một chiều — nhập hai cụm rồi thấy dài quá cũng không lùi
+            được, ngoài một bước hoàn tác. Cụm dài còn sinh ra từ chỗ khác nữa:
+            người dùng tự gõ thêm chữ vào một cụm ngắn. */}
+        {canSplit && (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => void editor.splitTextElement(element.id)}
+          >
+            <SplitIcon data-icon="inline-start" />
+            Tách cụm
           </Button>
         )}
         <Button

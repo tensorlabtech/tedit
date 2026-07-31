@@ -42,7 +42,7 @@ export function TimelinePlayheadButtons({ editor }: { editor: EditorState }) {
   const [moTuLieu, setMoTuLieu] = useState(false);
   const musicInputRef = useRef<HTMLInputElement>(null);
 
-  const chuaCoLoi = editor.sentences.length === 0;
+  const noTranscriptYet = editor.sentences.length === 0;
   /**
    * Đoạn mà vạch đang đứng trong — KHÔNG phải đoạn đang chọn.
    *
@@ -55,13 +55,13 @@ export function TimelinePlayheadButtons({ editor }: { editor: EditorState }) {
    * `MIN_SEGMENT`) và nhãn nói thẳng vì sao — một nút bấm được mà không làm gì
    * còn tệ hơn một nút mờ đi, nhưng một nút mờ mà không nói lý do cũng thế.
    */
-  const doanTaiVach = editor.segments.find(
+  const segmentAtPlayhead = editor.segments.find(
     (item) => editor.time >= item.start && editor.time < item.end,
   );
-  const tachDuoc =
-    !!doanTaiVach &&
-    editor.time > doanTaiVach.start + MIN_SEGMENT &&
-    editor.time < doanTaiVach.end - MIN_SEGMENT;
+  const canSplit =
+    !!segmentAtPlayhead &&
+    editor.time > segmentAtPlayhead.start + MIN_SEGMENT &&
+    editor.time < segmentAtPlayhead.end - MIN_SEGMENT;
 
   return (
     <>
@@ -83,10 +83,10 @@ export function TimelinePlayheadButtons({ editor }: { editor: EditorState }) {
           render={
             <Button
               size="icon-sm"
-              disabled={chuaCoLoi}
+              disabled={noTranscriptYet}
               tooltipSide="top"
               aria-label={
-                chuaCoLoi
+                noTranscriptYet
                   ? "Chép lời xong mới thêm được"
                   : editor.selection?.kind === "clip"
                     ? "Thêm vào đoạn đang chọn"
@@ -128,9 +128,9 @@ export function TimelinePlayheadButtons({ editor }: { editor: EditorState }) {
         variant="secondary"
         size="icon-sm"
         tooltipSide="bottom"
-        disabled={chuaCoLoi || !tachDuoc}
+        disabled={noTranscriptYet || !canSplit}
         aria-label={
-          tachDuoc
+          canSplit
             ? "Tách đoạn tại vạch"
             : "Vạch đang sát mép đoạn — kéo sang giữa đoạn rồi tách"
         }

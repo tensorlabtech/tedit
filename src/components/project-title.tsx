@@ -16,7 +16,8 @@ import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 
 /**
- * Tên dự án — đọc tại chỗ, sửa trong một hộp thoại.
+ * Tên dự án — đọc tại chỗ, sửa trong một hộp thoại. Dùng ở CẢ HAI màn có tên dự
+ * án trên đầu trang: bàn dựng và màn nạp tệp.
  *
  * Máy chủ nhận tên lúc tạo nhưng màn nạp tệp đặt cứng "Dự án mới", nên danh
  * sách thành mười ô trùng tên và không ô nào nhận ra được. Cửa sửa phải nằm
@@ -27,21 +28,33 @@ import { Input } from "@/components/ui/input";
  * cấm modal cho vòng lặp đó). Đầu trang cũng vì thế mà không đổi chiều cao khi
  * bấm sửa.
  */
-export function EditorTitle({
+export function ProjectTitle({
   title,
   onRename,
 }: {
   title: string;
-  onRename: (next: string) => void;
+  /**
+   * Bỏ trống thì chỉ HIỆN tên, không có nút sửa.
+   *
+   * Màn nạp tệp có sẵn ô "Tên dự án" trong khối Dự án, nên một cái nút sửa nữa ở
+   * đầu trang là hai đường tới cùng một giá trị — và người dùng phải đoán hai ô đó
+   * có phải một hay không. Bàn dựng thì ngược lại: ở đó không có khối nào để đặt
+   * ô, nên hộp thoại là đường duy nhất.
+   */
+  onRename?: (next: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(title);
 
-  const luu = () => {
+  const save = () => {
     setOpen(false);
     const clean = draft.trim();
-    if (clean !== title) onRename(clean);
+    if (clean !== title) onRename?.(clean);
   };
+
+  if (!onRename) {
+    return <CardTitle className="truncate">{title || "Dự án"}</CardTitle>;
+  }
 
   return (
     // MỘT phần tử, không phải hai anh em rời: đầu thẻ là lưới hai cột (tên |
@@ -78,9 +91,9 @@ export function EditorTitle({
             <DialogTitle>Đổi tên dự án</DialogTitle>
           </DialogHeader>
           <Field className="px-5">
-            <FieldLabel htmlFor="editor-project-title">Tên dự án</FieldLabel>
+            <FieldLabel htmlFor="project-title">Tên dự án</FieldLabel>
             <Input
-              id="editor-project-title"
+              id="project-title"
               // Mở ra là con trỏ vào sẵn và chữ cũ được bôi đen: đổi tên gần như
               // luôn là VIẾT LẠI, không phải sửa một chữ cái giữa dòng.
               //
@@ -94,13 +107,13 @@ export function EditorTitle({
               placeholder="Dự án mới"
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === "Enter") luu();
+                if (event.key === "Enter") save();
               }}
             />
           </Field>
           <DialogFooter>
             <DialogClose render={<Button variant="secondary">Huỷ</Button>} />
-            <Button onClick={luu}>Lưu</Button>
+            <Button onClick={save}>Lưu</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

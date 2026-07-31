@@ -17,7 +17,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-import { mainRoleRejection, type MediaFile, type MediaRole } from "./upload-data";
+import {
+  mainRoleRejection,
+  type MediaFile,
+  type MediaRole,
+} from "./upload-data";
 
 /**
  * Mọi thao tác với một ô tư liệu, gom vào một bảng.

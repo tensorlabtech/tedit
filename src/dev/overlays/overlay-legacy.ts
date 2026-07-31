@@ -14,27 +14,27 @@ export function fromLegacyLayout(value: string | null | undefined): {
 } {
   switch (value) {
     case "center":
-      return { align: "center", emphasis: "deu" };
+      return { align: "center", emphasis: "even" };
     case "right":
     case "lech-tam":
-      return { align: "right", emphasis: "deu" };
+      return { align: "right", emphasis: "even" };
     case "stair-right":
     case "stair-left":
     case "stair":
-      return { align: "stair", emphasis: "deu" };
+      return { align: "stair", emphasis: "even" };
     case "split":
     case "so-le":
-      return { align: "so-le", emphasis: "deu" };
+      return { align: "stagger", emphasis: "even" };
     case "mot-tieng-khong-lo":
-      return { align: "left", emphasis: "tu-khoa-to" };
+      return { align: "left", emphasis: "keyword-large" };
     case "xen-co":
-      return { align: "left", emphasis: "xen-co" };
+      return { align: "left", emphasis: "mixed-size" };
     case "duoi-len":
-      return { align: "left", emphasis: "dan-nho" };
+      return { align: "left", emphasis: "taper" };
     case "left":
-      return { align: "left", emphasis: "deu" };
+      return { align: "left", emphasis: "even" };
     // `flush` và mọi giá trị lạ: căn giữa, cỡ đều — đúng thứ bản in ra vẫn làm.
     default:
-      return { align: "center", emphasis: "deu" };
+      return { align: "center", emphasis: "even" };
   }
 }

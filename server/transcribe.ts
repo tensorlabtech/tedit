@@ -32,10 +32,17 @@ export type AsrSegment = {
 export async function transcribeAudio(
   audioPath: string,
   language = "vi",
+  /**
+   * Đoạn mồi từ vựng — xem `server/asr-bias.ts`.
+   *
+   * Truyền qua ĐỐI SỐ chứ không qua biến môi trường: đoạn này dài và có dấu
+   * tiếng Việt, mà biến môi trường thì tuỳ hệ điều hành lại cắt hoặc đổi mã.
+   */
+  prompt?: string,
 ): Promise<AsrSegment[]> {
   const { stdout } = await run(
     "python3",
-    [SCRIPT, audioPath, language],
+    [SCRIPT, audioPath, language, ...(prompt ? [prompt] : [])],
     // Bản chép của một video dài chục phút vượt xa mức đệm mặc định 1MB.
     {
       env: { ...process.env, PYTHONPATH: PYLIBS },

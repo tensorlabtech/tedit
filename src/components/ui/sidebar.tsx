@@ -25,7 +25,16 @@ import { PanelLeftIcon } from "lucide-react";
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state";
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
-const SIDEBAR_WIDTH = "16rem";
+/**
+ * 18rem chứ không phải 16rem như bản gốc.
+ *
+ * Đệm lề của thanh bên khớp `Card` (20px mỗi bên), mà thẻ người dùng bên trong còn
+ * chứa ảnh đại diện, tên, địa chỉ thư và nút đăng xuất trên cùng một hàng. Ở 16rem
+ * thì sau khi trừ hết chỉ còn 80px cho chữ — tên bị cắt thành "Lê Huy Th…" ngay ở
+ * một cái tên ba chữ. 18rem đưa nó lên khoảng 120px, đủ cho tên và gần đủ cho địa
+ * chỉ thư.
+ */
+const SIDEBAR_WIDTH = "18rem";
 const SIDEBAR_WIDTH_MOBILE = "18rem";
 const SIDEBAR_WIDTH_ICON = "3rem";
 const SIDEBAR_KEYBOARD_SHORTCUT = "b";
@@ -230,8 +239,13 @@ function Sidebar({
         className={cn(
           "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear data-[side=left]:left-0 data-[side=left]:group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)] data-[side=right]:right-0 data-[side=right]:group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)] md:flex",
           // Adjust the padding for floating and inset variants.
+          // Bề rộng lúc thu gọn phải khớp ĐÚNG ô giữ chỗ ở trên (`sidebar-gap`).
+          // Bản gốc cộng thêm `+2px` ở đây mà không cộng vào ô giữ chỗ, nên khung
+          // thanh bên rộng hơn phần đã chừa 2px và khe giữa nó với thẻ nội dung co
+          // lại còn 6px — trong khi lúc mở rộng là 8px như mọi khe khác. Viền vẽ
+          // bằng `ring` nên nằm ngoài hộp, không cần chừa chỗ cho nó.
           variant === "floating" || variant === "inset"
-            ? "p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]"
+            ? "p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4)))]"
             : "group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[side=left]:border-r group-data-[side=right]:border-l",
           className,
         )}
@@ -240,7 +254,12 @@ function Sidebar({
         <div
           data-sidebar="sidebar"
           data-slot="sidebar-inner"
-          className="flex size-full flex-col bg-sidebar group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:shadow-sm group-data-[variant=floating]:ring-1 group-data-[variant=floating]:ring-sidebar-border"
+          // `rounded-xl` chứ không `rounded-lg` của bản gốc: ở dạng `floating` thanh
+          // bên là MỘT THẺ đứng cạnh các thẻ khác, mà `Card` bo `rounded-xl` — lệch
+          // một bậc bo góc thì hai khối cạnh nhau đọc ra như hai thứ khác loại.
+          // Màu và viền vốn đã khớp: `--sidebar` bằng `--card`, `--sidebar-border`
+          // bằng `--border` (xem `src/index.css`).
+          className="flex size-full flex-col bg-sidebar group-data-[variant=floating]:rounded-xl group-data-[variant=floating]:shadow-sm group-data-[variant=floating]:ring-1 group-data-[variant=floating]:ring-sidebar-border"
         >
           {children}
         </div>
@@ -455,7 +474,11 @@ function SidebarMenu({ className, ...props }: React.ComponentProps<"ul">) {
     <ul
       data-slot="sidebar-menu"
       data-sidebar="menu"
-      className={cn("flex w-full min-w-0 flex-col gap-0", className)}
+      // `gap-1` chứ không `gap-0`: các mục dính sát nhau đọc ra như một khối
+      // đặc, mắt phải tự tách từng dòng. Bốn điểm ảnh đủ để tách mà không làm
+      // danh sách rời rạc — và nó cũng cho nền của mục đang mở có chỗ thở, thay
+      // vì chạm ngay vào mục trên và mục dưới.
+      className={cn("flex w-full min-w-0 flex-col gap-1", className)}
       {...props}
     />
   );

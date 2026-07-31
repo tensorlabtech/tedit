@@ -1,3 +1,5 @@
+## Dự án Tedit nhé, tên thư mục tôi viết sai là Teddit đấy
+
 ## Về quy tắc UI
 
 ### Sử dụng design system
@@ -27,6 +29,6 @@ Dự án này thiết kế với giao diện đồng bộ vả nhất quán, ch�
 
 ## Quy tắc code
 
-- Dùng full Tiếng Anh nhé (tên hàm, biến, ...)
+- Dùng full Tiếng Anh nhé (tên hàm, biến, đường dẫn, ... tất cả mọi thứ), chỉ có cái text hiện lên UI là tiếng Việt thôi
 
 ## Nếu tôi bảo làm hết đừng hỏi thì hãy tự động đi tiếp nhé

@@ -1,230 +1,154 @@
-import {
-  CheckIcon,
-  CropIcon,
-  MicOffIcon,
-  RefreshCwIcon,
-  TriangleAlertIcon,
-} from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Slider } from "@/components/ui/slider";
+import { Textarea } from "@/components/ui/textarea";
 
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
-import { Spinner } from "@/components/ui/spinner";
-import { cn } from "@/lib/utils";
-
-import { isLandscape } from "./upload-data";
 import type { UploadState } from "./use-upload";
 
 /**
- * Các bước máy chủ đi qua khi chép lời, kèm mốc tiến độ nó báo về.
+ * Khối KHAI BÁO DỰ ÁN: tên, ngưỡng rút lặng, lời dặn cho máy nghe.
  *
- * Suy bước đang chạy từ CON SỐ tiến độ chứ không so chuỗi thông báo: đổi một
- * chữ trong câu thông báo ở máy chủ thì danh sách này đứng im, mà không ai
- * biết. Bày cả bốn bước vì một thanh trơn không trả lời được "còn bao lâu" —
- * còn bốn bước thì đọc ra ngay là mới đi được một phần tư hay sắp xong.
- */
-const TRANSCRIBE_STEPS = [
-  { from: 0, label: "Ghép video chính" },
-  { from: 20, label: "Dựng dải ảnh" },
-  { from: 30, label: "Tách tiếng" },
-  { from: 45, label: "Nghe và chép lời" },
-];
-
-/**
- * Cột phải: những gì cần xem lại trước khi chạy, và việc đang chạy.
+ * Chiều cao BẤT BIẾN — đó là luật của thẻ này. Nó nằm ở hàng `auto` đầu cột nội
+ * dung, nên cao thêm một dòng là hai dải ô bên dưới bị bóp đúng chừng ấy. Từng có
+ * hàng soát, thanh tiến độ và bốn bước chép lời ở đây: thả tệp vào là cả layout xô
+ * lệch một nhịp. Chúng đã sang card "Tiếp theo", nơi có cái nút chúng đang nói về.
  *
  * KHÔNG bày số liệu về dự án. Từng có một dòng "2:23 · 9 cảnh nối lại" to đùng ở
  * đây, và nó nói dối hai lần: người đọc tưởng đó là khung xem video đã ghép, còn
- * con số thì chưa cắt gì nên chẳng phải độ dài thành phẩm. Thứ duy nhất đáng
- * đứng đây là thứ ĐỔI ĐƯỢC MỘT QUYẾT ĐỊNH — mà mỗi dòng đều kèm sẵn nút làm
- * được điều đó.
- *
- * Đây cũng là chỗ dành sẵn cho phần chọn phong cách và lời dặn sau này: chúng
- * chèn vào giữa hàng soát và phần trạng thái, không phải dựng lại cả trang.
+ * con số thì chưa cắt gì nên chẳng phải độ dài thành phẩm.
  */
 export function SetupCard({
   upload,
-  onOpen,
-  onPick,
   className,
 }: {
   upload: UploadState;
-  /** Mở khung xem một cảnh — câu trả lời cho dòng nhắc "cảnh quay ngang" */
-  onOpen: (id: string) => void;
-  /** Mở hộp chọn tệp — câu trả lời cho dòng nhắc "không nghe được lời nào" */
-  onPick: () => void;
   className?: string;
 }) {
-  const job = upload.transcribe;
-  const cropped = upload.mainFiles.filter(isLandscape);
-  const failed = upload.files.filter((item) => item.status === "error");
-
-  const blockReason = upload.uploading
-    ? "Đang tải tệp lên"
-    : upload.readyMainFiles.length === 0
-      ? "Cần ít nhất một cảnh chính tải xong"
-      : null;
-
-  const running = job?.status === "running";
-  const step = running
-    ? TRANSCRIBE_STEPS.reduce(
-        (found, item, index) => (job.progress >= item.from ? index : found),
-        0,
-      )
-    : -1;
-
-  const notes =
-    cropped.length > 0 ||
-    failed.length > 0 ||
-    upload.transcriptStale ||
-    upload.noSpeechFound;
-
-  /**
-   * Câu trạng thái — chỉ khi có việc thật sự đang xảy ra hoặc đang vướng.
-   *
-   * Từng có một câu mặc định *"Chép lời xong sẽ mở bàn dựng để cắt và thêm chữ"*
-   * đứng đây suốt: nó tả một việc sẽ tự xảy ra, không đổi quyết định nào, và nó
-   * làm cả cái thẻ tồn tại chỉ để chứa một câu như vậy.
-   */
-  const status =
-    job?.status === "error"
-      ? `Chép lời hỏng: ${job.message}`
-      : upload.uploading
-        ? `Đang tải ${upload.uploadingFiles.length} tệp · ${upload.uploadProgress}%`
-        : running
-          ? "Xong bước này là mở được bàn dựng"
-          : blockReason;
-
-  // Không có gì để nói thì KHÔNG dựng thẻ. Một thẻ trống mang tên "Thiết lập"
-  // là một lời hứa suông: người đọc đi tìm cái để chỉnh và không thấy gì.
-  if (!notes && !status && !running) return null;
+  // KHÔNG còn ẩn thẻ này nữa. Nó từng ẩn khi chưa có gì để nói, vì lúc đó nó chỉ
+  // chứa một câu trạng thái trùng với thứ thẻ Mạch chính đã nói. Giờ nó là khối
+  // KHAI BÁO DỰ ÁN — tên và cài đặt luôn có nghĩa, kể cả trước khi thả tệp đầu
+  // tiên, và ẩn nó đi là làm cột nội dung nhảy một nấc ngay lần thả đầu.
 
   return (
     <Card className={className}>
       <CardHeader>
-        <CardTitle>Thiết lập</CardTitle>
+        <CardTitle>Dự án</CardTitle>
       </CardHeader>
 
       {/* `overflow-hidden`: màn thấp thì phần trên tràn ra ngoài ô của mình và
-          đè lên thứ bên dưới — xén trong ô thì cùng lắm mất một dòng nhắc. */}
-      <CardContent className="flex min-h-0 flex-col gap-4 overflow-hidden lg:flex-1">
-        {/* Mỗi dòng nhắc phải có một CÂU TRẢ LỜI ngay tại chỗ, không phải một
-            nút giấu ở đâu đó — bằng không người dùng đọc xong vẫn đứng im. */}
-        {notes && (
-          <div className="grid gap-2 text-xs">
-            {/* Đứng ĐẦU vì nó nặng nhất: mọi thứ dựng sau đó đều dựa vào lời,
-                mà ở đây không có lời nào. Câu trả lời tại chỗ là đổi video —
-                chép lại cùng một tệp câm thì vẫn ra đúng ngần ấy. */}
-            {upload.noSpeechFound && (
-              <div className="flex items-start gap-2">
-                <MicOffIcon className="mt-0.5 size-3.5 shrink-0 text-destructive" />
-                <span className="flex-1 text-destructive">
-                  Không nghe được lời nào — video không có tiếng nói
-                </span>
-                <Button variant="ghost" size="xs" onClick={onPick}>
-                  Thêm video
-                </Button>
-              </div>
-            )}
-            {/* Đổi mạch sau khi chép lời thì phần mới KHÔNG có lời, mà nút vẫn
-                mời mở bàn dựng — sang tới nơi mới thấy một quãng không chữ nào. */}
-            {upload.transcriptStale && (
-              <div className="flex items-start gap-2">
-                <RefreshCwIcon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
-                <span className="flex-1 text-muted-foreground">
-                  Mạch đổi sau khi chép lời, lời không còn khớp
-                </span>
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  onClick={() => void upload.startTranscribe()}
-                >
-                  Chép lại
-                </Button>
-              </div>
-            )}
-            {cropped.length > 0 && (
-              <div className="flex items-start gap-2">
-                <CropIcon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
-                <span className="flex-1 text-muted-foreground">
-                  {cropped.length} cảnh quay ngang, sẽ cắt hai bên
-                </span>
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  onClick={() => onOpen(cropped[0]!.id)}
-                >
-                  Xem
-                </Button>
-              </div>
-            )}
-            {failed.length > 0 && (
-              <div className="flex items-start gap-2">
-                <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0 text-destructive" />
-                <span className="flex-1 text-destructive">
-                  {failed.length} tệp tải hỏng
-                </span>
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  onClick={() =>
-                    failed.forEach((item) => upload.retryUpload(item.id))
+          đè lên thứ bên dưới — xén trong ô thì cùng lắm mất một dòng nhắc.
+
+          `pb-1` là chỗ thở cho VÒNG FOCUS, không phải khoảng cách trang trí. Ô mô
+          tả bên dưới là `flex-1` nên đáy nó trùng KHÍT đáy ô này (đo được: hở 0px),
+          mà `overflow-hidden` xén ở mép padding — nên cả vòng `ring-3` phía dưới bị
+          cắt sạch, ô đang focus mà nhìn ra như không. Bốn điểm ảnh đủ cho vòng ba
+          điểm ảnh, và vì ô này `flex-1` nên thẻ KHÔNG cao thêm chút nào. */}
+      <CardContent className="flex min-h-0 flex-col gap-3 overflow-hidden pb-1 lg:flex-1">
+        {/* HAI cột: bên trái khai báo và cài đặt (từng dòng một, ngắn), bên phải
+            ô mô tả (cao, cần chỗ để đọc lại cả câu vừa gõ).
+
+            Xếp dọc hết thì khối này cao gấp đôi và ăn thẳng vào hai dải ô bên dưới
+            — đo được: dải tư liệu tụt còn 56px, ô cao 0. */}
+        <div className="grid min-h-0 flex-1 gap-3 sm:grid-cols-2">
+          <div className="flex min-w-0 flex-col gap-3">
+            {/* Máy nghe ĐỌC cái tên: `asr-bias` đẩy nó vào đoạn mồi thành câu
+                "Video tên là …", nên đặt tên "Sinh nhật 30" là đã mồi hai từ máy
+                hay nghe chệch — và phải đặt TRƯỚC khi chép lời mới kịp. */}
+            <Field>
+              <FieldLabel htmlFor="project-name">Tên dự án</FieldLabel>
+              <Input
+                id="project-name"
+                spellCheck={false}
+                // Điền SẴN tên gợi ý, không để trống chờ gõ: ai không muốn nghĩ tên
+                // thì bỏ qua ô này, mà danh sách dự án vẫn phân biệt được nhau.
+                defaultValue={upload.title}
+                onBlur={(event) => {
+                  const clean = event.target.value.trim();
+                  if (clean && clean !== upload.title) {
+                    void upload.saveTitle(clean);
                   }
-                >
-                  Thử lại
-                </Button>
-              </div>
-            )}
+                }}
+              />
+            </Field>
+
+            {/* Ngưỡng THẬT, không phải chỗ dành sẵn: `auto-trim-silence.ts` đọc nó
+                để quyết quãng nào bị rút. Người kể chậm cần ngưỡng cao, video hướng
+                dẫn nhanh thì hạ xuống cắt được nhiều hơn.
+
+                Thanh kéo chứ không phải danh sách chọn: đây là một con số liên tục,
+                và cái người ta muốn biết khi kéo là "nhiều hơn hay ít hơn", không
+                phải "0,8 hay 1,2". Số cụ thể vẫn in ngay cạnh nhãn.
+
+                Ghi lúc THẢ TAY (`onValueCommitted`), không ghi từng nhịp kéo: kéo
+                một lượt là hàng chục lần gọi máy chủ. */}
+            <Field>
+              <FieldLabel htmlFor="min-silence">
+                Tự rút chỗ lặng
+                <span className="ml-auto font-normal text-muted-foreground">
+                  {upload.minSilence === 0
+                    ? "không rút"
+                    : `dài hơn ${upload.minSilence.toFixed(1).replace(".", ",")}s`}
+                </span>
+              </FieldLabel>
+              <Slider
+                id="min-silence"
+                min={0}
+                max={3}
+                step={0.1}
+                // MẢNG một phần tử, không phải một con số: `Slider` suy số tay kéo
+                // từ chính `value`, và với một số trơn nó rơi về `[min, max]` — dựng
+                // ra HAI tay kéo, không tay nào nhận phím mũi tên.
+                value={[upload.minSilence]}
+                onValueChange={(value) =>
+                  upload.setMinSilenceDraft(
+                    Array.isArray(value) ? value[0]! : value,
+                  )
+                }
+                onValueCommitted={(value) =>
+                  void upload.saveMinSilence(
+                    Array.isArray(value) ? value[0]! : value,
+                  )
+                }
+              />
+            </Field>
           </div>
-        )}
 
-        <div className="grid gap-2">
-          {running && (
-            <ul className="grid gap-1.5 text-xs">
-              {TRANSCRIBE_STEPS.map((item, index) => (
-                <li
-                  key={item.label}
-                  className={cn(
-                    "flex items-center gap-2",
-                    index > step && "text-muted-foreground",
-                  )}
-                >
-                  {index < step ? (
-                    <CheckIcon className="size-3.5 shrink-0 text-muted-foreground" />
-                  ) : index === step ? (
-                    <Spinner className="size-3.5 shrink-0" />
-                  ) : (
-                    <span className="size-3.5 shrink-0" />
-                  )}
-                  {item.label}
-                </li>
-              ))}
-            </ul>
-          )}
+          {/* Cột phải: LỜI DẶN — thứ ĐỔI ĐƯỢC MỘT QUYẾT ĐỊNH rõ nhất ở màn này.
+              Máy nghe lấy nó làm mồi từ vựng, chặng sửa lời tin nó hơn mọi suy đoán.
+              Đo khi ô này còn rỗng: "TensorLab" chép ra "Tensolab" — không ngữ cảnh
+              nào cho máy đoán ra tên một công ty chưa ai nghe.
 
-          {(upload.uploading || running) && (
-            <Progress value={running ? job.progress : upload.uploadProgress} />
-          )}
+              Ô mô tả TỪNG tư liệu chèn không còn ở đây: nó đã sang khung Xem trước,
+              nơi tấm hình đang hiện ngay trên nó. Ở đây thì người dùng phải nhớ mình
+              đang mô tả tư liệu nào.
 
-          {/* Câu này là chỗ DUY NHẤT nói vì sao nút ở đầu trang chưa bấm được —
-              nhãn của nút chỉ nói nó đang làm gì, không nói nó đang chờ gì. */}
-          {status && (
-            <p
-              className={cn(
-                "text-xs",
-                job?.status === "error"
-                  ? "text-destructive"
-                  : "text-muted-foreground",
-              )}
-            >
-              {status}
-            </p>
-          )}
+              Hiện NGAY, không đợi có cảnh nào: ô này phải điền TRƯỚC khi chép lời
+              mới kịp làm mồi từ vựng, mà người ta hay gõ nó lúc đang chờ tệp tải lên.
+              Ẩn tới khi có cảnh đầu tiên là bỏ mất đúng quãng thời gian rảnh đó.
+
+              Ghi lúc RỜI Ô, không ghi từng phím: người ta gõ liền một câu dài. */}
+          <Field className="min-h-0">
+            <FieldLabel htmlFor="project-brief">Video nói về gì</FieldLabel>
+            <Textarea
+              id="project-brief"
+              // Không ép `text-sm`: design system để `text-base md:text-sm` là có
+              // lý do — dưới 16px thì Safari trên iPhone tự phóng cả trang lúc chạm
+              // vào ô, và người dùng phải chụm tay thu lại mới gõ tiếp được.
+              className="min-h-0 flex-1 resize-none"
+              // Tên riêng là mục đích của ô này, mà bộ soát chính tả gạch đỏ đúng
+              // những từ ấy — thành ra ô nào gõ đúng ý nhất lại trông sai nhất.
+              spellCheck={false}
+              placeholder="Tên riêng máy hay nghe sai — cứ viết vào: mình lập công ty TensorLab, làm Golang với Redis"
+              defaultValue={upload.profile}
+              onBlur={(event) => {
+                const clean = event.target.value.trim();
+                if (clean !== upload.profile) {
+                  void upload.saveProfile(clean);
+                }
+              }}
+            />
+          </Field>
         </div>
       </CardContent>
     </Card>

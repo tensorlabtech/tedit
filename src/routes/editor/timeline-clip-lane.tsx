@@ -222,9 +222,9 @@ function FilmCells({
   nativeSecondWidth: number;
 }) {
   // Lùi/tiến một ô ở hai đầu để lúc kéo dải không thấy mép ô trống chạy vào.
-  const bien = CELL_WIDTH / pxPerSecond;
-  const from = Math.max(clip.start, range.from - bien);
-  const to = Math.min(clip.end, range.to + bien);
+  const edge = CELL_WIDTH / pxPerSecond;
+  const from = Math.max(clip.start, range.from - edge);
+  const to = Math.min(clip.end, range.to + edge);
   const count = Math.max(
     0,
     Math.ceil(((to - from) * pxPerSecond) / CELL_WIDTH),
@@ -236,7 +236,7 @@ function FilmCells({
         const at = from + (index * CELL_WIDTH) / pxPerSecond;
         // Ô đặt theo mốc XUẤT RA, nhưng lấy khung theo mốc BẢN GỐC: một đoạn
         // giữ lại thì hai mốc chỉ lệch nhau một hằng số, nên cộng bù là xong.
-        const goc = clip.srcStart + (at - clip.start);
+        const source = clip.srcStart + (at - clip.start);
         return (
           <span
             key={index}
@@ -249,7 +249,7 @@ function FilmCells({
               // lấp kín, và vì ảnh gốc cao 88px nên phóng lên 56px vẫn còn dư
               // điểm ảnh — không lên hạt.
               backgroundSize: `${stripSeconds * nativeSecondWidth}px ${LANE_HEIGHT}px`,
-              backgroundPositionX: `${-goc * nativeSecondWidth}px`,
+              backgroundPositionX: `${-source * nativeSecondWidth}px`,
               backgroundRepeat: "no-repeat",
             }}
           />

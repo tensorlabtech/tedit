@@ -1,4 +1,13 @@
-const BASE = import.meta.env.VITE_API ?? "http://127.0.0.1:5190";
+/**
+ * Rỗng nghĩa là CÙNG GỐC với trang — Vite chuyển tiếp `/api` và `/files` về
+ * Fastify lúc phát triển (xem `vite.config.ts`), còn lúc chạy thật thì Fastify
+ * trả luôn bản build nên vốn đã cùng gốc.
+ *
+ * Trước đây chỗ này trỏ thẳng `http://127.0.0.1:5190`, tức là khác gốc với trang
+ * ở `5173`: trình duyệt không gửi cookie phiên kèm request, nên đăng nhập xong
+ * mọi lệnh vẫn trả về 401.
+ */
+const BASE = import.meta.env.VITE_API ?? "";
 
 export type ApiFile = {
   id: string;
@@ -10,9 +19,30 @@ export type ApiFile = {
   width: number | null;
   height: number | null;
   has_audio: number;
+  /**
+   * Ảnh hay video — máy chủ chốt theo đuôi đường dẫn thật trên đĩa.
+   *
+   * Không tự đoán bằng `name`: đó là chữ người dùng đặt, và tệp lấy từ kho mang
+   * luôn tiêu đề nên có thể không còn đuôi nào để mà đoán.
+   */
+  kind: "image" | "video";
   thumb_path: string | null;
+  /**
+   * Tệp này MÁY LẤY TỪ KHO chứ không phải người dùng tải lên cho dự án.
+   *
+   * Cần nói ra: mở bàn dựng thấy một clip mình không nhớ đã thêm, mà không có
+   * gì đánh dấu, thì đọc ra như máy bịa ra tệp.
+   */
+  from_library?: number;
+  /** Tên tệp trong kho mà bản này chép ra; `null` với tệp người dùng tự tải lên */
+  library_file?: string | null;
   /** Cảnh báo từ máy chủ: codec tiếng lạ, nhịp khung thay đổi, video bị xoay */
   warnings?: string[];
+  /**
+   * Nội dung tư liệu chèn — người dùng viết, hoặc máy đọc khi người dùng để trống.
+   * Chặng đặt tư liệu khớp nó với lời để chọn chỗ đặt.
+   */
+  description?: string | null;
 };
 
 export type ApiSentence = {
@@ -66,6 +96,29 @@ export type ApiJob = {
   message: string | null;
 };
 
+/** Một chặng của lượt dựng — xem `server/pipeline-steps.ts`. */
+export type ApiStep = {
+  key: string;
+  position: number;
+  status: "waiting" | "running" | "done" | "failed";
+  /** Thứ chặng này đẻ ra, vd "219 đoạn · 189 chữ" */
+  result: string | null;
+  error: string | null;
+  /** Hỏng chặng này thì có ra được sản phẩm không */
+  required: boolean;
+  /** Mốc đổi trạng thái; với chặng đang chạy đây là lúc nó bắt đầu */
+  updatedAt: number;
+};
+
+export type ApiPipeline = {
+  steps: ApiStep[];
+  /** Máy đã buông tay chưa — chặng bỏ qua vẫn tính là xong */
+  settled: boolean;
+  /** Có chặng BẮT BUỘC hỏng: chưa có sản phẩm để mà sửa */
+  blocked: boolean;
+  skipped: number;
+};
+
 export type ProjectSummary = {
   id: string;
   title: string;
@@ -90,6 +143,49 @@ export type ApiMusicTrack = {
   volume: number;
 };
 
+/**
+ * Một bài trong KHO DÙNG CHUNG — chưa đặt vào dự án nào.
+ *
+ * Khác `ApiMusicTrack` ở trên: cái đó là bài ĐÃ ĐẶT, có mốc và âm lượng riêng
+ * trong một dự án. Còn đây mới là món hàng trên kệ.
+ */
+export type ApiLibraryTrack = {
+  /** Tên tệp — cũng là mã của bài trong kho */
+  file: string;
+  title: string;
+  tags: string[];
+  seconds: number;
+  /** Người đang đăng nhập tự tải lên, chứ không phải bài đi kèm sẵn */
+  mine: boolean;
+  starred: boolean;
+};
+
+/** Một tư liệu (ảnh/video chèn) trong KHO DÙNG CHUNG — chưa thuộc dự án nào. */
+export type ApiLibraryAsset = {
+  file: string;
+  title: string;
+  kind: "image" | "video";
+  tags: string[];
+  /** Mô tả cho AI đọc — thiếu nó thì chặng ghép tư liệu bỏ qua tấm này */
+  description: string;
+  seconds: number;
+  bytes: number;
+  mine: boolean;
+  starred: boolean;
+};
+
+/** Cài đặt của người dùng — mặc định cho dự án tạo về sau. */
+export type ApiSettings = {
+  minSilence: number;
+  secondsPerEffect: number;
+  placesPerMinute: number;
+  musicVolume: number;
+  insertSource: "project" | "starred" | "library";
+  wantCaptions: boolean;
+  wantMusic: boolean;
+  profile: string;
+};
+
 export type ApiSegment = {
   id: string;
   position: number;
@@ -104,6 +200,23 @@ export type ApiProject = {
     id: string;
     title: string;
     status: string;
+    /** Lời dặn của người dùng: video nói về gì, có tên riêng nào */
+    profile?: string | null;
+    /** Lời dặn tại lúc chép lời — khác `profile` là bản chép đã cũ */
+    profile_at_transcribe?: string | null;
+    /** Mạch cảnh tại lúc chép lời (id nối bằng dấu phẩy) — khác hiện tại là lời đã cũ */
+    main_files_at_transcribe?: string | null;
+    /** Quãng lặng dài hơn ngần này giây thì tự rút; 0 là không tự rút */
+    min_silence?: number | null;
+    /**
+     * Có gieo chữ từ bản chép lời hay không. Máy chủ đọc cờ này ở chặng `captions`;
+     * CHƯA có ô nào ở giao diện bật tắt nó, nên thực tế luôn là mặc định (bật).
+     */
+    want_captions?: number | null;
+    /** Như `want_captions`, cho chặng `music`. Cũng chưa có ô nào bật tắt. */
+    want_music?: number | null;
+    /** Máy được lấy tư liệu ở đâu: project | starred | library */
+    insert_source?: string | null;
     /** Chiều nhấn zoom ở các chỗ nối đoạn: none | in | out */
     zoom_punch?: string | number;
     /**
@@ -122,6 +235,8 @@ export type ApiProject = {
   words: ApiWord[];
   elements: ApiElement[];
   jobs: ApiJob[];
+  /** Tiến trình dựng, để màn chờ và cổng vào bàn dựng đọc chung một nguồn */
+  pipeline?: ApiPipeline;
   /** Hiệu ứng người dùng đặt tay — quãng theo giây BẢN GỐC */
   effects?: Array<{
     id: string;
@@ -133,6 +248,61 @@ export type ApiProject = {
   dismissed?: string[];
 };
 
+/**
+ * Lỗi từ máy chủ, mang theo MÃ TRẠNG THÁI.
+ *
+ * Bên gọi cần phân biệt được "dự án không còn" (404 — hỏng vĩnh viễn, phải dựng
+ * lại từ đầu) với "máy chủ đang lỗi" (5xx — thử lại là được). Chỉ có câu chữ thì
+ * phải so chuỗi tiếng Việt, mà câu chữ ở máy chủ đổi lúc nào không ai biết.
+ */
+export class ApiError extends Error {
+  // Gán trong thân hàm, không dùng `readonly` trên tham số: cấu hình
+  // `erasableSyntaxOnly` không cho phép cú pháp đó.
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+/** Bóc câu tiếng Việt trong thân lỗi — máy chủ luôn trả `{"error":"..."}`. */
+function errorMessage(body: string, status: number) {
+  try {
+    const parsed = JSON.parse(body) as { error?: string };
+    if (parsed?.error) return parsed.error;
+  } catch {
+    /* không phải JSON thì dùng nguyên văn */
+  }
+  return body || `Máy chủ trả về ${status}`;
+}
+
+/**
+ * Máy chủ nói chưa đăng nhập thì đưa người dùng về `/`.
+ *
+ * `/` tự phân nhánh: chưa có phiên thì nó là trang giới thiệu, và ở đó có cửa
+ * đăng nhập. Không còn `/login` riêng — nó chỉ là bản sao nghèo hơn của trang ấy.
+ *
+ * Cần vì phiên hết hiệu lực Ở MÁY CHỦ mà trình duyệt không hay biết. Rõ nhất là
+ * khi một email bị gỡ khỏi `TEDDIT_ALLOWED_EMAILS`: Better Auth vẫn trả lời "phiên
+ * này còn hạn" nên `RequireSession` cho vào màn, còn cổng chặn ở máy chủ thấy email
+ * ngoài danh sách nên trả 401 cho mọi lời gọi — người dùng ngồi trước một màn dựng
+ * ra đủ nhưng không nạp được gì, và không có chỗ nào để bấm cho thoát. Phiên quá
+ * hạn ba mươi ngày cũng cùng một cảnh.
+ *
+ * Đặt ở đây chứ không ở từng màn: đây là cửa duy nhất mọi lời gọi đi qua.
+ *
+ * `location.assign` chứ không `navigate` của router: hàm này không nằm trong React
+ * nên không với tới router, mà tải lại cả trang cũng là điều nên làm — nó xoá sạch
+ * mọi thứ đã nhớ từ phiên cũ.
+ */
+function bounceToLogin() {
+  if (window.location.pathname !== "/") {
+    window.location.assign("/");
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${BASE}${path}`, {
     ...init,
@@ -141,20 +311,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       : init?.headers,
   });
   if (!response.ok) {
-    // Bóc lấy câu tiếng Việt trong thân lỗi, đừng ném cả JSON ra màn hình.
-    //
-    // Máy chủ luôn trả `{"error":"..."}`. Ném nguyên chuỗi đó thì người dùng
-    // đọc được đúng thế này: {"error":"Không có dự án này"} — dấu ngoặc, dấu
-    // nháy và tên trường đều là rác với họ.
+    if (response.status === 401) bounceToLogin();
     const detail = await response.text();
-    let loi = detail;
-    try {
-      const body = JSON.parse(detail) as { error?: string };
-      if (body?.error) loi = body.error;
-    } catch {
-      /* không phải JSON thì dùng nguyên văn */
-    }
-    throw new Error(loi || `Máy chủ trả về ${response.status}`);
+    throw new ApiError(errorMessage(detail, response.status), response.status);
   }
   return response.json() as Promise<T>;
 }
@@ -166,12 +325,40 @@ export const api = {
       body: JSON.stringify({ title }),
     }),
 
-  /** Đổi tên dự án — tên rỗng thì máy chủ trả về mặc định "Dự án mới" */
-  renameProject: (id: string, title: string) =>
-    request<{ id: string; title: string }>(`/api/projects/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify({ title }),
-    }),
+  /**
+   * Đổi tên hoặc LỜI DẶN của dự án — chỉ gửi trường nào muốn đổi.
+   *
+   * Tên rỗng thì máy chủ trả về mặc định "Dự án mới". Lời dặn là chỗ người dùng
+   * khai video nói về gì và có tên riêng nào; máy nghe lấy nó làm mồi từ vựng,
+   * còn chặng sửa lời tin nó hơn mọi suy đoán khác.
+   */
+  updateProject: (
+    id: string,
+    patch: {
+      title?: string;
+      profile?: string;
+      minSilence?: number;
+      wantCaptions?: boolean;
+      wantMusic?: boolean;
+      insertSource?: ApiSettings["insertSource"];
+    },
+  ) =>
+    request<{
+      id: string;
+      title: string;
+      profile: string | null;
+      min_silence: number | null;
+      want_captions: number | null;
+      want_music: number | null;
+      insert_source: string | null;
+    }>(`/api/projects/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+
+  /** Chạy lại ĐÚNG MỘT chặng AI — không dựng lại cả mạch từ đầu. */
+  retryStep: (projectId: string, key: string) =>
+    request<{ status: string }>(
+      `/api/projects/${projectId}/steps/${key}/retry`,
+      { method: "POST" },
+    ),
 
   listProjects: () => request<ProjectSummary[]>("/api/projects"),
 
@@ -215,12 +402,23 @@ export const api = {
     projectId: string,
     files: File[],
     onProgress: (percent: number) => void,
+    /**
+     * Chỗ tệp này đứng trong danh sách người dùng đang thấy.
+     *
+     * BẮT BUỘC khi các tệp được gửi song song — mà màn nạp tệp thì gửi song song.
+     * Máy chủ không tự suy ra được: nó chỉ biết tệp nào tới trước, tức tệp nào
+     * nhẹ nhất, chứ không biết người dùng xếp cảnh nào trước cảnh nào.
+     */
+    order?: number,
   ) {
     return new Promise<{
       saved: ApiFile[];
       rejected: Array<{ name: string; reason: string }>;
     }>((resolve, reject) => {
       const form = new FormData();
+      // Trường `order` đi TRƯỚC tệp: máy chủ đọc multipart theo luồng, gặp phần
+      // nào xử lý phần ấy — đặt sau tệp thì lúc ghi hàng nó chưa thấy số này.
+      if (order !== undefined) form.append("order", String(order));
       for (const file of files) form.append("file", file, file.name);
       const xhr = new XMLHttpRequest();
       xhr.open("POST", `${BASE}/api/projects/${projectId}/files`);
@@ -233,10 +431,17 @@ export const api = {
         if (xhr.status >= 200 && xhr.status < 300) {
           resolve(JSON.parse(xhr.responseText));
         } else {
-          reject(new Error(xhr.responseText || `Máy chủ trả về ${xhr.status}`));
+          // Đây là chỗ chuỗi JSON thô từng đổ ra tận nhãn dưới ô video: người
+          // dùng đọc được đúng thế này — {"error":"Không có dự án này"}.
+          reject(
+            new ApiError(
+              errorMessage(xhr.responseText, xhr.status),
+              xhr.status,
+            ),
+          );
         }
       };
-      xhr.onerror = () => reject(new Error("Mất kết nối tới máy chủ"));
+      xhr.onerror = () => reject(new ApiError("Mất kết nối tới máy chủ", 0));
       xhr.send(form);
     });
   },
@@ -251,6 +456,12 @@ export const api = {
     request<ApiFile>(`/api/files/${fileId}`, {
       method: "PATCH",
       body: JSON.stringify({ position }),
+    }),
+
+  setFileDescription: (fileId: string, description: string) =>
+    request<ApiFile>(`/api/files/${fileId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ description }),
     }),
 
   deleteFile: (fileId: string) =>
@@ -323,6 +534,21 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
+  /**
+   * Áp một kiểu cho MỌI chữ chạy theo lời — trả về số cụm đã đổi.
+   *
+   * Chữ tự do không nằm trong phạm vi này: nó là tiêu đề, con số, nhãn mà người
+   * dùng đặt tay từng cái với ý riêng.
+   */
+  applyTextStyleToAll: (
+    projectId: string,
+    style: { band?: string; align?: string; emphasis?: string },
+  ) =>
+    request<{ changed: number }>(`/api/projects/${projectId}/elements/style`, {
+      method: "PATCH",
+      body: JSON.stringify(style),
+    }),
+
   deleteElement: (elementId: string) =>
     request<{ ok: boolean }>(`/api/elements/${elementId}`, {
       method: "DELETE",
@@ -332,14 +558,117 @@ export const api = {
   uploadMusic(projectId: string, file: File, at: number) {
     const form = new FormData();
     form.append("file", file, file.name);
-    return fetch(`${BASE}/api/projects/${projectId}/music?at=${at.toFixed(3)}`, {
-      method: "POST",
-      body: form,
-    }).then((response) => {
+    return fetch(
+      `${BASE}/api/projects/${projectId}/music?at=${at.toFixed(3)}`,
+      {
+        method: "POST",
+        body: form,
+      },
+    ).then((response) => {
       if (!response.ok) throw new Error("Máy chủ không nhận tệp nhạc");
       return response.json() as Promise<ApiMusicTrack>;
     });
   },
+
+  /** Kho TƯ LIỆU dùng chung — ảnh và video chèn cho mọi dự án */
+  listAssets: () => request<ApiLibraryAsset[]>("/api/library/assets"),
+
+  /**
+   * Thêm tư liệu vào kho. Trả về cả những tệp bị BỎ vì trùng nội dung — thả mười
+   * tệp mà chỉ thấy bảy cái hiện ra thì người dùng phải biết ba cái kia đi đâu.
+   */
+  uploadAssets(files: File[], title = "", tags = "", description = "") {
+    const form = new FormData();
+    form.append("title", title);
+    form.append("tags", tags);
+    form.append("description", description);
+    for (const file of files) form.append("file", file, file.name);
+    return fetch(`${BASE}/api/library/assets`, {
+      method: "POST",
+      credentials: "include",
+      body: form,
+    }).then(async (response) => {
+      if (!response.ok) {
+        throw new Error(
+          errorMessage(await response.text(), response.status) ||
+            "Máy chủ không nhận tệp",
+        );
+      }
+      return response.json() as Promise<{
+        assets: ApiLibraryAsset[];
+        added: number;
+        duplicates: Array<{ name: string; sameAs: string }>;
+      }>;
+    });
+  },
+
+  starAsset: (file: string, on: boolean) =>
+    request<{ ok: boolean }>(
+      `/api/library/assets/${encodeURIComponent(file)}/star`,
+      { method: "PUT", body: JSON.stringify({ on }) },
+    ),
+
+  updateAsset: (
+    file: string,
+    patch: { title?: string; tags?: string[]; description?: string },
+  ) =>
+    request<{ ok: boolean }>(
+      `/api/library/assets/${encodeURIComponent(file)}`,
+      { method: "PATCH", body: JSON.stringify(patch) },
+    ),
+
+  /** Đặt một tư liệu TỪ KHO vào dự án — máy chủ chép một bản sang thư mục dự án */
+  addAssetFromLibrary: (projectId: string, file: string) =>
+    request<ApiFile>(`/api/projects/${projectId}/assets/from-library`, {
+      method: "POST",
+      body: JSON.stringify({ file }),
+    }),
+
+  /** Cài đặt của người đang đăng nhập — mặc định cho dự án tạo về sau */
+  getSettings: () => request<ApiSettings>("/api/settings"),
+  saveSettings: (patch: Partial<ApiSettings>) =>
+    request<ApiSettings>("/api/settings", {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
+
+  /** Danh mục nhạc DÙNG CHUNG — khác `music` của dự án, vốn là bài đã đặt vào dải */
+  listMusicLibrary: () => request<ApiLibraryTrack[]>("/api/library/music"),
+
+  /** Đánh dấu một bài. Dấu là của RIÊNG người đang đăng nhập. */
+  starMusic: (file: string, on: boolean) =>
+    request<{ ok: boolean }>(
+      `/api/library/music/${encodeURIComponent(file)}/star`,
+      { method: "PUT", body: JSON.stringify({ on }) },
+    ),
+
+  /** Thêm một bài vào KHO dùng chung — mọi dự án về sau đều chọn được nó */
+  uploadToMusicLibrary(file: File, title: string, tags: string) {
+    const form = new FormData();
+    form.append("title", title);
+    form.append("tags", tags);
+    form.append("file", file, file.name);
+    return fetch(`${BASE}/api/library/music`, {
+      method: "POST",
+      credentials: "include",
+      body: form,
+    }).then(async (response) => {
+      if (!response.ok) {
+        throw new Error(
+          errorMessage(await response.text(), response.status) ||
+            "Máy chủ không nhận tệp nhạc",
+        );
+      }
+      return response.json() as Promise<ApiLibraryTrack>;
+    });
+  },
+
+  /** Đặt một bài TỪ KHO vào dự án, tại vạch. Chỉ gửi TÊN — đường dẫn do máy chủ ghép. */
+  addMusicFromLibrary: (projectId: string, file: string, at: number) =>
+    request<ApiMusicTrack>(`/api/projects/${projectId}/music/from-library`, {
+      method: "POST",
+      body: JSON.stringify({ file, at }),
+    }),
 
   /** Sửa một bài nhạc — mức âm lượng, hoặc mốc hai đầu trên dải */
   updateMusic: (

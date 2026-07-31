@@ -139,14 +139,29 @@ function AlertDialogDescription({
   );
 }
 
+/**
+ * Nút XÁC NHẬN — làm việc xong thì hộp thoại tự đóng.
+ *
+ * Trước đây đây là một `Button` trần, không đi qua `Close`. Nó không lộ ra ở
+ * chỗ xoá — mục bị xoá biến khỏi màn nên hộp thoại biến theo — nhưng đúng lúc
+ * việc xác nhận chỉ ĐỔI dữ liệu (áp một kiểu cho mọi cụm chữ) thì hộp thoại
+ * đứng nguyên đó, và người dùng không biết cú bấm đã ăn hay chưa.
+ *
+ * Sửa ở tầng thành phần, không vá tại chỗ gọi: mọi hộp thoại xác nhận đều cần
+ * cùng một hành vi này.
+ */
 function AlertDialogAction({
   className,
+  variant,
+  size,
   ...props
-}: React.ComponentProps<typeof Button>) {
+}: AlertDialogPrimitive.Close.Props &
+  Pick<React.ComponentProps<typeof Button>, "variant" | "size">) {
   return (
-    <Button
+    <AlertDialogPrimitive.Close
       data-slot="alert-dialog-action"
       className={cn(className)}
+      render={<Button variant={variant} size={size} />}
       {...props}
     />
   );

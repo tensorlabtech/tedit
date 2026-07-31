@@ -328,8 +328,8 @@ export async function fitLines(
  * và không cách nào tồn tại ở bản in. Xếp dòng là chuyện của toạ độ, không phải
  * chuyện của phép đo, nên nó thuộc về đây chứ không cần một hệ riêng.
  */
-export type AlignId = "left" | "center" | "right" | "stair" | "so-le";
-export type EmphasisId = "deu" | "tu-khoa-to" | "xen-co" | "dan-nho";
+export type AlignId = "left" | "center" | "right" | "stair" | "stagger";
+export type EmphasisId = "even" | "keyword-large" | "mixed-size" | "taper";
 
 /**
  * Đổi giá trị `layout` cũ sang hai trục mới.
@@ -344,30 +344,30 @@ export function fromLegacyLayout(value: string | null | undefined): {
 } {
   switch (value) {
     case "center":
-      return { align: "center", emphasis: "deu" };
+      return { align: "center", emphasis: "even" };
     case "right":
-      return { align: "right", emphasis: "deu" };
+      return { align: "right", emphasis: "even" };
     case "stair-right":
-      return { align: "stair", emphasis: "deu" };
+      return { align: "stair", emphasis: "even" };
     case "stair-left":
-      return { align: "stair", emphasis: "deu" };
+      return { align: "stair", emphasis: "even" };
     case "split":
     case "so-le":
-      return { align: "so-le", emphasis: "deu" };
+      return { align: "stagger", emphasis: "even" };
     case "mot-tieng-khong-lo":
-      return { align: "left", emphasis: "tu-khoa-to" };
+      return { align: "left", emphasis: "keyword-large" };
     case "lech-tam":
-      return { align: "right", emphasis: "deu" };
+      return { align: "right", emphasis: "even" };
     case "xen-co":
-      return { align: "left", emphasis: "xen-co" };
+      return { align: "left", emphasis: "mixed-size" };
     case "duoi-len":
-      return { align: "left", emphasis: "dan-nho" };
+      return { align: "left", emphasis: "taper" };
     case "left":
     case "stair":
-      return { align: value, emphasis: "deu" };
+      return { align: value, emphasis: "even" };
     // `flush` và mọi giá trị lạ: căn giữa, cỡ đều — đúng thứ bản in ra vẫn làm.
     default:
-      return { align: "center", emphasis: "deu" };
+      return { align: "center", emphasis: "even" };
   }
 }
 
@@ -382,7 +382,7 @@ export function indentShare(
   if (lineIndex === 0) return 0;
   if (align === "left" || align === "center" || align === "right") return 0;
   // So le: nhịp KHÔNG đều mới ra thiết kế, lệch đều nhau đọc ra như lỗi căn lề.
-  if (align === "so-le") return [0, 0.14, 0.04][lineIndex % 3];
+  if (align === "stagger") return [0, 0.14, 0.04][lineIndex % 3];
   return (
     Math.min(0.055, MAX_TOTAL_INDENT / Math.max(1, lineCount - 1)) * lineIndex
   );

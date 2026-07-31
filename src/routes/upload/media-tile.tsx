@@ -19,6 +19,7 @@ import {
   shortName,
   type MediaFile,
   type MediaRole,
+  baseName,
 } from "./upload-data";
 import { useHoverScrub } from "./use-hover-scrub";
 
@@ -65,6 +66,16 @@ type Props = {
   dragging?: boolean;
 } & React.ComponentProps<"div">;
 
+/**
+ * Chiều cao một ô giữ tỉ lệ gốc: trọn vùng cuộn, trừ `1.25rem` là chiều cao đo
+ * được của dòng tên — `mt-1` (4px) cộng một dòng `text-xs` (16px).
+ *
+ * Dải cuộn NGANG nên chiều cao là thứ cố định và bề rộng tự suy ra từ tỉ lệ gốc.
+ * Trước đây dải xuống dòng, và chiều cao phải chia theo số ô — thêm một miếng là
+ * mọi miếng nhỏ đi, có lúc xuống tới 32×56px, một ô không nhận ra nội dung gì.
+ */
+export const TILE_HEIGHT = "h-[calc(100cqh-1.25rem)]";
+
 export function MediaTile({
   file,
   index,
@@ -93,7 +104,10 @@ export function MediaTile({
   const silent = isVideo(file.name) && file.hasAudio === false;
   const uploading = file.status === "uploading";
   const failed = file.status === "error";
-  const caption = failed ? (file.error ?? "Tải hỏng") : file.name;
+  // Dòng dưới ô bỏ phần mở rộng, `title` thì giữ tên đầy đủ: ô hẹp tới 79px, mà
+  // ".mp4" chiếm gần nửa số ký tự của "main-1.mp4" — cắt nó đi thì tên vừa trọn
+  // thay vì thành "main-1.m…".
+  const caption = failed ? (file.error ?? "Tải hỏng") : baseName(file.name);
 
   const {
     url: scrubUrl,
@@ -110,14 +124,11 @@ export function MediaTile({
       {...rest}
     >
       {/* Ô giữ tỉ lệ gốc: đặt CHIỀU CAO rồi để bề rộng tự suy ra từ tỉ lệ — cả
-          hàng cùng một mốc trên và một mốc dưới, chỉ khác bề ngang. Chiều cao đi
-          theo chiều cao màn để màn thấp không bị kho tư liệu ăn hết chỗ. */}
+          hàng cùng một mốc trên và một mốc dưới, chỉ khác bề ngang. */}
       <div
         className={cn(
           "relative overflow-hidden rounded-lg bg-muted",
-          shape === "portrait"
-            ? "aspect-[9/16]"
-            : "h-[clamp(6rem,15vh,10rem)] w-auto",
+          shape === "portrait" ? "aspect-[9/16]" : `${TILE_HEIGHT} w-auto`,
         )}
         style={
           shape === "natural" ? { aspectRatio: aspectRatioOf(file) } : undefined
@@ -187,6 +198,26 @@ export function MediaTile({
           </span>
         ) : null}
 
+        {/* Tư liệu CHƯA CÓ MÔ TẢ: một dấu "?" ngay trên ô.
+            
+            Mô tả là thứ chặng đặt tư liệu khớp với lời để chọn chỗ đặt, mà máy chỉ
+            tả được thứ NHÌN THẤY — ý nghĩa thì chỉ người biết. Không có dấu này thì
+            ô nào đã có mô tả và ô nào chưa là chuyện vô hình: người dùng phải bấm
+            từng ô ra xem.
+
+            `pointer-events-none` để cú bấm rơi xuống nút phủ kín ô bên dưới — bấm
+            vào dấu "?" cũng là mở khung xem, nơi có ô nhập mô tả. */}
+        {shape === "natural" && !file.description && !uploading && !failed && (
+          <span
+            className={cn(
+              "pointer-events-none absolute top-1.5 left-2 flex size-5 items-center justify-center rounded-full bg-background/85 text-xs font-medium text-muted-foreground",
+            )}
+            aria-hidden="true"
+          >
+            ?
+          </span>
+        )}
+
         {/* Dấu ✂ chỉ có nghĩa với CẢNH CHÍNH: cảnh chính cắt về khung 9:16 nên
             video ngang mất hai bên thật. Tư liệu chèn dán đè lên một góc màn và
             giữ nguyên tỉ lệ — gắn ✂ lên nó là doạ người dùng bằng một chuyện
@@ -238,7 +269,12 @@ export function MediaTile({
         <button
           type="button"
           onClick={onOpen}
-          title={file.name}
+          // Câu này là chỗ DUY NHẤT nói dấu "?" nghĩa là gì.
+          title={
+            shape === "natural" && !file.description
+              ? `${file.name} — chưa có mô tả, bấm để thêm`
+              : file.name
+          }
           aria-label={`Xem ${label}`}
           className="absolute inset-0 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
         />
@@ -262,7 +298,7 @@ export function MediaTile({
       {handleProps ? (
         <div
           {...handleProps}
-          title={caption}
+          title={file.name}
           className={cn(
             // `select-none`: kéo bắt đầu từ chính dòng chữ này, mà chữ bôi đen
             // được thì cú kéo hụt để lại một vệt xanh trên tên tệp.
@@ -281,7 +317,7 @@ export function MediaTile({
             "mt-1 w-0 min-w-full truncate text-xs",
             failed ? "text-destructive" : "text-muted-foreground",
           )}
-          title={caption}
+          title={file.name}
         >
           {caption}
         </p>

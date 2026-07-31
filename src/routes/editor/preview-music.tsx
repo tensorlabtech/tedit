@@ -20,6 +20,7 @@ export function PreviewMusic({
 }: {
   tracks: MusicTrack[];
   time: number;
+  /** Đang phát. Lượt NGHE THỬ phần đã cắt phải truyền `false` — xem chú thích dưới */
   playing: boolean;
   keptSpan: (from: number, to: number) => number;
 }) {
@@ -40,6 +41,19 @@ export function PreviewMusic({
 
 /** Lệch quá ngần này mới tua lại — gán `currentTime` mỗi khung là nhạc giật. */
 const DRIFT = 0.3;
+
+/**
+ * Vì sao lượt nghe thử phần đã cắt phải TẮT nhạc.
+ *
+ * Kim nhạc đặt theo thời gian GIỮ LẠI, mà trong một quãng đã bỏ thì thời gian giữ
+ * lại không nhích — nên kim đứng yên trong khi tệp vẫn chạy, và cứ quá `DRIFT` là
+ * bị kéo giật về chỗ cũ. Nghe ra là một mẩu nhạc lặp suốt lượt nghe thử.
+ *
+ * Đẩy kim theo giờ thật cũng không đúng: quãng ấy KHÔNG có trong bản xuất nên nó
+ * không có chỗ nào trên trục nhạc, mà đẩy xong thì lúc quay về phim kim lại phải
+ * nhảy ngược đúng chừng ấy. Im lặng là câu trả lời thật thà nhất — người dùng đang
+ * nghe xem chỗ CẮT nghe ra sao, và nhạc trở lại ngay khi vạch về lại phim.
+ */
 
 function MusicVoice({
   track,

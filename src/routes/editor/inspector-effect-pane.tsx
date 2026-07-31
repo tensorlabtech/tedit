@@ -16,9 +16,9 @@ import { JUNCTIONS, type JunctionId } from "@/dev/overlays/overlay-model";
 import type { EditorState } from "./use-editor";
 
 /** Lùi trước khi chạy, để mắt kịp bắt nhịp trước khi hiệu ứng nổ ra. */
-const LUI = 0.4;
+const LEAD_IN = 0.4;
 /** Chạy thêm một nhịp sau khi hiệu ứng hết, cho thấy nó lắng xuống thế nào. */
-const NGAN = 0.3;
+const TAIL = 0.3;
 
 /**
  * Bảng sửa một hiệu ứng — chỗ nối ở vết cắt, hay nhấn nhịp giữa đoạn.
@@ -37,10 +37,10 @@ export function EffectPane({
     kind: JunctionId;
     outStart: number;
     outEnd: number;
-    rieng: boolean;
-    taiCat: boolean;
+    custom: boolean;
+    atCut: boolean;
   };
-  onPreview: (at: number, denKhi?: number) => void;
+  onPreview: (at: number, until?: number) => void;
 }) {
   /**
    * Chọn là CHẠY THỬ ngay, và chỉ chạy đúng quãng của nó.
@@ -55,8 +55,8 @@ export function EffectPane({
   const { toSource } = editor;
   useEffect(() => {
     onPreview(
-      toSource(effect.outStart) - LUI,
-      toSource(effect.outEnd) + NGAN,
+      toSource(effect.outStart) - LEAD_IN,
+      toSource(effect.outEnd) + TAIL,
     );
     // Chỉ theo mã và kiểu. Thêm `onPreview` vào đây thì mỗi lượt vẽ lại của
     // trang cha là một lần tự chạy.
@@ -68,7 +68,7 @@ export function EffectPane({
       <CardHeader>
         {/* Không huy hiệu độ dài nữa: nó không đổi quyết định nào. Muốn biết dài
             ngắn thì giờ đã XEM được — chọn vào là nó chạy. */}
-        <CardTitle>{effect.taiCat ? "Chỗ nối" : "Nhấn nhịp"}</CardTitle>
+        <CardTitle>{effect.atCut ? "Chỗ nối" : "Nhấn nhịp"}</CardTitle>
       </CardHeader>
 
       <CardContent className="min-h-0 flex-1">
@@ -103,7 +103,7 @@ export function EffectPane({
 
             Chỉ hiệu ứng TỰ ĐẶT mới cần nút xoá thật: xoá nó là gỡ hẳn một vật,
             không có lựa chọn nào ở hàng trên làm được việc đó. */}
-        {!effect.taiCat && (
+        {!effect.atCut && (
           <Button
             variant="secondary"
             size="sm"
@@ -116,7 +116,7 @@ export function EffectPane({
         {/* ẨN chứ không làm mờ khi nó chẳng làm gì (kiểu ở đây đã đúng bằng mặc
             định của dự án). Một cái nút mờ nằm đó suốt buổi trông như hỏng; hiện
             ra đúng lúc bấm được thì nó tự nói là "giờ mới có việc để làm". */}
-        {effect.taiCat && editor.zoomPunch !== effect.kind && (
+        {effect.atCut && editor.zoomPunch !== effect.kind && (
           <Button
             variant="secondary"
             size="sm"

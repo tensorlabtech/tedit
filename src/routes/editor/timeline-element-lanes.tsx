@@ -1,4 +1,4 @@
-import { FilmIcon, ImageIcon, TypeIcon } from "lucide-react";
+import { FilmIcon, ImageIcon, LibraryIcon, TypeIcon } from "lucide-react";
 
 import type { Insert, TextElement } from "./editor-data";
 import { TimelineBlock } from "./timeline-block";
@@ -139,7 +139,10 @@ export function InsertLane({
           trimmable
           // Nhãn trên dải đã rút ngắn (xem `shortMediaLabel`); tên tệp đầy đủ
           // vẫn phải xem được ở đâu đó, không thì không biết đang chèn tệp nào.
-          title={insert.fullName ?? insert.label}
+          title={
+            (insert.fullName ?? insert.label) +
+            (insert.fromLibrary ? " — lấy từ kho tư liệu" : "")
+          }
           className="gap-1.5 pr-2"
           onSelect={() => onSelect(insert.id)}
         >
@@ -158,6 +161,15 @@ export function InsertLane({
             </span>
           )}
           <span className="truncate">{insert.label}</span>
+          {/* Tư liệu máy TỰ LẤY TỪ KHO phải nói ra. Không đánh dấu thì người dùng
+              mở dải ra, thấy một clip mình chưa từng thêm vào dự án này, và
+              không có cách nào biết nó ở đâu ra. */}
+          {insert.fromLibrary && (
+            <LibraryIcon
+              className="size-3 shrink-0 opacity-70"
+              aria-label="từ kho"
+            />
+          )}
         </TimelineBlock>
       ))}
     </div>

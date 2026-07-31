@@ -6,10 +6,13 @@ export function TrimHandles({
   start,
   end,
   onGrab,
+  onRestore,
 }: {
   start: number;
   end: number;
   onGrab: (edge: "start" | "end") => void;
+  /** Nhấp đúp: trả lại trọn chỗ đã gọt ở mép này, nếu có chỗ nào để trả */
+  onRestore?: (edge: "start" | "end") => void;
 }) {
   return (
     <>
@@ -22,6 +25,13 @@ export function TrimHandles({
             event.stopPropagation();
             onGrab(edge);
           }}
+          onDoubleClick={
+            onRestore &&
+            ((event) => {
+              event.stopPropagation();
+              onRestore(edge);
+            })
+          }
         />
       ))}
     </>
@@ -54,10 +64,12 @@ export function TrimHandle({
   x,
   edge,
   onPointerDown,
+  onDoubleClick,
 }: {
   x: number;
   edge: "start" | "end";
   onPointerDown: (event: React.PointerEvent) => void;
+  onDoubleClick?: (event: React.MouseEvent) => void;
 }) {
   return (
     <button
@@ -66,6 +78,7 @@ export function TrimHandle({
       tabIndex={-1}
       aria-label={edge === "start" ? "Gọt mép trái" : "Gọt mép phải"}
       onPointerDown={onPointerDown}
+      onDoubleClick={onDoubleClick}
       className="group absolute inset-y-0 z-20"
       style={{
         left: x - HANDLE_WIDTH / 2,

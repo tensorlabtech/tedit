@@ -38,6 +38,7 @@
     --color-input: var(--input);
     --color-border: var(--border);
     --color-destructive: var(--destructive);
+    --color-success: var(--success);
     --color-accent-foreground: var(--accent-foreground);
     --color-accent: var(--accent);
     --color-muted-foreground: var(--muted-foreground);
@@ -82,6 +83,12 @@
     --accent: oklch(0.95 0 0);
     --accent-foreground: oklch(0.205 0 0);
     --destructive: oklch(0.577 0.245 27.325);
+    /**
+     * Màu "xong xuôi". Chỉ dùng cho lời nhắn, không cho nút hay nền lớn — dự án này
+     * đã có `primary` tím làm màu hành động, thêm một màu hành động thứ hai là hai
+     * thứ tranh nhau chỗ nhấn.
+     */
+    --success: oklch(0.55 0.13 155);
     --border: oklch(0.955 0 0);
     --input: oklch(0.945 0 0);
     --ring: oklch(0.58 0.15 310);
@@ -142,6 +149,8 @@
     --accent: oklch(0.262 0 0);
     --accent-foreground: oklch(0.985 0 0);
     --destructive: oklch(0.704 0.191 22.216);
+    /* Sáng hơn bản nền trắng: nền tối thì màu đậm tụt xuống gần như đen. */
+    --success: oklch(0.72 0.15 155);
     --border: oklch(1 0 0 / 5.5%);
     --input: oklch(1 0 0 / 9%);
     --ring: oklch(0.58 0.15 310);
@@ -246,6 +255,14 @@
    thì luôn tràn nên giữ nguyên nếp cũ. */
 [data-slot="scroll-area-viewport"]:not([data-overflowing]) {
   mask-image: none;
+}
+
+/* Dải cuộn ngang mà mép TRÁI là đầu dải: `scroll-fade-x` mờ cả hai bên vô điều
+   kiện, nên ô đầu tiên bị làm nhạt trong khi bên trái nó chẳng còn gì — trông như
+   lỗi vẽ. Bản này chỉ mờ mép phải, đúng phía "còn nữa" của một dải xếp từ trái
+   sang. Cuộn sang giữa dải thì mép trái cụt thật, nhưng đó là phần đã xem qua. */
+@utility scroll-fade-r {
+  mask-image: linear-gradient(to right, black calc(100% - 1.5rem), transparent);
 }
 
 @utility scroll-fade-x {

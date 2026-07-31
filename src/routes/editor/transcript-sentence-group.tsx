@@ -19,7 +19,7 @@ export function SentenceGroup({
   rows,
   editor,
   activeTime,
-  chonNhieu,
+  inRangeIds,
   onPick,
 }: {
   sentence: Sentence;
@@ -27,9 +27,9 @@ export function SentenceGroup({
   editor: EditorState;
   activeTime: number;
   /** Những dòng đang nằm trong vùng chọn nhiều dòng */
-  chonNhieu: Set<string>;
+  inRangeIds: Set<string>;
   /** Bấm một dòng — `mo` là bấm thường, `noiDai` là Shift-bấm */
-  onPick: (row: TextElement, noiDai: boolean) => void;
+  onPick: (row: TextElement, extend: boolean) => void;
 }) {
   return (
     <div
@@ -74,7 +74,7 @@ export function SentenceGroup({
           rows={rows}
           editor={editor}
           activeTime={activeTime}
-          chonNhieu={chonNhieu}
+          inRangeIds={inRangeIds}
           onPick={onPick}
         />
       )}
@@ -97,14 +97,14 @@ function Rows({
   rows,
   editor,
   activeTime,
-  chonNhieu,
+  inRangeIds,
   onPick,
 }: {
   rows: TextElement[];
   editor: EditorState;
   activeTime: number;
-  chonNhieu: Set<string>;
-  onPick: (row: TextElement, noiDai: boolean) => void;
+  inRangeIds: Set<string>;
+  onPick: (row: TextElement, extend: boolean) => void;
 }) {
   return (
     <>
@@ -114,7 +114,7 @@ function Rows({
           row={row}
           editor={editor}
           active={activeTime >= row.start && activeTime < row.end}
-          inRange={chonNhieu.has(row.id)}
+          inRange={inRangeIds.has(row.id)}
           onPick={onPick}
         />
       ))}

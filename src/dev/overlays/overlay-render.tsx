@@ -4,7 +4,7 @@ import {
   OVERLAY_FONT_STACK,
   LINE_HEIGHT,
   WORD_GAP,
-  fitCum,
+  fitGroup,
   fitRow,
   indentOf,
   packRows,
@@ -107,15 +107,15 @@ export function buildRows(config: OverlayConfig): Row[] {
     color: isKey(word) ? COLOR.soft : COLOR.main,
   });
 
-  if (config.emphasis === "deu") {
+  if (config.emphasis === "even") {
     // Bẻ dòng theo bề rộng rồi dùng CHUNG một cỡ — dáng phụ đề khổ lớn.
-    const { lines, size } = fitCum(config.text, avail);
+    const { lines, size } = fitGroup(config.text, avail);
     return lines.map((line) =>
       line.split(/\s+/).map((word) => plain(word, size)),
     );
   }
 
-  if (config.emphasis === "tu-khoa-to") {
+  if (config.emphasis === "keyword-large") {
     // Lấy đoạn từ khoá LIỀN NHAU làm tiếng khổng lồ, phần trước lên trên, phần sau
     // xuống dưới. Bốc riêng một tiếng ra giữa thì câu đọc lộn thứ tự.
     const marked = words.map(isKey);
@@ -127,7 +127,7 @@ export function buildRows(config: OverlayConfig): Row[] {
     const after = from >= 0 ? words.slice(last + 1) : [];
     const heroSize = fitRow(hero.join(" "), avail, 1);
     const small = Math.min(heroSize * 0.4, 0.075);
-    const phu = (list: string[]): Row =>
+    const secondary = (list: string[]): Row =>
       list.map((word) => ({
         text: word,
         size: small,
@@ -135,25 +135,25 @@ export function buildRows(config: OverlayConfig): Row[] {
         color: COLOR.dim,
       }));
     return [
-      ...(before.length > 0 ? [phu(before)] : []),
+      ...(before.length > 0 ? [secondary(before)] : []),
       hero.map((word) => ({
         text: word,
         size: heroSize,
         bold: true,
         color: COLOR.soft,
       })),
-      ...(after.length > 0 ? [phu(after)] : []),
+      ...(after.length > 0 ? [secondary(after)] : []),
     ];
   }
 
-  if (config.emphasis === "xen-co") {
+  if (config.emphasis === "mixed-size") {
     const SMALL = 0.55;
     // Chưa đánh dấu tiếng nào thì XEN THEO THỨ TỰ. Không có bước này, "xen cỡ"
     // không từ khoá cho ra cả cụm cùng một cỡ nhỏ — đúng cái tên hứa ngược lại,
     // mà người dùng vừa bấm xong lại thấy chữ bé đi thì tưởng mình bấm nhầm.
-    const coDau = words.some(isKey);
+    const hasKeyword = words.some(isKey);
     const to = (word: string, index: number) =>
-      coDau ? isKey(word) : index % 2 === 0;
+      hasKeyword ? isKey(word) : index % 2 === 0;
     // Cỡ giải từ TỔNG bề rộng của các cỡ khác nhau. Coi cả hàng cùng một cỡ thì ước
     // rộng gần gấp đôi thật, và chữ bị co quắt lại.
     const sizeOf = (list: string[], offset = 0) =>
@@ -177,12 +177,12 @@ export function buildRows(config: OverlayConfig): Row[] {
       seen += row.length;
       const size = sizeOf(row, offset);
       return row.map((word, index) => {
-        const lon = to(word, offset + index);
+        const big = to(word, offset + index);
         return {
           text: word,
-          size: lon ? size : size * SMALL,
-          bold: lon,
-          color: lon ? COLOR.soft : COLOR.main,
+          size: big ? size : size * SMALL,
+          bold: big,
+          color: big ? COLOR.soft : COLOR.main,
         };
       });
     });
@@ -204,7 +204,7 @@ export function buildRows(config: OverlayConfig): Row[] {
   });
 }
 
-function Tieng({
+function Syllable({
   word,
   order,
   index,
@@ -309,7 +309,7 @@ export function OverlayTextBlock({
   span?: number;
 }) {
   const rows = buildRows(config);
-  const tongTieng = rows.reduce((sum, row) => sum + row.length, 0);
+  const totalSyllables = rows.reduce((sum, row) => sum + row.length, 0);
   // Đếm phẳng qua các hàng để tra mốc: `wordStarts` là một mảng theo thứ tự
   // tiếng trong câu, không chia hàng.
   let flat = -1;
@@ -343,7 +343,7 @@ export function OverlayTextBlock({
               {row.map((word, wordIndex) => {
                 flat += 1;
                 return (
-                  <Tieng
+                  <Syllable
                     key={`${word.text}-${wordIndex}`}
                     word={word}
                     order={index}
@@ -351,8 +351,8 @@ export function OverlayTextBlock({
                     seconds={seconds}
                     startAt={
                       wordStarts?.[flat] ??
-                      (span && tongTieng > 1
-                        ? (span * flat) / tongTieng
+                      (span && totalSyllables > 1
+                        ? (span * flat) / totalSyllables
                         : undefined)
                     }
                     onPick={onPickWord}

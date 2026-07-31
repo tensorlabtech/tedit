@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { zoomFactorFromWheel, type EditorState } from "./use-editor";
-import { datCoKeo } from "./use-editor-guards";
+import { setPageDragging } from "./use-editor-guards";
 
 /** Kéo bao nhiêu px mới tính là KÉO chứ không phải bấm. */
 const DRAG_THRESHOLD = 3;
@@ -61,7 +61,7 @@ export function useTimelineDrag({
   // nên effect chạy lại đúng lúc, còn cờ kéo dải nằm trong ref (xem `startScrub`).
   useEffect(() => {
     if (!trimming) return;
-    datCoKeo(true);
+    setPageDragging(true);
     const onMove = (event: PointerEvent) =>
       editor.trim(
         trimming.kind,
@@ -78,7 +78,7 @@ export function useTimelineDrag({
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     return () => {
-      datCoKeo(false);
+      setPageDragging(false);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
@@ -112,14 +112,14 @@ export function useTimelineDrag({
         setDragging(true);
         // Chuột đi ra khỏi dải lúc kéo thì trình duyệt quét chọn chữ ở bản chép
         // lời phía trên — cờ này tắt bôi đen trên cả trang.
-        datCoKeo(true);
+        setPageDragging(true);
       }
       if (drag.current.moved) seek(toSource(startOut - dx / pxPerSecond));
     };
     const onUp = () => {
       drag.current.active = false;
       setDragging(false);
-      datCoKeo(false);
+      setPageDragging(false);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       // Nhả sau một nhịp để cú click ngay sau đó biết vừa có kéo mà bỏ qua.

@@ -1906,3 +1906,93 @@ lúc đang lướt dải không? Không. Muốn biết một chỗ nối theo m�
 Kèm một chỗ lệch lòi ra khi soi: chữ của tông chỗ nối để `0.42` trong khi ba tông kia
 `0.38–0.40`, mà sắc đỏ cam ở độ sáng ấy còn trông nhạt thêm một nấc — nên ngay cả khối ĐÃ sửa
 tay cũng đọc ra nhợt hơn hàng xóm. Hạ về `0.38`, nâng độ tươi lên `0.12`.
+
+## §63 · Sáu chỗ làm việc với chữ dễ hơn — và hai chỗ hỏng lộ ra khi làm
+
+Câu hỏi nhận được: *"cảm giác hiện tại vẫn hơi khó dùng"*. Đo trước khi sửa, trên một dự án
+thật 51 cụm chữ:
+
+```
+cụm giữ DÁNG mặc định      42/51 = 82%
+cụm giữ CHỖ ĐẶT mặc định   45/51 = 88%
+cụm giữ CĂN NGANG mặc định 46/51 = 90%
+cụm còn khớp lời           47/51   (4 cụm đã viết lại → nhịp rải đều)
+```
+
+### Hai chỗ HỎNG
+
+**1 · Đang sửa mà không thấy chữ mình đang sửa.** Bấm một dòng thì vạch nhảy tới `đầu cụm +
+0,05s` — đúng khoảnh khắc chữ mới bật tiếng đầu. Chọn một cụm 14 tiếng để sửa thì khung xem
+hiện đúng chữ "Ngày". Nay: đang chọn mà không phát thì chữ hiện ĐỦ; nhịp thật vẫn xem được
+bằng cách bấm phát, và mọi cụm không chọn vẫn chạy đúng nhịp.
+
+**2 · Ô nhập một dòng cắt mất phần đầu.** Ô sửa cụm là `<input>` một dòng — đúng khi mọi cụm
+≤5 tiếng, nhưng từ khi gộp được hai cụm (§53) thì cụm dài tới 14 tiếng: chữ tràn ngang, con trỏ
+ở cuối nên đầu bị cuộn ra ngoài, dòng đọc ra thành *"ình nghĩ 30 tuổi là lớn lắm rồi"*. Nay là
+`<textarea>` tự cao theo nội dung: cụm ngắn vẫn đúng một dòng không nhích một pixel, cụm dài
+thì thấy hết chữ.
+
+### Bốn chỗ THIẾU
+
+**3 · Áp kiểu cho TẤT CẢ chữ.** 82–90% cụm giữ nguyên mặc định nghĩa là người dùng không sửa
+từng cụm — họ muốn đổi phong cách cả video, mà việc đó từng là 51 cú bấm y hệt nhau. Nút ở chân
+bảng sửa, hỏi lại một lần, và báo con số đã đổi. Chỉ áp cho chữ neo theo TỪ: chữ tự do là tiêu
+đề, con số, nhãn — mỗi cái một ý riêng.
+
+**4 · Tách cụm chữ** — việc đối xứng với Gộp. Không có nó thì cú gộp là một chiều. Chẻ ở giữa
+DANH SÁCH TỪ, không giữa chuỗi chữ: mỗi nửa phải neo được vào từ đầu và từ cuối của chính nó.
+Đo: `"phần mềm tên là TensorLab"` [30,22–31,80] → `"phần mềm tên"` [30,22–31,02] +
+`"là TensorLab"` [31,02–31,80].
+
+**5 · Sửa một TỪ ngay trong hàng soát.** Sửa ở bảng sửa là sửa cả CỤM, mà máy chủ chỉ ghi
+ngược vào lời chép khi số tiếng còn khớp — gõ "TensorLab" thay "Tenso Lab" là 5 tiếng cho 6 từ,
+nên lời chép giữ hai từ cũ và lời nhắc "nghe không chắc" còn nguyên. Người dùng chỉ còn cách
+bấm "chữ này đúng" cho một chữ mà máy nghe SAI thật. Nay có nút bút mở ô sửa tại chỗ. Đo trọn
+chuỗi: sửa `tiệu → tựu` → độ chắc lên 1 → lời nhắc tự biến mất → chữ trên màn tự đổi thành
+*"một cái thành tựu gì"*.
+
+**6 · Nói ra chữ còn khớp lời hay không.** Luật "số tiếng khớp thì lời chép đổi theo, lệch thì
+giữ nguyên và chữ rải đều" đúng nhưng ẩn hoàn toàn. Một dòng dưới ô nhập: `5 tiếng · khớp lời,
+chữ chạy theo nhịp nói thật` hoặc `5 tiếng cho 14 từ đã nói · chữ rải đều trong khoảng`.
+
+### Hai lỗi tầng thành phần lộ ra khi làm
+
+· **`AlertDialogAction` không đóng hộp thoại** — nó là một `Button` trần, không đi qua `Close`.
+  Không lộ ở chỗ xoá (mục biến khỏi màn nên hộp thoại biến theo), nhưng đúng lúc việc xác nhận
+  chỉ ĐỔI dữ liệu thì hộp thoại đứng nguyên và người dùng không biết cú bấm đã ăn hay chưa.
+· **`CardFooter` không cho xuống dòng** — bốn nút không vừa một hàng ở cột hẹp thì nút cuối bị
+  xén mất nửa chữ, mà nút cuối lại đúng là hành động huỷ hoại nhất.
+
+Cả hai sửa ở tầng thành phần, không vá tại chỗ gọi.
+
+## §64 · Nới mép theo tiếng thật KHÔNG được ăn sang cụm bên cạnh
+
+§51 nới mép đoạn ra tới chỗ tiếng thật tắt, xa nhất 0,4 giây, để bỏ "khoảng lặng" không chặt
+mất đuôi từ. Đúng ý, sai chỗ áp: khi hai cụm nói **liền nhau không có quãng lặng**,
+`speechEndsAt` chạy hết 0,4 giây cho phép và mép đoạn cắm thẳng vào giữa cụm sau.
+
+Hậu quả lộ ra bằng mắt trước khi lộ ra bằng số — người dùng nói *"cái chữ với cái đoạn nó
+loạn lạc quá"*. Đo trên dự án của họ:
+
+```
+                    trước sửa        sau sửa
+lệch hai mép        0,60s (120px)    0,00s
+cụm vắt nhiều đoạn  gần như tất cả   0/56
+```
+
+Ví dụ: cụm `"Mình muốn ghi lại dấu"` [1,48–3,10] sinh đoạn [1,48–**3,50**], còn cụm kế
+`"mốc ngày hôm nay."` [3,10–3,92] mất luôn đoạn riêng của nó.
+
+**Nới chỉ có nghĩa ở chỗ SẮP THÀNH QUÃNG LẶNG** — đó là chỗ người dùng sẽ bấm bỏ, và là chỗ
+duy nhất cần chừa đuôi tiếng. Hai cụm dính nhau thì không có quãng lặng nào để cắt, nên cũng
+không có gì phải chừa. Chặn bằng `Math.min(nới, cụmSau.start)` và `Math.max(nới, cụmTrước.end)`.
+
+Dự án đã gieo bằng luật cũ tự dựng lại một lần qua số phiên bản `segments_by_caption` (lên 4)
+— cùng đường mà ba lần đổi luật trước đã dùng. Quãng đang bị bỏ và mép đã gọt vẫn giữ, vì
+`daBoTruoc` đọc lại chúng trước khi dựng.
+
+**Và đây là câu trả lời cho "có nên tách chữ thành lớp riêng":** không cần. Cảm giác loạn không
+đến từ việc chữ vẽ đè lên khối phim — nó đến từ hai hàng khối lệch mép nhau 120px. Khớp mép
+rồi thì hai tầng đọc ra như MỘT khối, đúng ý §60. Tách ra mới là thứ làm mất quan hệ ấy: 56
+khối chữ trên 64 đoạn, mật độ gần 1:1, tách thành hai hàng song song mép trùng nhau là lặp thị
+giác — đúng lý do đã gỡ dải TỪ ở §12.

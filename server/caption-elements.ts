@@ -53,16 +53,16 @@ export async function createCaptionElements(
   // không ai đi đổi tay năm chục lần.
   const insert = db.prepare(
     `INSERT INTO elements (id, project_id, kind, from_word_id, to_word_id, content, position_band, align, emphasis, reveal, shape)
-     VALUES (?,?,'text',?,?,?,?,'center','dan-nho','none','full')`,
+     VALUES (?,?,'text',?,?,?,?,'center','taper','none','full')`,
   );
 
   const created: string[] = [];
   db.transaction(() => {
     for (const group of groups) {
-      const dungCho = taken.some(
+      const overlaps = taken.some(
         (span) => group.start < span.end && group.end > span.start,
       );
-      if (dungCho) continue;
+      if (overlaps) continue;
       const id = newId("e");
       insert.run(
         id,
@@ -100,7 +100,7 @@ export async function splitVerbatimCaptions(projectId: string) {
   const words = db
     .prepare("SELECT id, text FROM words WHERE project_id=? ORDER BY start_sec")
     .all(projectId) as Array<{ id: string; text: string }>;
-  const viTri = new Map(words.map((word, index) => [word.id, index]));
+  const wordIndex = new Map(words.map((word, index) => [word.id, index]));
 
   const rows = db
     .prepare(`SELECT * FROM elements WHERE project_id=? AND kind='text'`)
@@ -110,29 +110,29 @@ export async function splitVerbatimCaptions(projectId: string) {
     `INSERT INTO elements (id, project_id, kind, from_word_id, to_word_id, content, position_band, align, emphasis, reveal, shape, keywords)
      VALUES (?,?,'text',?,?,?,?,?,?,?,?,?)`,
   );
-  const xoa = db.prepare("DELETE FROM elements WHERE id=?");
+  const removeElement = db.prepare("DELETE FROM elements WHERE id=?");
 
-  let che = 0;
+  let rebuilt = 0;
   db.transaction(() => {
     for (const row of rows) {
-      const from = viTri.get(String(row.from_word_id));
-      const to = viTri.get(String(row.to_word_id));
+      const from = wordIndex.get(String(row.from_word_id));
+      const to = wordIndex.get(String(row.to_word_id));
       if (from === undefined || to === undefined || to <= from) continue;
-      const noi = words
+      const joined = words
         .slice(from, to + 1)
         .map((word) => word.text)
         .join(" ");
-      if (noi !== row.content) continue;
+      if (joined !== row.content) continue;
 
-      const trong = groups.filter((group) => {
-        const a = viTri.get(group.words[0].id);
-        const b = viTri.get(group.words[group.words.length - 1].id);
+      const inside = groups.filter((group) => {
+        const a = wordIndex.get(group.words[0].id);
+        const b = wordIndex.get(group.words[group.words.length - 1].id);
         return a !== undefined && b !== undefined && a >= from && b <= to;
       });
-      if (trong.length < 2) continue;
+      if (inside.length < 2) continue;
 
-      xoa.run(row.id);
-      for (const group of trong) {
+      removeElement.run(row.id);
+      for (const group of inside) {
         insert.run(
           newId("e"),
           projectId,
@@ -141,16 +141,16 @@ export async function splitVerbatimCaptions(projectId: string) {
           group.text,
           row.position_band ?? "bottom",
           row.align ?? "center",
-          row.emphasis ?? "deu",
+          row.emphasis ?? "even",
           row.reveal ?? "none",
           row.shape ?? "full",
           row.keywords ?? null,
         );
       }
-      che += trong.length;
+      rebuilt += inside.length;
     }
   })();
-  return che;
+  return rebuilt;
 }
 
 /**
@@ -178,38 +178,38 @@ export function applyTextBackToWords(
     text: string;
     sentence_id: string;
   }>;
-  const viTri = new Map(words.map((word, index) => [word.id, index]));
-  const from = viTri.get(fromWordId);
-  const to = viTri.get(toWordId);
+  const wordIndex = new Map(words.map((word, index) => [word.id, index]));
+  const from = wordIndex.get(fromWordId);
+  const to = wordIndex.get(toWordId);
   if (from === undefined || to === undefined || to < from) return 0;
 
-  const moi = content.trim().split(/\s+/).filter(Boolean);
-  const trong = words.slice(from, to + 1);
-  if (moi.length !== trong.length) return 0;
+  const nextTexts = content.trim().split(/\s+/).filter(Boolean);
+  const inside = words.slice(from, to + 1);
+  if (nextTexts.length !== inside.length) return 0;
 
   const update = db.prepare("UPDATE words SET text=?, confidence=1 WHERE id=?");
-  const cauCanDung = new Set<string>();
-  let doi = 0;
+  const sentencesToRebuild = new Set<string>();
+  let changed = 0;
   db.transaction(() => {
-    for (const [index, word] of trong.entries()) {
-      if (word.text === moi[index]) continue;
-      update.run(moi[index], word.id);
-      cauCanDung.add(word.sentence_id);
-      doi += 1;
+    for (const [index, word] of inside.entries()) {
+      if (word.text === nextTexts[index]) continue;
+      update.run(nextTexts[index], word.id);
+      sentencesToRebuild.add(word.sentence_id);
+      changed += 1;
     }
     // Lời của CÂU dựng lại từ bảng từ: hai nguồn lệch nhau thì bản chép lời
     // hiện một đằng mà chữ trên màn một nẻo.
-    for (const sentenceId of cauCanDung) {
-      const cau = db
+    for (const sentenceId of sentencesToRebuild) {
+      const sentence = db
         .prepare("SELECT text FROM words WHERE sentence_id=? ORDER BY position")
         .all(sentenceId) as Array<{ text: string }>;
       db.prepare("UPDATE sentences SET text=? WHERE id=?").run(
-        cau.map((item) => item.text).join(" "),
+        sentence.map((item) => item.text).join(" "),
         sentenceId,
       );
     }
   })();
-  return doi;
+  return changed;
 }
 
 /**
@@ -233,9 +233,9 @@ export function refreshCaptionsAfterWordEdit(
   const words = db
     .prepare("SELECT id, text FROM words WHERE project_id=? ORDER BY start_sec")
     .all(projectId) as Array<{ id: string; text: string }>;
-  const viTri = new Map(words.map((word, index) => [word.id, index]));
-  const sua = viTri.get(wordId);
-  if (sua === undefined) return 0;
+  const wordIndex = new Map(words.map((word, index) => [word.id, index]));
+  const editIndex = wordIndex.get(wordId);
+  if (editIndex === undefined) return 0;
 
   const rows = db
     .prepare(
@@ -249,27 +249,27 @@ export function refreshCaptionsAfterWordEdit(
     to_word_id: string;
   }>;
 
-  const noi = (from: number, to: number, thay?: string) =>
+  const joined = (from: number, to: number, replace?: string) =>
     words
       .slice(from, to + 1)
       .map((word, i) =>
-        from + i === sua && thay !== undefined ? thay : word.text,
+        from + i === editIndex && replace !== undefined ? replace : word.text,
       )
       .join(" ");
 
   const update = db.prepare("UPDATE elements SET content=? WHERE id=?");
-  let doi = 0;
+  let changed = 0;
   db.transaction(() => {
     for (const row of rows) {
-      const from = viTri.get(row.from_word_id);
-      const to = viTri.get(row.to_word_id);
+      const from = wordIndex.get(row.from_word_id);
+      const to = wordIndex.get(row.to_word_id);
       if (from === undefined || to === undefined || to < from) continue;
-      if (sua < from || sua > to) continue;
+      if (editIndex < from || editIndex > to) continue;
       // Nội dung đang lưu có đúng bằng lời CŨ của chính khoảng này không.
-      if (row.content !== noi(from, to, oldText)) continue;
-      update.run(noi(from, to), row.id);
-      doi += 1;
+      if (row.content !== joined(from, to, oldText)) continue;
+      update.run(joined(from, to), row.id);
+      changed += 1;
     }
   })();
-  return doi;
+  return changed;
 }

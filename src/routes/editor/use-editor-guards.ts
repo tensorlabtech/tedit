@@ -18,7 +18,7 @@ import { ZOOM_STEP, zoomFactorFromWheel, type EditorState } from "./use-editor";
  */
 
 /** Con trỏ đang ở ô gõ chữ — mọi phím tắt phải nhường. */
-function dangGoChu(target: EventTarget | null) {
+function isTypingIn(target: EventTarget | null) {
   const node = target instanceof HTMLElement ? target : null;
   if (!node) return false;
   if (node.isContentEditable) return true;
@@ -31,7 +31,7 @@ function dangGoChu(target: EventTarget | null) {
  * Menu và hộp thoại có luật phím riêng (dấu cách chọn mục, Escape đóng bảng).
  * Cướp phím của chúng thì bảng chọn "Chỗ nối" bấm dấu cách không chọn được gì.
  */
-function coBangDangMo() {
+function isMenuOpen() {
   return Boolean(
     document.querySelector(
       '[role="menu"],[role="listbox"],[role="dialog"],[role="alertdialog"]',
@@ -55,13 +55,13 @@ export function useEditorGuards({
     // Bắt ở pha CHỤP: nút đang có focus xử lý phím trước, nên nghe ở pha nổi
     // thì dấu cách đã kịp bấm lại nút đó rồi.
     const onKeyDown = (event: KeyboardEvent) => {
-      if (dangGoChu(event.target) || coBangDangMo()) return;
+      if (isTypingIn(event.target) || isMenuOpen()) return;
       const editor = editorRef.current;
-      const chinh = event.metaKey || event.ctrlKey;
+      const modifier = event.metaKey || event.ctrlKey;
 
       // Phóng dải, KHÔNG phóng cả trang. Phóng trang trong bàn dựng làm lệch
       // mọi phép tính px↔giây, mà người dùng bấm Cmd+= là muốn nhìn gần hơn.
-      if (chinh && ["=", "+", "-", "_", "0"].includes(event.key)) {
+      if (modifier && ["=", "+", "-", "_", "0"].includes(event.key)) {
         event.preventDefault();
         if (event.key === "0") editor.resetZoom();
         else if (event.key === "-" || event.key === "_")
@@ -72,7 +72,7 @@ export function useEditorGuards({
 
       // Cmd+S mở hộp "lưu trang này lại" của trình duyệt — vô nghĩa ở đây, mà
       // phản xạ lưu thì ai cũng có. Nói thẳng là không cần lưu.
-      if (chinh && event.key.toLowerCase() === "s") {
+      if (modifier && event.key.toLowerCase() === "s") {
         event.preventDefault();
         toast.add({
           title: "Không cần lưu",
@@ -82,7 +82,7 @@ export function useEditorGuards({
         return;
       }
 
-      if (chinh || event.altKey) return;
+      if (modifier || event.altKey) return;
 
       if (event.key === " ") {
         // `stopPropagation` chứ không chỉ `preventDefault`: cái nút vừa bấm vẫn
@@ -100,14 +100,14 @@ export function useEditorGuards({
       // đúng cái dấu chỗ nối ở mép khối, mà chỗ nối cũng chỉ hiện khi đang chọn.
       // Hai thứ tranh nhau một chỗ thì thứ nào cũng dùng không xong.
       if (event.key === "Delete" || event.key === "Backspace") {
-        const chon = editor.selection;
-        if (!chon) return;
+        const selection = editor.selection;
+        if (!selection) return;
         event.preventDefault();
-        if (chon.kind === "clip") void editor.toggleSegment(chon.id);
-        else if (chon.kind === "text" || chon.kind === "insert")
-          void editor.deleteElement(chon.id);
-        else if (chon.kind === "music") void editor.removeMusic(chon.id);
-        else if (chon.kind === "junction") void editor.deleteEffect(chon.id);
+        if (selection.kind === "clip") void editor.toggleSegment(selection.id);
+        else if (selection.kind === "text" || selection.kind === "insert")
+          void editor.deleteElement(selection.id);
+        else if (selection.kind === "music") void editor.removeMusic(selection.id);
+        else if (selection.kind === "junction") void editor.deleteEffect(selection.id);
         return;
       }
 
@@ -120,8 +120,8 @@ export function useEditorGuards({
       // có nghĩa; giữ Shift thì đi một giây.
       if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
         event.preventDefault();
-        const buoc = event.shiftKey ? 1 : 1 / 30;
-        editor.seek(editor.time + (event.key === "ArrowLeft" ? -buoc : buoc));
+        const step = event.shiftKey ? 1 : 1 / 30;
+        editor.seek(editor.time + (event.key === "ArrowLeft" ? -step : step));
       }
     };
 
@@ -129,23 +129,23 @@ export function useEditorGuards({
     // nửa thì nút vẫn tự bấm.
     const onKeyUp = (event: KeyboardEvent) => {
       if (event.key !== " ") return;
-      if (dangGoChu(event.target) || coBangDangMo()) return;
+      if (isTypingIn(event.target) || isMenuOpen()) return;
       event.preventDefault();
       event.stopPropagation();
     };
 
     // Thả tệp nhầm ra ngoài vùng nhận là trình duyệt MỞ THẲNG tệp đó, rời khỏi
     // bàn dựng và mất hết thao tác chưa xong.
-    const nuotTha = (event: DragEvent) => event.preventDefault();
+    const swallowDrop = (event: DragEvent) => event.preventDefault();
 
     // Chụm hai ngón trên bàn di của Safari phóng cả trang; sự kiện này là của
     // riêng Safari, `wheel` không bắt được.
-    const nuotChum = (event: Event) => event.preventDefault();
+    const swallowGesture = (event: Event) => event.preventDefault();
 
     // Chụm hai ngón ở Chrome/Firefox đến dưới dạng lăn có `ctrlKey`. Dải đã tự
     // xử lý phần của nó; chỗ này lo phần CÒN LẠI của màn — chụm trên bản chép
     // lời mà phóng cả trang thì mọi phép tính px↔giây lệch hết.
-    const nuotPhong = (event: WheelEvent) => {
+    const swallowZoom = (event: WheelEvent) => {
       if (!event.ctrlKey && !event.metaKey) return;
       event.preventDefault();
       if (!(event.target as HTMLElement | null)?.closest?.("[data-timeline]")) {
@@ -155,20 +155,20 @@ export function useEditorGuards({
 
     window.addEventListener("keydown", onKeyDown, true);
     window.addEventListener("keyup", onKeyUp, true);
-    window.addEventListener("dragover", nuotTha);
-    window.addEventListener("drop", nuotTha);
-    window.addEventListener("wheel", nuotPhong, { passive: false });
-    for (const ten of ["gesturestart", "gesturechange", "gestureend"]) {
-      window.addEventListener(ten, nuotChum, { passive: false });
+    window.addEventListener("dragover", swallowDrop);
+    window.addEventListener("drop", swallowDrop);
+    window.addEventListener("wheel", swallowZoom, { passive: false });
+    for (const name of ["gesturestart", "gesturechange", "gestureend"]) {
+      window.addEventListener(name, swallowGesture, { passive: false });
     }
     return () => {
       window.removeEventListener("keydown", onKeyDown, true);
       window.removeEventListener("keyup", onKeyUp, true);
-      window.removeEventListener("dragover", nuotTha);
-      window.removeEventListener("drop", nuotTha);
-      window.removeEventListener("wheel", nuotPhong);
-      for (const ten of ["gesturestart", "gesturechange", "gestureend"]) {
-        window.removeEventListener(ten, nuotChum);
+      window.removeEventListener("dragover", swallowDrop);
+      window.removeEventListener("drop", swallowDrop);
+      window.removeEventListener("wheel", swallowZoom);
+      for (const name of ["gesturestart", "gesturechange", "gestureend"]) {
+        window.removeEventListener(name, swallowGesture);
       }
     };
   }, []);
@@ -180,7 +180,7 @@ export function useEditorGuards({
  * CSS ở `index.css` đọc cờ này để tắt bôi đen và giữ con trỏ nắm trên CẢ trang
  * — chuột đi ra ngoài dải lúc kéo thì vẫn không quét chọn chữ ở chỗ khác.
  */
-export function datCoKeo(dangKeo: boolean) {
-  if (dangKeo) document.documentElement.dataset.dragging = "1";
+export function setPageDragging(dragging: boolean) {
+  if (dragging) document.documentElement.dataset.dragging = "1";
   else delete document.documentElement.dataset.dragging;
 }
