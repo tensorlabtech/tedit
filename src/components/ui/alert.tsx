@@ -4,13 +4,13 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const alertVariants = cva(
-  "group/alert relative grid w-full gap-0.5 rounded-lg border px-4 py-3 text-left text-sm has-data-[slot=alert-action]:relative has-data-[slot=alert-action]:pr-18 has-[>svg]:grid-cols-[auto_1fr] has-[>svg]:gap-x-2 *:[svg]:row-span-2 *:[svg]:translate-y-0.5 *:[svg]:text-current *:[svg:not([class*='size-'])]:size-4",
+  "group/alert relative grid w-full gap-0.5 rounded-lg px-4 py-3 text-left text-sm has-data-[slot=alert-action]:relative has-data-[slot=alert-action]:pr-18 has-[>svg]:grid-cols-[auto_1fr] has-[>svg]:gap-x-2 *:[svg]:row-span-2 *:[svg]:translate-y-0.5 *:[svg]:text-current *:[svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
-        default: "bg-card text-card-foreground",
+        default: "bg-muted text-card-foreground",
         destructive:
-          "bg-card text-destructive *:data-[slot=alert-description]:text-destructive/90 *:[svg]:text-current",
+          "bg-destructive/12 text-destructive *:data-[slot=alert-description]:text-destructive/90 *:[svg]:text-current",
         /**
          * Hai biến thể CÓ MÀU — nền nhạt, viền và icon cùng sắc.
          *
@@ -21,9 +21,9 @@ const alertVariants = cva(
          * Không thêm màu vào `default`: nhiều chỗ đang dùng nó đúng như một khối
          * trung tính, đổi nền ở đó là nhuộm cả những nơi không xin.
          */
-        info: "border-primary/30 bg-primary/8 text-foreground *:data-[slot=alert-description]:text-foreground/75 *:[svg]:text-primary",
+        info: "bg-primary/14 text-foreground *:data-[slot=alert-description]:text-foreground/75 *:[svg]:text-primary",
         success:
-          "border-success/30 bg-success/8 text-foreground *:data-[slot=alert-description]:text-foreground/75 *:[svg]:text-success",
+          "bg-success/14 text-foreground *:data-[slot=alert-description]:text-foreground/75 *:[svg]:text-success",
       },
     },
     defaultVariants: {
