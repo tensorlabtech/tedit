@@ -6,6 +6,7 @@ import "./index.css";
 import { Toaster } from "@/components/ui/toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { DesignSystemPage } from "@/dev/design-system/design-system-page";
+import { SkinLabPage } from "@/dev/skin/skin-lab-page";
 import { PipelinePage } from "./routes/pipeline/pipeline-page";
 import { StylePage } from "@/dev/overlays/style-page";
 import { MENU } from "@/routes/dashboard/dashboard-menu";
@@ -94,6 +95,9 @@ createRoot(document.getElementById("root")!).render(
                   element={<DesignSystemPage />}
                 />
                 <Route path="/_dev/style" element={<StylePage />} />
+                {/* Bàn thử ngôn ngữ thị giác — token khai trong phạm vi trang,
+                    không rò ra app thật. */}
+                <Route path="/_dev/skin" element={<SkinLabPage />} />
                 {/* Tên cũ giữ lại vì tôi đã đưa đường dẫn này cho người dùng. */}
                 <Route path="/_dev/overlays" element={<StylePage />} />
                 {/* MỘT đường dẫn với đoạn cuối không bắt buộc, không phải hai

@@ -1,0 +1,200 @@
+/**
+ * Thang 5 nấc — bản thử, KHAI TRONG PHẠM VI `.skin-lab`.
+ *
+ * Không đụng `src/index.css`: đổi token toàn cục thì mọi màn đổi cùng lúc và
+ * không còn cách nào đặt bản cũ cạnh bản mới mà so. Ở đây mọi thứ nằm sau
+ * `.skin-lab`, nên app thật không lệch một pixel nào.
+ *
+ * Ý NGHĨA CỐ ĐỊNH CỦA TỪNG NẤC — mỗi nấc nói một điều, không hai nấc nói cùng
+ * một chuyện:
+ *
+ *   nấc 0  nền trang            thứ không đụng vào được
+ *   nấc 1  mặt thẻ              mặt bàn làm việc
+ *   nấc 2  chỗ nhận thao tác    ô nhập · nút phụ · mục danh sách · khối trên dải
+ *   nấc 3  đang trỏ vào
+ *   nấc 4  đang nhấn / đang mở
+ *
+ * Hệ quả là một lời hứa với người dùng: CHỖ NÀO LỆCH KHỎI MẶT THẺ LÀ CHỖ BẤM
+ * ĐƯỢC. Nên không được cấp nền cho một nhóm chỉ-để-gom — gom nhóm dùng khoảng
+ * hở, và kẻ ngang khi nội dung cuộn.
+ */
+
+/* Nền tối đi LÊN, cách đều 5% một nấc. Giữ xám trung tính hoàn toàn: ảnh tham
+   khảo cho thấy xám không pha vẫn đậm đà, miễn là thang nấc đủ rõ. */
+.skin-lab[data-skin="dark"] {
+    /* Nền trang xuống sâu hơn bản đang chạy (0.145 → 0.115).
+       Ảnh tham khảo để nền app gần như đen và panel mới nổi lên rõ; giữ 0.145
+       thì mặt thẻ 0.195 chỉ cách nền 5% — cùng một bước với các nấc bên trong
+       thẻ, nên mắt không tách được "đây là một khối" với "đây là một ô bấm
+       được". Nền trang phải cách xa hơn phần còn lại. */
+    --background: oklch(0.115 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.195 0 0);
+    --card-foreground: oklch(0.985 0 0);
+    --popover: oklch(0.195 0 0);
+    --popover-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.245 0 0);
+    --secondary: oklch(0.245 0 0);
+    --input: oklch(0.245 0 0);
+    /* Hai nấc trên NÉN LẠI so với bản trước (0.295 / 0.345).
+       Cách đều 5% nghe thì gọn, nhưng nấc 4 khi ấy cách mặt thẻ tới 15% — một
+       mục đang chọn đứng yên trong danh sách sáng bừng lên như đang được nhấn.
+       Nấc càng cao càng là trạng thái NGẮN, nên càng không cần bước dài. */
+    --accent: oklch(0.275 0 0);
+    --accent-active: oklch(0.305 0 0);
+    --muted-foreground: oklch(0.65 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    /* Viền chỉ còn một việc: KẺ NGANG ở mép vùng cuộn. Ở đó nó nằm trên nền
+       thẻ và chạy dài, nên 8% đã đọc được — không cần đậm hơn.
+       (Bản trước tôi để 10% với lý do "viền hiếm nên phải rõ". Sai chỗ: lúc đó
+       `Card` vẫn còn `ring-1`, nên thứ được làm rõ lại chính là cái viền đáng
+       ra phải biến mất.) */
+    --border: oklch(1 0 0 / 8%);
+    --primary: oklch(0.62 0.16 310);
+    --primary-foreground: oklch(0.985 0.01 310);
+    --ring: oklch(0.62 0.16 310);
+}
+
+/* Nền sáng ĐẢO CHIỀU: mặt thẻ vọt lên gần trắng, rồi từ trong thẻ đi XUỐNG.
+   Ô nhập không thể sáng hơn thẻ được nữa nên nó lõm xuống — cùng một luật
+   "lệch khỏi mặt thẻ một nấc", chỉ khác hướng.
+   Mặt thẻ rời khỏi trắng tinh (0.99 chứ không phải 1.0) để còn chỗ mà chia nấc:
+   giữ 1.0 thì cả thang chỉ còn ~6% cho 5 nấc. */
+.skin-lab[data-skin="light"] {
+    --background: oklch(0.925 0.004 310);
+    --foreground: oklch(0.145 0 0);
+    --card: oklch(0.99 0.004 310);
+    --card-foreground: oklch(0.145 0 0);
+    --popover: oklch(0.99 0.004 310);
+    --popover-foreground: oklch(0.145 0 0);
+    --muted: oklch(0.955 0.004 310);
+    --secondary: oklch(0.955 0.004 310);
+    --input: oklch(0.955 0.004 310);
+    --accent: oklch(0.93 0.005 310);
+    --accent-active: oklch(0.905 0.006 310);
+    --muted-foreground: oklch(0.52 0.01 310);
+    --secondary-foreground: oklch(0.205 0 0);
+    --accent-foreground: oklch(0.205 0 0);
+    --border: oklch(0.9 0.005 310);
+    --primary: oklch(0.48 0.16 310);
+    --primary-foreground: oklch(0.985 0.01 310);
+    --ring: oklch(0.48 0.16 310);
+}
+
+/* Thang nấc bày ra để nhìn — dùng cho ô mẫu ở bảng "Thang 5 nấc". */
+.skin-lab[data-skin="dark"] {
+    --step-0: oklch(0.115 0 0);
+    --step-1: oklch(0.195 0 0);
+    --step-2: oklch(0.245 0 0);
+    --step-3: oklch(0.275 0 0);
+    --step-4: oklch(0.305 0 0);
+}
+
+.skin-lab[data-skin="light"] {
+    --step-0: oklch(0.925 0.004 310);
+    --step-1: oklch(0.99 0.004 310);
+    --step-2: oklch(0.955 0.004 310);
+    --step-3: oklch(0.93 0.005 310);
+    --step-4: oklch(0.905 0.006 310);
+}
+
+/**
+ * MÉP THẺ KHÔNG CÓ VIỀN.
+ *
+ * `Card` gắn cứng `ring-1 ring-border` trong `card.tsx`, nên đổi token bao
+ * nhiêu cũng không bỏ được nó — đây đúng là chỗ chứng minh rằng thang nấc mới
+ * KHÔNG phải việc riêng của `index.css`: `card.tsx` phải sửa theo.
+ *
+ * Bỏ được vì mặt thẻ và nền trang khác nhau 8% độ sáng: đã khác độ sáng thì
+ * viền không còn việc gì để làm, đúng luật 2.
+ *
+ * Ở đây tắt bằng CSS trong phạm vi bàn thử để không phải đụng `card.tsx` khi
+ * còn đang thử. Chốt xong thì sửa thẳng vào component và xoá luật này đi.
+ */
+.skin-lab [data-slot="card"] {
+    box-shadow: none;
+}
+
+/**
+ * BO GÓC VÀ ĐỆM — kéo xuống một nấc.
+ *
+ * `--radius` 10px làm `Card` (rounded-xl = radius × 1.4) bo tận 14px, và ô nhập
+ * 8px. Trên một ô cao 40px thì 8px đã lượn thấy rõ; ảnh tham khảo để panel ~12px
+ * và ô ~8px mà trông vuông vắn hơn hẳn, vì chiều cao ô của nó lớn hơn tỉ lệ ấy.
+ *
+ * 8px ở đây cho: thẻ 11px · ô nhập và nút 6px · khối trên dải vẫn 3px.
+ *
+ * Đệm thẻ 20px → 16px: lưới bento có nhiều thẻ nhỏ, mà 20px là thang dựng cho
+ * thẻ lớn đứng một mình.
+ */
+.skin-lab {
+    --radius: 0.5rem;
+}
+
+/* 1rem = 16px. Viết thẳng chứ không dùng `--spacing(4)`: hàm đó cần biến theme
+   của Tailwind, mà tệp này nằm ngoài chỗ khai theme. */
+.skin-lab [data-slot="card"] {
+    --card-spacing: 1rem;
+}
+
+/**
+ * KẺ DƯỚI TIÊU ĐỀ THẺ.
+ *
+ * `:not(:last-child)` chứ không phải mọi đầu thẻ: thẻ chỉ có tiêu đề mà không
+ * có thân — nhãn nhóm trong lưới bento chẳng hạn — thì đường kẻ rơi sát đáy
+ * thẻ và gạch chân một chỗ chẳng ngăn cách gì.
+ *
+ * `card.tsx` đã có sẵn luật `[.border-b]:pb-(--card-spacing)`, nên đệm dưới ở
+ * đây đi đúng cơ chế mà component dự tính, không phải chế thêm.
+ */
+.skin-lab [data-slot="card-header"]:not(:last-child) {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: var(--card-spacing);
+}
+
+/**
+ * Khoảng dưới kẻ phải BẰNG khoảng trên kẻ.
+ *
+ * `--card-gap` mặc định 8px, dựng cho lúc đầu thẻ và thân thẻ chỉ cách nhau một
+ * hơi thở. Nhưng khi giữa chúng có một đường kẻ thì hai bên đường kẻ thành hai
+ * khoảng đo được, và 16px trên với 8px dưới đọc ra ngay là lệch.
+ *
+ * 16px cũng đúng bằng đệm ngang của thẻ, nên đường kẻ nằm giữa một ô vuông đệm
+ * đều bốn phía.
+ */
+.skin-lab [data-slot="card"] {
+    --card-gap: 1rem;
+}
+
+/**
+ * ĐẦU THẺ CAO BẰNG DÒNG CHỮ, KHÔNG BẰNG CÁI NÚT.
+ *
+ * `card.tsx` chặn sàn tiêu đề ở `min-h-10` (40px) để mốc chữ đứng yên giữa các
+ * thẻ dù thẻ có nút hay không. Mục đích đúng, giá phải trả sai: một dòng chữ
+ * cao 22px chiếm chỗ của 40px, nhân với hàng chục thẻ trong lưới bento.
+ *
+ * Đảo lại: thay vì NÂNG SÀN của chữ lên bằng cái nút, thì HẠ TRẦN của nút
+ * xuống dưới dòng chữ. Lề âm ở `card-action` cho nút tràn vào đệm thẻ — đệm
+ * 16px thừa sức chứa 6px tràn mỗi bên — nên nút không còn đóng góp chiều cao.
+ *
+ * Kết quả: đầu thẻ luôn 22px, có nút hay không cũng vậy. Mốc chữ vẫn đứng yên,
+ * mà mỗi thẻ tiết kiệm 18px.
+ *
+ * Giới hạn: nút trong đầu thẻ phải cao TỐI ĐA 32px. Lớn hơn thì phần vượt bắt
+ * đầu đẩy đầu thẻ cao lên trở lại, và mốc chữ lệch đúng như trước.
+ */
+.skin-lab [data-slot="card-title"] {
+    min-height: 0;
+    /* 16px → 14px. Tiêu đề thẻ là NHÃN của một khối, không phải tiêu đề của
+       một trang: trong lưới bento có hàng chục thẻ, mỗi tiêu đề to thêm 2px là
+       hàng chục vệt nặng thêm. Vẫn giữ `font-medium` nên nó vẫn tách được khỏi
+       chữ thân thẻ — phân cấp nằm ở độ đậm, không ở cỡ. */
+    font-size: 0.875rem;
+}
+
+/* -8px: nút 32px chỉ còn đóng góp 16px chiều cao, thấp hơn dòng chữ 19px nên
+   không đẩy được đầu thẻ. */
+.skin-lab [data-slot="card-action"] {
+    margin-block: -0.5rem;
+}
