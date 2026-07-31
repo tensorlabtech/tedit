@@ -1,0 +1,52 @@
+# Đơn vị systemd cho máy chủ Tedit.
+#
+# Chép sang /etc/systemd/system/tedit.service rồi:
+#   sudo systemctl daemon-reload && sudo systemctl enable --now tedit
+
+[Unit]
+Description=Tedit — công cụ dựng video
+# `network-online` chứ không phải `network`: chặng AI gọi ra ngoài ngay từ lượt
+# dựng đầu, mà `network` chỉ nghĩa là card mạng đã bật, chưa chắc đã có đường ra.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tedit
+Group=tedit
+WorkingDirectory=/srv/tedit
+EnvironmentFile=/srv/tedit/.env
+
+# `tsx` chạy thẳng TypeScript, không cần bước biên dịch riêng cho phía máy chủ.
+# Phía web thì có `npm run build` ra `dist/`, và Fastify tự phục vụ thư mục đó.
+ExecStart=/usr/bin/node /srv/tedit/node_modules/.bin/tsx /srv/tedit/server/main.ts
+Environment=NODE_ENV=production
+
+Restart=always
+RestartSec=5
+
+# KHÔNG đặt TimeoutStartSec ngắn: lượt khởi động đầu tiên phải tải mô hình nghe
+# (khoảng 1,5 GB) trước khi nhận request nào.
+
+# Dựng một video dài là hàng chục phút ffmpeg chạy liên tục. Mọi giới hạn thời
+# gian ở đây đều phải rộng hơn thế, không thì systemd giết đúng giữa lượt dựng và
+# người dùng chỉ thấy tiến trình đứng im.
+TimeoutStopSec=5m
+
+# Siết quyền vừa đủ: chỉ được ghi vào chỗ chứa dữ liệu của chính nó.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/srv/tedit/server/data /srv/tedit/dist
+
+# Mô hình nghe nằm trong bộ nhớ đệm của HuggingFace. Trỏ vào thư mục của dịch vụ
+# thay vì /root — không thì mỗi lần đổi người chạy là tải lại 1,5 GB.
+Environment=HF_HOME=/srv/tedit/server/asr/hf-cache
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tedit
+
+[Install]
+WantedBy=multi-user.target

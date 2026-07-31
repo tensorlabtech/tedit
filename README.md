@@ -10,6 +10,7 @@ npm run dev:all          # web (5173) + API (5190)
 npm run build            # tsc + vite build
 npm run lint
 npm run check:ownership  # kiểm luật phân quyền trên CSDL tạm
+npm run check:style-pack # kiểm bất biến của bộ dáng chữ trên CSDL tạm
 ```
 
 Mở `http://localhost:5173`. Chưa đăng nhập thì mọi đường dẫn đều chuyển về
@@ -206,17 +207,52 @@ cd server/asr && uv pip install --target pylibs mlx-whisper
 
 Cần sẵn `ffmpeg`, `ffprobe`, `magick` trong PATH.
 
+## Đưa lên máy chủ
+
+Chạy thật ở <https://tedit.tensorlab.tech> — Ubuntu, Caddy đứng trước Fastify.
+
+```bash
+# trên máy chủ, chạy một lần
+sudo REPO=<địa-chỉ-git> bash deploy/setup-ubuntu.sh
+
+# mỗi lần ra bản mới
+sudo bash /srv/tedit/deploy/update.sh
+```
+
+`setup-ubuntu.sh` cài Node 22, ffmpeg, ImageMagick, Caddy, tạo người dùng
+`tedit`, dựng swap, cài môi trường nghe, sinh `.env` với khoá phiên ngẫu nhiên và
+đăng ký dịch vụ. Xong nó in ra ba việc phải làm bằng tay: trỏ bản ghi A, điền
+`.env`, khai đường quay về cho Google OAuth.
+
+**Máy chủ nghe bằng thư viện khác máy Mac.** mlx-whisper tính trên chip Metal của
+Apple nên không cài được trên x86; `server/asr/transcribe.py` tự nhận ra và đổi
+sang faster-whisper, cùng mô hình `large-v3-turbo`, cùng hình dạng dữ liệu trả
+về. Tiếng nói vẫn không rời khỏi máy chủ. Đổi lại nó chạy trên CPU nên chậm hơn
+đáng kể so với lúc thử ở máy — đó là cái giá của việc không gửi tiếng người dùng
+đi đâu.
+
+Sao lưu: mọi thứ nằm trong `server/data/` — `teddit.db` và các thư mục dự án.
+Chép thư mục đó là chép được tất cả; không có trạng thái nào nằm ngoài nó.
+
 ## Kiến trúc
 
 ```
-server/            API Fastify + SQLite
-├── main.ts        định tuyến HTTP
-├── db.ts          lược đồ và vá cột dần
-├── pipeline.ts    chép lời và xuất video, chạy nền, báo qua bảng jobs
-├── render.ts      ffmpeg: ghép · cắt · in chữ · chèn tư liệu · trộn nhạc
-├── text-layout.ts bẻ dòng và thu cỡ chữ cho vừa dải an toàn
-├── transcribe.ts  gọi mlx-whisper, vá mốc từ bị dồn cục
-└── asr/           mlx-whisper cục bộ (model whisper-large-v3-turbo)
+server/                   API Fastify + SQLite
+├── main.ts               định tuyến HTTP
+├── db.ts                 lược đồ và vá cột dần
+├── pipeline.ts           chép lời và xuất video, chạy nền, báo qua bảng jobs
+├── render.ts             ffmpeg: ghép · cắt · in chữ · chèn tư liệu · trộn nhạc
+├── text-layout.ts        bẻ dòng và thu cỡ chữ cho vừa dải an toàn
+├── style-pack.ts         KIỂU của một bộ dáng chữ + hàm dùng chung
+├── style-pack-catalog.ts NĂM bộ dáng — dữ liệu, không phải logic
+├── style-pack-store.ts   đọc bộ dáng của một dự án, rơi về bộ gốc
+├── music-tags.ts         vốn từ ĐÓNG cho kho nhạc (ba trục)
+├── insert-reveal.ts      cách tư liệu chèn hiện ra, dùng chung hai đường vẽ
+├── transcribe.ts         gọi mlx-whisper, vá mốc từ bị dồn cục
+└── asr/                  mlx-whisper cục bộ (model whisper-large-v3-turbo)
+
+assets/fonts/             font đóng gói theo repo (SIL OFL / Apache), KHÔNG lấy
+                          font hệ thống — máy chủ Linux không có chúng
 
 src/routes/
 ├── projects/      danh sách dự án
@@ -240,3 +276,12 @@ Tiếng nói của người dùng không rời khỏi máy.
 - **Ảnh tĩnh chèn phải `-loop 1` và dịch mốc**, không thì chỉ hiện một khung ở giây 0.
 - **Đo bề rộng chữ bằng ImageMagick với đúng tệp font sẽ in**, không ước lượng
   theo số ký tự — "IIIII" và "mmmmm" cùng 5 ký tự nhưng rộng gấp đôi nhau.
+- **Bộ dáng chữ nằm trong MỘT cột trên `projects`, không nằm trong `elements`.**
+  Nhờ vậy đổi bộ dáng chỉ đổi phần VẼ: nội dung và bố cục người dùng đã chỉnh
+  tay không bị đụng, nên không cần dialog xác nhận và không cần luật giữ/đè.
+  Giữ được điều đó là nhờ cả năm bộ dáng khai `defaults` giống hệt nhau —
+  `npm run check:style-pack` canh đúng chỗ ấy.
+- **Chỉ có MỘT khai báo cho mỗi con số dáng chữ**, ở `server/style-pack.ts`, và
+  cả máy chủ lẫn trang xem cùng import nó. Chép sang là có bản thứ hai để lệch,
+  mà lệch giữa hai đường vẽ là lỗi "xem một đằng xuất một nẻo" —
+  `scripts/overlay-parity/` bắt được nó mà không cần đăng nhập.

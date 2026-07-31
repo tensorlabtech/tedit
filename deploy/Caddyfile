@@ -1,0 +1,35 @@
+# Caddy đứng trước Fastify: nhận HTTPS từ internet, chuyển tiếp sang cổng nội bộ.
+#
+# Vì sao Caddy chứ không phải nginx: chứng chỉ Let's Encrypt được xin, cài và gia
+# hạn tự động chỉ nhờ dòng tên miền dưới đây — không certbot, không cron, không
+# cái hẹn ba tháng một lần mà ai cũng quên cho tới lúc trang báo hết hạn.
+#
+# Chép sang /etc/caddy/Caddyfile rồi: sudo systemctl reload caddy
+
+tedit.tensorlab.tech {
+	reverse_proxy 127.0.0.1:5190 {
+		# Một lượt tải lên là vài GB video qua đường mạng nhà. Mặc định của Caddy
+		# quá ngắn cho việc đó: đứt giữa chừng thì người dùng mất cả lượt tải mà
+		# không hiểu vì sao.
+		transport http {
+			read_timeout 30m
+			write_timeout 30m
+		}
+	}
+
+	# Fastify tự nhận `bodyLimit` 4GB. Caddy không chặn sẵn, nhưng ghi rõ ra đây
+	# để hai bên khớp nhau — không thì bên nọ nhận, bên kia từ chối, và thông báo
+	# lỗi chỉ vào nhầm chỗ.
+	request_body {
+		max_size 4GB
+	}
+
+	encode zstd gzip
+
+	log {
+		output file /var/log/caddy/tedit.log {
+			roll_size 20mb
+			roll_keep 5
+		}
+	}
+}

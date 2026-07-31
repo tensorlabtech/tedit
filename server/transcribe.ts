@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -8,6 +9,22 @@ const here = dirname(fileURLToPath(import.meta.url));
 
 const SCRIPT = join(here, "asr", "transcribe.py");
 const PYLIBS = join(here, "asr", "pylibs");
+
+/**
+ * Trình Python nào chạy được `transcribe.py`.
+ *
+ * Hai máy cài hai kiểu, vì hai thư viện nghe khác nhau:
+ *
+ * · Máy Mac dùng mlx-whisper, cài phẳng vào `asr/pylibs` và nạp qua PYTHONPATH.
+ * · Máy chủ Ubuntu dùng faster-whisper, cài trong một venv riêng — nó kéo theo
+ *   CTranslate2 và cả một cây phụ thuộc, mà cài phẳng những thứ đó vào Python
+ *   hệ thống thì Ubuntu chặn thẳng (PEP 668).
+ *
+ * Có venv thì dùng venv. Không có thì `python3` của máy, tức đúng đường cũ trên
+ * Mac.
+ */
+const VENV_PY = join(here, "asr", "venv", "bin", "python3");
+const PYTHON = existsSync(VENV_PY) ? VENV_PY : "python3";
 
 export type AsrWord = {
   text: string;
@@ -41,7 +58,7 @@ export async function transcribeAudio(
   prompt?: string,
 ): Promise<AsrSegment[]> {
   const { stdout } = await run(
-    "python3",
+    PYTHON,
     [SCRIPT, audioPath, language, ...(prompt ? [prompt] : [])],
     // Bản chép của một video dài chục phút vượt xa mức đệm mặc định 1MB.
     {
