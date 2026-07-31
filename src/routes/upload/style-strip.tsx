@@ -63,15 +63,16 @@ export function StyleStrip({
         </span>
       </div>
 
-      {/* Mười ô không bao giờ vừa bề ngang, nên phải có thứ nói "còn nữa":
-          `scroll-fade-r` mờ mép PHẢI — phía còn nữa của một dải xếp từ trái
-          sang. Đặt ở VIEWPORT chứ không ở khối nội dung, vì đặt vào nội dung
-          thì vùng mờ trôi theo nó lúc cuộn thay vì đứng yên ở mép. Cùng cách
-          với dải cảnh và dải tư liệu. */}
+      {/* KHÔNG thanh cuộn, cũng KHÔNG mép mờ.
+          Cả hai đều để nói "còn nữa", mà ở đây chính cái ô bị xén một nửa ở
+          rìa đã nói điều đó rõ hơn cả — và giờ dải kéo được bằng chuột nên
+          không cần thanh cuộn để mà kéo.
+          Mép mờ còn làm hỏng đúng thứ quan trọng nhất: ô ĐANG CHỌN nằm ở rìa
+          thì viền báo chọn của nó bị làm nhạt, trông như vẽ lỗi. */}
       <ScrollArea
         orientation="horizontal"
         className="min-h-0"
-        viewportClassName="scroll-fade-r"
+        scrollbar={false}
       >
         <div className="flex gap-2 pr-1 pb-2">
           {STYLE_PACKS.map((pack) => (
