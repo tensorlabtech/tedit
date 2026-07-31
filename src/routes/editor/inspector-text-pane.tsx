@@ -33,8 +33,11 @@ import { toast } from "@/components/ui/toast";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 import { type BandId, type EmphasisId } from "@/dev/overlays/overlay-model";
+import { findStylePack } from "../../../server/style-pack-catalog";
+
 import { formatTime, type TextElement } from "./editor-data";
 import { AlignRow, BandRow } from "./inspector-text-axis-rows";
+import { TextOverrideRows } from "./inspector-text-override-rows";
 import { TextShapeTiles } from "./inspector-text-shape-tiles";
 import type { EditorState } from "./use-editor";
 
@@ -236,6 +239,7 @@ export function TextPane({
                 align={element.align}
                 keywords={element.keywords}
                 value={element.emphasis}
+                pack={findStylePack(editor.stylePack)}
                 onChange={(next) => {
                   editor.updateTextElement(element.id, { emphasis: next });
                   playPreview();
@@ -271,6 +275,17 @@ export function TextPane({
                 }}
               />
             </Field>
+
+            {/* Hai trục cụm này ĐÈ được, đặt sau ba trục bố cục: chúng là cách
+                nhấn MỘT chỗ, nên chỉ có nghĩa khi đã xong phần bố cục. */}
+            <TextOverrideRows
+              element={element}
+              pack={findStylePack(editor.stylePack)}
+              onChange={(patch) => {
+                editor.updateTextElement(element.id, patch);
+                playPreview();
+              }}
+            />
 
             {/* Cảnh báo đứng NGAY DƯỚI thứ gây ra nó. Báo ở hàng "Cần bạn xem"
                 cách nửa màn hình thì người dùng đổi dải, thấy không sao, đi tiếp

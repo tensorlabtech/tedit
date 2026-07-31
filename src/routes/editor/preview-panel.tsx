@@ -173,14 +173,14 @@ export function PreviewPanel({
      */
     <Card className="min-h-80 lg:min-h-0">
       <CardHeader>
-        <CardTitle>Phong cách: {projectPack.label}</CardTitle>
+        <CardTitle>Xem trước</CardTitle>
         <CardAction>
           <Button
             variant="secondary"
             size="sm"
             onClick={() => setStyleOpen(true)}
           >
-            Đổi
+            Đổi dáng chữ
           </Button>
         </CardAction>
       </CardHeader>
