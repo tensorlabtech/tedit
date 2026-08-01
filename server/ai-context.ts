@@ -7,10 +7,9 @@ import { db } from "./db";
  * *"mình lập công ty TensorLab, làm Golang với Redis"*. Nó đang được dùng ở
  * đúng hai chỗ: mồi từ vựng cho máy nghe, và chặng sửa chỗ nghe nhầm.
  *
- * Còn năm chặng chọn lựa thì không đọc nó, nên chúng làm việc mù:
+ * Còn bốn chặng chọn lựa thì không đọc nó, nên chúng làm việc mù:
  *
  * · chọn từ khoá — không biết "TensorLab" là tên riêng, nên không nhấn
- * · gắn emoji    — không biết video nói về công nghệ hay về nấu ăn
  * · chọn nhạc    — không biết giọng điệu chung của video
  * · đặt tư liệu  — không biết chủ đề để khớp cảnh
  * · chọn hiệu ứng— không biết video này gắt hay êm

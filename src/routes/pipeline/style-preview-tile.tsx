@@ -11,12 +11,6 @@ import { cn } from "@/lib/utils";
  * `/_dev/overlays` và với khung xem trong bàn dựng, nên thấy sao thì xuất ra vậy.
  * Một bộ vẽ thứ hai chỉ dành riêng cho ô mẫu là một bản để lệch.
  */
-/**
- * Hình mẫu của ô xem trước. Cố định để mười ô so được với nhau — đổi hình theo
- * bộ dáng thì người ta so hình chứ không so bộ dáng.
- */
-const TILE_EMOJI = "🔥";
-
 export function StylePreviewTile({
   pack,
   text,
@@ -138,10 +132,6 @@ export function StylePreviewTile({
               // trục tách các bộ dáng mạnh thứ hai sau font, mà cụm không có từ
               // khoá nào thì nó vô hình.
               keywords: shownWords.slice(-1),
-              // Một hình MẪU cố định cho mọi ô: ô nào có emoji thì hiện, ô nào
-              // tắt thì không. Nhờ vậy ba bộ nhóm "Gọn" nói ra được điều chúng
-              // khác — mà nếu không bày thì trục này vô hình đúng ở màn chọn nó.
-              emoji: TILE_EMOJI,
               insert: { kind: "none", shape: "wide" },
             }}
             pack={pack}

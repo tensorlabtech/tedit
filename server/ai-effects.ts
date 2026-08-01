@@ -85,6 +85,25 @@ VỪA — dùng cho đổi ý bình thường:
 - drift: khung trôi chậm sang ngang — cứu một cảnh người nói ngồi yên không động
   đậy, chỗ hình tĩnh mà lời vẫn đang chạy
 
+CHUYỂN CẢNH THẬT — hai cảnh gặp nhau, khác hẳn nhóm trên (chỉ nhấn vào chỗ cắt).
+Chọn nhóm này khi chỗ nối là một BƯỚC NGOẶT, không phải một cú nhấn:
+- cross-fade: cảnh cũ mờ dần thành cảnh mới — êm nhất, hợp mọi chỗ chuyển ý
+- cross-black: chìm hẳn vào đen rồi mở — dấu chấm hết một chương
+- cross-gray: bạc màu rồi có màu lại — lùi về kể chuyện cũ
+- cross-circle: cảnh mới nở ra từ giữa khung
+- cross-smooth: mép lau nhoè, nhẹ hơn lau ngang một bậc
+- cross-slide-left / cross-slide-right: cảnh mới đẩy cảnh cũ đi — như lật trang
+- cross-wipe: một mép chạy ngang qua khung
+- cross-radial: quét vòng quanh tâm — hợp lúc sang mốc thời gian khác
+- cross-blur: hai cảnh nhoè ngang rồi rõ lại
+- cross-pixel: hình rã thành ô vuông rồi kết lại — phá mạnh nhất, dùng rất dè
+- cross-slice: hình xé thành dải rồi trượt sang
+- cross-wind: cảnh cũ bị thổi tan sang ngang
+
+Chuyển cảnh thật CHỈ dựng được ở chỗ nối đã cắt bỏ một quãng đủ dài. Chỗ nào
+không đủ, máy tự đổi sang một kiểu nhấn cùng nhóm cảm giác — nên cứ chọn theo
+mạch chuyện, đừng đoán chỗ nào đủ.
+
 ĐỪNG dùng một kiểu quá hai lần trong cùng một video, trừ zoom-in và zoom-out.
 Lặp một kiểu lạ ba bốn lần thì nó thành tật của video chứ không còn là điểm nhấn.
 Và ĐỪNG rải kiểu MẠNH liên tiếp — mạnh chỉ mạnh khi quanh nó có chỗ êm.

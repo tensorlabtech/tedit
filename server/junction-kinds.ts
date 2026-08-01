@@ -11,19 +11,34 @@
  * bảng ấy ra chuỗi lọc ffmpeg, trang xem dịch ra `transform` và `filter` của
  * CSS. Thêm kiểu mới chỉ là thêm một dòng.
  *
- * ══ HAI RÀNG BUỘC KHÔNG NÉ ĐƯỢC ══
+ * ══ HAI HỌ KIỂU, HAI CÁCH DỰNG ══
  *
- * 1. **Không kiểu nào được ăn thời gian.** Cả hệ đứng trên phép "mốc ra = tổng
- *    độ dài các khoảng còn giữ": mốc từng chữ, từng tư liệu, cả năm chục cụm
- *    phụ đề. Mờ chồng (`xfade`) làm hai đoạn gối nhau nên tổng ngắn đi — bảy
- *    chỗ nối là lệch gần ba giây ở cuối, tức phụ đề rơi sang câu khác.
+ * **Họ MỘT LUỒNG (`drive`)** — bóp méo khuôn hình tại vết cắt: phóng, dịch,
+ * xoay, sáng, màu, nhoè, tối viền. Chạy sau khi đã ghép, trên một khung hình
+ * duy nhất. Dùng được ở MỌI chỗ nối, không đòi hỏi gì.
  *
- * 2. **Hiệu ứng chạy trên MỘT luồng đã ghép.** Nên không làm được thứ cần hai
- *    đoạn cùng hiện: hoà tan, trượt chồng, lật trang. Mọi kiểu ở đây đều là
- *    phép biến hình trên một khung hình duy nhất.
+ * **Họ HAI LUỒNG (`cross`)** — chuyển cảnh thật giữa hai cảnh: hoà tan, lau,
+ * trượt chồng, vỡ hạt. Cần hai đoạn cùng hiện một lúc, nên phải dựng NGAY LÚC
+ * GHÉP chứ không áp sau.
  *
- * Trong hai ràng buộc ấy vẫn còn rất nhiều chỗ: phóng, dịch, xoay, sáng, màu,
- * nhoè, tối viền — và nhịp hai nửa dài ngắn khác nhau.
+ * ── Vì sao trước đây họ hai luồng bị coi là không làm được ──
+ *
+ * Cả hệ đứng trên phép "mốc ra = tổng độ dài các khoảng còn giữ": mốc từng chữ,
+ * từng tư liệu, cả năm chục cụm phụ đề. Mà `xfade` làm hai đoạn gối lên nhau nên
+ * tổng NGẮN ĐI — bảy chỗ nối là lệch gần ba giây ở cuối, phụ đề rơi sang câu
+ * khác.
+ *
+ * Lối ra: MƯỢN ĐỆM TỪ CHÍNH QUÃNG VỪA BỊ CẮT BỎ. Kéo mỗi đoạn dài thêm nửa thời
+ * lượng chuyển cảnh về phía quãng bỏ, rồi cho chúng gối nhau đúng chừng ấy —
+ * phần thêm vào bằng đúng phần bị nuốt, tổng không đổi một phần nghìn giây. Đo
+ * thật: ghép thẳng ra 10,000000 giây, hoà tan cũng ra 10,000000 giây.
+ *
+ * Phần mượn nằm trong quãng ĐÃ BỎ, tức quãng lặng — không có lời nào ở đó nên
+ * không mất chữ nào.
+ *
+ * Điều kiện duy nhất: quãng bỏ phải đủ dài. Đo trên 98 chỗ nối thật, quãng bỏ
+ * trung vị 2,36 giây và 76% chỗ nối mượn được. Chỗ nối cắt sát (người dùng cắt
+ * thẳng, không bỏ gì) thì không mượn được — nó rơi về họ một luồng.
  */
 
 /**
@@ -85,7 +100,24 @@ export type JunctionSpec = {
    */
   halves: [number, number];
   drive: JunctionDrive;
+  /**
+   * Tên phép chuyển cảnh của `xfade` — có giá trị nghĩa là kiểu HAI LUỒNG.
+   *
+   * Kiểu có `cross` được dựng lúc ghép và KHÔNG áp thêm `drive` nào: chồng một
+   * cú phóng lên một cú hoà tan thì hai thứ giành nhau, và cái nhìn thấy chỉ là
+   * hình vừa mờ vừa giật.
+   */
+  cross?: string;
 };
+
+/**
+ * Thời lượng một chuyển cảnh hai luồng.
+ *
+ * Nửa giây: ngắn hơn thì hoà tan chưa kịp đọc ra là hoà tan, dài hơn thì ở một
+ * video nói liên tục nó thành lê thê. Cũng là mức đệm phải mượn — mỗi bên
+ * một phần tư giây.
+ */
+export const CROSS_SECONDS = 0.5;
 
 /** Nửa dài của một cú phóng — đủ để thấy là dồn dần, chưa thành lê thê. */
 const CHAM = 0.5;
@@ -278,6 +310,143 @@ export const JUNCTION_SPECS: JunctionSpec[] = [
     note: "Màu trượt sắc một nhát — cú nhiễu nhẹ, đừng dùng nhiều",
     halves: [0.1, 0.1],
     drive: { sac: 28 },
+  },
+
+  /*
+   * ══ CHUYỂN CẢNH THẬT — hai cảnh cùng hiện một lúc ══
+   *
+   * Khác hẳn mọi kiểu bên trên: chúng không bóp méo một khung hình, chúng cho
+   * cảnh cũ và cảnh mới gặp nhau. Đây là thứ mắt đọc ra ngay là "phim", còn cả
+   * mười tám kiểu kia rốt cuộc đều là một ý tưởng — nhấn vào chỗ cắt.
+   *
+   * `halves` vẫn khai đủ vì trang xem và bàn dựng đọc nó để vẽ quãng trên dải;
+   * còn `drive` để rỗng vì phép biến hình nằm ở `xfade`, không ở bộ lọc rời.
+   *
+   * Chỉ dùng được ở chỗ nối có quãng bỏ đủ dài để mượn đệm. Chỗ nào không đủ,
+   * `pipeline.ts` tự đổi sang kiểu một luồng cùng nhóm cảm giác.
+   */
+
+  // ── Gắt: cắt phá, hợp nhịp nhanh ──────────────────────────────────────────
+  {
+    id: "cross-pixel",
+    group: "manh",
+    label: "Vỡ hạt",
+    note: "Hình rã thành ô vuông rồi kết lại — cú phá mạnh nhất, dùng dè",
+    halves: [0.25, 0.25],
+    drive: {},
+    cross: "pixelize",
+  },
+  {
+    id: "cross-slice",
+    group: "manh",
+    label: "Xé sọc",
+    note: "Hình xé thành dải rồi trượt sang cảnh mới — gắt kiểu kỹ thuật số",
+    halves: [0.25, 0.25],
+    drive: {},
+    cross: "vuslice",
+  },
+  {
+    id: "cross-wind",
+    group: "manh",
+    label: "Thổi bay",
+    note: "Cảnh cũ bị thổi tan sang ngang — mạnh mà vẫn có hướng",
+    halves: [0.25, 0.25],
+    drive: {},
+    cross: "hrwind",
+  },
+
+  // ── Vừa: chuyển ý, đổi cảnh ───────────────────────────────────────────────
+  {
+    id: "cross-slide-left",
+    group: "vua",
+    label: "Trượt trái",
+    note: "Cảnh mới đẩy cảnh cũ sang trái — như lật sang trang sau",
+    halves: [0.25, 0.25],
+    drive: {},
+    cross: "slideleft",
+  },
+  {
+    id: "cross-slide-right",
+    group: "vua",
+    label: "Trượt phải",
+    note: "Cảnh mới đẩy cảnh cũ sang phải — dùng khi quay lại ý trước",
+    halves: [0.25, 0.25],
+    drive: {},
+    cross: "slideright",
+  },
+  {
+    id: "cross-wipe",
+    group: "vua",
+    label: "Lau ngang",
+    note: "Một mép chạy ngang qua khung, để lại cảnh mới",
+    halves: [0.25, 0.25],
+    drive: {},
+    cross: "wipeleft",
+  },
+  {
+    id: "cross-radial",
+    group: "vua",
+    label: "Quét kim",
+    note: "Quét vòng quanh tâm như kim đồng hồ — hợp lúc sang mốc thời gian khác",
+    halves: [0.25, 0.25],
+    drive: {},
+    cross: "radial",
+  },
+  {
+    id: "cross-blur",
+    group: "vua",
+    label: "Nhoè sang",
+    note: "Hai cảnh nhoè ngang rồi rõ lại — như máy quay lia quá nhanh",
+    halves: [0.25, 0.25],
+    drive: {},
+    cross: "hblur",
+  },
+
+  // ── Êm: chuyển đoạn, hạ nhịp ──────────────────────────────────────────────
+  {
+    id: "cross-fade",
+    group: "em",
+    label: "Hoà tan",
+    note: "Cảnh cũ mờ dần thành cảnh mới — cách chuyển êm nhất, dùng được ở đâu cũng hợp",
+    halves: [0.25, 0.25],
+    drive: {},
+    cross: "fade",
+  },
+  {
+    id: "cross-black",
+    group: "em",
+    label: "Qua đen",
+    note: "Chìm hẳn vào đen rồi mở ra — dấu chấm hết một chương",
+    halves: [0.25, 0.25],
+    drive: {},
+    cross: "fadeblack",
+  },
+  {
+    id: "cross-gray",
+    group: "em",
+    label: "Qua xám",
+    note: "Bạc màu rồi có màu lại — hợp lúc lùi về kể chuyện cũ",
+    halves: [0.25, 0.25],
+    drive: {},
+    cross: "fadegrays",
+  },
+  {
+    id: "cross-circle",
+    group: "em",
+    label: "Mở vòng",
+    note: "Cảnh mới nở ra từ giữa khung — êm mà vẫn có chuyện xảy ra",
+    halves: [0.25, 0.25],
+    drive: {},
+    cross: "circleopen",
+  },
+  {
+    id: "cross-smooth",
+    group: "em",
+    label: "Lau mềm",
+    note: "Mép lau nhoè chứ không sắc — nhẹ hơn lau ngang một bậc",
+    halves: [0.25, 0.25],
+    drive: {},
+    cross: "smoothleft",
   },
 ];
 

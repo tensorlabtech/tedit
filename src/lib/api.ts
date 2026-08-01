@@ -94,8 +94,6 @@ export type ApiElement = {
   /** Giá trị gộp kiểu cũ, chỉ để đổi sang hai trục khi đọc */
   layout: string | null;
   keywords: string | null;
-  /** Emoji bám vào cụm; `null` là không có */
-  emoji: string | null;
 };
 
 export type ApiJob = {
@@ -439,19 +437,6 @@ export const api = {
   suggestOpeningLines: (projectId: string) =>
     request<{ lines: string[] }>(
       `/api/projects/${projectId}/opening-lines`,
-      { method: "POST" },
-    ),
-
-  /**
-   * Lời đăng bài viết sẵn từ bản chép lời: ba tiêu đề, một mô tả, mấy thẻ.
-   *
-   * KHÔNG nuốt lỗi như `suggestOpeningLines`: ở đó lời gợi ý chỉ là một trong ba
-   * đường của màn "3 giây đầu", còn ở đây người dùng chủ động bấm và đang đợi —
-   * im lặng trả rỗng thì họ không biết là thiếu khoá hay mất mạng.
-   */
-  writePostCopy: (projectId: string) =>
-    request<{ titles: string[]; description: string; hashtags: string[] }>(
-      `/api/projects/${projectId}/post-copy`,
       { method: "POST" },
     ),
 

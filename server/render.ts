@@ -17,10 +17,8 @@ import {
   REVEAL_SECONDS,
   SLIDE_SHIFT,
 } from "./insert-reveal";
-import { clampEmojiTop, emojiSpot } from "./emoji-layout";
-import { emojiFileName, isKnownEmoji } from "./emoji-vocab";
 import { ffmpeg, probe, run } from "./media-tools";
-import { PROJECT_ROOT, outDir, resolvePackFont, workDir } from "./paths";
+import { outDir, resolvePackFont, workDir } from "./paths";
 import {
   boxBorderW,
   ffmpegColor,
@@ -30,7 +28,6 @@ import {
 } from "./style-pack";
 import type { RevealId } from "./style-pack";
 import {
-  SAFE,
   textWidth,
   type AlignId,
   type Band,
@@ -83,8 +80,6 @@ export type RenderElement = {
   letterCase?: StylePack["letterCase"] | null;
   /** Cụm này tự đè màu nhấn; rỗng thì theo bộ dáng của dự án */
   keyColor?: string | null;
-  /** Emoji bám vào cụm; rỗng là không có. Bộ dáng tắt emoji thì bỏ qua. */
-  emoji?: string | null;
   /** Hình dáng khung tư liệu */
   shape?: InsertShape;
   /**
@@ -222,15 +217,39 @@ export async function buildBase(projectId: string, sources: string[]) {
  * Biểu thức lọc ghi ra tệp thay vì truyền thẳng: một video dài có thể có hàng
  * trăm khoảng, chuỗi tham số sẽ vượt giới hạn dòng lệnh.
  */
+/**
+ * Chuyển cảnh HAI LUỒNG đặt ở một ranh giới: `sau` là chỉ số đoạn đứng trước nó.
+ *
+ * `dem` là số giây mượn thêm ở MỖI bên, lấy từ chính quãng vừa bị cắt bỏ. Nơi
+ * gọi đã kiểm quãng đó đủ dài — ở đây chỉ việc dùng.
+ */
+export type CrossAt = { sau: number; transition: string; dem: number };
+
 export async function cutRanges(
   projectId: string,
   base: string,
   kept: KeptRange[],
+  crossAt: CrossAt[] = [],
 ) {
   const target = join(workDir(projectId), "cut.mp4");
   if (kept.length === 0) throw new Error("Không còn đoạn nào để xuất");
 
-  const parts = kept
+  const cross = new Map(crossAt.map((item) => [item.sau, item]));
+
+  /*
+   * Biên CẮT khác biên GIỮ: chỗ nối nào có chuyển cảnh thì hai đoạn được kéo dài
+   * về phía nhau, lấn vào quãng vừa bỏ.
+   *
+   * `kept` gốc KHÔNG được đụng tới — mọi phép quy mốc chữ, tư liệu và nhạc đều
+   * đọc nó, sửa ở đây là lệch hết. Bảng dưới chỉ sống trong hàm này.
+   */
+  const bien = kept.map((range) => ({ ...range }));
+  for (const [sau, item] of cross) {
+    bien[sau].end += item.dem;
+    bien[sau + 1].start -= item.dem;
+  }
+
+  const parts = bien
     .map((range, index) => {
       // Vuốt 8ms ở hai đầu mỗi mẩu tiếng.
       //
@@ -238,28 +257,90 @@ export async function cutRanges(
       // ra tiếng "bụp" ngay chỗ cắt. Đo một bản cắt thẳng: mức rơi từ −28dB
       // xuống −62dB trong đúng một ô 10ms. Vuốt ngắn hơn một khung hình thì
       // không ai nghe thấy là đã vuốt, mà bước nhảy thì biến mất.
+      //
+      // Ranh giới có chuyển cảnh thì `acrossfade` lo phần nối, nên không vuốt
+      // thêm ở đầu ấy — vuốt chồng lên nhau thành một lỗ thủng nghe rõ.
       const duration = Math.max(0, range.end - range.start);
       const fade = Math.min(0.008, duration / 4);
+      const vuotDau = fade > 0 && !cross.has(index - 1);
+      const vuotCuoi = fade > 0 && !cross.has(index);
       const fadeOut =
-        fade > 0
-          ? `afade=t=in:st=0:d=${fade.toFixed(3)},` +
-            `afade=t=out:st=${Math.max(0, duration - fade).toFixed(3)}:d=${fade.toFixed(3)},`
-          : "";
+        (vuotDau ? `afade=t=in:st=0:d=${fade.toFixed(3)},` : "") +
+        (vuotCuoi
+          ? `afade=t=out:st=${Math.max(0, duration - fade).toFixed(3)}:d=${fade.toFixed(3)},`
+          : "");
+      /*
+       * `settb=AVTB` — chỉ đặt khi bản dựng CÓ chuyển cảnh, và bắt buộc khi có.
+       *
+       * `concat` trả ra luồng ở thang thời gian 1/1000000, còn `trim` giữ nguyên
+       * thang của tệp gốc (1/15360 với video điện thoại đo được). Chuỗi nối trộn
+       * hai loại ấy, nên tới chỗ `xfade` nhận một luồng từ `concat` và một luồng
+       * từ `trim` là nó từ chối thẳng: "input link timebases do not match", và cả
+       * lệnh dựng chết.
+       *
+       * Kéo mọi luồng về cùng một thang trước khi nối thì hết. Không đặt khi
+       * không có chuyển cảnh: đường ấy đang chạy đúng, không có lý do đụng vào.
+       */
+      const tb = cross.size > 0 ? ",settb=AVTB" : "";
       return (
         `[0:v]trim=start=${range.start.toFixed(3)}:end=${range.end.toFixed(3)},` +
-        `setpts=PTS-STARTPTS[v${index}];` +
+        `setpts=PTS-STARTPTS${tb}[v${index}];` +
         `[0:a]atrim=start=${range.start.toFixed(3)}:end=${range.end.toFixed(3)},` +
-        `asetpts=PTS-STARTPTS,${fadeOut}` +
+        `asetpts=PTS-STARTPTS${tb ? ",asettb=AVTB" : ""},${fadeOut}` +
         `anull[a${index}]`
       );
     })
     .join(";");
-  const concat =
-    kept.map((_, index) => `[v${index}][a${index}]`).join("") +
-    `concat=n=${kept.length}:v=1:a=1[vout][aout]`;
+
+  /*
+   * Nối TỪNG CẶP một thay vì `concat` cả loạt.
+   *
+   * `xfade` chỉ ăn đúng hai luồng, và nó phải biết `offset` — mốc bắt đầu hoà,
+   * tính trên luồng bên trái đã dài bao nhiêu. Nên phải xâu chuỗi và đi kèm một
+   * bộ đếm độ dài; `concat` một phát không cho chỗ nào chen việc đó vào.
+   *
+   * Ranh giới không có chuyển cảnh vẫn dùng `concat`, chỉ là dạng hai luồng.
+   */
+  const noi: string[] = [];
+  let vTruoc = "[v0]";
+  let aTruoc = "[a0]";
+  let dai = bien[0].end - bien[0].start;
+
+  for (let index = 1; index < bien.length; index++) {
+    const item = cross.get(index - 1);
+    const vRa = index === bien.length - 1 ? "[vout]" : `[vc${index}]`;
+    const aRa = index === bien.length - 1 ? "[aout]" : `[ac${index}]`;
+    const daiNay = bien[index].end - bien[index].start;
+
+    if (item) {
+      const d = item.dem * 2;
+      // `offset` đo từ đầu luồng TRÁI: hoà bắt đầu sớm hơn mép cuối đúng bằng
+      // thời lượng hoà, để nó kết thúc vừa lúc luồng trái hết.
+      const offset = Math.max(0, dai - d);
+      noi.push(
+        `${vTruoc}[v${index}]xfade=transition=${item.transition}:` +
+          `duration=${d.toFixed(3)}:offset=${offset.toFixed(3)}${vRa}`,
+      );
+      noi.push(`${aTruoc}[a${index}]acrossfade=d=${d.toFixed(3)}${aRa}`);
+      // Gối nhau `d` giây nên tổng ngắn đi đúng `d` — và `d` cũng đúng bằng
+      // phần vừa mượn thêm ở hai bên. Hai số triệt tiêu nhau, độ dài không đổi.
+      dai = dai + daiNay - d;
+    } else {
+      noi.push(`${vTruoc}[v${index}]concat=n=2:v=1:a=0${vRa}`);
+      noi.push(`${aTruoc}[a${index}]concat=n=2:v=0:a=1${aRa}`);
+      dai += daiNay;
+    }
+    vTruoc = vRa;
+    aTruoc = aRa;
+  }
+
+  // Một đoạn duy nhất thì không có gì để nối — vẫn phải đặt tên đầu ra.
+  if (bien.length === 1) {
+    noi.push("[v0]null[vout]", "[a0]anull[aout]");
+  }
 
   const scriptPath = join(workDir(projectId), "cut-filter.txt");
-  await writeFile(scriptPath, `${parts};${concat}`, "utf8");
+  await writeFile(scriptPath, `${parts};${noi.join(";")}`, "utf8");
 
   await ffmpeg([
     "-i",
@@ -862,23 +943,6 @@ export async function burnElements(
   // có biểu thức thời gian riêng. Trước đây kiểu "cỡ đều" đi đường bẻ dòng (một
   // lệnh mỗi DÒNG) cho nhẹ, nhưng vẽ cả dòng bằng một lệnh thì không cách nào
   // cho từng tiếng hiện lần lượt — mà đó lại là kiểu chữ của cả hệ này.
-  /**
-   * Emoji chờ dán — gom cả lượt rồi mới dựng đồ thị lọc.
-   *
-   * Không dán ngay trong vòng lặp vì mỗi hình là một LUỒNG VÀO của ffmpeg, mà
-   * luồng vào phải khai hết ở dòng lệnh trước khi có chuỗi lọc. Gom theo hình
-   * chứ không theo lần dùng: một video hay dùng lại vài hình, và mở cùng một
-   * tệp năm lần là năm luồng giải mã cho đúng một tấm ảnh.
-   */
-  const emojiUses: Array<{
-    char: string;
-    x: number;
-    y: number;
-    size: number;
-    start: number;
-    end: number;
-  }> = [];
-
   const draws: string[] = [];
   for (const text of texts) {
     // Bộ dáng HIỆU LỰC của riêng cụm này: bộ của dự án, cộng phần nó tự đè.
@@ -887,7 +951,7 @@ export async function burnElements(
       letterCase: text.letterCase ?? null,
       keyColor: text.keyColor ?? null,
     });
-    const { words: placed, box } = await placeWords(
+    const { words: placed } = await placeWords(
       text.content!,
       text.keywords ?? [],
       text.align ?? "center",
@@ -897,45 +961,6 @@ export async function burnElements(
       OUT_HEIGHT,
       shown,
     );
-    /*
-     * Chỗ đứng của emoji — vật NỔI bên ngoài khối chữ.
-     *
-     * Ba cửa phải cùng mở: cụm có hình, bộ dáng cho phép, và hình nằm trong vốn
-     * từ. Cửa thứ ba không thừa: cột `emoji` là dữ liệu cũ có thể còn giữ một
-     * hình đã bị bỏ khỏi vốn từ, mà thiếu tệp ảnh thì ffmpeg chết cả lượt xuất
-     * chứ không phải mất mỗi cái emoji.
-     */
-    if (text.emoji && shown.emoji && isKnownEmoji(text.emoji) && placed.length) {
-      const largest = Math.max(...placed.map((word) => word.fontSize));
-      const spot = emojiSpot(text.band ?? "top", largest, shown)!;
-      const align = text.align ?? "center";
-      // Cùng luật với trang xem: `stair` và `stagger` bám lề TRÁI ở hàng đầu,
-      // nên emoji của chúng cũng bám trái.
-      const x =
-        align === "center"
-          ? Math.round(box.left + (box.width - spot.size) / 2)
-          : align === "right"
-            ? Math.round(box.left + box.width - spot.size)
-            : box.left;
-      emojiUses.push({
-        char: text.emoji,
-        x,
-        y: clampEmojiTop(
-          Math.round(
-            spot.side === "above"
-              ? box.top - spot.gap - spot.size
-              : box.bottom + spot.gap,
-          ),
-          Math.round(spot.size),
-          OUT_HEIGHT,
-          SAFE,
-        ),
-        size: Math.round(spot.size),
-        start: text.start,
-        end: text.end,
-      });
-    }
-
     // Mốc bắt đầu của TỪNG tiếng, tính trước cả lượt: lớp tô sáng cần biết
     // tiếng SAU bắt đầu lúc nào để tắt đúng chỗ, mà trong vòng lặp thì chưa có.
     const startsAt = placed.map((_, flat) => {
@@ -1057,44 +1082,6 @@ export async function burnElements(
     stream = "[out]";
   }
 
-  /*
-   * EMOJI dán SAU lớp chữ.
-   *
-   * Sau chứ không trước, và không đi chung lớp chữ: lớp chữ có quầng tối phía
-   * sau, mà quầng đó dựng bằng cách bóp hết màu của cả lớp về đen. Emoji đi
-   * chung là nó thành một vệt đen. Đằng nào hai vật cũng không bao giờ chồng lên
-   * nhau — emoji luôn nằm ngoài mép khối chữ.
-   */
-  const emojiChars = [...new Set(emojiUses.map((use) => use.char))];
-  if (emojiUses.length > 0) {
-    const base = 1 + inserts.length + (draws.length > 0 ? 1 : 0);
-    let step = 0;
-    emojiChars.forEach((char, index) => {
-      const uses = emojiUses.filter((use) => use.char === char);
-      const parts = uses.map((_, at) => `[em${index}_${at}]`);
-      // `format=rgba` trước khi tách: ảnh PNG vào đã có kênh trong, nhưng chuỗi
-      // lọc phía sau chỉ giữ được nó khi định dạng đã chốt là có kênh trong.
-      filters.push(
-        `[${base + index}:v]format=rgba,split=${uses.length}${parts.join("")}`,
-      );
-      uses.forEach((use, at) => {
-        const sized = `[ems${index}_${at}]`;
-        // Hiện ra bằng cùng khoảng thời gian với chữ. Bật phắt thì nó lạc lõng
-        // giữa một khối chữ đang chạy vào từng tiếng.
-        filters.push(
-          `[em${index}_${at}]scale=${use.size}:${use.size},` +
-            `fade=t=in:st=${use.start.toFixed(3)}:d=${REVEAL_SECONDS}:alpha=1${sized}`,
-        );
-        const next = `[emo${step++}]`;
-        filters.push(
-          `${stream}${sized}overlay=x=${use.x}:y=${use.y}:format=rgb:` +
-            `${enableRange(use.start, use.end)}${next}`,
-        );
-        stream = next;
-      });
-    });
-  }
-
   if (filters.length === 0) {
     await ffmpeg(["-i", cut, "-c", "copy", "-y", target]);
     return target;
@@ -1146,16 +1133,6 @@ export async function burnElements(
           `color=c=black@0.0:s=${OUT_WIDTH}x${OUT_HEIGHT}:r=${FPS}:d=${layerSeconds.toFixed(3)},format=rgba`,
         ]
       : []),
-    // Mỗi hình emoji một luồng ảnh tĩnh, lặp khung suốt dải — cùng lý do với tư
-    // liệu chèn dạng ảnh: một khung thì điều kiện thời gian không bao giờ khớp.
-    ...emojiChars.flatMap((char) => [
-      "-loop",
-      "1",
-      "-t",
-      layerSeconds.toFixed(3),
-      "-i",
-      join(PROJECT_ROOT, "assets", "emoji", emojiFileName(char)),
-    ]),
     "-filter_complex",
     (() => {
       const value = filters.join(";");

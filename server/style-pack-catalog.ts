@@ -56,13 +56,6 @@ const BASE = {
   edge: { share: 0.022, tone: { color: "#000000", alpha: 0.7 } },
   glow: { opacity: 0.9, radiusPx: 10, cssBlurShare: 12 },
   box: null,
-  // Emoji BẬT ở nền chung, tỉ lệ dè dặt. Ba bộ nhóm "Gọn" tự tắt bằng `null`.
-  //
-  // Khác `grade` (bộ gốc để `null` làm mốc so): nắn màu là đụng vào KHUNG HÌNH
-  // của người dùng, còn emoji là thêm một vật lên lớp phủ — mà lớp phủ thì bộ
-  // gốc vốn đã làm rất nhiều. Vả lại bộ gốc là bộ mặc định, để `null` ở đây là
-  // phần lớn người dùng không bao giờ thấy trục này tồn tại.
-  emoji: { scale: 1.15, share: 0.18 },
   // Bộ gốc KHÔNG nắn màu: nó là mốc so, và mốc so phải là khung hình y như người
   // dùng quay ra.
   grade: null,
@@ -183,7 +176,6 @@ export const CHU_HOA_VANG: StylePack = {
   // LẠNH và cứng — thép. Rút bớt bão hoà để màu da không tranh với chữ hoa,
   // và kéo hẳn về phía lam: đây là bộ lạnh nhất trong mười bộ.
   grade: { brightness: 1.08, contrast: 1.1, saturation: 0.92, warmth: -0.35 },
-  emoji: { scale: 1.25, share: 0.3 },
   defaults: { ...BASE.defaults, emphasis: "even" },
 };
 
@@ -221,7 +213,6 @@ export const NHAN_XANH: StylePack = {
   intensity: { ...BASE.intensity, punchScale: 0.09, keywordShare: 0.45 },
   // ẤM và tươi — nắng. Sáng lên, bão hoà lên, đẩy hẳn sang đỏ.
   grade: { brightness: 1.1, contrast: 1.04, saturation: 1.18, warmth: 0.45 },
-  emoji: { scale: 1.2, share: 0.25 },
   defaults: { ...BASE.defaults, align: "left" },
 };
 
@@ -263,9 +254,6 @@ export const NET_THUA: StylePack = {
   // Phai và mát: bộ này bán khoảng thở, nên hình cũng phải lùi lại một bước để
   // chữ mảnh không phải tranh với nền.
   grade: { brightness: 1.12, contrast: 0.9, saturation: 0.72, warmth: -0.25 },
-  // KHÔNG emoji. Cả bộ này bán khoảng thở; một hình nảy lên giữa khung là thứ
-  // đầu tiên phá nó.
-  emoji: null,
   defaults: { ...BASE.defaults, align: "stagger" },
 };
 
@@ -309,7 +297,6 @@ export const DUNG_YEN: StylePack = {
   // Gần như không đụng vào màu, chỉ hạ tương phản và rút bão hoà: bộ này bán
   // cái TĨNH, mà một sắc ám rõ ràng là một thứ để ý.
   grade: { brightness: 1.05, contrast: 0.96, saturation: 0.85, warmth: 0.05 },
-  emoji: null,
   defaults: { ...BASE.defaults, emphasis: "even" },
 };
 
@@ -354,7 +341,6 @@ export const NET_DAC: StylePack = {
   grouping: { ...BASE.grouping, maxWords: 3, maxChars: 18 },
   // ẤM NHẤT trong mười bộ, tương phản cao — lửa.
   grade: { brightness: 1.06, contrast: 1.12, saturation: 1.15, warmth: 0.5 },
-  emoji: { scale: 1.3, share: 0.32 },
   defaults: { ...BASE.defaults, align: "right", emphasis: "even" },
 };
 
@@ -394,7 +380,6 @@ export const NGHIENG_TRON: StylePack = {
   // Giấy cũ: hơi ngả vàng, bão hoà rút xuống, tương phản để nguyên — mặt giấy
   // không bóng, nên tăng tương phản là ra nhựa chứ không ra giấy.
   grade: { brightness: 1.08, contrast: 1.0, saturation: 0.86, warmth: 0.18 },
-  emoji: null,
   defaults: { ...BASE.defaults, align: "stair" },
 };
 
@@ -431,7 +416,6 @@ export const DUNG_DUNG: StylePack = {
   // Lạnh mà TƯƠI: bão hoà cao nhất trong mười bộ, kéo về lam. Màu của video
   // thể thao — không phải màu ấm áp, mà là màu chói.
   grade: { brightness: 1.08, contrast: 1.08, saturation: 1.2, warmth: -0.4 },
-  emoji: { scale: 1.25, share: 0.3 },
   defaults: { ...BASE.defaults, align: "left", emphasis: "even" },
 };
 
@@ -476,10 +460,6 @@ export const TUNG_CHU: StylePack = {
   // Sáng và sắc, gần như không ám màu: bộ này mỗi lúc một tiếng trên nền đen,
   // nên cái cần là hình RÕ chứ không phải hình có sắc thái.
   grade: { brightness: 1.1, contrast: 1.12, saturation: 0.95, warmth: 0.1 },
-  // Tỉ lệ hạ hẳn: bộ này mỗi TIẾNG một cụm nên số cụm gấp mấy lần bộ khác —
-  // giữ nguyên 0,3 là emoji hiện gần như liên tục. Cạnh cũng nhỏ lại vì chữ ở
-  // đây vốn đã rất to.
-  emoji: { scale: 1.0, share: 0.08 },
   defaults: { ...BASE.defaults, emphasis: "even" },
 };
 
@@ -526,7 +506,6 @@ export const SANG_THEO_LOI: StylePack = {
   intensity: { ...BASE.intensity, punchScale: 0.06, flashAmount: 0.55, keywordShare: 0.3, keywordsPerGroup: 1, minSilence: 0.9 },
   // Ấm vừa, bão hoà vừa — nền cho vệt sáng vàng chạy qua chữ.
   grade: { brightness: 1.06, contrast: 1.04, saturation: 1.12, warmth: 0.35 },
-  emoji: { scale: 1.15, share: 0.22 },
   defaults: { ...BASE.defaults, emphasis: "even" },
 };
 

@@ -210,29 +210,6 @@ export type StylePack = {
    */
   highlight: { tone: Tone; box: Tone | null } | null;
   /**
-   * EMOJI tự động bám vào cụm. `null` là bộ dáng này KHÔNG BAO GIỜ có emoji.
-   *
-   * `null` không phải "chưa làm" mà là một lựa chọn có nội dung: ba bộ nhóm
-   * "Gọn" (Sương · Lặng · Giấy) bán đúng cái khoảng thở, và một cái emoji nảy
-   * lên giữa khung là thứ đầu tiên phá nó. Trục này vì thế chia mười bộ thành
-   * hai nhóm nhìn ra ngay — đúng loại khác biệt mà cả kế hoạch đang tìm.
-   *
-   * Hình lấy từ vốn từ ĐÓNG (`emoji-vocab.ts`), dán bằng ảnh chứ không vẽ bằng
-   * font — lý do ở đầu tệp đó.
-   */
-  emoji: {
-    /** Cạnh emoji so với tiếng LỚN NHẤT của cụm. `1` là bằng chiều cao cỡ chữ. */
-    scale: number;
-    /**
-     * Trần tỉ lệ cụm được gắn emoji.
-     *
-     * Cùng một lý lẽ với `intensity.keywordShare`: gắn đều tay mọi cụm thì emoji
-     * hết mang tin, và video đọc ra như một dãy nhãn dán. Trần này mới là thứ
-     * làm việc gắn emoji có tác dụng.
-     */
-    share: number;
-  } | null;
-  /**
    * Luật CHIA CỤM — "một lúc hiện mấy tiếng".
    *
    * Đây là trục quyết định dáng phụ đề mạnh không kém font, mà trước đây nó là

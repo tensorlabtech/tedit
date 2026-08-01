@@ -242,7 +242,6 @@ export function PreviewPanel({
                 emphasis: atPlayhead.emphasis,
                 band: atPlayhead.position as BandId,
                 keywords: atPlayhead.keywords,
-                emoji: atPlayhead.emoji,
               }
             : null
         }
@@ -368,7 +367,6 @@ export function PreviewPanel({
                     emphasis: element.emphasis,
                     band: element.position as BandId,
                     keywords: element.keywords,
-                    emoji: element.emoji,
                     insert: { kind: "none", shape: "wide" },
                   }}
                   // Bộ dáng HIỆU LỰC của riêng cụm này: bộ của dự án, cộng phần

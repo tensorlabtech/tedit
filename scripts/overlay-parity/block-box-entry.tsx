@@ -76,8 +76,8 @@ function App() {
 /**
  * Đo hộp bao của khối chữ trong TỪNG khung, quy về tỉ lệ khung.
  *
- * Đo thẻ bọc (`> div`) chứ không đo từng hàng: đó là thứ emoji bám vào, và cũng
- * là thứ `placeWords` trả về ở `box`.
+ * Đo thẻ bọc (`> div`) chứ không đo từng hàng: đó là thứ `placeWords` trả về ở
+ * `box`, nên hai bên mới so được với nhau.
  */
 declare global {
   interface Window {

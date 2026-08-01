@@ -32,9 +32,6 @@ export default defineConfig({
     proxy: {
       '/api': { target: `http://127.0.0.1:${API_PORT}`, changeOrigin: false },
       '/files': { target: `http://127.0.0.1:${API_PORT}`, changeOrigin: false },
-      // Ảnh emoji nằm ở `assets/emoji/` — ngoài tầm phục vụ tĩnh của Vite, và
-      // cùng bộ tệp mà bộ dựng dán vào video.
-      '/emoji': { target: `http://127.0.0.1:${API_PORT}`, changeOrigin: false },
     },
   },
 })

@@ -36,10 +36,10 @@ import {
 /**
  * Khối chữ đã xếp: các tiếng, kèm HỘP BAO của cả khối.
  *
- * Hộp bao có mặt ở đây vì emoji cần nó, và nó phải tính ở ĐÚNG chỗ đã tính ra
- * `y` của từng hàng. Tính lại ở nơi khác nghĩa là chép `halfLeading` và phép
- * cộng chiều cao hàng sang một tệp thứ hai — hai bản chép của cùng một phép đo
- * là hai bản sẽ trôi khỏi nhau.
+ * Hộp bao là thứ bộ kiểm khớp bố cục đo để so trang xem với bản xuất, và nó phải
+ * tính ở ĐÚNG chỗ đã tính ra `y` của từng hàng. Tính lại ở nơi khác nghĩa là chép
+ * `halfLeading` và phép cộng chiều cao hàng sang một tệp thứ hai — hai bản chép
+ * của cùng một phép đo là hai bản sẽ trôi khỏi nhau.
  */
 export type PlacedBlock = {
   words: PlacedWord[];

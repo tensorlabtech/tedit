@@ -10,8 +10,8 @@ import { thumbDir, workDir } from "./paths";
 import { existsSync } from "node:fs";
 
 import { listMusic } from "./music-tracks";
-import {buildBase, burnElements, cutRanges, keptBefore, mixMusic, mapToOutput, type KeptRange, normalizeReveal, type RenderElement} from "./render";
-import {junctionHalves, normalizeJunction, type JunctionId} from "./junction-kinds";
+import {buildBase, burnElements, type CrossAt, cutRanges, keptBefore, mixMusic, mapToOutput, type KeptRange, normalizeReveal, type RenderElement} from "./render";
+import {CROSS_SECONDS, findJunction, junctionHalves, normalizeJunction, type JunctionId} from "./junction-kinds";
 import { keptFromSegments, listSegments } from "./segments";
 import { seedSegmentsByCaption } from "./segment-seed";
 import { buildAsrPrompt } from "./asr-bias";
@@ -21,7 +21,6 @@ import { trimSilence } from "./auto-trim-silence";
 import { describeInserts } from "./ai-broll-describe";
 import { placeInserts } from "./ai-broll-place";
 import { pickEffects } from "./ai-effects";
-import { pickEmoji } from "./ai-emoji";
 import { pickKeywords } from "./ai-keywords";
 import { pickMusic } from "./ai-music";
 import { createCaptionElements } from "./caption-elements";
@@ -526,6 +525,40 @@ function mergeAdjacent(ranges: KeptRange[]): KeptRange[] {
   return out;
 }
 
+/** Hiệu ứng đặt tay, quãng theo giây BẢN GỐC. */
+type ManualEffect = { start: number; end: number; kind: JunctionId };
+
+/**
+ * Chỗ nối nào dựng được CHUYỂN CẢNH THẬT, và mượn đệm ở đâu.
+ *
+ * Kiểu hai luồng cần hai cảnh cùng hiện một lúc, mà hình cho phần chồng ấy phải
+ * lấy từ chính quãng vừa bị cắt bỏ — nên quãng đó phải đủ dài. Đo trên 98 chỗ
+ * nối thật: quãng bỏ trung vị 2,36 giây và 76% chỗ nối đủ.
+ *
+ * Chỗ không đủ (người dùng cắt thẳng, không bỏ gì ở giữa) thì KHÔNG dựng, và nơi
+ * gọi để nó rơi về hiệu ứng một luồng. Đúng kiểu người dùng chọn thì không còn,
+ * nhưng có một cú nhấn vẫn hơn là không có gì xảy ra ở chỗ hình vừa đứt.
+ *
+ * Tách khỏi `runExport` để phép kiểm gọi được mà không cần cả cơ sở dữ liệu lẫn
+ * ffmpeg — thứ cần kiểm ở đây chỉ là số học của việc mượn đệm.
+ */
+export function duLieuChuyenCanh(
+  kept: KeptRange[],
+  manual: ManualEffect[],
+  defaultKind: JunctionId,
+): CrossAt[] {
+  const out: CrossAt[] = [];
+  for (let index = 0; index < kept.length - 1; index++) {
+    const at = kept[index].end;
+    const tay = manual.find((item) => item.start <= at && at <= item.end);
+    const spec = findJunction(tay?.kind ?? defaultKind);
+    if (!spec.cross) continue;
+    if (kept[index + 1].start - at < CROSS_SECONDS) continue;
+    out.push({ sau: index, transition: spec.cross, dem: CROSS_SECONDS / 2 });
+  }
+  return out;
+}
+
 export async function runExport(projectId: string) {
   setJob(projectId, "export", "running", 5, "Đang chuẩn bị");
   const sources = mainSources(projectId);
@@ -538,12 +571,6 @@ export async function runExport(projectId: string) {
 
   const baseInfo = await probe(base);
   const kept = keptRanges(projectId, baseInfo.duration);
-  setJob(projectId, "export", "running", 35, "Đang bỏ các đoạn đã gạch");
-  const cut = await cutRanges(projectId, baseVideo, kept);
-
-  setJob(projectId, "export", "running", 60, "Đang in chữ và chèn tư liệu");
-  const elements = resolveElements(projectId, kept);
-
   // Mốc các chỗ nối trên dải ĐÃ CẮT: cộng dồn độ dài các khoảng giữ lại. Chỗ nối
   // đầu tiên (giây 0) không tính — không có gì để chuyển từ đó.
   // `zoom_punch` lưu kiểu MẶC ĐỊNH của dự án (tên cột giữ nguyên cho dữ liệu cũ).
@@ -571,6 +598,14 @@ export async function runExport(projectId: string) {
     kind: normalizeJunction(row.kind),
   }));
 
+  const crossAt = duLieuChuyenCanh(kept, manual, defaultKind);
+
+  setJob(projectId, "export", "running", 35, "Đang bỏ các đoạn đã gạch");
+  const cut = await cutRanges(projectId, baseVideo, kept, crossAt);
+
+  setJob(projectId, "export", "running", 60, "Đang in chữ và chèn tư liệu");
+  const elements = resolveElements(projectId, kept);
+
   // Mỗi vết cắt được TỰ SUY một hiệu ứng theo mặc định của dự án — trừ chỗ đã có
   // hiệu ứng đặt tay phủ lên. Có cả hai thì hai xung cùng kiểu chồng nhau ở cùng
   // một chỗ, mà `max` của chúng chỉ nhô lên đúng một lần: người dùng kéo dài
@@ -581,12 +616,25 @@ export async function runExport(projectId: string) {
   // Mốc của MỌI vết cắt trên dải đã cắt, kể cả chỗ sẽ bỏ qua vì đã có hiệu ứng
   // đặt tay: cần đủ danh sách thì mới biết một hiệu ứng được phép lấn tới đâu.
   const cutMarks: number[] = [];
+  /**
+   * Cùng những vết cắt ấy nhưng đo trên dải GỐC.
+   *
+   * Phải giữ cả hai thang: quãng hiệu ứng tính trên dải đã cắt, còn `manual` lưu
+   * mốc gốc nên muốn biết một vết cắt đã có hiệu ứng đặt tay hay chưa thì phải
+   * hỏi bằng mốc gốc. Đem mốc đã cắt đi so với mốc gốc thì chỗ nối có hiệu ứng
+   * tay vẫn bị chồng thêm một hiệu ứng tự suy, và `max` của hai xung cùng kiểu
+   * chỉ nhô lên một lần — người dùng kéo dài quãng ra mà thấy y như cũ.
+   */
+  const cutMarksSource: number[] = [];
   let running = 0;
   for (const range of kept.slice(0, -1)) {
     running += range.end - range.start;
     cutMarks.push(running);
+    cutMarksSource.push(range.end);
   }
   const tongDaCat = kept.reduce((sum, r) => sum + (r.end - r.start), 0);
+
+  const cheoTai = new Set(crossAt.map((item) => item.sau));
 
   /*
    * KẸP quãng hiệu ứng vào chỗ nó được phép chạy.
@@ -615,8 +663,12 @@ export async function runExport(projectId: string) {
    * giữ nguyên, đỉnh vẫn đúng chỗ, hiệu ứng chỉ gọn lại.
    */
   for (const [index, cutAt] of cutMarks.entries()) {
-    if (manual.some((item) => item.start <= cutAt && cutAt <= item.end))
-      continue;
+    const at = cutMarksSource[index];
+    if (manual.some((item) => item.start <= at && at <= item.end)) continue;
+    // Chỗ nối đã dựng chuyển cảnh thật thì thôi: chồng một cú phóng lên một cú
+    // hoà tan là hai thứ giành nhau, và cái nhìn thấy chỉ là hình vừa mờ vừa
+    // giật — không ra kiểu nào cả.
+    if (cheoTai.has(index)) continue;
     // Ranh giới là NỬA ĐƯỜNG tới vết cắt bên cạnh, không phải chính vết cắt đó:
     // cho chạy tới tận vết cắt sau thì quãng này và quãng của chỗ nối ấy vẫn
     // giẫm lên nhau, vì quãng kia được phép bắt đầu từ vết cắt trước — tức từ
@@ -808,9 +860,6 @@ function resolveElements(
           ? row.letter_case
           : null,
       keyColor: (row.key_color as string | null) ?? null,
-      // Cột GIÁ TRỊ, không phải cột đè: bộ dáng không dùng emoji thì khâu vẽ
-      // im lặng bỏ qua, cột vẫn còn nguyên cho lúc đổi về bộ có dùng.
-      emoji: (row.emoji as string | null) ?? null,
       reveal: normalizeReveal(row.reveal as string | null),
       shape: (row.shape as RenderElement["shape"]) ?? "full",
       mediaPath: (row.media_path as string) ?? undefined,
@@ -866,7 +915,7 @@ function aiStages(projectId: string): AiJob[][] {
   return [
     take("silence"),
     take("cuts"),
-    take("keywords", "emoji", "place", "effects", "music"),
+    take("keywords", "place", "effects", "music"),
   ];
 }
 
@@ -897,18 +946,6 @@ function aiJobs(projectId: string): AiJob[] {
         const { applied, rejected } = await pickKeywords(projectId);
         return (
           `nhấn ${applied} cụm` + (rejected > 0 ? ` · gạt ${rejected}` : "")
-        );
-      },
-    },
-    {
-      // Cùng chặng với `keywords` chứ không sau nó: emoji bám vào CỤM, từ khoá
-      // bám vào TIẾNG trong cụm — hai bên ghi hai cột khác nhau và không đọc kết
-      // quả của nhau.
-      key: "emoji",
-      run: async () => {
-        const { applied, rejected } = await pickEmoji(projectId);
-        return (
-          `gắn ${applied} hình` + (rejected > 0 ? ` · gạt ${rejected}` : "")
         );
       },
     },

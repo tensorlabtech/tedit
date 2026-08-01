@@ -354,7 +354,6 @@ function shape(data: ApiProject) {
         };
       })(),
       keywords: element.keywords ? element.keywords.split("|") : [],
-      emoji: element.emoji ?? null,
       // Hai trục ĐÈ; rỗng là theo bộ dáng của dự án.
       letterCase:
         element.letter_case === "upper" || element.letter_case === "as-typed"
@@ -1481,7 +1480,6 @@ export function useEditor(projectId: string | undefined) {
                 align: "center",
                 emphasis: "even",
                 keywords: [],
-                emoji: null,
                 letterCase: null,
                 keyColor: null,
               },
@@ -1535,7 +1533,6 @@ export function useEditor(projectId: string | undefined) {
                   align: "center",
                   emphasis: "even",
                   keywords: [],
-                emoji: null,
                   letterCase: null,
                   keyColor: null,
                 },

@@ -62,7 +62,6 @@ export const STEP_PLAN: Array<{ key: string; required: boolean }> = [
   { key: "silence", required: false },
   { key: "cuts", required: false },
   { key: "keywords", required: false },
-  { key: "emoji", required: false },
   { key: "place", required: false },
   { key: "effects", required: false },
   { key: "music", required: false },

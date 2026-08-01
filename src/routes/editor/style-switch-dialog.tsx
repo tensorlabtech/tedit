@@ -68,7 +68,6 @@ export function StyleSwitchDialog({
     emphasis: "even" | "keyword-large" | "mixed-size" | "taper";
     band: BandId;
     keywords: string[];
-    emoji?: string | null;
   } | null;
 }) {
   // Chọn TẠM, chưa ghi. Đóng bằng Esc hay bấm Thôi là bỏ hẳn lựa chọn tạm.

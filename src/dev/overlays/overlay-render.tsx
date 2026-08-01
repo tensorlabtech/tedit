@@ -4,8 +4,6 @@ import {
   styleCase,
   type StylePack,
 } from "../../../server/style-pack";
-import { emojiSpot } from "../../../server/emoji-layout";
-import { emojiUrl, isKnownEmoji } from "../../../server/emoji-vocab";
 import { OverlayFrame } from "./overlay-frame";
 import {
   BANDS,
@@ -41,8 +39,6 @@ export type OverlayConfig = {
   /** Tiếng được đánh dấu là từ khoá — đậm hơn, và là tiếng được phóng to */
   keywords: string[];
   insert: Insert;
-  /** Emoji bám vào cụm; rỗng là không có. Bộ dáng tắt emoji thì bỏ qua. */
-  emoji?: string | null;
 };
 
 const SHAPE_RATIO: Record<Insert["shape"], string> = {
@@ -412,22 +408,6 @@ export function OverlayTextBlock({
       : config.align === "right"
         ? "flex-end"
         : "flex-start";
-  /*
-   * EMOJI của cụm — vật NỔI, không phải một hàng nữa của khối.
-   *
-   * Đặt tuyệt đối so với thẻ bọc chứ không thả vào dòng flex: thả vào flex là nó
-   * đẩy các hàng chữ xuống, và bản xuất — nơi emoji không đụng gì tới bố cục chữ
-   * — sẽ đặt chữ ở chỗ khác. Đúng lỗi "xem một đằng xuất một nẻo".
-   *
-   * Mọi số đo ở đây tính bằng `cqw`, cùng đơn vị với cỡ chữ, nên không phải đo
-   * DOM lần nào: cùng một phép tính của `emojiSpot` chạy cho cả hai đường vẽ.
-   */
-  const largest = Math.max(0, ...rows.flat().map((word) => word.size));
-  const spot =
-    config.emoji && isKnownEmoji(config.emoji) && largest > 0
-      ? emojiSpot(config.band, largest * 100, pack)
-      : null;
-
   return (
     <div className="absolute" style={bandStyle(config.band)}>
       <div
@@ -436,32 +416,9 @@ export function OverlayTextBlock({
           display: "flex",
           flexDirection: "column",
           alignItems: items,
-          // Mốc cho emoji đặt tuyệt đối. Không đổi bố cục của chính thẻ này.
           position: "relative",
         }}
       >
-        {spot && (
-          <img
-            src={emojiUrl(config.emoji!)}
-            alt=""
-            aria-hidden
-            style={{
-              position: "absolute",
-              width: `${spot.size}cqw`,
-              height: `${spot.size}cqw`,
-              ...(spot.side === "above"
-                ? { bottom: `calc(100% + ${spot.gap}cqw)` }
-                : { top: `calc(100% + ${spot.gap}cqw)` }),
-              // Bám theo TRỤC CĂN, cùng luật với `placeWords`: `stair` và
-              // `stagger` bám lề trái ở hàng đầu nên emoji của chúng cũng bám trái.
-              ...(config.align === "center"
-                ? { left: "50%", transform: "translateX(-50%)" }
-                : config.align === "right"
-                  ? { right: 0 }
-                  : { left: 0 }),
-            }}
-          />
-        )}
         {rows.map((row, index) => {
           const shift = indentOf(config.align, index, rows.length) * 100;
           return (
@@ -480,7 +437,7 @@ export function OverlayTextBlock({
                  * hàng, mà thẻ hàng thừa hưởng `line-height` của giao diện. Phần
                  * cộng thêm ấy không có bên `drawtext`, nên cả khối chữ trên
                  * trang xem cao hơn bản xuất — đo được tới 40 điểm ảnh ở khổ
-                 * 1920, và nó đẩy lệch chỗ đứng của cả khối lẫn emoji.
+                 * 1920, và nó đẩy lệch chỗ đứng của cả khối chữ.
                  */
                 lineHeight: 0,
                 ...(config.align === "right"

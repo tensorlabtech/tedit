@@ -100,7 +100,6 @@ function Harness() {
                     align: "center",
                     emphasis: "taper",
                     keywords: [],
-                    emoji: null,
                     ...over,
                   }}
                   pack={findStylePack(pack)}

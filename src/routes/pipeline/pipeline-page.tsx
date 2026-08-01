@@ -62,7 +62,6 @@ const STEP_LABELS: Record<string, string> = {
   silence: "Cắt chỗ im lặng",
   cuts: "Tìm chỗ nên bỏ",
   keywords: "Chọn từ khoá",
-  emoji: "Gắn emoji",
   describe: "Đọc tư liệu chèn",
   place: "Ghép tư liệu chèn",
   effects: "Chọn hiệu ứng",

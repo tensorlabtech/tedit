@@ -430,18 +430,6 @@ for (const [table, column, type] of [
   // đều thành "đã đặt tay" và đổi bộ dáng không còn tác dụng gì.
   ["elements", "letter_case", "TEXT"],
   ["elements", "key_color", "TEXT"],
-  /**
-   * Emoji bám vào cụm này. `NULL` là không có — và phần lớn cụm là `NULL`.
-   *
-   * Lưu KÝ TỰ chứ không lưu tên tệp: tên tệp là chuyện của kho ảnh đang dùng,
-   * mà kho ảnh thì đổi được (Noto hôm nay, hình tự vẽ ngày mai). Ký tự thì
-   * không đổi. `emojiFileName()` lo phần bắc cầu.
-   *
-   * Khác hai cột đè ở trên: đây là cột GIÁ TRỊ, do chặng `emoji` ghi. Đổi bộ
-   * dáng sang bộ không dùng emoji thì cột giữ nguyên và phần vẽ im lặng bỏ qua
-   * — đổi về bộ có emoji là nó hiện lại, không phải chạy lại lượt AI.
-   */
-  ["elements", "emoji", "TEXT"],
   ["library_tracks", "energy", "TEXT"],
   ["library_tracks", "density", "TEXT"],
   ["library_tracks", "vocal", "TEXT"],
@@ -630,6 +618,19 @@ function migrateLayoutAxisNames() {
   })();
 }
 migrateLayoutAxisNames();
+
+/**
+ * Dọn dấu vết của chặng gắn emoji đã bỏ.
+ *
+ * Hàng `steps` phải xoá chứ không để lại làm lịch sử: trang mạch dựng tra tên
+ * chặng theo khoá, khoá lạ thì nó hiện đúng chữ `emoji` trần — đọc ra như một
+ * chặng hỏng chứ không đọc ra như một chặng đã gỡ. Còn cột `elements.emoji` thì
+ * để nguyên: SQLite bỏ cột phải dựng lại cả bảng, mà không còn chỗ nào đọc nó
+ * nên nó chỉ là mấy byte nằm im.
+ *
+ * `WHERE` nên chạy lại lần nữa không đổi thêm dòng nào.
+ */
+db.prepare("DELETE FROM steps WHERE key='emoji'").run();
 
 // Danh sách dự án luôn lọc theo chủ, nên cột này nằm trong mọi truy vấn đọc.
 // Đặt sau vòng vá cột vì lúc đó `owner_id` mới chắc chắn tồn tại.

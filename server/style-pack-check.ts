@@ -13,18 +13,13 @@
  *
  * Lệnh npm trỏ `TEDDIT_DATA_ROOT` sang thư mục tạm nên nó KHÔNG chạm CSDL thật.
  */
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { db, newId } from "./db";
-import { clampEmojiTop, emojiSpot } from "./emoji-layout";
-import { EMOJI_VOCAB, emojiFileName } from "./emoji-vocab";
-import { DATA_ROOT, PROJECT_ROOT } from "./paths";
-import { OUT_HEIGHT, OUT_WIDTH } from "./render";
-import { boxPadShareY, type Band } from "./style-pack";
+import { DATA_ROOT } from "./paths";
 import { STYLE_PACKS, findStylePack } from "./style-pack-catalog";
 import { readStylePack } from "./style-pack-store";
-import { BAND_ANCHOR, MAX_LINES, SAFE } from "./text-layout";
 
 if (!process.env.TEDDIT_DATA_ROOT) {
   console.error(
@@ -272,71 +267,6 @@ check(
   })(),
   "hai đầu ấm/lạnh gần nhau thì mười bộ đọc ra một màu",
 );
-
-/*
- * EMOJI — vốn từ, tệp ảnh, và chỗ đứng.
- *
- * Phép quan trọng nhất là phép cuối: `clampEmojiTop` là chốt chặn cuối cùng để
- * emoji không nhô ra khỏi lề an toàn, mà một chốt chặn CÓ NỔ thì hai đường vẽ
- * lệch nhau — trang xem không cài chốt đó (nó không có số đo tuyệt đối để cài).
- * Nên chốt phải là thứ không bao giờ nổ với hình học có thật, và đây là chỗ canh
- * điều đó thay vì tin.
- */
-console.log("\nEmoji");
-check(
-  `vốn từ ${EMOJI_VOCAB.length} hình, không trùng`,
-  new Set(EMOJI_VOCAB.map((entry) => entry.char)).size === EMOJI_VOCAB.length,
-  "trùng hình là hai dòng cùng nghĩa cho mô hình chọn",
-);
-{
-  const missing = EMOJI_VOCAB.filter(
-    (entry) =>
-      !existsSync(join(PROJECT_ROOT, "assets", "emoji", emojiFileName(entry.char))),
-  );
-  check(
-    "mọi hình trong vốn từ đều có tệp ảnh",
-    missing.length === 0,
-    // Thiếu tệp không làm mất mỗi cái emoji — ffmpeg chết cả lượt xuất.
-    missing.map((entry) => entry.char).join(" ") ||
-      "chạy scripts/emoji/fetch-emoji-assets.ts",
-  );
-}
-check(
-  'ba bộ nhóm "Gọn" đều TẮT emoji',
-  STYLE_PACKS.filter((pack) => pack.theme === "gon").every(
-    (pack) => pack.emoji === null,
-  ),
-  "khoảng thở là thứ nhóm này bán; một hình nảy lên giữa khung phá đúng nó",
-);
-for (const pack of STYLE_PACKS) {
-  if (!pack.emoji) continue;
-  // Ca xấu nhất: khối chạm trần dòng ở cỡ chữ trần.
-  const font = pack.density.maxScale * OUT_WIDTH;
-  const blockHeight =
-    MAX_LINES * font * (pack.density.lineHeight + boxPadShareY(pack) * 2);
-  const bands: Band[] = ["top", "middle", "bottom"];
-  const fits = bands.every((band) => {
-    const anchor = BAND_ANCHOR[band];
-    const top =
-      anchor.edge === "top"
-        ? OUT_HEIGHT * anchor.at
-        : anchor.edge === "bottom"
-          ? OUT_HEIGHT * anchor.at - blockHeight
-          : OUT_HEIGHT * anchor.at - blockHeight / 2;
-    const spot = emojiSpot(band, font, pack)!;
-    const want =
-      spot.side === "above" ? top - spot.gap - spot.size : top + blockHeight + spot.gap;
-    return (
-      clampEmojiTop(Math.round(want), Math.round(spot.size), OUT_HEIGHT, SAFE) ===
-      Math.round(want)
-    );
-  });
-  check(
-    `"${pack.label}" emoji nằm gọn trong lề ở mọi dải, không cần kẹp`,
-    fits,
-    "chốt kẹp mà nổ là trang xem và bản xuất đặt emoji ở hai chỗ",
-  );
-}
 
 console.log(`\n${passed} đạt, ${failed} trượt`);
 process.exit(failed === 0 ? 0 : 1);
