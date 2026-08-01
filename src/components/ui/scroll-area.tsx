@@ -197,7 +197,19 @@ function ScrollArea({
   return (
     <ScrollAreaPrimitive.Root
       data-slot="scroll-area"
-      className={cn("relative", className)}
+      /*
+       * `min-h-0` — vùng cuộn phải CO ĐƯỢC, nếu không thì nó không cuộn.
+       *
+       * Phần tử con của flex/grid mặc định `min-height: auto`, tức không bao giờ
+       * nhỏ hơn nội dung. Nên trong một hàng lưới bị ép chiều cao, vùng cuộn nở
+       * hết cỡ và đẩy cả thẻ tràn ra ngoài — thẻ thì `overflow-hidden` nên phần
+       * thừa bị xén và không có cách nào cuộn tới. Đo ở màn chờ: hàng được cấp
+       * 501px nhưng đòi 726px, mất 225px danh sách chặng.
+       *
+       * Chỗ nào cha không ép chiều cao thì dòng này không đổi gì — vùng cuộn vẫn
+       * cao theo nội dung.
+       */
+      className={cn("relative min-h-0", className)}
       {...props}
     >
       {/* `p-[3px]` là chỗ thở cho MÉP của thứ nằm sát rìa vùng cuộn.

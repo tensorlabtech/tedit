@@ -1,6 +1,20 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+
+/*
+ * `bento:` — chỉ khoá bố cục phủ kín màn khi màn ĐỦ CAO.
+ *
+ * Các màn bento đang khoá bằng `lg:`, mà `lg` chỉ xét chiều RỘNG. Màn 1200×700
+ * thoả `lg` nên vẫn bị ép `h-svh` + `overflow-hidden` — nội dung không đủ chỗ thì
+ * bị xén, và xén trong một thẻ `overflow-hidden` thì không có cách nào cuộn tới.
+ * Người dùng thấy chữ cụt giữa dòng.
+ *
+ * Đo trên màn nạp tệp: dưới 1000px cao thì thẻ Dự án mất 96px. Từ 1000px thì vừa.
+ * Nên dưới ngưỡng ấy thả cho trang cuộn như một trang thường — thà cuộn còn hơn
+ * mất chữ.
+ */
+@custom-variant bento (@media (min-width: 1024px) and (min-height: 1000px));
 @import "@fontsource/be-vietnam-pro/400.css";
 @import "@fontsource/be-vietnam-pro/500.css";
 @import "@fontsource/be-vietnam-pro/600.css";

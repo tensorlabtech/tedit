@@ -115,7 +115,7 @@ export function UploadPage() {
        nó chỉ còn là bản trùng. Hai nút xuống card hành động ở đầu cột phải: chỗ đó
        ngay trên khung xem, đúng nơi người ta soát lần cuối trước khi bấm chạy, và câu
        giải thích "vì sao nút chưa bấm được" đi theo được sang đó. */
-    <div className="grid min-h-svh gap-2 bg-background p-2 text-foreground lg:h-svh lg:overflow-hidden">
+    <div className="grid min-h-svh gap-2 bg-background p-2 text-foreground bento:h-svh bento:overflow-hidden">
       {/* HAI cột: NỘI DUNG bên trái, XEM TRƯỚC bên phải.
 
           Cột nội dung xếp ba khối dọc theo đúng thứ tự làm việc: khai báo dự án →
