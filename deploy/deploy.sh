@@ -36,10 +36,20 @@ say "Nối vào edge Caddy"
 # cũng ra cùng một mã lỗi với "đã nối rồi", nên `|| echo "đã nối từ trước"` từng
 # in ra dòng trấn an trong khi edge chưa hề với tới được container.
 docker network connect tedit_default vas-printing-edge-1 2>/dev/null || true
-if docker exec vas-printing-edge-1 wget -qO- --timeout=5 http://tedit_app:5190/ >/dev/null 2>&1; then
-	echo "  ✓ edge gọi được tedit_app"
-else
-	echo "  ✗ edge KHÔNG gọi được tedit_app — kiểm: docker inspect tedit_app --format '{{.NetworkSettings.Networks}}'"
+# Thử lại vài lượt: sau khi nối mạng, DNS nội bộ của Docker cần vài giây mới
+# phân giải được tên container. Kiểm một phát ngay sau `connect` thì trượt, và
+# trượt kiểu ấy trông y hệt một lỗi cấu hình thật.
+noi=""
+for i in $(seq 1 10); do
+	if docker exec vas-printing-edge-1 wget -qO- --timeout=5 http://tedit_app:5190/ >/dev/null 2>&1; then
+		noi="ok"; echo "  ✓ edge gọi được tedit_app (sau $((i * 3))s)"; break
+	fi
+	sleep 3
+done
+if [[ -z "$noi" ]]; then
+	echo "  ✗ edge KHÔNG gọi được tedit_app sau 30s"
+	echo "    mạng tedit_app: $(docker inspect tedit_app --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}')"
+	echo "    mạng edge:      $(docker inspect vas-printing-edge-1 --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}')"
 	exit 1
 fi
 

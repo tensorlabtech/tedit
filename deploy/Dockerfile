@@ -30,11 +30,21 @@ WORKDIR /app
 # ffmpeg và imagemagick là công cụ dựng video, không phải thứ tuỳ chọn.
 # python3-venv cho máy nghe; build-essential còn lại để better-sqlite3 dựng được
 # ở bước cài phần phụ thuộc chạy thật.
+#
+# `ln magick -> convert`: mã gọi lệnh `magick` (ImageMagick 7), còn Debian 12
+# đóng gói bản 6 với tên `convert`. Thiếu cầu này thì đo bề rộng chữ và vẽ mặt
+# nạ bo góc đều gãy — hỏng đúng phần bố cục chữ, và hỏng giữa chừng một lượt
+# dựng chứ không phải lúc khởi động, nên container vẫn báo khoẻ. Đã thử đúng
+# phép mã dùng trên bản 6: nó trả về đúng kết quả.
+#
+# Chú thích để NGOÀI khối RUN: một dòng `#` chen giữa các dòng nối bằng `\` làm
+# shell coi tất cả phần sau nó là chú thích, và lệnh cuối lặng lẽ không chạy.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ffmpeg imagemagick \
       python3 python3-venv python3-dev \
       build-essential ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/convert /usr/local/bin/magick
 
 # Máy nghe: faster-whisper thay mlx-whisper.
 #
