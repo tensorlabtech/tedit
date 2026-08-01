@@ -32,9 +32,16 @@ say "Khởi động"
 docker compose up -d
 
 say "Nối vào edge Caddy"
-# Chạy lại nhiều lần không sao — Docker báo lỗi "already exists" thì bỏ qua.
-docker network connect tedit_default vas-printing-edge-1 2>/dev/null \
-	&& echo "  đã nối" || echo "  đã nối từ trước"
+# KIỂM tra thay vì đoán: `docker network connect` thất bại vì mạng không tồn tại
+# cũng ra cùng một mã lỗi với "đã nối rồi", nên `|| echo "đã nối từ trước"` từng
+# in ra dòng trấn an trong khi edge chưa hề với tới được container.
+docker network connect tedit_default vas-printing-edge-1 2>/dev/null || true
+if docker exec vas-printing-edge-1 wget -qO- --timeout=5 http://tedit_app:5190/ >/dev/null 2>&1; then
+	echo "  ✓ edge gọi được tedit_app"
+else
+	echo "  ✗ edge KHÔNG gọi được tedit_app — kiểm: docker inspect tedit_app --format '{{.NetworkSettings.Networks}}'"
+	exit 1
+fi
 
 say "Chờ máy chủ nhận việc"
 # Lượt đầu phải tải mô hình nghe (~1,5 GB) nên chờ lâu hơn nhiều so với cảm giác.

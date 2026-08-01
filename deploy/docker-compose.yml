@@ -10,6 +10,14 @@
 #
 #   docker network connect tedit_default vas-printing-edge-1
 
+# Tên stack đặt TƯỜNG MINH.
+#
+# Bỏ trống thì Docker lấy tên thư mục chứa tệp compose — mà tệp này nằm trong
+# `deploy/`, nên stack thành "deploy", mạng thành `deploy_default` và volume
+# thành `deploy_tedit_data`. Edge Caddy nối vào `tedit_default` sẽ không tìm
+# thấy gì, và lỗi ấy chỉ lộ ra ở bước cuối khi trang trả 502.
+name: tedit
+
 services:
   app:
     build:
