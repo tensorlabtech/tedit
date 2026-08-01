@@ -45,18 +45,42 @@ export async function doTieng(path: string): Promise<TiengStats | null> {
   try {
     const { stderr } = await run(
       "ffmpeg",
+      // KHÔNG đặt `framelog=quiet`: ffmpeg 5.1 (bản Debian 12 trên máy chủ) chỉ
+      // nhận `info` và `verbose`, nên `quiet` làm cả bộ lọc không chạy — và nó
+      // không chạy một cách IM LẶNG. Số đo ra 0,0 LUFS, tức "to hơn chuẩn 14 dB",
+      // nên mọi video trên máy chủ đều bị hạ tiếng một cách vô cớ. Máy phát triển
+      // dùng ffmpeg mới hơn nên không bao giờ lộ ra.
+      //
+      // Bỏ tham số ấy thì ebur128 in thêm một dòng mỗi phần mười giây — mười lăm
+      // giây là chừng 150 dòng, thừa sức nằm trong bộ đệm bên dưới.
       ["-hide_banner", "-nostats", "-t", "15", "-i", path,
-       "-af", "ebur128=peak=true:framelog=quiet", "-f", "null", "-"],
+       "-af", "ebur128=peak=true", "-f", "null", "-"],
       { timeout: 90_000, maxBuffer: 8 * 1024 * 1024 },
     ).catch((e: { stderr?: string }) => ({ stderr: e.stderr ?? "" }));
 
     const raw = String(stderr);
+    /*
+     * Đọc từ khối TÓM TẮT ở cuối, không đọc từ cả chuỗi.
+     *
+     * Không cắt lấy phần tóm tắt thì `I:` khớp ngay dòng frame log đầu tiên — đó
+     * là số đo tức thời của một phần mười giây đầu video, thường là quãng im
+     * trước khi người ta kịp nói.
+     */
+    const tomTat = raw.slice(raw.lastIndexOf("Integrated loudness:"));
     const soSau = (nhan: string) => {
-      const m = new RegExp(`${nhan}:\\s*(-?[\\d.]+)`).exec(raw);
+      const m = new RegExp(`${nhan}:\\s*(-?[\\d.]+)`).exec(tomTat);
       return m ? Number(m[1]) : Number.NaN;
     };
     const lufs = soSau("I");
     if (!Number.isFinite(lufs)) return null;
+    /*
+     * Đúng 0,0 LUFS là dấu hiệu ĐO HỎNG, không phải một bản ghi to.
+     *
+     * Giọng nói thật không bao giờ chạm mức ấy — 0 LUFS là biên độ đầy khung,
+     * tức đã vỡ tiếng từ lâu. Con số này ra khi bộ lọc không chạy được, và nếu
+     * tin nó thì máy hạ tiếng hết cỡ trên một bản vốn đã nhỏ.
+     */
+    if (lufs === 0) return null;
     const peak = soSau("Peak");
     return { lufs, peak: Number.isFinite(peak) ? peak : -1 };
   } catch {
@@ -95,10 +119,13 @@ export function canTieng(stats: TiengStats | null): CanTieng | null {
 
   const gainDb = Math.max(-6, Math.min(12, lech));
   const lyDo: string[] = [];
+  // Nói mức THẬT SỰ đã chỉnh, không nói mức lệch: hai số khác nhau khi bị chặn
+  // bởi trần hay sàn, và lúc ấy dòng nhật ký báo "hạ 14 dB" trong khi máy chỉ hạ
+  // 6 — người đọc đi tìm 8 dB không tồn tại.
   lyDo.push(
     gainDb > 0
-      ? `giọng nhỏ hơn chuẩn ${Math.abs(lech).toFixed(0)} dB nên đã nâng lên`
-      : `giọng to hơn chuẩn ${Math.abs(lech).toFixed(0)} dB nên đã hạ xuống`,
+      ? `giọng nhỏ hơn chuẩn nên đã nâng ${gainDb.toFixed(1)} dB`
+      : `giọng to hơn chuẩn nên đã hạ ${Math.abs(gainDb).toFixed(1)} dB`,
   );
 
   const locU = gainDb >= 4;
