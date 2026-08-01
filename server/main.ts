@@ -1885,12 +1885,19 @@ if (hasWebBuild) {
 
 const port = Number(process.env.PORT ?? 5190);
 /**
- * Chỉ nghe trên máy nội bộ. Lúc chạy thật thì Caddy/nginx đứng trước và nói
- * chuyện với cổng này; mở ra `0.0.0.0` là phơi thẳng cổng chưa có HTTPS ra
- * internet, mà cookie phiên đi qua đường không mã hoá thì ai chặn được đường
- * truyền cũng đọc được nó.
+ * Mặc định chỉ nghe trên máy nội bộ.
+ *
+ * Trên máy phát triển và trên máy chủ chạy thẳng, Caddy đứng trước và nói chuyện
+ * với cổng này; mở ra `0.0.0.0` là phơi thẳng cổng chưa có HTTPS ra internet, mà
+ * cookie phiên đi qua đường không mã hoá thì ai chặn được đường truyền cũng đọc
+ * được nó.
+ *
+ * Trong container thì ngược lại: Caddy nằm ở container KHÁC, nên nghe
+ * `127.0.0.1` là không ai với tới được — kể cả Caddy. Ở đó đặt `HOST=0.0.0.0`,
+ * và cổng vẫn kín vì compose không publish nó ra host, chỉ mạng Docker nội bộ
+ * thấy.
  */
-await app.listen({ port, host: "127.0.0.1" });
+await app.listen({ port, host: process.env.HOST ?? "127.0.0.1" });
 app.log.info(
   `API chạy ở http://127.0.0.1:${port}` +
     (hasWebBuild ? " (kèm bản build của trang)" : " (chưa có dist/, chỉ API)"),

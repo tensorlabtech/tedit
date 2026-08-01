@@ -1,0 +1,53 @@
+# Tedit trên máy chủ dùng chung.
+#
+# Chỉ MỘT dịch vụ: Fastify vừa chạy API vừa phục vụ trang đã dựng. Không có cơ
+# sở dữ liệu riêng — Tedit dùng SQLite, nằm trong volume `tedit_data` cùng chỗ
+# với video người dùng.
+#
+# Edge Caddy (`vas-printing-edge-1`) đứng trước, nói chuyện qua mạng
+# `tedit_default` bằng TÊN CONTAINER. Nên container phải có tên cố định, và edge
+# phải join mạng này:
+#
+#   docker network connect tedit_default vas-printing-edge-1
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: tedit:latest
+    container_name: tedit_app
+    restart: unless-stopped
+    env_file: ../.env
+    environment:
+      NODE_ENV: production
+      PORT: 5190
+      # Trong container Caddy nằm ở container khác, nghe 127.0.0.1 là không ai
+      # với tới được. Cổng vẫn kín vì không publish ra host.
+      HOST: 0.0.0.0
+      TEDDIT_DATA_ROOT: /data
+      HF_HOME: /model-cache
+    volumes:
+      # Dữ liệu người dùng: CSDL, video tải lên, bản dựng. Mất volume này là mất
+      # tất cả — không có gì tái tạo lại được.
+      - tedit_data:/data
+      # Mô hình nghe (~1,5 GB). Tách khỏi dữ liệu vì nó tải lại được, còn dữ
+      # liệu thì không — sao lưu hai thứ này theo hai nhịp khác nhau.
+      - tedit_model:/model-cache
+    # KHÔNG `ports:` — cổng 5190 chỉ mạng Docker nội bộ thấy. Đường vào duy nhất
+    # là qua edge Caddy, nơi đã có HTTPS của Cloudflare ở phía trước.
+    healthcheck:
+      # Trang chủ, không phải một route API: route API đòi đăng nhập nên trả 401,
+      # mà 401 vẫn là "máy chủ sống" — dùng nó thì healthcheck không phân biệt
+      # được máy chủ chết với máy chủ chỉ từ chối.
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:5190/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      # Lượt khởi động đầu phải tải mô hình nghe trước khi nhận việc — cho nó
+      # thời gian, không thì Docker giết đúng lúc đang tải.
+      start_period: 5m
+      retries: 3
+
+volumes:
+  tedit_data:
+  tedit_model:
