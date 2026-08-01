@@ -10,6 +10,8 @@ description: Deploy Tedit lên production (tedit.tensorlab.tech). CHỈ chạy k
 ## Hạ tầng
 
 - Server: `root@154.26.136.134` (SSH key auth), dùng chung với vas-printing, tensorlab, tax-desk, museum, cad-auto, tensortourism.
+- **Một nhánh duy nhất: `main`.** Không nhánh feature — nhiều người cùng làm thì
+  nhánh song song là chỗ đầu tiên sinh rối. Prod luôn chạy đúng `main`.
 - Mã trên server: `/root/projects/tedit` (KHÔNG phải git clone — xem dưới).
 - Stack: `deploy/docker-compose.yml`, tên stack `tedit`, một container `tedit_app`.
 - Edge Caddy `vas-printing-edge-1` reverse_proxy `tedit.tensorlab.tech` → `tedit_app:5190`.
@@ -36,12 +38,22 @@ Nếu sau này bật được deploy key, đổi sang `git pull` cho tiện.
    commit hộ. Deploy đẩy nội dung của `HEAD`, nên thay đổi chưa commit sẽ KHÔNG
    lên server, và điều đó cần nói rõ chứ không im lặng.
 
-2. **Đẩy mã** (từ máy phát triển, ở gốc repo):
+2. **Đẩy mã** (từ máy phát triển, ở gốc repo, đang đứng trên `main`):
    ```bash
-   git archive --format=tar HEAD | ssh root@154.26.136.134 'tar x -C /root/projects/tedit'
+   git archive --format=tar HEAD | ssh root@154.26.136.134 'cd /root/projects/tedit \
+     && find . -mindepth 1 -maxdepth 1 ! -name ".env" ! -name ".env.bak.*" -exec rm -rf {} + \
+     && tar x -C /root/projects/tedit'
    ```
-   Chạy MỘT MÌNH, đừng nối `&&` với lệnh khác — luồng tar bị tranh chấp stdin và
-   ra `tar: This does not look like a tar archive`.
+   **Phải dọn trước khi giải nén.** `tar x` chỉ ghi đè, không xoá tệp đã biến mất
+   khỏi commit — bỏ bước `find … rm` thì tệp đã gỡ vẫn sống mãi trên server. Đã
+   dính đúng lỗi này: gỡ emoji xong deploy, mà `assets/emoji/` và
+   `server/emoji-*.ts` vẫn còn, prod vẫn hiện emoji.
+
+   Giữ lại `.env` và các bản `.env.bak.*` — dữ liệu người dùng nằm trong Docker
+   volume nên không bị ảnh hưởng.
+
+   Chạy MỘT MÌNH, đừng nối `&&` với lệnh khác ở phía máy local — luồng tar bị
+   tranh chấp stdin và ra `tar: This does not look like a tar archive`.
 
 3. **Dựng và khởi động** (chạy nền, build mất 3–8 phút):
    ```bash
@@ -121,6 +133,11 @@ bộ, không riêng Tedit.
   `TEDDIT_ASR` trên server.
 - **DNS Docker sau `network connect`** cần vài giây. `deploy.sh` đã thử lại trong
   30 giây.
+- **Tệp đã gỡ vẫn sống trên server** nếu quên bước dọn ở mục 2. Kiểm nhanh sau
+  mỗi lần deploy có xoá tệp:
+  ```bash
+  ssh root@154.26.136.134 'docker exec tedit_app ls <đường-dẫn-đã-gỡ>'
+  ```
 
 ## Cần để mắt
 
