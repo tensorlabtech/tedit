@@ -88,6 +88,44 @@ Nếu sau này bật được deploy key, đổi sang `git pull` cho tiện.
 5. **Báo lại**: trạng thái container, và nhắc Cloudflare cache HTML (Purge
    Everything nếu cần thấy ngay).
 
+## Chạy thử trọn luồng trên bản đã deploy
+
+Không đăng nhập Google bằng máy được (Google chối trình duyệt tự động), và nút
+"Vào bằng tài khoản dev chung" bị `import.meta.env.DEV` **xoá hẳn khỏi bản dựng
+production** — không bật lại bằng biến môi trường được.
+
+Cách chạy được: dựng một container thứ hai từ CÙNG ảnh, dữ liệu riêng, cửa dev
+mở; rồi đăng nhập qua API thay vì bấm nút.
+
+```bash
+# 1. Container thử — không nối edge, chỉ nghe loopback của server
+ssh root@154.26.136.134 'docker run -d --name tedit_test -p 127.0.0.1:5199:5190 \
+  -e NODE_ENV=development -e TEDDIT_DEV_LOGIN=1 -e HOST=0.0.0.0 -e PORT=5190 \
+  -e TEDDIT_DATA_ROOT=/data -e HF_HOME=/model-cache -e BETTER_AUTH_URL=http://localhost:5199 \
+  --env-file /root/projects/tedit/.env \
+  -v tedit_test_data:/data -v tedit_tedit_model:/model-cache tedit:latest'
+
+# 2. Đường hầm
+ssh -f -N -L 5199:127.0.0.1:5199 root@154.26.136.134
+
+# 3. Chạy luồng (script ở scratchpad phiên trước, hoặc viết lại theo mẫu dưới)
+python3 thu-server.py 5199 <video.mp4> <thư-mục-ảnh>
+
+# 4. DỌN — dữ liệu thử không được để lại
+ssh root@154.26.136.134 'docker rm -f tedit_test; docker volume rm tedit_test_data'
+```
+
+Đăng nhập bằng API: `POST /api/auth/sign-in/email` với
+`dev@teddit.local` / `dev-only-password-2026` (xem `src/routes/landing/dev-sign-in.tsx`),
+lấy cookie từ header `Set-Cookie` rồi nạp vào Playwright context. Đừng cố tự ký
+cookie bằng `BETTER_AUTH_SECRET` — tốn thời gian và tôi đã thử, không ra.
+
+**Tại sao đáng làm:** lượt chạy thử đầu tiên bắt được một lỗi chỉ có trên máy
+chủ — `ebur128=…:framelog=quiet` không hợp lệ trên ffmpeg 5.1, bộ lọc không chạy
+một cách im lặng, số đo ra 0,0 LUFS và mọi video bị hạ tiếng 6 dB vô cớ. Máy phát
+triển dùng ffmpeg mới hơn nên không bao giờ lộ ra. Sau mỗi lần đụng vào ffmpeg
+filter, chạy lại phép thử này.
+
 ## Rollback
 
 ```bash
