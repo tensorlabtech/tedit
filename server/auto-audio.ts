@@ -41,7 +41,7 @@ const DICH_LUFS = -14;
  * Đủ để biết giọng to hay nhỏ. Quét cả tệp chính xác hơn nhưng một quyết định
  * chỉ có một con số thì không đáng bắt người dùng chờ thêm.
  */
-export async function doTieng(path: string): Promise<TiengStats | null> {
+export async function measureAudio(path: string): Promise<TiengStats | null> {
   try {
     const { stderr } = await run(
       "ffmpeg",
@@ -66,9 +66,9 @@ export async function doTieng(path: string): Promise<TiengStats | null> {
      * là số đo tức thời của một phần mười giây đầu video, thường là quãng im
      * trước khi người ta kịp nói.
      */
-    const tomTat = raw.slice(raw.lastIndexOf("Integrated loudness:"));
-    const soSau = (nhan: string) => {
-      const m = new RegExp(`${nhan}:\\s*(-?[\\d.]+)`).exec(tomTat);
+    const summary = raw.slice(raw.lastIndexOf("Integrated loudness:"));
+    const soSau = (label: string) => {
+      const m = new RegExp(`${label}:\\s*(-?[\\d.]+)`).exec(summary);
       return m ? Number(m[1]) : Number.NaN;
     };
     const lufs = soSau("I");
@@ -112,7 +112,7 @@ export type CanTieng = {
  * `locU` bật khi phải nâng nhiều: tiếng ù tần thấp luôn có sẵn trong phòng, và
  * nó lên theo đúng số decibel ta vừa nâng.
  */
-export function canTieng(stats: TiengStats | null): CanTieng | null {
+export function levelAudio(stats: TiengStats | null): CanTieng | null {
   if (!stats) return null;
   const lech = DICH_LUFS - stats.lufs;
   if (Math.abs(lech) < 1.5) return null;

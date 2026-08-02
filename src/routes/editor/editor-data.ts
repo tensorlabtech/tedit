@@ -213,7 +213,7 @@ export const INSERTS: Insert[] = [
     id: "i3",
     start: 66,
     end: 70,
-    label: "bien-do-thi.mp4",
+    label: "bounds-do-thi.mp4",
     reveal: "none",
     shape: "full",
     ...ANCHOR,

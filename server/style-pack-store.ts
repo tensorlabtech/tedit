@@ -1,6 +1,6 @@
 import { db } from "./db";
 import type { StylePack } from "./style-pack";
-import { GOC, findStylePack } from "./style-pack-catalog";
+import { BASE_PACK, findStylePack } from "./style-pack-catalog";
 
 /**
  * Đọc bộ dáng của một dự án — MỘT cổng duy nhất, và là cổng duy nhất chịu trách
@@ -25,5 +25,5 @@ export function readStylePack(projectId: string): StylePack {
     .get(projectId) as { style_pack: string | null } | undefined;
   // Dự án không tồn tại, cột chưa vá, hay tên rác trong CSDL — cả ba đều rơi về
   // bộ gốc. Thà ra dáng mặc định còn hơn dừng cả mạch vì một chuỗi lạ.
-  return row ? findStylePack(row.style_pack) : GOC;
+  return row ? findStylePack(row.style_pack) : BASE_PACK;
 }

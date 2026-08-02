@@ -190,7 +190,7 @@ export function MediaPickerDialog({
     }
   };
 
-  const chinh =
+  const primary =
     tab === "project"
       ? onUse && {
           nhan: useLabel ?? "Dùng tệp này",
@@ -345,10 +345,10 @@ export function MediaPickerDialog({
             >
               Đóng
             </Button>
-            {chinh && (
-              <Button onClick={chinh.lam} disabled={chinh.tat || dangLam}>
+            {primary && (
+              <Button onClick={primary.lam} disabled={primary.tat || dangLam}>
                 {dangLam ? <Spinner data-icon="inline-start" /> : null}
-                {chinh.nhan}
+                {primary.nhan}
               </Button>
             )}
           </div>

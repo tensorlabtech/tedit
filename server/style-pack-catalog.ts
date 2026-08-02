@@ -111,7 +111,7 @@ const BASE = {
  * Font là bản thay của `Arial Bold Italic`: Arial không phát hành kèm phần mềm
  * được và máy chủ Linux không có nó. Xem `reports/font-audit.md`.
  */
-export const GOC: StylePack = {
+export const BASE_PACK: StylePack = {
   ...BASE,
   id: "goc",
   label: "Mộc",
@@ -510,7 +510,7 @@ export const SANG_THEO_LOI: StylePack = {
 };
 
 export const STYLE_PACKS: StylePack[] = [
-  GOC,
+  BASE_PACK,
   CHU_HOA_VANG,
   NHAN_XANH,
   NET_THUA,
@@ -531,7 +531,7 @@ export const DEFAULT_STYLE_PACK_ID: StylePackId = "goc";
  * hơn dừng cả mạch vì một chuỗi lạ.
  */
 export function findStylePack(id: string | null | undefined): StylePack {
-  return STYLE_PACKS.find((pack) => pack.id === id) ?? GOC;
+  return STYLE_PACKS.find((pack) => pack.id === id) ?? BASE_PACK;
 }
 
 /**

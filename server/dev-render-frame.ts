@@ -18,13 +18,13 @@ import {
   type Band,
   type EmphasisId,
 } from "./text-layout";
-import { GOC } from "./style-pack-catalog";
+import { BASE_PACK } from "./style-pack-catalog";
 import { ffmpegColor } from "./style-pack";
 import { placeWords } from "./word-layout";
 
 const [content, align, emphasis, band, target, bgArg, ...keywords] =
   process.argv.slice(2);
-const pack = GOC;
+const pack = BASE_PACK;
 const fontPath = resolvePackFont(pack.font.file);
 const bgColor = bgArg && bgArg !== "-" ? bgArg : "#3a3a3a";
 

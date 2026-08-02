@@ -39,7 +39,7 @@ export type HinhStats = {
  * Trả `null` khi không đo được — tệp hỏng, thiếu luồng hình, ffmpeg đổi định
  * dạng in ra. Nơi gọi phải coi đó là "đừng chỉnh gì", không phải là lỗi.
  */
-export async function doHinh(path: string): Promise<HinhStats | null> {
+export async function measureImage(path: string): Promise<HinhStats | null> {
   try {
     const { stdout, stderr } = await run(
       "ffmpeg",
@@ -107,7 +107,7 @@ export type CanHinh = {
  * khi nâng sáng — nâng mà không lọc thì càng nâng càng thấy hạt. Video đủ
  * sáng thì lọc chỉ làm mất chi tiết da và tốn thời gian dựng.
  */
-export function canHinh(stats: HinhStats | null): CanHinh | null {
+export function gradeImage(stats: HinhStats | null): CanHinh | null {
   if (!stats) return null;
 
   const lyDo: string[] = [];
@@ -121,9 +121,9 @@ export function canHinh(stats: HinhStats | null): CanHinh | null {
     lyDo.push("hình hơi tối nên đã nâng sáng");
   }
 
-  const dai = stats.yMax - stats.yMin;
-  if (dai < 140) {
-    tuongPhan = 1 + Math.min(0.18, (140 - dai) / 700);
+  const spread = stats.yMax - stats.yMin;
+  if (spread < 140) {
+    tuongPhan = 1 + Math.min(0.18, (140 - spread) / 700);
     lyDo.push("sáng tối bết vào nhau nên đã tách ra");
   }
 

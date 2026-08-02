@@ -22,7 +22,7 @@
  * khai báo thì không có bản thứ hai để lệch — chép sang là tự tạo ra đúng thứ
  * `/_dev/overlays` sinh ra để bắt.
  */
-import { GOC } from "../../../server/style-pack-catalog";
+import { BASE_PACK } from "../../../server/style-pack-catalog";
 import { boxPadShare } from "../../../server/style-pack";
 import type { StylePack } from "../../../server/style-pack";
 
@@ -164,7 +164,7 @@ export function bandsOverlap(a: BandId, b: BandId) {
 }
 
 /** Bề rộng một chuỗi theo tỉ lệ khung, ở cỡ `size`. */
-export const widthOf = (text: string, size: number, pack: StylePack = GOC) =>
+export const widthOf = (text: string, size: number, pack: StylePack = BASE_PACK) =>
   (baseWidth(text, pack) / BASE_SIZE) * size;
 
 /**
@@ -224,7 +224,7 @@ export type Fitted = {
 export function fitGroup(
   text: string,
   avail: number,
-  pack: StylePack = GOC,
+  pack: StylePack = BASE_PACK,
 ): Fitted {
   const maxScale = pack.density.maxScale;
   const words = text.trim().split(/\s+/).filter(Boolean);
@@ -258,7 +258,7 @@ export function fitGroup(
 export function splitGroup(
   text: string,
   avail = 0.9,
-  pack: StylePack = GOC,
+  pack: StylePack = BASE_PACK,
   depth = 0,
 ): string[] {
   const words = text.trim().split(/\s+/).filter(Boolean);
@@ -292,7 +292,7 @@ export function fitRow(
   text: string,
   avail: number,
   rows: number,
-  pack: StylePack = GOC,
+  pack: StylePack = BASE_PACK,
 ) {
   // Chia theo số hàng để cả khối không cao quá nửa khung.
   const byHeight = pack.density.maxScale * (rows > 2 ? 0.7 : rows > 1 ? 0.85 : 1);

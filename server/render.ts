@@ -243,13 +243,13 @@ export async function cutRanges(
    * `kept` gốc KHÔNG được đụng tới — mọi phép quy mốc chữ, tư liệu và nhạc đều
    * đọc nó, sửa ở đây là lệch hết. Bảng dưới chỉ sống trong hàm này.
    */
-  const bien = kept.map((range) => ({ ...range }));
+  const bounds = kept.map((range) => ({ ...range }));
   for (const [sau, item] of cross) {
-    bien[sau].end += item.dem;
-    bien[sau + 1].start -= item.dem;
+    bounds[sau].end += item.dem;
+    bounds[sau + 1].start -= item.dem;
   }
 
-  const parts = bien
+  const parts = bounds
     .map((range, index) => {
       // Vuốt 8ms ở hai đầu mỗi mẩu tiếng.
       //
@@ -301,46 +301,46 @@ export async function cutRanges(
    *
    * Ranh giới không có chuyển cảnh vẫn dùng `concat`, chỉ là dạng hai luồng.
    */
-  const noi: string[] = [];
+  const joins: string[] = [];
   let vTruoc = "[v0]";
   let aTruoc = "[a0]";
-  let dai = bien[0].end - bien[0].start;
+  let duration = bounds[0].end - bounds[0].start;
 
-  for (let index = 1; index < bien.length; index++) {
+  for (let index = 1; index < bounds.length; index++) {
     const item = cross.get(index - 1);
-    const vRa = index === bien.length - 1 ? "[vout]" : `[vc${index}]`;
-    const aRa = index === bien.length - 1 ? "[aout]" : `[ac${index}]`;
-    const daiNay = bien[index].end - bien[index].start;
+    const vRa = index === bounds.length - 1 ? "[vout]" : `[vc${index}]`;
+    const aRa = index === bounds.length - 1 ? "[aout]" : `[ac${index}]`;
+    const daiNay = bounds[index].end - bounds[index].start;
 
     if (item) {
       const d = item.dem * 2;
       // `offset` đo từ đầu luồng TRÁI: hoà bắt đầu sớm hơn mép cuối đúng bằng
       // thời lượng hoà, để nó kết thúc vừa lúc luồng trái hết.
-      const offset = Math.max(0, dai - d);
-      noi.push(
+      const offset = Math.max(0, duration - d);
+      joins.push(
         `${vTruoc}[v${index}]xfade=transition=${item.transition}:` +
           `duration=${d.toFixed(3)}:offset=${offset.toFixed(3)}${vRa}`,
       );
-      noi.push(`${aTruoc}[a${index}]acrossfade=d=${d.toFixed(3)}${aRa}`);
+      joins.push(`${aTruoc}[a${index}]acrossfade=d=${d.toFixed(3)}${aRa}`);
       // Gối nhau `d` giây nên tổng ngắn đi đúng `d` — và `d` cũng đúng bằng
       // phần vừa mượn thêm ở hai bên. Hai số triệt tiêu nhau, độ dài không đổi.
-      dai = dai + daiNay - d;
+      duration = duration + daiNay - d;
     } else {
-      noi.push(`${vTruoc}[v${index}]concat=n=2:v=1:a=0${vRa}`);
-      noi.push(`${aTruoc}[a${index}]concat=n=2:v=0:a=1${aRa}`);
-      dai += daiNay;
+      joins.push(`${vTruoc}[v${index}]concat=n=2:v=1:a=0${vRa}`);
+      joins.push(`${aTruoc}[a${index}]concat=n=2:v=0:a=1${aRa}`);
+      duration += daiNay;
     }
     vTruoc = vRa;
     aTruoc = aRa;
   }
 
   // Một đoạn duy nhất thì không có gì để nối — vẫn phải đặt tên đầu ra.
-  if (bien.length === 1) {
-    noi.push("[v0]null[vout]", "[a0]anull[aout]");
+  if (bounds.length === 1) {
+    joins.push("[v0]null[vout]", "[a0]anull[aout]");
   }
 
   const scriptPath = join(workDir(projectId), "cut-filter.txt");
-  await writeFile(scriptPath, `${parts};${noi.join(";")}`, "utf8");
+  await writeFile(scriptPath, `${parts};${joins.join(";")}`, "utf8");
 
   await ffmpeg([
     "-i",

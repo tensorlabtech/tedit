@@ -2,7 +2,7 @@
  * Kiểm VỐN TỪ CHUYỂN CẢNH: mỗi kiểu phải dựng được chuỗi lọc mà ffmpeg chạy
  * trót lọt.
  *
- *   npx tsx scripts/kiem-junction.ts
+ *   npx tsx scripts/check-junction.ts
  *
  * ── Vì sao KHÔNG kiểm luôn "hình có đổi không" ──
  *

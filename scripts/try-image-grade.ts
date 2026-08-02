@@ -1,7 +1,7 @@
 /**
  * Thử bộ TỰ CÂN HÌNH trên các tệp thật trong `server/data`.
  *
- *   npx tsx scripts/thu-can-hinh.ts
+ *   npx tsx scripts/try-image-grade.ts
  *
  * In ra số đo, quyết định, và xuất một ảnh so trước/sau để nhìn tận mắt —
  * vì "sáng hơn 8%" trên giấy không nói được nó có đẹp hơn hay không.
@@ -11,7 +11,7 @@ import { readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
-import { autoGradeFilter, canHinh, doHinh } from "../server/auto-grade";
+import { autoGradeFilter, gradeImage, measureImage } from "../server/auto-grade";
 
 const run = promisify(execFile);
 const ROOT = "server/data/projects";
@@ -29,12 +29,12 @@ async function main() {
   console.log(`${files.length} tệp\n`);
 
   for (const path of files.slice(0, 6)) {
-    const stats = await doHinh(path);
+    const stats = await measureImage(path);
     if (!stats) {
       console.log(`${path.split("/").pop()}  — không đo được`);
       continue;
     }
-    const can = canHinh(stats);
+    const can = gradeImage(stats);
     const chain = autoGradeFilter(can);
     console.log(`${path.split("/").pop()}`);
     console.log(
@@ -47,7 +47,7 @@ async function main() {
 
   // Xuất ảnh so trước/sau của tệp đầu tiên có chỉnh
   for (const path of files) {
-    const can = canHinh(await doHinh(path));
+    const can = gradeImage(await measureImage(path));
     const chain = autoGradeFilter(can);
     if (!chain) continue;
     const out = "/tmp/can-hinh-so.png";

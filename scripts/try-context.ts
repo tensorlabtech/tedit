@@ -1,7 +1,7 @@
 /**
  * In ra lời nhắc THẬT mà mỗi chặng AI nhận, để đọc bằng mắt.
  *
- *   npx tsx scripts/thu-boi-canh.ts
+ *   npx tsx scripts/try-context.ts
  *
  * Lời nhắc là thứ quyết định chất lượng mọi chặng chọn lựa, mà nó lại vô hình:
  * không có màn nào bày ra, không có test nào đọc. In ra là cách rẻ nhất để

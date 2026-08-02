@@ -1,4 +1,4 @@
-import { GOC } from "../../../server/style-pack-catalog";
+import { BASE_PACK } from "../../../server/style-pack-catalog";
 import {
   cssColor,
   styleCase,
@@ -90,7 +90,7 @@ export const availOf = (band: BandId) => (band === "top" ? 0.78 : 0.71);
  * chỗ đứng thì hai lựa chọn của người dùng dính vào nhau, và đổi một cái thì cái
  * kia thành gì không ai đoán được.
  */
-export function buildRows(config: OverlayConfig, pack: StylePack = GOC): Row[] {
+export function buildRows(config: OverlayConfig, pack: StylePack = BASE_PACK): Row[] {
   const COLOR = {
     main: cssColor(pack.color.main),
     key: cssColor(pack.color.key),
@@ -360,7 +360,7 @@ function Syllable({
  */
 export function OverlayTextBlock({
   config,
-  pack = GOC,
+  pack = BASE_PACK,
   seconds,
   ring,
   wordStarts,
@@ -473,7 +473,7 @@ export function OverlayTextBlock({
 
 export function OverlayRender({
   config,
-  pack = GOC,
+  pack = BASE_PACK,
   seconds,
   showSafeArea = true,
   background,

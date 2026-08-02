@@ -3,7 +3,7 @@ import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
-import { autoAudioFilter, canTieng, doTieng } from "../server/auto-audio";
+import { autoAudioFilter, levelAudio, measureAudio } from "../server/auto-audio";
 
 const run = promisify(execFile);
 
@@ -53,10 +53,10 @@ async function main() {
   let xet = 0;
 
   for (const tep of teps) {
-    const truoc = await doTieng(tep);
+    const truoc = await measureAudio(tep);
     if (!truoc) { console.log(`— ${tep}: không đo được`); continue; }
 
-    const can = canTieng(truoc);
+    const can = levelAudio(truoc);
     if (!can) {
       console.log(`✓ ${tep.split("/").pop()}: ${truoc.lufs.toFixed(1)} LUFS — đã đạt, không chỉnh`);
       continue;
@@ -68,7 +68,7 @@ async function main() {
       "-i", tep, "-af", chain, "-c:a", "aac", "-b:a", "192k", "-y", tmp],
       { timeout: 120_000 });
 
-    const sau = await doTieng(tmp);
+    const sau = await measureAudio(tmp);
     xet++;
     const lech = sau ? Math.abs(sau.lufs - -14) : 99;
     // Sai số 1,5 dB là ngưỡng tai bắt đầu nghe ra chênh lệch.

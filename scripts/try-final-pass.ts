@@ -2,9 +2,9 @@
  * Dựng THẬT một đoạn ngắn qua đúng đường mà bản xuất đi qua, rồi so hai bản:
  * có tự cân hình và không.
  *
- *   npx tsx scripts/thu-cuoi-cung.ts
+ *   npx tsx scripts/try-final-pass.ts
  *
- * Khác `thu-can-hinh.ts` ở chỗ: bản kia chỉ áp bộ lọc lên một khung, bản này
+ * Khác `try-image-grade.ts` ở chỗ: bản kia chỉ áp bộ lọc lên một khung, bản này
  * chạy cả chuỗi — nắn màu bộ dáng, hiệu ứng chỗ nối, tự cân hình — để bắt lỗi
  * thứ tự nối chuỗi mà một khung đơn lẻ không lộ ra.
  */
@@ -13,7 +13,7 @@ import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
-import { autoGradeFilter, canHinh, doHinh } from "../server/auto-grade";
+import { autoGradeFilter, gradeImage, measureImage } from "../server/auto-grade";
 import { JUNCTION_SPECS } from "../server/junction-kinds";
 import { junctionFilter } from "../server/render";
 
@@ -32,7 +32,7 @@ async function main() {
   if (!nguon) return console.log("không có tệp nào để thử");
   console.log(`nguồn: ${nguon}\n`);
 
-  const canh = canHinh(await doHinh(nguon));
+  const canh = gradeImage(await measureImage(nguon));
   const tuCan = autoGradeFilter(canh);
   console.log(`tự cân hình: ${canh ? canh.lyDo.join(" · ") : "không cần"}`);
 
