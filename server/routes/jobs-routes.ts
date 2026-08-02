@@ -1,0 +1,72 @@
+import type { FastifyInstance } from "fastify";
+import { db } from "../db";
+import {
+  enqueue,
+  queuePosition,
+} from "../job-queue";
+import { retryAiStep, runExport, runTranscribe, setJob } from "../pipeline";
+
+export default async function jobsRoutes(app: FastifyInstance) {
+app.post("/api/projects/:id/transcribe", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const outcome = enqueue(id, "transcribe", () => runTranscribe(id));
+  if (outcome === "duplicate") {
+    return reply.code(409).send({ error: "Đang chép lời rồi" });
+  }
+  // `queued` KHÔNG phải lỗi: việc đã nhận, chỉ là máy đang bận. Trả 409 ở đây
+  // thì người dùng đọc ra "hỏng rồi, bấm lại đi" và bấm lại thật.
+  return reply.code(202).send({ status: outcome === "queued" ? "queued" : "running" });
+});
+
+/**
+ * Chạy lại từ một chặng.
+ *
+ * Dùng chung ngăn việc `transcribe`: chạy lại một chặng giữa lúc cả mạch đang chạy
+ * thì hai bên ghi lên cùng một bảng chặng và kết quả đọc ra lộn xộn.
+ */
+app.post("/api/projects/:id/steps/:key/retry", async (request, reply) => {
+  const { id, key } = request.params as { id: string; key: string };
+  const outcome = enqueue(id, "transcribe", async () => {
+      // Chặng đầu (`prepare`, `transcribe`, `captions`) không chạy lẻ được — chúng
+      // đẻ ra dữ liệu mà mọi chặng sau dựa vào. Nhưng nút Thử lại VẪN hiện ở đó, và
+      // trước đây bấm vào chỉ nhận 400 rồi chẳng gì xảy ra: một cái nút chết ở đúng
+      // chỗ người dùng đang bị chặn. Dựng lại cả mạch là đường duy nhất còn lại, và
+      // lúc ấy không mất gì của người dùng — bàn dựng vẫn đang khoá vì chặng bắt
+      // buộc đang hỏng.
+      if (await retryAiStep(id, key)) {
+        // ĐÓNG việc lại. `startJob` chỉ mở nó ra; chặng `transcribe` bình thường tự
+        // gọi `setJob(..., "done")` ở cuối, còn phép chạy lẻ này thì không — và việc
+        // treo ở "running" chặn mọi lượt `startJob` sau đó bằng 409, kể cả nút Thử
+        // lại lần hai và cả lượt xuất video. Đo thật: chặng chạy xong từ lâu mà việc
+        // vẫn "running · Đang xếp hàng".
+        setJob(id, "transcribe", "done", 100, "Xong");
+        return;
+      }
+      await runTranscribe(id);
+  });
+  if (outcome === "duplicate") {
+    return reply.code(409).send({ error: "Đang có việc chạy rồi" });
+  }
+  return reply.code(202).send({ status: outcome === "queued" ? "queued" : "running" });
+});
+
+app.post("/api/projects/:id/export", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const outcome = enqueue(id, "export", () => runExport(id));
+  if (outcome === "duplicate") {
+    return reply.code(409).send({ error: "Đang xuất video rồi" });
+  }
+  return reply.code(202).send({ status: outcome === "queued" ? "queued" : "running" });
+});
+
+app.get("/api/projects/:id/jobs/:kind", async (request, reply) => {
+  const { id, kind } = request.params as { id: string; kind: string };
+  const job = db
+    .prepare("SELECT * FROM jobs WHERE project_id=? AND kind=?")
+    .get(id, kind) as Record<string, unknown> | undefined;
+  if (!job) return reply.code(404).send({ error: "Chưa chạy việc này" });
+  // Đứng thứ mấy — CHỈ một con số, không kèm mã dự án hay ai đứng trước. Đây là
+  // route mọi người dùng đều gọi được cho dự án của mình.
+  return { ...job, queuePosition: queuePosition(id, kind) };
+});
+}
