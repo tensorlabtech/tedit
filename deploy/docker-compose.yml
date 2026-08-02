@@ -1,4 +1,6 @@
-# Tedit trên máy chủ dùng chung.
+# Tedit trên máy chủ dùng chung — 30 container của nhiều dự án khác nhau trên
+# đúng 4 core và 7,8 GB. Đọc phần `cpus`/`mem_limit` dưới trước khi nới bất cứ
+# con số nào ở đây.
 #
 # Chỉ MỘT dịch vụ: Fastify vừa chạy API vừa phục vụ trang đã dựng. Không có cơ
 # sở dữ liệu riêng — Tedit dùng SQLite, nằm trong volume `tedit_data` cùng chỗ
@@ -27,6 +29,27 @@ services:
     container_name: tedit_app
     restart: unless-stopped
     env_file: ../.env
+    # VPS DÙNG CHUNG với RẤT NHIỀU thứ khác — không có trần thì một lượt xuất
+    # video kéo sập cả máy.
+    #
+    # Đo thật trên máy chủ (02/08/2026): 4 core, 7,8 GB RAM, **30 container** —
+    # tedit, tensorlab, taxdesk, museum, cad-auto, chatbot/langfuse, tensorship,
+    # vas-printing. Lúc rảnh đã dùng 3,1 GB và **swap đã ăn 1,5 GB**, tức là máy
+    # vốn đã chật chứ không phải còn rộng. Load 15 phút ~0,8.
+    #
+    # Và KHÔNG container nào khác có trần bộ nhớ. Nên trần ở đây không phải để
+    # tedit khỏi bị thiệt — nó là để tedit đừng thành thứ kích hoạt OOM killer,
+    # vì lúc ấy nhân hệ điều hành chọn nạn nhân theo dung lượng chứ không theo
+    # "ai vừa gây ra chuyện".
+    #
+    # 2,5 GB đủ cho MỘT lượt máy nghe (`int8` ~1,5–2 GB) cộng Node và ffmpeg, mà
+    # vẫn chừa hơn 2 GB cho hai mươi chín container kia.
+    #
+    # 2 core: nền ~1 core, nên lúc tedit chạy hết sức thì tổng ~3/4 core, còn dư
+    # một core cho mọi thứ khác. Xác nhận lại bằng `docker stats` sau lượt deploy
+    # đầu có một video đang xuất.
+    cpus: "2.0"
+    mem_limit: 2500m
     environment:
       NODE_ENV: production
       PORT: 5190
@@ -35,6 +58,19 @@ services:
       HOST: 0.0.0.0
       TEDDIT_DATA_ROOT: /data
       HF_HOME: /model-cache
+      # MỘT việc nặng một lúc trên máy này.
+      #
+      # Với 2,5 core thì hai lượt song song làm cả hai cùng bò, và bộ nhớ nhân
+      # đôi vì mỗi lượt máy nghe chiếm 1,5–2 GB. Một việc xong trong mười phút
+      # hơn hai việc cùng xong trong hai mươi lăm. Đổi máy to hơn thì nâng số
+      # này, không phải sửa mã.
+      TEDDIT_MAX_JOBS: 1
+      # Số luồng cho máy nghe và cho ffmpeg.
+      #
+      # PHẢI khai tay: `os.cpu_count()` trong container trả về số core của MÁY
+      # CHỦ (4), không đọc hạn mức `cpus` ở trên. Để mặc định thì bốn luồng tranh
+      # nhau 2,5 core, cgroup bóp lại, và kết quả chậm hơn cả lúc chưa đặt trần.
+      TEDDIT_WORKER_THREADS: 2
     volumes:
       # Dữ liệu người dùng: CSDL, video tải lên, bản dựng. Mất volume này là mất
       # tất cả — không có gì tái tạo lại được.
@@ -45,10 +81,14 @@ services:
     # KHÔNG `ports:` — cổng 5190 chỉ mạng Docker nội bộ thấy. Đường vào duy nhất
     # là qua edge Caddy, nơi đã có HTTPS của Cloudflare ở phía trước.
     healthcheck:
-      # Trang chủ, không phải một route API: route API đòi đăng nhập nên trả 401,
-      # mà 401 vẫn là "máy chủ sống" — dùng nó thì healthcheck không phân biệt
-      # được máy chủ chết với máy chủ chỉ từ chối.
-      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:5190/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      # `/api/health` kiểm CSDL, ffmpeg/ffprobe/magick và quyền ghi thư mục dữ
+      # liệu, rồi trả 503 nếu có cái nào hỏng.
+      #
+      # Trước đây gọi `/` — nhưng đó là `index.html` tĩnh, nên CSDL hỏng hay
+      # ffmpeg biến khỏi PATH thì container vẫn xanh trong khi mọi thao tác đều
+      # gãy. Route này không đòi đăng nhập (xem `server/auth-guard.ts`), nên nó
+      # phân biệt được "chết" với "chỉ từ chối" mà không cần phiên nào.
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:5190/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 30s
       timeout: 10s
       # Lượt khởi động đầu phải tải mô hình nghe trước khi nhận việc — cho nó

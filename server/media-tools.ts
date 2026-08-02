@@ -258,8 +258,23 @@ export async function makeFilmstrip(
   };
 }
 
+/**
+ * Số luồng cho ffmpeg — cùng nguồn với số luồng của máy nghe.
+ *
+ * ffmpeg để mặc định sẽ mở luồng theo số core NHÌN THẤY, mà trong container đó
+ * là số core của máy chủ chứ không phải hạn mức `cpus` của cgroup. Thừa luồng
+ * không cho thêm tốc độ, chỉ cho thêm nhịp bị cgroup bóp — và trên VPS dùng
+ * chung thì phần bóp ấy lấy đi của stack bên cạnh.
+ *
+ * Chưa đặt thì để rỗng và ffmpeg tự quyết, giữ nguyên hành vi cũ ở máy phát
+ * triển.
+ */
+const WORKER_THREADS = process.env.TEDDIT_WORKER_THREADS?.trim();
+
 export const ffmpeg = (args: string[]) =>
-  run("ffmpeg", args, { maxBuffer: 32 * 1024 * 1024 });
+  run("ffmpeg", WORKER_THREADS ? ["-threads", WORKER_THREADS, ...args] : args, {
+    maxBuffer: 32 * 1024 * 1024,
+  });
 
 /**
  * Mặt nạ hình chữ nhật BO GÓC — trắng ở trong, đen ở ngoài.

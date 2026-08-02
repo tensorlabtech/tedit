@@ -55,8 +55,12 @@ fi
 
 say "Chờ máy chủ nhận việc"
 # Lượt đầu phải tải mô hình nghe (~1,5 GB) nên chờ lâu hơn nhiều so với cảm giác.
+#
+# Hỏi `/api/health` chứ không hỏi `/`: `/` là `index.html` tĩnh nên nó trả 200
+# kể cả khi CSDL không mở được hay ffmpeg biến khỏi PATH — deploy sẽ báo thành
+# công rồi người dùng đầu tiên mới phát hiện ra mọi thao tác đều gãy.
 for i in $(seq 1 60); do
-	if docker exec tedit_app node -e "fetch('http://127.0.0.1:5190/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" 2>/dev/null; then
+	if docker exec tedit_app node -e "fetch('http://127.0.0.1:5190/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" 2>/dev/null; then
 		echo "  ✓ sống sau $((i * 5))s"
 		break
 	fi

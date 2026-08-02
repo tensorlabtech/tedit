@@ -110,12 +110,21 @@ def chay_faster(audio_path: str, language: str, prompt: str) -> dict:
     """
     from faster_whisper import WhisperModel
 
-    so_luong = os.cpu_count() or 4
+    # `TEDDIT_WORKER_THREADS` trước, `os.cpu_count()` chỉ là đường lùi.
+    #
+    # Trong container, `os.cpu_count()` trả về số core của MÁY CHỦ, không đọc hạn
+    # mức `cpus` của cgroup. Máy chủ có 4 core mà container chỉ được 2,5 thì bốn
+    # luồng tranh nhau phần ấy: cgroup bóp lại từng nhịp, và tổng thời gian tệ
+    # hơn cả lúc chưa đặt trần. Số luồng phải khai từ bên ngoài vì chỉ bên ngoài
+    # mới biết hạn mức thật là bao nhiêu.
+    thread_count = int(os.environ.get("TEDDIT_WORKER_THREADS") or 0) or (
+        os.cpu_count() or 4
+    )
     model = WhisperModel(
         MODEL_FASTER,
         device="cpu",
         compute_type="int8",
-        cpu_threads=so_luong,
+        cpu_threads=thread_count,
     )
     segments, info = model.transcribe(
         audio_path,
