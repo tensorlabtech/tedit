@@ -7,6 +7,7 @@ import {
 } from "./junction-kinds";
 import { existsSync } from "node:fs";
 import { rename, writeFile } from "node:fs/promises";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -92,13 +93,31 @@ export type RenderElement = {
   wordStarts?: number[];
 };
 
-/** Escape cho drawtext: dấu nháy, hai chấm, phần trăm và gạch chéo đều là ký tự điều khiển. */
-function escapeDrawText(value: string) {
-  return value
-    .replace(/\\/g, "\\\\")
-    .replace(/'/g, "’")
-    .replace(/:/g, "\\:")
-    .replace(/%/g, "\\%");
+/**
+ * Đưa chữ người dùng vào `drawtext` qua MỘT TỆP, không qua tham số `text`.
+ *
+ * Vì sao đổi: phép escape cũ đổi dấu nháy `'` thành `’` — lặng lẽ sửa chữ người
+ * dùng gõ. `don't` in ra thành `don’t` và không ai báo gì.
+ *
+ * Nội dung ghi THÔ, không escape gì cả. Đo thật trên đúng đường vẽ này
+ * (`burnElements` → so từng khung):
+ *
+ * - Chữ KHÔNG có dấu nháy: khung y hệt bản cũ, SSIM 1.000000. Sàn nhiễu đo được
+ *   cũng đúng 1.000000, nên con số đó là bằng thật chứ không phải làm tròn.
+ * - Chữ CÓ dấu nháy: khác đúng ở chỗ dấu nháy, và khác theo hướng đúng.
+ * - Ghi `\%` vào tệp thì LỆCH 801 điểm ảnh ở mép nét chữ. `drawtext` đọc từ tệp
+ *   không áp cùng lớp khai triển như đọc từ `text=`, nên escape ở đây là thêm ký
+ *   tự thừa chứ không phải giữ an toàn.
+ * - `expansion=none` cũng lệch đúng 801 điểm ảnh ấy. Không dùng: đường vẽ chính
+ *   không phải chỗ nhận một thay đổi chưa giải thích được.
+ *
+ * Tên tệp mang số thứ tự để hai lệnh `drawtext` cùng khung không đè nhau; tất cả
+ * nằm dưới `work/` nên đi cùng lượt dọn của thư mục đó.
+ */
+function textFileFor(projectId: string, id: string, value: string) {
+  const path = join(workDir(projectId), `text-${id}.txt`);
+  writeFileSync(path, value, "utf8");
+  return path;
 }
 
 /**
@@ -944,6 +963,9 @@ export async function burnElements(
   // lệnh mỗi DÒNG) cho nhẹ, nhưng vẽ cả dòng bằng một lệnh thì không cách nào
   // cho từng tiếng hiện lần lượt — mà đó lại là kiểu chữ của cả hệ này.
   const draws: string[] = [];
+  // Số thứ tự phẳng cho tên tệp chữ — chỉ cần duy nhất trong một lượt dựng.
+  let textFileSeq = 0;
+
   for (const text of texts) {
     // Bộ dáng HIỆU LỰC của riêng cụm này: bộ của dự án, cộng phần nó tự đè.
     // Mọi phép đo và mọi biểu thức phía dưới đều chạy theo bộ này.
@@ -997,8 +1019,11 @@ export async function burnElements(
         ? `box=1:boxcolor=${ffmpegColor(shown.box.tone)}:` +
           `boxborderw=${boxBorderW(word.fontSize, shown)}:`
         : "";
+      // MỘT tệp cho mỗi tiếng, dùng chung cho cả lượt vẽ thường lẫn lượt vẽ
+      // sáng — hai lượt vẽ ĐÚNG một chữ, nên hai tệp là hai chỗ để lệch.
+      const wordTextFile = textFileFor(projectId, String(textFileSeq++), word.text);
       const body =
-        `fontfile='${fontPath}':text='${escapeDrawText(word.text)}':` +
+        `fontfile='${fontPath}':textfile='${wordTextFile}':` +
         `fontsize=${word.fontSize}:x='${spot.x}':y='${spot.y}':` +
         edge +
         box;
@@ -1034,7 +1059,7 @@ export async function burnElements(
             `boxborderw=${boxBorderW(word.fontSize, shown)}:`
           : box;
         const litBody =
-          `fontfile='${fontPath}':text='${escapeDrawText(word.text)}':` +
+          `fontfile='${fontPath}':textfile='${wordTextFile}':` +
           `fontsize=${word.fontSize}:x='${spot.x}':y='${spot.y}':` +
           edge +
           litBox;
