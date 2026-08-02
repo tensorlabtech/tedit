@@ -179,12 +179,24 @@ bộ, không riêng Tedit.
 
 ## Cần để mắt
 
-- **Đĩa server 80%** (30 GB trống). `docker system df` cho thấy ~72 GB image có
-  thể thu hồi, nhưng ĐỪNG `docker system prune -a` — các stack khác giữ ảnh
-  `:rollback` trong đó. Muốn dọn thì xoá đích danh.
-- **RAM 4 GB khả dụng, swap 2 GB.** Mô hình nghe chiếm ~2 GB lúc chép lời. Nếu
-  container bị OOM-kill giữa lượt chép, đó là chỗ đầu tiên cần nhìn.
+Đo lại 02/08/2026 (`nproc`, `free -h`, `df -h`, `docker stats`):
+
+- **4 core · 7,8 GB RAM · 145 GB đĩa · 30 container.** Không phải bảy dự án như
+  ghi ở trên — đếm thật ra tedit, tensorlab, taxdesk, museum, cad-auto,
+  chatbot/langfuse, tensorship, vas-printing.
+- **Đĩa 42%** (85 GB trống) — con số 80%/30 GB ở bản trước đã cũ, ai đó đã dọn.
+  Vẫn ĐỪNG `docker system prune -a`: các stack khác giữ ảnh `:rollback` trong đó.
+- **RAM 4,7 GB khả dụng, mà swap ĐÃ ăn 1,5 GB.** Máy vốn đã chật chứ không rộng.
+  Mô hình nghe chiếm ~2 GB lúc chép lời. Container bị OOM-kill giữa lượt chép thì
+  đây là chỗ nhìn đầu tiên.
+- **Chỉ `tedit_app` có trần tài nguyên** (`cpus: 2.0`, `mem_limit: 2500m` trong
+  `deploy/docker-compose.yml`); hai mươi chín container kia không có trần nào.
+  Nên trần ấy không phải để tedit khỏi bị thiệt — nó là để tedit đừng thành thứ
+  kích hoạt OOM killer, vì lúc đó nhân chọn nạn nhân theo dung lượng chứ không
+  theo "ai vừa gây ra chuyện".
 - **Ảnh 2,7 GB.** Mỗi lượt deploy giữ thêm một ảnh `:rollback`.
+- **ffmpeg 5.1.9** (Debian 12). Máy phát triển dùng bản mới hơn — mọi filter mới
+  phải thử trên server, xem mục "Chạy thử trọn luồng" ở trên.
 
 ## Việc phải làm tay một lần (nếu đăng nhập Google hỏng)
 
