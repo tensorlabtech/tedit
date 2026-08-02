@@ -11,6 +11,7 @@ npm run build            # tsc + vite build
 npm run lint
 npm run check:ownership  # kiểm luật phân quyền trên CSDL tạm
 npm run check:style-pack # kiểm bất biến của bộ dáng chữ trên CSDL tạm
+npm run check:all        # cả bốn lệnh trên — đúng thứ CI chạy
 ```
 
 Mở `http://localhost:5173`. Chưa đăng nhập thì mọi đường dẫn đều chuyển về
@@ -209,20 +210,69 @@ Cần sẵn `ffmpeg`, `ffprobe`, `magick` trong PATH.
 
 ## Đưa lên máy chủ
 
-Chạy thật ở <https://tedit.tensorlab.tech> — Ubuntu, Caddy đứng trước Fastify.
+Chạy thật ở <https://tedit.tensorlab.tech> — Docker trên Ubuntu, edge Caddy
+(`vas-printing-edge-1`) đứng trước và dùng chung VPS với stack khác.
+
+Quy trình đầy đủ ở `.claude/skills/deploy/SKILL.md`. Tóm tắt hai bước:
 
 ```bash
-# trên máy chủ, chạy một lần
-sudo REPO=<địa-chỉ-git> bash deploy/setup-ubuntu.sh
+# 1. Đẩy mã — từ MÁY PHÁT TRIỂN, đứng ở gốc repo, trên `main`.
+#    Chạy một mình, đừng nối `&&` với lệnh khác ở phía máy local.
+git archive --format=tar HEAD | ssh root@154.26.136.134 'cd /root/projects/tedit \
+  && find . -mindepth 1 -maxdepth 1 ! -name ".env" ! -name ".env.bak.*" -exec rm -rf {} + \
+  && tar x -C /root/projects/tedit'
 
-# mỗi lần ra bản mới
-sudo bash /srv/tedit/deploy/update.sh
+# 2. Dựng và khởi động — TRÊN máy chủ, mất 3–8 phút
+ssh root@154.26.136.134 'cd /root/projects/tedit && bash deploy/deploy.sh'
+
+# bản mới hỏng thì lùi về ảnh của lượt trước
+ssh root@154.26.136.134 'cd /root/projects/tedit && bash deploy/rollback.sh'
 ```
 
-`setup-ubuntu.sh` cài Node 22, ffmpeg, ImageMagick, Caddy, tạo người dùng
-`tedit`, dựng swap, cài môi trường nghe, sinh `.env` với khoá phiên ngẫu nhiên và
-đăng ký dịch vụ. Xong nó in ra ba việc phải làm bằng tay: trỏ bản ghi A, điền
-`.env`, khai đường quay về cho Google OAuth.
+**`git archive` chứ không `git pull`, và máy chủ KHÔNG có `.git`.** Repo là private
+mà tổ chức tắt deploy key, nên đường còn lại là đặt token lên máy chủ — máy này
+dùng chung cho bảy dự án nên một token đọc-được-mọi-repo nằm ở đó không đáng.
+`git archive` gửi đúng nội dung một commit, không cần credential nào trên server.
+Đổi lại: muốn biết server đang chạy bản nào thì xem
+`docker images tedit --format "{{.CreatedAt}}"`, không hỏi git được.
+
+**Phải dọn trước khi giải nén.** `tar x` chỉ ghi đè chứ không xoá tệp đã biến mất
+khỏi commit. Bỏ bước `find … rm` thì tệp đã gỡ vẫn sống trên server — đã dính
+đúng lỗi này một lần.
+
+`deploy.sh` gắn thẻ `tedit:rollback` cho ảnh đang chạy **trước** khi dựng ảnh mới,
+`docker compose build && up -d`, nối container vào mạng của edge Caddy rồi chờ
+`/api/health` trả 200 mới báo xong. Lượt đầu chờ lâu vì phải tải mô hình nghe
+(~1,5 GB).
+
+`rollback.sh` chỉ đổi ảnh, **không đụng volume** — dữ liệu người dùng không thuộc
+về bản dựng nào cả.
+
+Lượt đầu trên một máy mới phải làm tay: cài Docker, tạo `/root/projects/tedit`,
+chép `.env.example` sang `.env` rồi điền (xem mục **Đăng nhập**), trỏ bản ghi A,
+và khai đường quay về cho Google OAuth.
+
+Hai chỗ đáng biết trong `deploy/docker-compose.yml`:
+
+- **Tên stack khai tường minh là `tedit`.** Bỏ trống thì Docker lấy tên thư mục
+  (`deploy`), mạng thành `deploy_default`, và edge Caddy nối vào `tedit_default`
+  sẽ không tìm thấy gì — lỗi ấy chỉ lộ ra ở bước cuối khi trang trả 502.
+- **Không có `ports:`.** Cổng 5190 chỉ mạng Docker nội bộ thấy; đường vào duy nhất
+  là qua edge Caddy.
+
+### Máy chủ còn sống không
+
+```bash
+curl -s https://tedit.tensorlab.tech/api/health
+```
+
+Không đòi đăng nhập, và kiểm ba thứ mà `/` không kiểm được: CSDL mở được, có đủ
+`ffmpeg`/`ffprobe`/`magick`, và thư mục dữ liệu ghi được. Hỏng cái nào thì trả
+`503` kèm tên phép kiểm — healthcheck của Docker dùng chính đường này.
+
+`diskUsedPercent` và `diskLow` là **số để nhìn**, không kéo `ok` xuống: đĩa 90% thì
+máy chủ vẫn chép lời và vẫn xuất video được, nên đánh nó thành hỏng chỉ tổ mời
+người khác khởi động lại một máy đang khoẻ. Cảnh báo đi đường nhật ký.
 
 **Máy chủ nghe bằng thư viện khác máy Mac.** mlx-whisper tính trên chip Metal của
 Apple nên không cài được trên x86; `server/asr/transcribe.py` tự nhận ra và đổi
