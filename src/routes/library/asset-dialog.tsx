@@ -96,6 +96,7 @@ export function AssetDialog({
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
                 spellCheck={false}
+                disabled={!asset.mine}
               />
               <FieldDescription>
                 Tên máy sinh ra thì dài và không nói gì — đặt lại một cái tên
@@ -111,6 +112,7 @@ export function AssetDialog({
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
                 placeholder="Ví dụ: bàn tay đang gõ bàn phím cơ trên bàn gỗ"
+                disabled={!asset.mine}
               />
               {/* Đỏ theo Ô ĐANG GÕ, không theo giá trị đã lưu. Bản trước đọc
                   `asset.description` nên gõ xong chữ vẫn đỏ nguyên — người dùng
@@ -137,8 +139,14 @@ export function AssetDialog({
             />
             {asset.starred ? "Bỏ đánh dấu" : "Đánh dấu"}
           </Button>
+          {/* Kho là của chung để DÙNG, không phải để sửa của nhau: xem, nghe
+              thử, chép vào dự án thì ai cũng được, còn tiêu đề và mô tả thì chỉ
+              người đã tải tệp lên mới đổi. Máy chủ mới là chỗ chốt việc này
+              (`server/asset-library.ts`); ẩn nút chỉ để người dùng khỏi gõ xong
+              mới biết là không được. Đánh dấu sao vẫn mở, vì sao là của riêng
+              từng người. */}
           <Button
-            disabled={!doi}
+            disabled={!doi || !asset.mine}
             onClick={() => {
               onSave(asset.file, {
                 title: title.trim() || asset.title,
@@ -147,7 +155,7 @@ export function AssetDialog({
               onOpenChange(false);
             }}
           >
-            Lưu
+            {asset.mine ? "Lưu" : "Của người khác"}
           </Button>
         </DialogFooter>
       </DialogContent>

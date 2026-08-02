@@ -121,7 +121,9 @@ export function listLibrary(viewerId: string): LibraryTrack[] {
             : (extra?.tags ?? []),
           labels: readMusicTags(row ?? {}),
           seconds: row?.seconds ?? extra?.seconds ?? 0,
-          mine: Boolean(row?.uploaded_by),
+          // So BẰNG người đang xem — xem chú thích cùng chỗ ở `asset-library.ts`.
+          // `Boolean(...)` bật `true` cho mọi bài bất kỳ ai tải lên.
+          mine: row?.uploaded_by === viewerId,
           starred: starred.has(file),
         };
       })
@@ -179,8 +181,8 @@ export function safeName(name: string): string {
   const base = dot > 0 ? clean.slice(0, dot) : clean;
   const ext = dot > 0 ? clean.slice(dot) : "";
   for (let index = 2; index < 500; index += 1) {
-    const thu = `${base} (${index})${ext}`;
-    if (!existsSync(join(LIBRARY, thu))) return thu;
+    const candidate = `${base} (${index})${ext}`;
+    if (!existsSync(join(LIBRARY, candidate))) return candidate;
   }
   return `${base} (${Date.now()})${ext}`;
 }

@@ -5,6 +5,7 @@ import { extname, join } from "node:path";
 
 import { db, newId } from "./db";
 import { makeThumbnail, probe } from "./media-tools";
+import { AccessError } from "./ownership";
 import { DATA_ROOT, ensureProjectDirs, mediaDir, thumbDir } from "./paths";
 
 /**
@@ -112,7 +113,11 @@ export function listAssets(viewerId: string): LibraryAsset[] {
         description: row?.description ?? "",
         seconds: row?.seconds ?? 0,
         bytes,
-        mine: Boolean(row?.uploaded_by),
+        // So BẰNG người đang xem. `Boolean(...)` chỉ trả lời "có ai đó tải lên",
+        // nên nó bật `true` cho mọi tệp trong kho — kể cả tệp của người khác —
+        // và màn hình bày nút Sửa ở khắp nơi. Hai dòng dưới đã dùng đúng
+        // `viewerId` cho dấu sao ngay từ đầu; dòng này sót lại.
+        mine: row?.uploaded_by === viewerId,
         starred: starred.has(file),
       };
     })
@@ -151,10 +156,35 @@ export function rememberAsset(entry: {
   );
 }
 
+/**
+ * Sửa siêu dữ liệu một tư liệu trong kho — CHỈ người đã tải nó lên.
+ *
+ * Danh mục là của chung: ai đăng nhập cũng xem, nghe thử, và chép vào dự án của
+ * mình. Nhưng "dùng chung" không có nghĩa là "sửa của nhau" — trước đây hàm này
+ * không nhận `viewerId` và không kiểm gì, nên bất kỳ ai cũng đổi được tiêu đề,
+ * thẻ, mô tả của mọi tệp trong kho, kể cả tệp người khác vừa tải lên.
+ *
+ * Ném 404 chứ không 403, kể cả khi tệp có thật mà của người khác — cùng lập
+ * trường với `server/ownership.ts`: 403 là câu trả lời đủ để người ngoài dò xem
+ * cái gì tồn tại.
+ *
+ * Tệp thả tay vào thư mục (`uploaded_by` NULL) thì KHÔNG AI sửa được qua API.
+ * Trước đây chỗ này `INSERT OR IGNORE` một hàng mới rồi sửa, nghĩa là nhận cả
+ * tên tệp không tồn tại và đẻ ra hàng ma. Đóng là mặc định: sửa những tệp ấy thì
+ * sửa thẳng trong CSDL, vì không có ai để mà hỏi quyền.
+ */
 export function updateAsset(
+  viewerId: string,
   file: string,
   patch: { title?: string; tags?: string[]; description?: string },
 ) {
+  const row = db
+    .prepare("SELECT uploaded_by FROM library_assets WHERE file=?")
+    .get(file) as { uploaded_by: string | null } | undefined;
+  if (!row || row.uploaded_by !== viewerId) {
+    throw new AccessError(404, "Không tìm thấy");
+  }
+
   const sets: string[] = [];
   const values: unknown[] = [];
   if (patch.title !== undefined) {
@@ -170,11 +200,6 @@ export function updateAsset(
     values.push(patch.description.slice(0, 600));
   }
   if (sets.length === 0) return;
-  // Tệp thả tay vào thư mục chưa có hàng nào — chèn trước rồi mới sửa, không thì
-  // sửa mô tả cho nó là một lệnh không đụng vào hàng nào và im lặng trôi qua.
-  db.prepare(
-    "INSERT OR IGNORE INTO library_assets (file, created_at) VALUES (?,?)",
-  ).run(file, Date.now());
   db.prepare(`UPDATE library_assets SET ${sets.join(", ")} WHERE file=?`).run(
     ...values,
     file,
@@ -201,8 +226,8 @@ export function safeAssetName(name: string): string {
   const base = dot > 0 ? clean.slice(0, dot) : clean;
   const ext = dot > 0 ? clean.slice(dot) : "";
   for (let index = 2; index < 500; index += 1) {
-    const thu = `${base} (${index})${ext}`;
-    if (!existsSync(join(ASSETS, thu))) return thu;
+    const candidate = `${base} (${index})${ext}`;
+    if (!existsSync(join(ASSETS, candidate))) return candidate;
   }
   return `${base} (${Date.now()})${ext}`;
 }
