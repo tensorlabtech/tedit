@@ -78,11 +78,27 @@ const URL_OWNER_RULES: Array<[RegExp, OwnedKind]> = [
   [/^\/api\/elements\/([^/]+)/, "element"],
 ];
 
+/**
+ * Giải mã một đoạn đường dẫn. Hỏng thì coi như không có.
+ *
+ * `decodeURIComponent` ném `URIError` với dấu `%` lạc — `/api/projects/%zz`
+ * chẳng hạn. Để nó ném ra ngoài thì Fastify trả 500, tức là một đường dẫn rác
+ * đọc ra như máy chủ hỏng. Chối bằng 404 đúng hơn: không giải mã được thì cũng
+ * không có mã nào để mà tìm.
+ */
+function decodeSegment(raw: string): string {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    throw new AccessError(404, "Không tìm thấy");
+  }
+}
+
 export function assertOwnsUrlTarget(viewer: Viewer, path: string): void {
   for (const [pattern, kind] of URL_OWNER_RULES) {
     const match = pattern.exec(path);
     if (!match) continue;
-    assertOwnerIs(viewer, kind, decodeURIComponent(match[1]));
+    assertOwnerIs(viewer, kind, decodeSegment(match[1]));
     return;
   }
 }
@@ -133,7 +149,19 @@ export function assertInProject(
  * không tự nhiên thành công khai.
  */
 export function assertOwnsFilePath(viewer: Viewer, path: string): void {
-  if (path.includes("..")) throw new AccessError(404, "Không tìm thấy");
+  // GIẢI MÃ TRƯỚC rồi mới soi `..`.
+  //
+  // `request.url` còn nguyên percent-encoding, nên `%2e%2e%2f` đi lọt qua phép
+  // kiểm chuỗi thô — nó không chứa hai dấu chấm nào cả. `@fastify/static` gần
+  // như chắc chắn chặn tiếp sau khi tự giải mã, nhưng nếu thế thì phép kiểm ở
+  // đây đang sống nhờ hành vi của một thư viện chứ không tự đứng được, mà cả tệp
+  // này viết theo tinh thần ngược lại.
+  //
+  // Soi trên CẢ HAI dạng: dạng đã giải mã bắt `%2e%2e`, dạng thô bắt trường hợp
+  // giải mã ra một chuỗi vô hại nhưng bản thân đường dẫn thô đã có `..`.
+  const decoded = decodeSegment(path);
+  if (path.includes("..") || decoded.includes(".."))
+    throw new AccessError(404, "Không tìm thấy");
 
   // KHO NHẠC và KHO TƯ LIỆU dùng chung: mọi người đã qua cổng đều xem/nghe thử
   // được, vì đó chính là ý nghĩa của một cái kho chung. Không ai "sở hữu" thứ trong
@@ -147,5 +175,5 @@ export function assertOwnsFilePath(viewer: Viewer, path: string): void {
   const match = /^\/files\/projects\/([^/]+)\//.exec(path);
   if (!match) throw new AccessError(404, "Không tìm thấy");
 
-  assertOwnerIs(viewer, "project", decodeURIComponent(match[1]));
+  assertOwnerIs(viewer, "project", decodeSegment(match[1]));
 }

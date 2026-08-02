@@ -161,6 +161,20 @@ check("leo thư mục bằng ..", true, () =>
 check("dự án không chủ", true, () =>
   assertOwnsFilePath(alice, `/files/projects/${prjOrphan}/out/final.mp4`),
 );
+// `..` VIẾT DƯỚI DẠNG MÃ HOÁ. Phép kiểm chuỗi thô không thấy hai dấu chấm nào ở
+// đây, nên nếu đường dẫn không được giải mã trước khi soi thì trường hợp này đi
+// lọt và cả cái khoá chỉ còn sống nhờ `@fastify/static` chặn hộ.
+check("leo thư mục bằng .. mã hoá", true, () =>
+  assertOwnsFilePath(alice, `/files/projects/${prjA}/%2e%2e/%2e%2e/teddit.db`),
+);
+// Dấu `%` lạc: phải chối, KHÔNG được ném `URIError` ra ngoài — ra ngoài là 500,
+// tức là một đường dẫn rác đọc ra như máy chủ hỏng.
+check("đường dẫn mã hoá hỏng", true, () =>
+  assertOwnsFilePath(alice, "/files/projects/%zz/out/final.mp4"),
+);
+check("mã dự án mã hoá hỏng trên /api/", true, () =>
+  assertOwnsUrlTarget(alice, "/api/projects/%zz"),
+);
 
 console.log(`\n${passed} đạt, ${failed} trượt`);
 process.exit(failed === 0 ? 0 : 1);
