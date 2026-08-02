@@ -1,23 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { toast } from "@/components/ui/toast";
+import { useMediaIntake } from "./use-media-intake";
+import type { RevealId, ShapeId } from "./editor-data";
+import { segmentLabel, shape, toMusicTrack } from "./shape-project";
 import {
   ApiError,
   api,
   isJobActive,
   queueLabel,
-  type ApiMusicTrack,
   type ApiProject,
   type ApiPipeline,
   type ApiSegment,
 } from "@/lib/api";
 
-import { fromLegacyLayout } from "@/dev/overlays/overlay-legacy";
 
 import type { StylePackId } from "../../../server/style-pack";
 import { findStylePack } from "../../../server/style-pack-catalog";
 
-import { silenceLabel, shortMediaLabel } from "./editor-data";
+import { shortMediaLabel } from "./editor-data";
 import type { AudioEnvelope } from "./timeline-audio-lane";
 
 import type {
@@ -29,7 +30,6 @@ import type {
   TextElementPosition,
   Word,
 } from "./editor-data";
-import type { AlignId, EmphasisId, RevealId, ShapeId } from "./editor-data";
 import {
   bandsOverlap,
   effectPeak,
@@ -248,243 +248,6 @@ export function demElement(
     overlaps(item.start, item.end),
   ).length;
   return textCount + insertCount;
-}
-
-/** Thứ tự của một tệp trong danh sách tư liệu chèn — dùng để đặt tên phân biệt. */
-function insertOrder(data: ApiProject, fileId: string) {
-  const list = data.files
-    .filter((item) => item.role === "insert")
-    .sort((a, b) => a.position - b.position);
-  const i = list.findIndex((item) => item.id === fileId);
-  return i === -1 ? undefined : i;
-}
-
-/**
- * Nhãn của một đoạn: LỜI nó đang chứa, không phải số thứ tự.
- *
- * Từ khi đoạn cắt theo cụm chữ thì một video một phút có bảy chục đoạn — "Đoạn
- * 47" không nói được gì và cũng không ai đếm tới đó. Lấy chính cụm chữ nằm
- * trong đoạn thì dải phim đọc ra như bản chép lời; đoạn không có lời nào là
- * khoảng lặng, nói thẳng nó dài bao nhiêu.
- */
-function segmentLabel(
-  start: number,
-  end: number,
-  texts: Array<{
-    start: number;
-    end: number;
-    content: string;
-    byTime?: boolean;
-  }>,
-) {
-  const mid = (start + end) / 2;
-  // Chỉ lấy nhãn từ chữ CHÉP LỜI. Đoạn là một khúc người ta NÓI, nên nhãn của
-  // nó phải là lời nói ở đó; một cái tiêu đề vắt ngang sẽ cướp nhãn của cụm lời
-  // thật và khối trên dải đọc ra một thứ chẳng ai nói.
-  const inside = texts.find(
-    (item) => !item.byTime && mid >= item.start && mid < item.end,
-  );
-  if (inside?.content.trim()) {
-    const text = inside.content.trim();
-    return text.length > 28 ? `${text.slice(0, 27)}…` : text;
-  }
-  return silenceLabel(end - start);
-}
-
-/** Đổi một hàng nhạc của máy chủ sang kiểu của bàn dựng. */
-function toMusicTrack(row: ApiMusicTrack): MusicTrack {
-  return {
-    id: row.id,
-    name: row.name,
-    start: row.start_sec,
-    end: row.end_sec,
-    volume: row.volume,
-    storedPath: row.stored_path,
-    position: row.position,
-    url: api.fileUrl(row.stored_path),
-  };
-}
-
-function shape(data: ApiProject) {
-  const sentences: Sentence[] = data.sentences.map((row) => ({
-    id: row.id,
-    text: row.text,
-    start: row.start_sec,
-    end: row.end_sec,
-    removed: row.removed === 1,
-  }));
-
-  const words: Word[] = data.words.map((row) => ({
-    id: row.id,
-    text: row.text,
-    start: row.start_sec,
-    end: row.end_sec,
-    sentenceId: row.sentence_id,
-    // Whisper trả xác suất từng từ; dưới 0,6 là chỗ đáng soát lại.
-    unsure: (row.confidence ?? 1) < 0.6 || undefined,
-  }));
-
-  const wordsById = new Map(words.map((word) => [word.id, word]));
-
-  const textElements: TextElement[] = data.elements
-    .filter((element) => element.kind === "text")
-    .map((element) => ({
-      id: element.id,
-      fromWordId: element.from_word_id ?? "",
-      toWordId: element.to_word_id ?? "",
-      // Chữ TỰ DO neo theo giờ: hai mã từ để rỗng, mốc lấy thẳng từ dữ liệu.
-      // Chữ chép lời neo vào KHOẢNG TỪ; mốc giây chỉ là hình chiếu để vẽ lên dải.
-      byTime: element.from_word_id === null,
-      start:
-        element.from_word_id === null
-          ? (element.start_sec ?? 0)
-          : (wordsById.get(element.from_word_id)?.start ?? 0),
-      end:
-        element.from_word_id === null
-          ? (element.end_sec ?? 0)
-          : (wordsById.get(element.to_word_id ?? "")?.end ?? 0),
-      content: element.content ?? "",
-      position: (element.position_band ?? "top") as TextElementPosition,
-      // MỖI TRỤC đọc độc lập, chỉ trục nào còn trống mới lấy từ `layout` gộp cũ.
-      // Buộc hai trục vào một điều kiện thì chọn căn mà chưa đụng ô nhấn sẽ mất
-      // luôn lựa chọn căn — cùng lỗi phải sửa ở `server/pipeline.ts`.
-      ...(() => {
-        const cu = fromLegacyLayout(element.layout);
-        return {
-          align: (element.align ?? cu.align) as AlignId,
-          emphasis: (element.emphasis ?? cu.emphasis) as EmphasisId,
-        };
-      })(),
-      keywords: element.keywords ? element.keywords.split("|") : [],
-      // Hai trục ĐÈ; rỗng là theo bộ dáng của dự án.
-      letterCase:
-        element.letter_case === "upper" || element.letter_case === "as-typed"
-          ? element.letter_case
-          : null,
-      keyColor: element.key_color ?? null,
-    }));
-
-  const inserts: Insert[] = data.elements
-    .filter((element) => element.kind === "insert")
-    .map((element) => {
-      // Tư liệu chèn LUÔN neo theo từ — chỉ chữ tự do mới bỏ trống hai mã này.
-      const from = wordsById.get(element.from_word_id ?? "");
-      const to = wordsById.get(element.to_word_id ?? "");
-      const file = data.files.find((item) => item.id === element.media_file_id);
-      // Số thứ tự trong THƯ VIỆN, không phải trên dải: cùng một tệp chèn hai
-      // lần thì hai khối phải mang cùng tên, không thì tưởng là hai tệp khác.
-      const order = file ? insertOrder(data, file.id) : undefined;
-      return {
-        id: element.id,
-        start: from?.start ?? 0,
-        end: to?.end ?? 0,
-        fromWordId: element.from_word_id ?? "",
-        toWordId: element.to_word_id ?? "",
-        mediaFileId: element.media_file_id ?? undefined,
-        fromLibrary: !!file?.from_library,
-        label: file ? shortMediaLabel(file.name, order) : "Tư liệu",
-        fullName: file?.name,
-        // Giá trị cũ (`zoom`, `slide`, `ken`) đổi về kiểu gần nhất còn lại.
-        reveal: (["none", "fade", "fade-up"].includes(element.reveal ?? "")
-          ? element.reveal
-          : element.reveal
-            ? "fade-up"
-            : "none") as RevealId,
-        shape: (element.shape ?? "full") as ShapeId,
-        // Xem trước phải là TỆP THẬT, không phải ô màu có tên: ô màu không cho
-        // biết tư liệu có che mặt người nói hay không.
-        url: file ? api.mediaUrl(file.id) : undefined,
-        ...(() => {
-          // Máy chủ chốt ảnh-hay-video theo đuôi đường dẫn thật; `name` là chữ
-          // người dùng đặt nên có thể chẳng còn đuôi nào để mà đoán.
-          const isVideo = file?.kind !== "image";
-          return {
-            isVideo,
-            // Mặt của khối trên dải: ảnh thu nhỏ do máy chủ dựng sẵn lúc tải
-            // tệp lên. Với VIDEO thì bắt buộc phải là ảnh thu nhỏ — tải cả tệp
-            // 200MB về chỉ để lấy một khung cho ô 32px là quá đắt. Với ẢNH thì
-            // lấy thẳng tệp gốc khi chưa có ảnh thu nhỏ: tệp tải lên bằng bản
-            // cũ không có ảnh thu nhỏ nào để mà lấy.
-            thumbUrl: file?.thumb_path
-              ? api.fileUrl(file.thumb_path)
-              : !isVideo && file
-                ? api.mediaUrl(file.id)
-                : undefined,
-          };
-        })(),
-      };
-    })
-    .filter((item) => item.end > item.start);
-
-  // Khối trên dải giờ là ĐOẠN do máy chủ dựng, không phải từng tệp: đoạn mới là
-  // đơn vị người dùng cắt, bỏ và (sau này) gắn effect.
-  const segments: Clip[] = (data.segments ?? []).map((row) => ({
-    id: row.id,
-    start: row.start_sec,
-    end: row.end_sec,
-    // Nhãn mặc định sinh TẠI ĐÂY — máy chủ không lưu nó, vì mỗi lần tách/gộp/
-    // gọt là nó đổi. Cột `label` chỉ còn giữ tên người dùng tự đặt.
-    label: row.label ?? segmentLabel(row.start_sec, row.end_sec, textElements),
-    removed: row.removed === 1,
-  }));
-
-  let cursor = 0;
-  const clips: Clip[] = data.files
-    .filter((file) => file.role === "main")
-    .sort((a, b) => a.position - b.position)
-    .map((file, index) => {
-      const start = cursor;
-      cursor += file.duration ?? 0;
-      return {
-        id: file.id,
-        start,
-        end: cursor,
-        label: shortMediaLabel(file.name, index),
-      };
-    });
-
-  const music: MusicTrack[] = (data.music ?? []).map(toMusicTrack);
-
-  return {
-    segments,
-    sentences,
-    words,
-    wordsById,
-    textElements,
-    inserts,
-    music,
-    // Kho tư liệu đã tải lên: nguồn để chọn khi chèn, khác với `inserts` là
-    // những lần đã đặt lên dải.
-    insertLibrary: data.files.filter((file) => file.role === "insert"),
-    /**
-     * Khung hình thật của cảnh chính đầu tiên — nền cho ô mẫu chọn phong cách.
-     *
-     * Cùng nguồn với màn nạp tệp (`media_files.thumb_path`). Thiếu nó thì hộp
-     * đổi phong cách ở bàn dựng bày mười ô nền đen trơn, trong khi cũng hộp ấy
-     * ở màn nạp tệp lại có khung hình — và cái làm nên khác biệt giữa "chọn
-     * phong cách" và "chọn font" chính là khung hình đó.
-     */
-    posterUrl: (() => {
-      const first = data.files
-        .filter((file) => file.role === "main" && file.thumb_path)
-        .sort((a, b) => a.position - b.position)[0];
-      return first?.thumb_path ? api.fileUrl(first.thumb_path) : null;
-    })(),
-    clips,
-    duration: cursor || (sentences.at(-1)?.end ?? 0),
-    title: data.project.title,
-    /** Mã những lời nhắc đã bỏ qua — hàng soát lọc theo danh sách này */
-    dismissed: data.dismissed ?? [],
-    /** Tiến trình dựng — bàn dựng dùng nó làm CỔNG, xem `editor-page.tsx` */
-    pipeline: data.pipeline ?? null,
-    /** Hiệu ứng người dùng đặt tay — quãng theo giây bản gốc */
-    manualEffects: (data.effects ?? []).map((row) => ({
-      id: row.id,
-      start: row.start_sec,
-      end: row.end_sec,
-      kind: row.kind as JunctionId,
-    })),
-  };
 }
 
 export function useEditor(projectId: string | undefined) {
@@ -2342,113 +2105,12 @@ export function useEditor(projectId: string | undefined) {
     return () => window.clearInterval(timer);
   }, [projectId, transcribeJob?.status]);
 
-  const [uploading, setUploading] = useState(false);
-
-  /**
-   * Thêm tư liệu vào dự án ĐANG mở.
-   *
-   * Không bắt quay về màn upload: màn đó luôn tạo dự án MỚI, nên người dùng
-   * muốn chèn thêm một cái ảnh là mất cả buổi sửa.
-   */
-  /**
-   * Lấy một tư liệu TỪ KHO DÙNG CHUNG về dự án này.
-   *
-   * Máy chủ chép một bản sang thư mục dự án và mang theo cả mô tả đã viết trong
-   * kho — nhờ vậy chặng ghép tư liệu dùng được ngay, không phải đọc lại tấm ảnh.
-   *
-   * Nạp lại cả dự án sau đó, cùng lý do với `addMedia`: tệp mới phải có mặt trong
-   * kho tư liệu của dự án thì mới chèn được.
-   */
-  /**
-   * Lấy tư liệu TỪ KHO về dự án, nhiều tệp một lượt.
-   *
-   * Chép từng tệp một chứ không `Promise.all`: thứ tự trong dự án là thứ tự người
-   * dùng vừa bấm, mà chạy song song thì tệp nào máy chủ xong trước sẽ giành chỗ
-   * đứng trước.
-   *
-   * Chỉ nạp lại dự án MỘT LẦN ở cuối. Nạp sau mỗi tệp thì lấy năm cái là năm lượt
-   * tải cả dự án về, mà bốn lượt đầu vứt đi ngay.
-   */
-  const addAssetsFromLibrary = useCallback(
-    async (chosen: string[]) => {
-      if (!projectId || chosen.length === 0) return [];
-      const ids: string[] = [];
-      let hong = 0;
-      for (const file of chosen) {
-        try {
-          const row = await api.addAssetFromLibrary(projectId, file);
-          ids.push(row.id);
-        } catch {
-          hong += 1;
-        }
-      }
-      if (ids.length > 0) {
-        const fresh = await api.getProject(projectId);
-        const shaped = shape(fresh);
-        durationRef.current = shaped.duration;
-        setData(shaped);
-      }
-      if (hong > 0) {
-        toast.add({
-          title: `Không lấy được ${hong} tư liệu từ kho`,
-          type: "error",
-        });
-      }
-      return ids;
-    },
-    [projectId],
+  const { uploading, addAssetsFromLibrary, addMedia } = useMediaIntake(
+    projectId,
+    setData,
+    durationRef,
   );
 
-  const addMedia = useCallback(
-    async (files: File[]) => {
-      if (!projectId || files.length === 0) return;
-      setUploading(true);
-      try {
-        const result = await api.uploadFiles(projectId, files, () => {});
-        for (const item of result.rejected) {
-          toast.add({
-            title: item.name,
-            description: item.reason,
-            type: "error",
-          });
-        }
-        if (result.saved.length > 0) {
-          toast.add({
-            title: `Đã thêm ${result.saved.length} tư liệu`,
-            type: "success",
-          });
-          // Nạp lại cả dự án: tệp mới phải vào kho tư liệu để chèn được ngay.
-          const fresh = await api.getProject(projectId);
-          const shaped = shape(fresh);
-          durationRef.current = shaped.duration;
-          setData(shaped);
-        }
-      } catch (error) {
-        toast.add({
-          title: "Không thêm được tư liệu",
-          description: (error as Error).message.slice(0, 100),
-          type: "error",
-        });
-      } finally {
-        setUploading(false);
-      }
-    },
-    [projectId],
-  );
-
-  /** Sửa một từ máy nghe sai — giữ mốc, hạ cờ "không chắc". */
-  /**
-   * "Máy nghe đúng rồi" — hạ cờ ngờ vực mà không đổi một chữ nào.
-   *
-   * Trước đây không có đường này. Cờ `confidence` chỉ hạ khi người dùng SỬA từ,
-   * nên lúc máy nghe đúng thì không có cách nào nói với nó điều đó: gạch chấm
-   * dưới chữ nằm lại vĩnh viễn, và hàng soát nhắc lại mỗi lần mở dự án. "Bỏ
-   * qua" thì chỉ giấu dòng nhắc, gạch chấm vẫn còn — hai chỗ nói hai điều khác
-   * nhau về cùng một chữ.
-   *
-   * Ghi lại chính chữ cũ là đủ: máy chủ luôn hạ cờ khi có người ghi vào từ, vì
-   * "người đã nghe lại rồi thì máy không còn quyền nghi ngờ nữa".
-   */
   const updateWordRef = useRef<(id: string, text: string) => Promise<void>>(
     async () => {},
   );
