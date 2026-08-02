@@ -39,6 +39,15 @@ export async function resolveViewer(
 const AUTH_PREFIX = "/api/auth/";
 
 /**
+ * Đường duy nhất khác được đi qua cổng: healthcheck của Docker.
+ *
+ * So BẰNG chứ không theo tiền tố. Tiền tố `/api/health` sẽ mở luôn
+ * `/api/health-detail` hay `/api/health/db` nếu về sau có ai đặt tên như vậy —
+ * và cửa mở thêm mà không ai định mở là đúng thứ cả tệp này sinh ra để tránh.
+ */
+const HEALTH_PATH = "/api/health";
+
+/**
  * Cổng chung: mọi thứ dưới `/api/` và `/files/` đều phải có phiên.
  *
  * Chặn theo TIỀN TỐ chứ không liệt kê từng route: liệt kê thì mỗi route mới thêm
@@ -48,6 +57,7 @@ const AUTH_PREFIX = "/api/auth/";
 export async function authGuard(request: FastifyRequest, reply: FastifyReply) {
   const path = request.url.split("?")[0];
   if (path.startsWith(AUTH_PREFIX)) return;
+  if (path === HEALTH_PATH) return;
   if (!path.startsWith("/api/") && !path.startsWith("/files/")) return;
 
   const viewer = await resolveViewer(request);

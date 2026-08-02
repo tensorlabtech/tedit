@@ -16,6 +16,13 @@ import { assertInProject, assertOwnerIs } from "./ownership";
 
 import { buildEnvelope, readEnvelope } from "./audio-envelope";
 import { db, newId } from "./db";
+import { collectHealth, diskUsage } from "./health";
+import {
+  enqueue,
+  queuePosition,
+  queueStats,
+  reapOrphans,
+} from "./job-queue";
 import {
   makeFilmstrip,
   makeThumbnail,
@@ -60,7 +67,7 @@ import {
   setStar,
 } from "./music-library";
 import { retryAiStep, runExport, runTranscribe, setJob } from "./pipeline";
-import { failRunningStep, pipelineState } from "./pipeline-steps";
+import { pipelineState } from "./pipeline-steps";
 import { readSettings, writeSettings } from "./settings";
 import { seedSegmentsByCaption } from "./segment-seed";
 import { OUT_HEIGHT, OUT_WIDTH } from "./render";
@@ -84,11 +91,50 @@ import {
 } from "./caption-elements";
 import { suggestOpeningLines } from "./ai-opening";
 import { KEY_COLORS } from "./style-pack";
-import { GOC, STYLE_PACKS } from "./style-pack-catalog";
+import { BASE_PACK, STYLE_PACKS } from "./style-pack-catalog";
 import { readStylePack } from "./style-pack-store";
 import { layoutText, type Band } from "./text-layout";
 
-const app = Fastify({ bodyLimit: 4 * 1024 * 1024 * 1024 });
+/**
+ * `bodyLimit` là hạn mức cho THÂN REQUEST THƯỜNG, không phải cho tệp tải lên.
+ *
+ * Tệp đi đường `@fastify/multipart` với hạn mức riêng khai ngay dưới đây, nên con
+ * số này chỉ còn áp cho các route nhận JSON. Trước đây nó là 4 GB — tức là cho
+ * phép đệm 4 GB vào bộ nhớ cho một lời gọi `/api/layout`, và máy chủ chết vì hết
+ * bộ nhớ chứ không vì ai tấn công.
+ *
+ * 8 MB đủ rộng cho thân JSON lớn nhất mà bàn dựng sinh ra (danh sách phần tử của
+ * một dự án dài), và cách xa mức đủ để giết tiến trình.
+ */
+const JSON_BODY_LIMIT = 8 * 1024 * 1024;
+
+const app = Fastify({
+  bodyLimit: JSON_BODY_LIMIT,
+  /**
+   * Không có nhật ký thì `docker logs` rỗng và một lỗi 500 lúc chạy thật không
+   * để lại dấu vết nào — đang phục vụ nhiều người thì đó là bay không đèn.
+   *
+   * `redact` che hai tiêu đề mang phiên đăng nhập: nhật ký là thứ được chép đi
+   * chép lại và dán vào chỗ khác lúc nhờ người xem giúp, mà một cookie phiên lọt
+   * ra ngoài thì tương đương mất mật khẩu.
+   */
+  logger: {
+    level: process.env.LOG_LEVEL ?? "info",
+    redact: ["req.headers.authorization", "req.headers.cookie"],
+  },
+});
+
+/**
+ * Rejection lọt thì GHI LẠI rồi sống tiếp, không để Node giết tiến trình.
+ *
+ * Node 22 mặc định thoát khi có promise bị từ chối mà không ai bắt. Đường chính
+ * đã an toàn — `startJob` có `.catch` — nhưng một chỗ nào đó sót thì cả máy chủ
+ * chết giữa lúc người khác đang dựng video, để đổi lấy đúng một request hỏng.
+ * Đánh đổi đó không đáng, và giờ đã có nhật ký để biết mà đi sửa gốc.
+ */
+process.on("unhandledRejection", (reason) => {
+  app.log.error({ reason }, "Có promise bị từ chối mà không ai bắt");
+});
 
 await app.register(multipart, {
   limits: { fileSize: 4 * 1024 * 1024 * 1024, files: 20 },
@@ -136,6 +182,30 @@ app.route({
 app.addHook("onRequest", authGuard);
 
 await app.register(fastifyStatic, { root: DATA_ROOT, prefix: "/files/" });
+
+/**
+ * Máy chủ còn LÀM VIỆC ĐƯỢC không — dành cho healthcheck của Docker.
+ *
+ * Không đòi đăng nhập, vì thứ đi hỏi là Docker chứ không phải người dùng; đường
+ * này được `auth-guard.ts` cho qua bằng phép so BẰNG, không phải tiền tố.
+ *
+ * Thân trả về chỉ có `true/false` theo từng phép kiểm và một con số phần trăm.
+ * Không phiên bản, không đường dẫn, không thông báo lỗi thô: đây là đường duy
+ * nhất ngoài cổng đăng nhập, nên nó không được kể gì về bên trong.
+ */
+app.get("/api/health", async (request, reply) => {
+  const report = await collectHealth();
+  // Đĩa sắp đầy KHÔNG làm healthcheck đỏ — nó chỉ là lời nhắc đi dọn. Nói ra qua
+  // nhật ký để còn kịp thấy, vì `teddit.db` nằm cùng ổ với video và lúc SQLite
+  // hết chỗ ghi thì lỗi hiện ra ở một chỗ chẳng liên quan gì tới nguyên nhân.
+  if (report.diskLow) {
+    request.log.warn(
+      { diskUsedPercent: report.diskUsedPercent },
+      "Đĩa sắp đầy — nên dọn",
+    );
+  }
+  return reply.code(report.ok ? 200 : 503).send(report);
+});
 
 const VIDEO = /\.(mp4|mov|m4v|webm|mkv|avi)$/i;
 const IMAGE = /\.(jpe?g|png|webp|heic)$/i;
@@ -667,7 +737,25 @@ app.post("/api/projects/:id/files", async (request, reply) => {
 
     const fileId = newId("f");
     const target = join(mediaDir(id), `${fileId}${extname(name)}`);
-    await pipeline(part.file, createWriteStream(target));
+    /*
+     * Ghi hỏng thì DỌN tệp dở dang rồi mới đi tiếp.
+     *
+     * `@fastify/multipart` ném khi tệp vượt hạn mức, và ổ đầy cũng ném — cả hai
+     * đều xảy ra SAU khi một phần tệp đã nằm trên đĩa. Không dọn thì mảnh ấy ở
+     * lại mãi: không hàng nào trong CSDL trỏ tới nó nên không đường nào xoá được,
+     * mà nó vẫn chiếm chỗ. Đúng cách mà hai nhánh lỗi phía dưới đang làm.
+     */
+    try {
+      await pipeline(part.file, createWriteStream(target));
+      // Vượt hạn mức mà thư viện KHÔNG ném thì cờ này là dấu duy nhất. Tệp cụt
+      // đi tiếp sẽ thành một ô trông như dùng được, và chỗ vỡ dời tới tận lúc
+      // dựng — sau khi người dùng đã đợi vài phút chép lời.
+      if (part.file.truncated) throw new Error("Tệp vượt hạn mức");
+    } catch {
+      await unlink(target).catch(() => {});
+      rejected.push({ name, reason: "Tệp quá lớn hoặc đứt giữa chừng" });
+      continue;
+    }
 
     // Khai đúng kiểu `ProbeResult`: để suy kiểu từ giá trị mặc định thì `info`
     // chỉ còn bốn trường, và `info.warnings` phía dưới luôn là `undefined` —
@@ -873,6 +961,19 @@ app.post("/api/projects/:id/music", async (request, reply) => {
  */
 app.get("/api/settings", async (request) => readSettings(request.viewer!.id));
 
+/**
+ * Đĩa còn bao nhiêu — con số để BIẾT LÚC NÀO PHẢI DỌN, không phải hạn mức.
+ *
+ * Danh sách cho phép trả lời "ai được vào", không trả lời "đĩa còn chỗ không".
+ * Mà phần lớn dung lượng không đến từ người dùng bất cẩn: mỗi dự án giữ mãi
+ * khoảng ba tới bốn lần dung lượng tư liệu gốc, và `teddit.db` nằm cùng ổ với
+ * chúng — ổ đầy nghĩa là CSDL hết chỗ ghi.
+ *
+ * Route RIÊNG chứ không nhét vào `/api/settings`: hình dạng của settings còn
+ * dùng cho `PATCH`, mà mấy con số này thì đọc xong không sửa được.
+ */
+app.get("/api/storage", async () => (await diskUsage()) ?? { unavailable: true });
+
 app.patch("/api/settings", async (request) =>
   writeSettings(request.viewer!.id, (request.body ?? {}) as never),
 );
@@ -887,7 +988,7 @@ app.post("/api/library/assets", async (request) => {
   let tags: string[] = [];
   let description = "";
   const saved: unknown[] = [];
-  const trung: Array<{ name: string; sameAs: string }> = [];
+  const duplicates: Array<{ name: string; sameAs: string }> = [];
 
   for await (const part of request.parts()) {
     if (part.type !== "file") {
@@ -907,7 +1008,7 @@ app.post("/api/library/assets", async (request) => {
     const name = basename(part.filename ?? "tu-lieu");
     if (!kindOf(name)) {
       await part.toBuffer();
-      trung.push({ name, sameAs: "" });
+      duplicates.push({ name, sameAs: "" });
       continue;
     }
     const file = safeAssetName(name);
@@ -921,7 +1022,7 @@ app.post("/api/library/assets", async (request) => {
     const daCo = findDuplicate(hash);
     if (daCo) {
       await unlink(target).catch(() => {});
-      trung.push({ name, sameAs: daCo });
+      duplicates.push({ name, sameAs: daCo });
       continue;
     }
 
@@ -944,7 +1045,7 @@ app.post("/api/library/assets", async (request) => {
   return {
     assets: listAssets(request.viewer!.id),
     added: saved.length,
-    duplicates: trung,
+    duplicates: duplicates,
   };
 });
 
@@ -955,7 +1056,7 @@ app.patch("/api/library/assets/:file", async (request) => {
     tags?: string[];
     description?: string;
   };
-  updateAsset(decodeURIComponent(file), body);
+  updateAsset(request.viewer!.id, decodeURIComponent(file), body);
   return { ok: true };
 });
 
@@ -1162,7 +1263,7 @@ app.post("/api/layout", async (request) => {
     body.band ?? "top",
     OUT_WIDTH,
     OUT_HEIGHT,
-    body.projectId ? readStylePack(body.projectId) : GOC,
+    body.projectId ? readStylePack(body.projectId) : BASE_PACK,
   );
   return {
     lines: layout.lines,
@@ -1684,61 +1785,43 @@ app.post("/api/projects/:id/filmstrip", async (request, reply) => {
 });
 
 /**
- * Chạy một việc nền và ghi trạng thái vào bảng jobs.
+ * Chạy một việc nặng: KHÔNG quá một lượt mỗi loại mỗi dự án, và không quá
+ * `TEDDIT_MAX_JOBS` lượt trên cả máy.
  *
  * Không `await`: người dùng phải nhận được câu trả lời ngay rồi hỏi tiến độ sau,
  * chứ không treo kết nối vài phút cho tới lúc ffmpeg xong.
- */
-/**
- * Chạy một việc nặng, và CHỈ MỘT lượt cho mỗi loại mỗi dự án.
  *
- * Không chặn thì bấm "Xuất video" hai lần là hai luồng ffmpeg cùng ghi vào một
- * tệp `final.mp4` — tệp ra hỏng, mà bảng việc chỉ có một hàng nên không ai biết
- * có hai luồng. Bấm đúp là chuyện thường, nhất là khi lượt đầu chưa kịp đổi nhãn
- * nút. Chép lời cũng vậy: hai luồng cùng xoá và dựng lại bảng từ.
+ * Chốt "một lượt mỗi loại" có từ trước: bấm "Xuất video" hai lần là hai luồng
+ * ffmpeg cùng ghi vào một tệp `final.mp4` — tệp ra hỏng, mà bảng việc chỉ có một
+ * hàng nên không ai biết có hai luồng.
  *
- * Trả `false` khi đang bận để nơi gọi còn nói cho người dùng biết.
- */
-/**
- * Việc coi như CHẾT nếu quá lâu không nhích tiến độ.
+ * Chốt ấy trước đây suy từ `updated_at`: quá ba phút không nhích tiến độ thì coi
+ * như chết. Nhưng lượt xuất đi một mạch từ tiến độ 60 tới 85 mà không báo gì ở
+ * giữa — toàn bộ pass in chữ và chèn tư liệu nằm trong quãng đó, và trên CPU của
+ * máy chủ nó lâu hơn ba phút là chuyện thường. Nên chính phép suy ấy đẻ ra đúng
+ * cái nó sinh ra để chặn: hai ffmpeg trên một dự án.
  *
- * Cái chốt "một lượt mỗi loại" chỉ đúng khi biết được việc còn sống. Việc chạy
- * trong tiến trình máy chủ, nên nó chết cùng lúc với ffmpeg bị giết, với máy chủ
- * khởi động lại, với một ngoại lệ không ai bắt. Hàng trong bảng thì vẫn ghi
- * `running` mãi mãi — và cái chốt biến một trục trặc nhất thời thành một cái
- * khoá không mở được. Gặp thật ngay khi vừa thêm chốt: một lượt xuất chết 939
- * giây trước khoá mọi lượt xuất sau.
+ * Nay nguồn sự thật là `server/job-queue.ts` — một `Map` việc đang chạy, cộng
+ * nhịp tim để bên ngoài đọc được là việc còn sống. Mốc thời gian không còn tham
+ * gia quyết định nào.
  */
-const JOB_STALE_MS = 3 * 60_000;
-
 function startJob(
   projectId: string,
   kind: string,
   run: () => Promise<unknown>,
 ) {
-  const running = db
-    .prepare(
-      "SELECT status, updated_at FROM jobs WHERE project_id=? AND kind=? AND status='running'",
-    )
-    .get(projectId, kind) as { status: string; updated_at: number } | undefined;
-  if (running && Date.now() - running.updated_at < JOB_STALE_MS) return false;
-
-  setJob(projectId, kind, "running", 0, "Đang xếp hàng");
-  void run().catch((error: Error) => {
-    setJob(projectId, kind, "error", 0, error.message.slice(0, 300));
-    // Đánh hỏng luôn chặng đang chạy, không thì màn chờ để nó quay mãi: người
-    // dùng ngồi nhìn một con quay của việc đã chết từ lâu.
-    failRunningStep(projectId, error.message.slice(0, 200));
-  });
-  return true;
+  return enqueue(projectId, kind, run);
 }
 
 app.post("/api/projects/:id/transcribe", async (request, reply) => {
   const { id } = request.params as { id: string };
-  if (!startJob(id, "transcribe", () => runTranscribe(id))) {
+  const outcome = startJob(id, "transcribe", () => runTranscribe(id));
+  if (outcome === "duplicate") {
     return reply.code(409).send({ error: "Đang chép lời rồi" });
   }
-  return reply.code(202).send({ status: "running" });
+  // `queued` KHÔNG phải lỗi: việc đã nhận, chỉ là máy đang bận. Trả 409 ở đây
+  // thì người dùng đọc ra "hỏng rồi, bấm lại đi" và bấm lại thật.
+  return reply.code(202).send({ status: outcome === "queued" ? "queued" : "running" });
 });
 
 /**
@@ -1749,8 +1832,7 @@ app.post("/api/projects/:id/transcribe", async (request, reply) => {
  */
 app.post("/api/projects/:id/steps/:key/retry", async (request, reply) => {
   const { id, key } = request.params as { id: string; key: string };
-  if (
-    !startJob(id, "transcribe", async () => {
+  const outcome = startJob(id, "transcribe", async () => {
       // Chặng đầu (`prepare`, `transcribe`, `captions`) không chạy lẻ được — chúng
       // đẻ ra dữ liệu mà mọi chặng sau dựa vào. Nhưng nút Thử lại VẪN hiện ở đó, và
       // trước đây bấm vào chỉ nhận 400 rồi chẳng gì xảy ra: một cái nút chết ở đúng
@@ -1767,28 +1849,31 @@ app.post("/api/projects/:id/steps/:key/retry", async (request, reply) => {
         return;
       }
       await runTranscribe(id);
-    })
-  ) {
+  });
+  if (outcome === "duplicate") {
     return reply.code(409).send({ error: "Đang có việc chạy rồi" });
   }
-  return reply.code(202).send({ status: "running" });
+  return reply.code(202).send({ status: outcome === "queued" ? "queued" : "running" });
 });
 
 app.post("/api/projects/:id/export", async (request, reply) => {
   const { id } = request.params as { id: string };
-  if (!startJob(id, "export", () => runExport(id))) {
+  const outcome = startJob(id, "export", () => runExport(id));
+  if (outcome === "duplicate") {
     return reply.code(409).send({ error: "Đang xuất video rồi" });
   }
-  return reply.code(202).send({ status: "running" });
+  return reply.code(202).send({ status: outcome === "queued" ? "queued" : "running" });
 });
 
 app.get("/api/projects/:id/jobs/:kind", async (request, reply) => {
   const { id, kind } = request.params as { id: string; kind: string };
   const job = db
     .prepare("SELECT * FROM jobs WHERE project_id=? AND kind=?")
-    .get(id, kind);
+    .get(id, kind) as Record<string, unknown> | undefined;
   if (!job) return reply.code(404).send({ error: "Chưa chạy việc này" });
-  return job;
+  // Đứng thứ mấy — CHỈ một con số, không kèm mã dự án hay ai đứng trước. Đây là
+  // route mọi người dùng đều gọi được cho dự án của mình.
+  return { ...job, queuePosition: queuePosition(id, kind) };
 });
 
 /**
@@ -1855,7 +1940,20 @@ const port = Number(process.env.PORT ?? 5190);
  * và cổng vẫn kín vì compose không publish nó ra host, chỉ mạng Docker nội bộ
  * thấy.
  */
+/**
+ * Dọn việc còn treo `running` từ lượt chạy TRƯỚC.
+ *
+ * Gọi ở đây, khi hàng đợi còn rỗng, nên mọi hàng `running` trong bảng chắc chắn
+ * thuộc về một tiến trình đã chết. Không dọn thì người dùng mở bàn dựng ra và
+ * ngồi nhìn con quay của một việc đã chết từ lúc container khởi động lại.
+ */
+const reaped = reapOrphans();
+if (reaped > 0) {
+  app.log.warn({ count: reaped }, "Dọn việc treo từ lượt chạy trước");
+}
+
 await app.listen({ port, host: process.env.HOST ?? "127.0.0.1" });
+app.log.info(queueStats(), "Hàng đợi việc nặng");
 app.log.info(
   `API chạy ở http://127.0.0.1:${port}` +
     (hasWebBuild ? " (kèm bản build của trang)" : " (chưa có dist/, chỉ API)"),
