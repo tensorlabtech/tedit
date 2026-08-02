@@ -28,9 +28,9 @@ Cờ `mine` đã có sẵn trong mã nhưng tính sai; xem [phase-03](phase-03-f
 | 01 | [Quan sát được + CI + README](phase-01-observability-and-ci.md) | ✅ **xong** 02/08 | Không đụng logic. Xong chặng này thì mọi chặng sau đều chẩn đoán được và có lưới an toàn |
 | 02 | [Chịu tải nhiều người](phase-02-load-resilience.md) | ✅ **xong** 02/08 (còn đo trên máy chủ) | Hàng đợi + nhịp tim + trần tài nguyên là ba mặt của một vấn đề |
 | 03 | [Luật chia sẻ công bằng](phase-03-fair-sharing-rules.md) | ✅ **xong** 02/08 | Hạn ngạch đĩa, hạn mức chi phí, quyền sửa kho chung |
-| 04 | [Tách hai tệp khổng lồ](phase-04-split-monoliths.md) | ⬜ **chưa làm — cố ý dừng** | Nợ kỹ thuật. Làm SAU khi có CI để có lưới |
+| 04 | [Tách hai tệp khổng lồ](phase-04-split-monoliths.md) | ✅ **xong** 02/08 · main.ts 1961→346 · use-editor 3170→2375 | Nợ kỹ thuật. Làm SAU khi có CI để có lưới |
 | 05 | [Chia nhỏ bundle](phase-05-bundle-splitting.md) | ✅ **xong** 02/08 · 1.744 KB → 567 KB | 1,74 MB một mảnh, kèm cả trang dev |
-| 06 | [Dọn vặt & nhất quán](phase-06-consistency-cleanup.md) | 🟡 **gần xong** — còn 6.2 và 6.6 | Tên tiếng Việt, escape drawtext, sao lưu trước migration |
+| 06 | [Dọn vặt & nhất quán](phase-06-consistency-cleanup.md) | 🟡 11/12 — còn 6.2, cần đường dựng thật | Tên tiếng Việt, escape drawtext, sao lưu trước migration |
 
 ## Phụ thuộc
 

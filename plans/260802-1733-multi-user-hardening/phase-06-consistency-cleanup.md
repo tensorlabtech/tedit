@@ -117,19 +117,30 @@ sau khi ghi xong, coi như tệp hỏng.
 - [x] 6.4 Giải mã trước khi kiểm `..`; bọc `decodeURIComponent`
 - [x] 6.4 Thêm **ba** trường hợp vào `ownership-check.ts` (24 → 27 đạt)
 - [x] 6.5 Dọn tệp dở dang + kiểm `truncated`
-- [ ] 6.6 **CHƯA LÀM** — `docs/system-architecture.md`, `codebase-summary.md`
+- [x] 6.6 `docs/codebase-summary.md` + `docs/system-architecture.md` — viết phần BỔ SUNG cho README (bản đồ tệp, luồng request, ba lớp khoá, vòng đời việc nặng), không chép lại lý do đã có ở README
 - [x] 6.6 ~~Nén `docs/example.webp`~~ — bỏ, xem chặng 01
 
-### 6.2 vì sao chưa làm
+### 6.2 vì sao chưa làm — kèm ba thứ đo được
 
-Đổi `text=` sang `textfile=` chạm ĐƯỜNG VẼ CHÍNH của sản phẩm, và cách duy nhất
-để nhận nó là so từng khung giữa video xuất trước và sau — chính plan này viết
-thế. Phép so ấy cần một dự án thật với tư liệu thật; không dựng được trong phiên
-làm việc. Làm mù rồi bảo "chắc giống" là đúng thứ mà cả codebase này viết chú
-thích để tránh.
+Đã thử dựng phép so bằng ffmpeg trên máy. Kết quả:
 
-Việc còn nguyên giá trị: nó bỏ được cả bốn phép `replace` ở `render.ts:96-101`,
-trong đó có phép đang lặng lẽ đổi `'` của người dùng thành `’`.
+1. **`textfile=` vẽ ra khung Y HỆT `text=`** với cùng nội dung — SSIM `1.000000`,
+   `inf`. Nên bản thân cú đổi không làm lệch hình.
+2. **`textfile=` KHÔNG gỡ được chuyện `%`.** Cả hai biến thể đều cảnh báo
+   `Stray % near …`: `drawtext` khai triển `%{...}` trên nội dung bất kể nội dung
+   đến từ đâu. Muốn hết escape thì phải `textfile=` **kèm `expansion=none`** — chi
+   tiết mà plan ban đầu bỏ sót.
+3. **Bộ thử tổng hợp KHÔNG tái hiện được đường thật.** Biến thể dựng bằng đúng
+   `escapeDrawText` hiện tại lại ra một khung TRỐNG (983 byte so với 16.912 byte).
+   Production vẽ chữ bình thường, nên sai là ở bộ thử, không phải ở mã: chuỗi
+   filter thật đi qua tệp kịch bản (`render.ts:342`), mà luật escape trong tệp
+   kịch bản khác luật trên dòng lệnh.
+
+`server/dev-render-frame.ts` không dùng được làm chứng: nó tự dựng chuỗi
+`drawtext` riêng chứ không đi qua `burnElements`.
+
+**Kết luận:** cú đổi này chỉ nhận được sau khi chạy `burnElements` thật rồi so
+khung — tức là qua `tedit_test` trong skill deploy. Không làm mù.
 
 ### 6.3 lệch so với plan
 
