@@ -96,27 +96,23 @@ export type RenderElement = {
 /**
  * Đưa chữ người dùng vào `drawtext` qua MỘT TỆP, không qua tham số `text`.
  *
- * Vì sao đổi: phép escape cũ đổi dấu nháy `'` thành `’` — lặng lẽ sửa chữ người
- * dùng gõ. `don't` in ra thành `don’t` và không ai báo gì.
+ * Sửa HAI lỗi cùng lúc, cả hai đều thuộc loại im lặng:
  *
- * Nội dung ghi THÔ, không escape gì cả. Đo thật trên đúng đường vẽ này
- * (`burnElements` → so từng khung):
+ * 1. Phép escape cũ đổi `'` thành `’` — lặng lẽ sửa chữ người dùng gõ. `don't`
+ *    in ra `don’t`, không ai báo gì. Qua tệp thì `'` và `:` hết là ký tự phân
+ *    cách của cú pháp filter nên giữ nguyên được.
+ * 2. Escape `\%` bên trong `text='...'` làm `drawtext` bỏ HẲN cả từ chứa nó.
+ *    Đo trên đúng đường vẽ này: `khong dau nhay: 50% xong` in ra thành
+ *    `khong dau nhay: xong`. Mất chữ mà không lỗi, không cảnh báo. Cùng chuỗi
+ *    `\%` ấy đặt trong TỆP thì vẽ ra `%` đúng.
  *
- * - Chữ KHÔNG có dấu nháy: khung y hệt bản cũ, SSIM 1.000000. Sàn nhiễu đo được
- *   cũng đúng 1.000000, nên con số đó là bằng thật chứ không phải làm tròn.
- * - Chữ CÓ dấu nháy: khác đúng ở chỗ dấu nháy, và khác theo hướng đúng.
- * - Ghi `\%` vào tệp thì LỆCH 801 điểm ảnh ở mép nét chữ. `drawtext` đọc từ tệp
- *   không áp cùng lớp khai triển như đọc từ `text=`, nên escape ở đây là thêm ký
- *   tự thừa chứ không phải giữ an toàn.
- * - `expansion=none` cũng lệch đúng 801 điểm ảnh ấy. Không dùng: đường vẽ chính
- *   không phải chỗ nhận một thay đổi chưa giải thích được.
- *
- * Tên tệp mang số thứ tự để hai lệnh `drawtext` cùng khung không đè nhau; tất cả
- * nằm dưới `work/` nên đi cùng lượt dọn của thư mục đó.
+ * `\` và `%` vẫn phải escape: chúng là chuyện của lớp KHAI TRIỂN bên trong
+ * `drawtext`, không phải của lớp cú pháp, nên đổi cách đưa chữ vào không đụng
+ * tới chúng. Bỏ escape `%` thì lại rơi vào đúng lỗi (2) — đã đo.
  */
 function textFileFor(projectId: string, id: string, value: string) {
   const path = join(workDir(projectId), `text-${id}.txt`);
-  writeFileSync(path, value, "utf8");
+  writeFileSync(path, value.replace(/\\/g, "\\\\").replace(/%/g, "\\%"), "utf8");
   return path;
 }
 
