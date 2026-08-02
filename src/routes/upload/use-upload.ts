@@ -2,7 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { PickerItem } from "@/components/media-picker-item";
 import { toast } from "@/components/ui/toast";
-import { ApiError, api, type ApiSettings } from "@/lib/api";
+import {
+  ApiError,
+  api,
+  isJobActive,
+  queueLabel,
+  type ApiSettings,
+} from "@/lib/api";
 
 import type { StylePackId } from "../../../server/style-pack";
 import {
@@ -338,7 +344,8 @@ export function useUpload(openingProjectId?: string) {
         if (!alive) return;
         setTranscribe({
           status: job.status,
-          message: job.message ?? "",
+          message:
+            job.status === "queued" ? queueLabel(job) : (job.message ?? ""),
           progress: job.progress ?? 0,
         });
       })
@@ -918,7 +925,7 @@ export function useUpload(openingProjectId?: string) {
   }, []);
 
   useEffect(() => {
-    if (!projectId || transcribe?.status !== "running") return;
+    if (!projectId || !isJobActive(transcribe?.status)) return;
     const timer = window.setInterval(async () => {
       try {
         const job = await api.getJob(projectId, "transcribe");
@@ -935,7 +942,8 @@ export function useUpload(openingProjectId?: string) {
         }
         setTranscribe({
           status: job.status,
-          message: job.message ?? "",
+          message:
+            job.status === "queued" ? queueLabel(job) : (job.message ?? ""),
           progress: job.progress ?? 0,
         });
       } catch {

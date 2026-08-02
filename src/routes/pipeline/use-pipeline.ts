@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { api, type ApiPipeline } from "@/lib/api";
+import { api, isJobActive, type ApiPipeline } from "@/lib/api";
 
 import type { StylePackId } from "../../../server/style-pack";
 
@@ -87,7 +87,11 @@ export function usePipeline(projectId: string | undefined): PipelineView {
       );
       setPosterUrl(main?.thumb_path ? api.fileUrl(main.thumb_path) : null);
       const job = data.jobs.find((item) => item.kind === "transcribe");
-      setMessage(job?.status === "running" ? (job.message ?? null) : null);
+      // Cả `running` lẫn `queued`: việc đang xếp hàng vẫn phải nói ra, không thì
+      // màn dựng im lặng trong lúc máy chủ đang bận và người dùng tưởng hỏng.
+      // Không hiện thứ tự ở đây vì payload dự án không mang nó — dòng
+      // "Đang xếp hàng" do máy chủ ghi sẵn vào việc là đủ.
+      setMessage(isJobActive(job?.status) ? (job?.message ?? null) : null);
       setJobError(job?.status === "error" ? (job.message ?? "Lỗi") : null);
       settledRef.current = data.pipeline?.settled ?? false;
       setError(null);

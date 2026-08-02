@@ -1,5 +1,5 @@
-import { canTieng, doTieng } from "./auto-audio";
-import { autoGradeOn, canHinh, doHinh } from "./auto-grade";
+import { levelAudio, measureAudio } from "./auto-audio";
+import { autoGradeOn, gradeImage, measureImage } from "./auto-grade";
 import { join } from "node:path";
 
 import { buildEnvelope } from "./audio-envelope";
@@ -8,6 +8,7 @@ import { filterHallucinations } from "./hallucination-filter";
 import { extractAudio, makeFilmstrip, probe } from "./media-tools";
 import { thumbDir, workDir } from "./paths";
 import { existsSync } from "node:fs";
+import { unlink } from "node:fs/promises";
 
 import { listMusic } from "./music-tracks";
 import {buildBase, burnElements, type CrossAt, cutRanges, keptBefore, mixMusic, mapToOutput, type KeptRange, normalizeReveal, type RenderElement} from "./render";
@@ -542,7 +543,7 @@ type ManualEffect = { start: number; end: number; kind: JunctionId };
  * Tách khỏi `runExport` để phép kiểm gọi được mà không cần cả cơ sở dữ liệu lẫn
  * ffmpeg — thứ cần kiểm ở đây chỉ là số học của việc mượn đệm.
  */
-export function duLieuChuyenCanh(
+export function buildCrossAt(
   kept: KeptRange[],
   manual: ManualEffect[],
   defaultKind: JunctionId,
@@ -598,7 +599,7 @@ export async function runExport(projectId: string) {
     kind: normalizeJunction(row.kind),
   }));
 
-  const crossAt = duLieuChuyenCanh(kept, manual, defaultKind);
+  const crossAt = buildCrossAt(kept, manual, defaultKind);
 
   setJob(projectId, "export", "running", 35, "Đang bỏ các đoạn đã gạch");
   const cut = await cutRanges(projectId, baseVideo, kept, crossAt);
@@ -632,9 +633,9 @@ export async function runExport(projectId: string) {
     cutMarks.push(running);
     cutMarksSource.push(range.end);
   }
-  const tongDaCat = kept.reduce((sum, r) => sum + (r.end - r.start), 0);
+  const keptTotal = kept.reduce((sum, r) => sum + (r.end - r.start), 0);
 
-  const cheoTai = new Set(crossAt.map((item) => item.sau));
+  const crossFadedAudio = new Set(crossAt.map((item) => item.sau));
 
   /*
    * KẸP quãng hiệu ứng vào chỗ nó được phép chạy.
@@ -668,7 +669,7 @@ export async function runExport(projectId: string) {
     // Chỗ nối đã dựng chuyển cảnh thật thì thôi: chồng một cú phóng lên một cú
     // hoà tan là hai thứ giành nhau, và cái nhìn thấy chỉ là hình vừa mờ vừa
     // giật — không ra kiểu nào cả.
-    if (cheoTai.has(index)) continue;
+    if (crossFadedAudio.has(index)) continue;
     // Ranh giới là NỬA ĐƯỜNG tới vết cắt bên cạnh, không phải chính vết cắt đó:
     // cho chạy tới tận vết cắt sau thì quãng này và quãng của chỗ nối ấy vẫn
     // giẫm lên nhau, vì quãng kia được phép bắt đầu từ vết cắt trước — tức từ
@@ -677,7 +678,7 @@ export async function runExport(projectId: string) {
     const sanSau =
       index + 1 < cutMarks.length
         ? (cutAt + cutMarks[index + 1]) / 2
-        : tongDaCat;
+        : keptTotal;
     // Nửa dài 0 giây không đòi chỗ nào — để nguyên `Infinity` thì nó không tham
     // gia quyết định hệ số co, thay vì thành 0/0.
     const coTruoc = before > 0 ? (cutAt - sanTruoc) / before : Infinity;
@@ -708,14 +709,14 @@ export async function runExport(projectId: string) {
    * Tốn hai giây quét — chấp nhận được ở chặng cuối, nơi ffmpeg vốn đã chạy
    * hàng chục giây.
    */
-  const tuCan = autoGradeOn(projectId);
-  const canh = tuCan ? canHinh(await doHinh(cut)) : null;
-  if (canh) console.log(`[render] tự cân hình: ${canh.lyDo.join(" · ")}`);
+  const autoGradeWanted = autoGradeOn(projectId);
+  const graded = autoGradeWanted ? gradeImage(await measureImage(cut)) : null;
+  if (graded) console.log(`[render] tự cân hình: ${graded.lyDo.join(" · ")}`);
 
   // Đo TIẾNG trên cùng bản đã cắt, cùng lý do với hình: nhiều tệp ghép lại thì
   // mỗi tệp một mức, đo riêng rồi chỉnh riêng là đoạn nọ to hơn đoạn kia.
-  const canhTieng = tuCan ? canTieng(await doTieng(cut)) : null;
-  if (canhTieng) console.log(`[render] tự cân tiếng: ${canhTieng.lyDo.join(" · ")}`);
+  const gradedAudio = autoGradeWanted ? levelAudio(await measureAudio(cut)) : null;
+  if (gradedAudio) console.log(`[render] tự cân tiếng: ${gradedAudio.lyDo.join(" · ")}`);
 
   const finalPath = await burnElements(
     projectId,
@@ -725,12 +726,12 @@ export async function runExport(projectId: string) {
     // lượt sau — bản đang dựng dở không tự đổi dáng ở nửa sau video.
     readStylePack(projectId),
     junctions,
-    canh,
+    graded,
   );
 
   // Nhạc đặt theo thời gian NGUỒN trên dải, nên phải quy sang dải ĐÃ CẮT: bỏ
   // một phút ở giữa thì bài nhạc đặt sau đó cũng phải lùi lên đúng một phút,
-  // không thì nó kêu lệch hẳn so với chỗ người dùng đã canh.
+  // không thì nó kêu lệch hẳn so với chỗ người dùng đã graded.
   const cues = listMusic(projectId)
     .filter((track) => existsSync(track.stored_path))
     .map((track) => {
@@ -745,16 +746,39 @@ export async function runExport(projectId: string) {
     // Bài nằm trọn trong một quãng đã bỏ thì độ dài về 0 — bỏ luôn, giữ lại là
     // `atrim` ra luồng rỗng và cả lệnh trộn hỏng.
     .filter((cue) => cue.length > 0.2);
-  if (cues.length > 0 || canhTieng) {
+  if (cues.length > 0 || gradedAudio) {
     setJob(
       projectId, "export", "running", 85,
       cues.length > 0 ? "Đang trộn nhạc nền" : "Đang cân âm lượng",
     );
-    await mixMusic(projectId, finalPath, cues, canhTieng);
+    await mixMusic(projectId, finalPath, cues, gradedAudio);
   }
 
   setJob(projectId, "export", "done", 100, "Xong", finalPath);
+  await dropExportScratch(projectId);
   return finalPath;
+}
+
+/**
+ * Dọn tệp trung gian của lượt xuất — CHỈ khi lượt ấy thành công.
+ *
+ * Mỗi dự án giữ lại khoảng ba tới bốn lần dung lượng tư liệu gốc, và giữ mãi.
+ * `teddit.db` nằm cùng ổ với video, nên ổ đầy không phải chuyện "hết chỗ tải
+ * thêm" mà là chuyện SQLite hết chỗ ghi — lỗi hiện ra ở một nơi chẳng liên quan
+ * gì tới nguyên nhân, thường là giữa lượt dựng của một người khác.
+ *
+ * Chỉ xoá `cut.mp4` và tệp biểu thức của nó. `base.mp4` và `audio.wav` PHẢI ở
+ * lại: dải ảnh (`/api/projects/:id/filmstrip`) và đường bao tiếng
+ * (`/api/projects/:id/envelope`) đọc thẳng hai tệp đó mỗi lần mở bàn dựng — xoá
+ * chúng là dọn đĩa bằng cách làm hỏng bàn dựng.
+ *
+ * Không dọn ở nhánh hỏng: lúc ấy chúng là bằng chứng để đọc ra chỗ gãy.
+ */
+async function dropExportScratch(projectId: string) {
+  const work = workDir(projectId);
+  for (const name of ["cut.mp4", "cut-filter.txt"]) {
+    await unlink(join(work, name)).catch(() => {});
+  }
 }
 
 /** Đổi phần tử gắn-vào-TỪ thành mốc thời gian trên dải ĐÃ CẮT. */

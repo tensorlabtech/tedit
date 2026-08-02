@@ -98,10 +98,35 @@ export type ApiElement = {
 
 export type ApiJob = {
   kind: string;
-  status: "running" | "done" | "error";
+  /**
+   * `queued` = máy chủ ĐÃ NHẬN việc nhưng đang bận, việc đang chờ tới lượt.
+   *
+   * Khác `error` ở chỗ không có gì hỏng, và khác `running` ở chỗ chưa tốn tài
+   * nguyên nào. Xem `server/job-queue.ts`.
+   */
+  status: "queued" | "running" | "done" | "error";
   progress: number;
   message: string | null;
+  /** Đứng thứ mấy trong hàng, tính từ 1. `null` khi không chờ. */
+  queuePosition?: number | null;
 };
+
+/**
+ * Việc còn ĐANG DIỄN RA — nghĩa là màn hình phải hỏi tiếp.
+ *
+ * Bốn chỗ hỏi tiến độ (bàn dựng ×2, màn nạp tệp, màn dựng) đều từng viết
+ * `status !== "running"` để dừng hỏi. Thêm `queued` mà không sửa cả bốn thì việc
+ * xếp hàng bị bỏ rơi: máy chủ chạy nó xong xuôi mà màn hình không bao giờ hỏi
+ * lại. Để luật ở MỘT chỗ thì không có chỗ thứ hai để quên.
+ */
+export const isJobActive = (status: string | undefined | null) =>
+  status === "running" || status === "queued";
+
+/** Câu hiện cho người dùng khi việc đang chờ tới lượt. */
+export const queueLabel = (job: Pick<ApiJob, "queuePosition">) =>
+  job.queuePosition && job.queuePosition > 1
+    ? `Đang xếp hàng — thứ ${job.queuePosition}`
+    : "Đang xếp hàng";
 
 /** Một chặng của lượt dựng — xem `server/pipeline-steps.ts`. */
 export type ApiStep = {
@@ -198,6 +223,16 @@ export type ApiSettings = {
   wantMusic: boolean;
   profile: string;
 };
+
+/**
+ * Dung lượng ổ chứa dữ liệu của máy chủ.
+ *
+ * `unavailable` khi máy chủ không đo được — hiếm, nhưng có thật trên vài loại
+ * ổ gắn mạng. Lúc ấy màn hình im lặng chứ không bịa ra số 0.
+ */
+export type ApiStorage =
+  | { totalBytes: number; freeBytes: number; usedBytes: number }
+  | { unavailable: true };
 
 export type ApiSegment = {
   id: string;
@@ -682,6 +717,9 @@ export const api = {
       `/api/library/assets/${encodeURIComponent(file)}`,
       { method: "PATCH", body: JSON.stringify(patch) },
     ),
+
+  /** Đĩa của máy chủ còn bao nhiêu — con số để biết lúc nào phải dọn */
+  getStorage: () => request<ApiStorage>("/api/storage"),
 
   /** Đặt một tư liệu TỪ KHO vào dự án — máy chủ chép một bản sang thư mục dự án */
   addAssetFromLibrary: (projectId: string, file: string) =>

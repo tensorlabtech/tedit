@@ -4,6 +4,8 @@ import { toast } from "@/components/ui/toast";
 import {
   ApiError,
   api,
+  isJobActive,
+  queueLabel,
   type ApiMusicTrack,
   type ApiProject,
   type ApiPipeline,
@@ -2306,11 +2308,15 @@ export function useEditor(projectId: string | undefined) {
   }, [projectId]);
 
   useEffect(() => {
-    if (!projectId || transcribeJob?.status !== "running") return;
+    if (!projectId || !isJobActive(transcribeJob?.status)) return;
     const timer = window.setInterval(async () => {
       try {
         const job = await api.getJob(projectId, "transcribe");
-        setTranscribeJob({ status: job.status, message: job.message ?? "" });
+        setTranscribeJob({
+          status: job.status,
+          message:
+            job.status === "queued" ? queueLabel(job) : (job.message ?? ""),
+        });
         // Chép lời HỎNG thì phải nói ra. Trước đây chỉ ghi vào state rồi thôi:
         // nút quay về chữ "Chép lời" như chưa có gì xảy ra, người dùng bấm mà
         // không thấy động tĩnh gì thì tưởng nút hỏng. Đo thật: dự án chưa có
@@ -2794,11 +2800,15 @@ export function useEditor(projectId: string | undefined) {
   }, [projectId]);
 
   useEffect(() => {
-    if (!projectId || exportJob?.status !== "running") return;
+    if (!projectId || !isJobActive(exportJob?.status)) return;
     const timer = window.setInterval(async () => {
       try {
         const job = await api.getJob(projectId, "export");
-        setExportJob({ status: job.status, message: job.message ?? "" });
+        setExportJob({
+          status: job.status,
+          message:
+            job.status === "queued" ? queueLabel(job) : (job.message ?? ""),
+        });
         // Xuất HỎNG cũng phải nói ra — cùng lý do với chép lời. Người dùng đợi
         // vài phút rồi thấy nút quay về chữ "Xuất video" mà không biết vì sao.
         if (job.status === "error") {
