@@ -17,12 +17,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Progress } from "@/components/ui/progress";
 import { Slider } from "@/components/ui/slider";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
-import { api, type ApiSettings } from "@/lib/api";
+import { api, type ApiSettings, type ApiStorage } from "@/lib/api";
 import { INSERT_SOURCE_LABELS } from "@/lib/insert-source-options";
 
 /**
@@ -345,10 +346,60 @@ export function SettingsPage() {
                 />
               </Field>
             </Nhom>
+
+            <Nhom
+              ten="Chỗ chứa"
+              y="Máy chủ dùng chung. Video gốc, bản dựng và cơ sở dữ liệu nằm cùng một ổ."
+            >
+              <StorageLine />
+            </Nhom>
           </div>
         </ScrollArea>
       </CardContent>
     </Card>
+  );
+}
+
+const GB = 1024 ** 3;
+const gb = (bytes: number) => `${(bytes / GB).toFixed(1)} GB`;
+
+/**
+ * Ổ của máy chủ còn bao nhiêu.
+ *
+ * Là con số để BIẾT LÚC NÀO PHẢI DỌN, không phải hạn mức — không ai bị chặn vì
+ * dòng này. Cần nói ra vì cơ sở dữ liệu nằm cùng ổ với video: ổ đầy không hiện
+ * ra thành "hết chỗ tải thêm" mà thành một lỗi ghi ở giữa lượt dựng của người
+ * khác, ở chỗ chẳng liên quan gì tới nguyên nhân.
+ *
+ * Đo không được thì KHÔNG hiện gì. Bịa ra số 0 tệ hơn im lặng.
+ */
+function StorageLine() {
+  const [storage, setStorage] = useState<ApiStorage | null>(null);
+
+  useEffect(() => {
+    api
+      .getStorage()
+      .then(setStorage)
+      .catch(() => setStorage(null));
+  }, []);
+
+  if (!storage || "unavailable" in storage) return null;
+
+  const usedRatio = storage.totalBytes > 0
+    ? storage.usedBytes / storage.totalBytes
+    : 0;
+
+  return (
+    <Field>
+      <FieldLabel>
+        Đã dùng {gb(storage.usedBytes)} / {gb(storage.totalBytes)}
+      </FieldLabel>
+      <Progress value={Math.round(usedRatio * 100)} />
+      <FieldDescription>
+        Còn trống {gb(storage.freeBytes)}. Mỗi dự án giữ lại khoảng ba tới bốn
+        lần dung lượng video gốc — xoá dự án đã xong là cách dọn nhanh nhất.
+      </FieldDescription>
+    </Field>
   );
 }
 
