@@ -4,6 +4,10 @@ import { toast } from "@/components/ui/toast";
 import { useMediaIntake } from "./use-media-intake";
 import type { RevealId, ShapeId } from "./editor-data";
 import { segmentLabel, shape, toMusicTrack } from "./shape-project";
+import { useTrimDrag } from "./use-trim-drag";
+import { boQuaLoi } from "./ignore-error";
+import type { UndoEntry } from "./editor-data";
+import { MIN_EFFECT_LENGTH, MIN_TEXT_LENGTH } from "./editor-limits";
 import {
   ApiError,
   api,
@@ -38,103 +42,6 @@ import {
   type JunctionId,
 } from "@/dev/overlays/overlay-model";
 
-/** Một bước hoàn tác được — chỉ chứa dữ liệu để còn cất vào localStorage. */
-type UndoEntry =
-  // Bỏ một quãng giờ là bỏ ĐOẠN (có thể vài đoạn), không còn bảng cắt riêng.
-  | { type: "cut"; label: string; segmentIds: string[] }
-  | {
-      type: "trim";
-      label: string;
-      segmentId: string;
-      edge: "start" | "end";
-      /** Mốc TRƯỚC khi gọt — hoàn tác là đặt mép về đúng chỗ này */
-      at: number;
-    }
-  | { type: "split"; label: string; segmentId: string }
-  | {
-      type: "segment";
-      label: string;
-      segmentId: string;
-      wasRemoved: boolean;
-    }
-  | { type: "sentence"; label: string; sentenceId: string; wasRemoved: boolean }
-  | {
-      type: "music-trim";
-      label: string;
-      trackId: string;
-      edge: "start" | "end";
-      /** Mốc TRƯỚC khi kéo */
-      at: number;
-    }
-  // Gỡ một bài nhạc: giữ đủ dữ liệu để đặt lại. Tệp nhạc là thứ người dùng phải
-  // đi tìm và tải lên, mất nó thì "hoàn tác" chỉ là lời hứa suông.
-  | {
-      type: "music-restore";
-      label: string;
-      track: {
-        id: string;
-        position: number;
-        name: string;
-        storedPath: string;
-        start: number;
-        end: number;
-        volume: number;
-      };
-    }
-  | { type: "element"; label: string; elementId: string }
-  // MỘT mục cho mọi thao tác trên hiệu ứng — thêm, xoá, đổi kiểu, kéo quãng.
-  // Cả bốn đều là "hàng này trước đó trông ra sao", nên một mục là đủ; tách bốn
-  // loại thì bốn nhánh hoàn tác viết y hệt nhau.
-  | {
-      type: "effect";
-      label: string;
-      effectId: string;
-      /** Trạng thái TRƯỚC — `null` là lúc đó chưa có hàng nào (thao tác thêm) */
-      was: { start: number; end: number; kind: JunctionId } | null;
-    }
-  | {
-      type: "insert-trim";
-      label: string;
-      elementId: string;
-      edge: "start" | "end";
-      /** Mã TỪ mà mép đang neo TRƯỚC khi kéo */
-      wordId: string;
-    }
-  // Chữ TỰ DO neo theo giờ, nên hoàn tác trả lại một con GIÂY chứ không phải
-  // một mã từ như `insert-trim`.
-  | {
-      type: "text-trim";
-      label: string;
-      elementId: string;
-      edge: "start" | "end";
-      at: number;
-    }
-  // Tạo chữ từ lời sinh ra hàng chục phần tử một lúc — hoàn tác phải gỡ cả loạt,
-  // không thì người dùng phải xoá tay 58 cái.
-  | { type: "captions"; label: string; elementIds: string[] }
-  // Xoá một chữ hay một tư liệu: giữ đủ dữ liệu để DỰNG LẠI nó. Xoá là việc
-  // huỷ hoại nhất trên bàn dựng — người dùng mất công đặt chỗ, chọn kiểu, đánh
-  // dấu từ khoá, rồi một cú bấm nhầm là mất sạch mà không có đường lùi.
-  | {
-      type: "restore";
-      label: string;
-      element: {
-        kind: "text" | "insert";
-        fromWordId: string;
-        toWordId: string;
-        /** Chữ TỰ DO dựng lại bằng cặp giây này, vì nó không có mã từ nào */
-        start?: number;
-        end?: number;
-        content?: string;
-        band?: string;
-        mediaFileId?: string;
-        align?: string;
-        emphasis?: string;
-        reveal?: string;
-        shape?: string;
-        keywords?: string[];
-      };
-    };
 
 export type Selection =
   | { kind: "clip"; id: string }
@@ -164,7 +71,7 @@ export const ZOOM_STEP = 1.25;
  * Khớp `MIN_LENGTH` của `server/segments.ts` — máy chủ là nơi chốt, đây chỉ là
  * bản sao để khoá nút trước khi người dùng bấm vào chỗ không tách được.
  */
-export const MIN_SEGMENT = 0.3;
+export { MIN_SEGMENT } from "./editor-limits";
 
 /**
  * Đổi độ lăn thành hệ số phóng — theo ĐỘ LỚN cú lăn, không phải mỗi cú một nấc.
@@ -178,46 +85,14 @@ export function zoomFactorFromWheel(deltaY: number) {
   return Math.min(1.5, Math.max(1 / 1.5, Math.exp(-deltaY * 0.0035)));
 }
 
-/**
- * Khoảng nhạc ngắn hơn hai giây không còn là nhạc nền, chỉ là một tiếng bụp.
- * Máy chủ chặn cùng con số này — xem `music-tracks.ts`.
- */
-const MIN_MUSIC_LENGTH = 2;
 
-/**
- * Bắt lỗi của một lệnh GHI — và nói ra, thay vì nuốt im lặng.
- *
- * Bàn dựng đổi hình ngay khi bấm rồi mới ghi xuống máy chủ (lạc quan). Ghi hỏng
- * mà không báo thì màn hình nói một đằng, dữ liệu một nẻo — người dùng chỉ biết
- * ở lần mở sau, lúc đó công đã mất và không còn manh mối nào.
- *
- * Từng có 25 chỗ viết `.catch(boQuaLoi())`. Một hàm dùng chung thì chỗ nào cũng
- * báo giống nhau, và không ai phải nhớ tự viết lấy.
- */
-const boQuaLoi = () => (error: unknown) => {
-  toast.add({
-    title: "Không lưu được thay đổi",
-    description:
-      error instanceof Error && error.message
-        ? error.message
-        : "Máy chủ không trả lời — thử lại giúp mình",
-    type: "error",
-  });
-};
 
 /** Một khung hình ở 30 khung/giây — bước lùi nhỏ nhất còn có nghĩa trên dải. */
 const FRAME = 1 / 30;
 
 /** Khối chữ tự do mới đặt dài bao lâu — đủ đọc một dòng tiêu đề. */
 const TEXT_DEFAULT_LENGTH = 2;
-/** Sàn khi kéo hai đầu khối chữ; máy chủ chặn cùng con số này. */
-const MIN_TEXT_LENGTH = 0.4;
 
-/**
- * Hiệu ứng ngắn nhất — dưới mức này thì cú nhấn rơi gọn trong một hai khung
- * hình, xem ra chỉ như một cái giật chứ không đọc được là chủ ý.
- */
-const MIN_EFFECT_LENGTH = 0.15;
 
 /** Dựng dữ liệu màn Editor từ dữ liệu máy chủ trả về. */
 /**
@@ -249,6 +124,21 @@ export function demElement(
   ).length;
   return textCount + insertCount;
 }
+
+/** Một hiệu ứng đã tính xong mốc trên dải đã cắt — hình dạng `effects` trả về. */
+type EffectRow = {
+  id: string;
+  start: number;
+  end: number;
+  kind: JunctionId;
+  custom: boolean;
+  /** Mốc đã đổi sang dải ĐÃ CẮT — đó là thang mà dải thời gian vẽ theo. */
+  outStart: number;
+  outEnd: number;
+  outPeak: number;
+  /** Nằm đúng một vết cắt, tức là do máy tự suy chứ không phải người đặt tay. */
+  atCut: boolean;
+};
 
 export function useEditor(projectId: string | undefined) {
   const [data, setData] = useState<ReturnType<typeof shape> | null>(null);
@@ -1499,378 +1389,29 @@ export function useEditor(projectId: string | undefined) {
    * `commitTrim` lúc thả tay — mỗi lần kéo bắn hàng chục sự kiện, ghi từng cái
    * là đẻ ra hàng chục đoạn cắt vụn.
    */
-  const dragTrim = useRef<{
-    /** Mỗi loại một đường ghi khác nhau */
-    kind: "clip" | "music" | "insert" | "text" | "effect";
-    id: string;
-    edge: "start" | "end";
-    /** Mốc mới của mép, chốt lúc thả tay */
-    at: number;
-    /** Mốc cũ, để hoàn tác */
-    was: number;
-    /** Tư liệu chèn neo vào TỪ, nên mép của nó là một mã từ chứ không phải giây */
-    wordId?: string;
-    wasWordId?: string;
-    /**
-     * Có mặt khi lần kéo này BIẾN một hiệu ứng tự suy thành hàng thật. Hoàn tác
-     * lúc ấy phải XOÁ hàng đi chứ không phải trả mép về chỗ cũ — trả mép thì còn
-     * lại một hàng thật trùng khít cái tự suy, nhìn không ra khác biệt mà lần
-     * sau đổi mặc định dự án thì chỗ này trơ ra.
-     */
-    wasKind?: JunctionId;
-  } | null>(null);
-
-  const trim = useCallback(
-    (
-      kind: "clip" | "music" | "insert" | "text" | "effect",
-      id: string,
-      edge: "start" | "end",
-      nextTime: number,
-    ) => {
-      setData((current) => {
-        if (!current) return current;
-        // Hiệu ứng kéo theo GIÂY như chữ tự do. Cái đang TỰ SUY ở vết cắt thì
-        // lần kéo đầu tiên hoá nó thành hàng thật — không thì kéo xong buông
-        // tay là nó về chỗ cũ, mà chẳng có gì giải thích.
-        if (kind === "effect") {
-          const manual = current.manualEffects.find((item) => item.id === id);
-          const original =
-            manual ?? effectsRef.current.find((item) => item.id === id) ?? null;
-          if (!original) return current;
-          const bounded =
-            edge === "start"
-              ? Math.min(
-                  Math.max(nextTime, 0),
-                  original.end - MIN_EFFECT_LENGTH,
-                )
-              : Math.max(nextTime, original.start + MIN_EFFECT_LENGTH);
-          dragTrim.current = {
-            kind: "effect",
-            id,
-            edge,
-            at: bounded,
-            was:
-              dragTrim.current?.was ??
-              (edge === "start" ? original.start : original.end),
-            wasKind:
-              dragTrim.current?.wasKind ?? (manual ? undefined : original.kind),
-          };
-          const next =
-            edge === "start"
-              ? { start: bounded, end: original.end }
-              : { start: original.start, end: bounded };
-          return {
-            ...current,
-            manualEffects: manual
-              ? current.manualEffects.map((item) =>
-                  item.id === id ? { ...item, ...next } : item,
-                )
-              : [
-                  ...current.manualEffects,
-                  { id, ...next, kind: original.kind },
-                ],
-          };
-        }
-        // Chữ TỰ DO kéo theo GIÂY, y như nhạc — nó không neo vào tiếng nào để
-        // mà bám ranh giới từ. Chữ chép lời thì không có tay nắm (khoảng của nó
-        // là khoảng của cụm lời), nên nhánh này chỉ chạy cho chữ tự do.
-        if (kind === "text") {
-          const element = current.textElements.find((item) => item.id === id);
-          if (!element) return current;
-          const bounded =
-            edge === "start"
-              ? Math.min(Math.max(nextTime, 0), element.end - MIN_TEXT_LENGTH)
-              : Math.max(nextTime, element.start + MIN_TEXT_LENGTH);
-          dragTrim.current = {
-            kind: "text",
-            id,
-            edge,
-            at: bounded,
-            was:
-              dragTrim.current?.was ??
-              (edge === "start" ? element.start : element.end),
-          };
-          return {
-            ...current,
-            textElements: current.textElements.map((item) =>
-              item.id === id
-                ? edge === "start"
-                  ? { ...item, start: bounded }
-                  : { ...item, end: bounded }
-                : item,
-            ),
-          };
-        }
-        if (kind === "insert") {
-          const insert = current.inserts.find((item) => item.id === id);
-          if (!insert) return current;
-          const words = current.words;
-          const from = words.findIndex((w) => w.id === insert.fromWordId);
-          const to = words.findIndex((w) => w.id === insert.toWordId);
-          if (from === -1 || to === -1) return current;
-          // Mép BÁM RANH GIỚI TỪ, không bám giây: tư liệu chèn neo vào khoảng
-          // từ (đặc tả §1), nên "kéo dài thêm" nghĩa là phủ thêm một tiếng nữa.
-          // Giữ ít nhất một tiếng — hai mép trùng nhau là khối rộng 0.
-          const gan = (from: number, to: number, lay: (w: Word) => number) => {
-            let best = from;
-            for (let i = from; i <= to; i += 1) {
-              if (
-                Math.abs(lay(words[i]) - nextTime) <
-                Math.abs(lay(words[best]) - nextTime)
-              ) {
-                best = i;
-              }
-            }
-            return best;
-          };
-          const pick =
-            edge === "start"
-              ? gan(0, to, (w) => w.start)
-              : gan(from, words.length - 1, (w) => w.end);
-          const word = words[pick];
-          dragTrim.current = {
-            kind: "insert",
-            id,
-            edge,
-            at: edge === "start" ? word.start : word.end,
-            was:
-              dragTrim.current?.was ??
-              (edge === "start" ? insert.start : insert.end),
-            wordId: word.id,
-            wasWordId:
-              dragTrim.current?.wasWordId ??
-              (edge === "start" ? insert.fromWordId : insert.toWordId),
-          };
-          return {
-            ...current,
-            inserts: current.inserts.map((item) =>
-              item.id === id
-                ? edge === "start"
-                  ? { ...item, start: word.start, fromWordId: word.id }
-                  : { ...item, end: word.end, toWordId: word.id }
-                : item,
-            ),
-          };
-        }
-        if (kind === "music") {
-          const track = current.music.find((item) => item.id === id);
-          if (!track) return current;
-          const bounded =
-            edge === "start"
-              ? Math.min(Math.max(nextTime, 0), track.end - MIN_MUSIC_LENGTH)
-              : Math.max(nextTime, track.start + MIN_MUSIC_LENGTH);
-          dragTrim.current = {
-            kind: "music",
-            id,
-            edge,
-            at: bounded,
-            was:
-              dragTrim.current?.was ??
-              (edge === "start" ? track.start : track.end),
-          };
-          return {
-            ...current,
-            music: current.music.map((item) =>
-              item.id === id
-                ? edge === "start"
-                  ? { ...item, start: bounded }
-                  : { ...item, end: bounded }
-                : item,
-            ),
-          };
-        }
-        // Tay nắm nằm trên ĐOẠN, nên phải sửa `segments`. Bản trước tìm trong
-        // `clips` (dải tệp) — không bao giờ khớp id, nên kéo không thấy gì động
-        // và lúc thả tay cũng không ghi được gì. Sai im lặng suốt.
-        const segment = current.segments.find((item) => item.id === id);
-        if (!segment) return current;
-        // Chặn LẤN sang đoạn bên cạnh ngay khi đang kéo, đúng luật máy chủ.
-        //
-        // Thiếu chặn ở đây thì màn hình vẽ khối lấn qua hàng xóm suốt lúc kéo,
-        // thả tay xong máy chủ kéo về — người dùng thấy khối giật ngược một cái
-        // mà không hiểu vì sao. Chặn ở cả hai nơi thì cái nhìn thấy đúng bằng
-        // cái sẽ được ghi.
-        const before = current.segments
-          .filter((item) => item.end <= segment.start + 0.001)
-          .reduce((max, item) => Math.max(max, item.end), 0);
-        const after = current.segments
-          .filter((item) => item.start >= segment.end - 0.001)
-          .reduce(
-            (min, item) => Math.min(min, item.start),
-            Number.POSITIVE_INFINITY,
-          );
-        // KHÔNG cần hít mép vào biên láng giềng ở đây, dù nghe như cần.
-        //
-        // Kéo mép ra khỏi một chỗ đã gọt thì hai phép chặn dưới đây đã cho ra ĐÚNG
-        // biên rồi, không sai một phần nghìn giây: mốc kéo đi qua `toSource`, mà
-        // `toSource` không bao giờ trả về một giây nằm TRONG quãng đã bỏ — nó nhảy
-        // thẳng từ mép này sang mép kia (xem vòng lặp `skipRanges` của nó). Nên chỉ
-        // cần nhích chuột ra một điểm ảnh là `nextTime` đã ở bên kia chỗ hở, rồi bị
-        // `Math.min(..., after)` ghim đúng vào biên.
-        //
-        // Nói cách khác: trên dải vẽ theo giờ XUẤT RA, chỗ hở rộng 0 nên không có
-        // cách nào kéo vào "giữa" nó. Từng thêm một phép hít 0,45s ở đây và bỏ đi,
-        // vì nó không bao giờ đổi được kết quả — chỉ là một hằng số để người đọc sau
-        // tưởng có luật gì đó đang chạy.
-        const bounded =
-          edge === "start"
-            ? Math.min(Math.max(nextTime, before), segment.end - MIN_SEGMENT)
-            : Math.min(Math.max(nextTime, segment.start + MIN_SEGMENT), after);
-        dragTrim.current = {
-          kind: "clip",
-          id,
-          edge,
-          at: bounded,
-          was:
-            dragTrim.current?.was ??
-            (edge === "start" ? segment.start : segment.end),
-        };
-        return {
-          ...current,
-          segments: current.segments.map((item) =>
-            item.id === id
-              ? edge === "start"
-                ? { ...item, start: bounded }
-                : { ...item, end: bounded }
-              : item,
-          ),
-        };
-      });
-    },
-    [],
-  );
-
   /**
-   * Chốt việc gọt mép: dịch MÉP CỦA ĐOẠN, không tạo một "vết cắt" riêng.
+   * Danh sách hiệu ứng mới nhất, đọc được từ trong các hàm gọi lại mà không phải
+   * cho nó vào danh sách phụ thuộc — cho vào thì mọi hàm dựng lại mỗi lần kéo
+   * một mép.
    *
-   * Phần bị gọt thành hở giữa hai đoạn, mà hở không thuộc đoạn nào nên không vào
-   * video — cùng một kết quả với cách cũ, nhưng không cần cơ chế thứ hai.
-   */
-  const commitTrim = useCallback(async () => {
-    const pending = dragTrim.current;
-    dragTrim.current = null;
-    if (!projectId || !pending) return;
-
-    if (pending.kind === "insert") {
-      if (pending.wordId) {
-        await api
-          .updateElement(
-            pending.id,
-            pending.edge === "start"
-              ? { fromWordId: pending.wordId }
-              : { toWordId: pending.wordId },
-          )
-          .catch(boQuaLoi());
-      }
-      if (pending.wasWordId) {
-        pushUndo({
-          type: "insert-trim",
-          label: "Đổi khoảng tư liệu",
-          elementId: pending.id,
-          edge: pending.edge,
-          wordId: pending.wasWordId,
-        });
-      }
-      return;
-    }
-    if (pending.kind === "effect") {
-      const item = effectsRef.current.find((row) => row.id === pending.id);
-      if (item) {
-        await api
-          .setEffect(projectId, pending.id, {
-            start: item.start,
-            end: item.end,
-            kind: item.kind,
-          })
-          .catch(boQuaLoi());
-      }
-      pushUndo({
-        type: "effect",
-        label: "Đổi quãng hiệu ứng",
-        effectId: pending.id,
-        was: pending.wasKind
-          ? null
-          : {
-              start:
-                pending.edge === "start" ? pending.was : (item?.start ?? 0),
-              end: pending.edge === "end" ? pending.was : (item?.end ?? 0),
-              kind: item?.kind ?? "zoom-in",
-            },
-      });
-      return;
-    }
-    if (pending.kind === "text") {
-      await api
-        .updateElement(
-          pending.id,
-          pending.edge === "start"
-            ? { start: pending.at }
-            : { end: pending.at },
-        )
-        .catch(boQuaLoi());
-      pushUndo({
-        type: "text-trim",
-        label: "Đổi khoảng chữ",
-        elementId: pending.id,
-        edge: pending.edge,
-        at: pending.was,
-      });
-      return;
-    }
-    if (pending.kind === "music") {
-      const row = await api
-        .updateMusic(
-          pending.id,
-          pending.edge === "start"
-            ? { start: pending.at }
-            : { end: pending.at },
-        )
-        .catch(() => null);
-      // Máy chủ mới là nơi chốt mốc (nó chặn hai mép vào nhau), nên lấy lại số
-      // của nó chứ không giữ số vừa vẽ trên màn.
-      if (row) {
-        setData((current) =>
-          current
-            ? {
-                ...current,
-                music: current.music.map((item) =>
-                  item.id === row.id ? toMusicTrack(row) : item,
-                ),
-              }
-            : current,
-        );
-      }
-      pushUndo({
-        type: "music-trim",
-        label: "Đổi khoảng nhạc",
-        trackId: pending.id,
-        edge: pending.edge,
-        at: pending.was,
-      });
-      return;
-    }
-
-    await api
-      .updateSegment(pending.id, { edge: pending.edge, at: pending.at })
-      .catch(boQuaLoi());
-    const rows = await api.listSegments(projectId).catch(() => null);
-    if (rows) applySegmentsRef.current(rows);
-    pushUndo({
-      type: "trim",
-      label: "Gọt mép đoạn",
-      segmentId: pending.id,
-      edge: pending.edge,
-      at: pending.was,
-    });
-  }, [projectId, pushUndo]);
-
-  /**
-   * Những chỗ KHÔNG vào video, suy ra từ ĐOẠN — không có danh sách riêng nào nữa.
+   * Khai ở đây chứ không ở cạnh chỗ tính `effects`: nhóm gọt mép ngay dưới đã
+   * đọc nó rồi, mà một `useRef` phải tồn tại trước lượt đọc đầu tiên. Phép gán
+   * `effectsRef.current = effects` vẫn nằm dưới, sau khi `effects` tính xong —
+   * ref không quan tâm thứ tự, chỉ cần cùng một thứ tự ở mọi lần render.
    *
-   * Ba nguồn, cùng một ý: đoạn bị bỏ, hở giữa hai đoạn (do gọt mép), câu bị gạch.
-   * Trước đây "cắt tay" là bảng thứ tư song song với đoạn, nên cùng một chuyện có
-   * hai chỗ lưu và hai cách hiện trên dải.
+   * Rỗng ở lượt render đầu là đúng: mọi chỗ đọc đều nằm trong hàm gọi lại, tức
+   * là chạy lúc người dùng chạm vào chứ không phải lúc dựng.
    */
+  const effectsRef = useRef<EffectRow[]>([]);
+
+  const { trim, commitTrim } = useTrimDrag({
+    projectId,
+    setData,
+    pushUndo,
+    applySegmentsRef,
+    effectsRef,
+  });
+
   const cuts = useMemo(() => {
     const segments = [...(data?.segments ?? [])].sort(
       (a, b) => a.start - b.start,
@@ -2605,9 +2146,7 @@ export function useEditor(projectId: string | undefined) {
     return [...derived, ...tay].sort((a, b) => a.outPeak - b.outPeak);
   }, [cutMark, current.manualEffects, zoomPunch, toOutput]);
 
-  // Đọc danh sách mới nhất từ trong các hàm gọi lại mà không phải cho nó vào
-  // danh sách phụ thuộc — cho vào thì mọi hàm dựng lại mỗi lần kéo một mép.
-  const effectsRef = useRef(effects);
+  // Gán ở ĐÂY, còn ref khai sớm hơn — xem chú thích ở chỗ khai.
   effectsRef.current = effects;
 
   /** Ghi một hiệu ứng xuống kho, có ghi vết hoàn tác. */

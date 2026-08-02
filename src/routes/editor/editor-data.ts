@@ -1,3 +1,4 @@
+import type { JunctionId } from "@/dev/overlays/overlay-model";
 /**
  * Dữ liệu mẫu cho màn Editor — nội dung lấy từ video sinh nhật thật.
  *
@@ -391,3 +392,102 @@ export function shortMediaLabel(name: string, thuTu?: number) {
   const short = base.length > 16 ? `${base.slice(0, 15)}…` : base;
   return `${kind} · ${short}`;
 }
+
+
+/** Một bước hoàn tác được — chỉ chứa dữ liệu để còn cất vào localStorage. */
+export type UndoEntry =
+  // Bỏ một quãng giờ là bỏ ĐOẠN (có thể vài đoạn), không còn bảng cắt riêng.
+  | { type: "cut"; label: string; segmentIds: string[] }
+  | {
+      type: "trim";
+      label: string;
+      segmentId: string;
+      edge: "start" | "end";
+      /** Mốc TRƯỚC khi gọt — hoàn tác là đặt mép về đúng chỗ này */
+      at: number;
+    }
+  | { type: "split"; label: string; segmentId: string }
+  | {
+      type: "segment";
+      label: string;
+      segmentId: string;
+      wasRemoved: boolean;
+    }
+  | { type: "sentence"; label: string; sentenceId: string; wasRemoved: boolean }
+  | {
+      type: "music-trim";
+      label: string;
+      trackId: string;
+      edge: "start" | "end";
+      /** Mốc TRƯỚC khi kéo */
+      at: number;
+    }
+  // Gỡ một bài nhạc: giữ đủ dữ liệu để đặt lại. Tệp nhạc là thứ người dùng phải
+  // đi tìm và tải lên, mất nó thì "hoàn tác" chỉ là lời hứa suông.
+  | {
+      type: "music-restore";
+      label: string;
+      track: {
+        id: string;
+        position: number;
+        name: string;
+        storedPath: string;
+        start: number;
+        end: number;
+        volume: number;
+      };
+    }
+  | { type: "element"; label: string; elementId: string }
+  // MỘT mục cho mọi thao tác trên hiệu ứng — thêm, xoá, đổi kiểu, kéo quãng.
+  // Cả bốn đều là "hàng này trước đó trông ra sao", nên một mục là đủ; tách bốn
+  // loại thì bốn nhánh hoàn tác viết y hệt nhau.
+  | {
+      type: "effect";
+      label: string;
+      effectId: string;
+      /** Trạng thái TRƯỚC — `null` là lúc đó chưa có hàng nào (thao tác thêm) */
+      was: { start: number; end: number; kind: JunctionId } | null;
+    }
+  | {
+      type: "insert-trim";
+      label: string;
+      elementId: string;
+      edge: "start" | "end";
+      /** Mã TỪ mà mép đang neo TRƯỚC khi kéo */
+      wordId: string;
+    }
+  // Chữ TỰ DO neo theo giờ, nên hoàn tác trả lại một con GIÂY chứ không phải
+  // một mã từ như `insert-trim`.
+  | {
+      type: "text-trim";
+      label: string;
+      elementId: string;
+      edge: "start" | "end";
+      at: number;
+    }
+  // Tạo chữ từ lời sinh ra hàng chục phần tử một lúc — hoàn tác phải gỡ cả loạt,
+  // không thì người dùng phải xoá tay 58 cái.
+  | { type: "captions"; label: string; elementIds: string[] }
+  // Xoá một chữ hay một tư liệu: giữ đủ dữ liệu để DỰNG LẠI nó. Xoá là việc
+  // huỷ hoại nhất trên bàn dựng — người dùng mất công đặt chỗ, chọn kiểu, đánh
+  // dấu từ khoá, rồi một cú bấm nhầm là mất sạch mà không có đường lùi.
+  | {
+      type: "restore";
+      label: string;
+      element: {
+        kind: "text" | "insert";
+        fromWordId: string;
+        toWordId: string;
+        /** Chữ TỰ DO dựng lại bằng cặp giây này, vì nó không có mã từ nào */
+        start?: number;
+        end?: number;
+        content?: string;
+        band?: string;
+        mediaFileId?: string;
+        align?: string;
+        emphasis?: string;
+        reveal?: string;
+        shape?: string;
+        keywords?: string[];
+      };
+    };
