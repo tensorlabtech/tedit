@@ -1,10 +1,50 @@
 import Database from "better-sqlite3";
-import { mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 
 import { DB_PATH } from "./paths";
 
 mkdirSync(dirname(DB_PATH), { recursive: true });
+
+/**
+ * Chép một bản CSDL sang bên cạnh trước khi dựng lại một bảng.
+ *
+ * Khối dựng lại nằm trong transaction nên an toàn về mặt CSDL — hoặc xong cả,
+ * hoặc không gì. Nhưng nó `DROP TABLE`, và transaction không cứu được trường hợp
+ * danh sách cột dựng ra SAI: lúc ấy lệnh chạy trót lọt, dữ liệu cũ đi mất, và
+ * không có gì để quay về.
+ *
+ * Đây là dữ liệu KHÔNG TÁI TẠO LẠI ĐƯỢC (xem `deploy/docker-compose.yml`), nên
+ * vài trăm MB đĩa cho một bản chép là cái giá rẻ nhất trong cả dự án.
+ *
+ * Giữ ba bản gần nhất. Giữ hết thì mỗi lượt deploy lại thêm một bản và chính chỗ
+ * sao lưu làm đầy ổ mà nó sinh ra để bảo vệ.
+ */
+function backupBeforeRebuild(label: string) {
+  if (!existsSync(DB_PATH)) return;
+  const dir = dirname(DB_PATH);
+  const stem = `${basename(DB_PATH)}.bak-`;
+  try {
+    // `VACUUM INTO` chứ không chép tệp: chế độ WAL để một phần dữ liệu mới nằm
+    // trong `-wal` chưa nhập vào tệp chính, nên `copyFile` ra một bản thiếu đúng
+    // những thay đổi gần nhất — bản sao lưu trông có vẻ ổn mà lại cũ hơn hiện tại.
+    db.prepare("VACUUM INTO ?").run(
+      join(dir, `${stem}${label}-${Date.now()}`),
+    );
+  } catch (error) {
+    // Sao lưu hỏng thì NÓI RA rồi dừng hẳn, không dựng lại bảng. Chạy tiếp là
+    // đúng lúc không có lưới lại đi làm động tác nguy hiểm nhất.
+    throw new Error(
+      `Không sao lưu được CSDL trước khi dựng lại bảng ${label}: ${error}`,
+    );
+  }
+  const olds = readdirSync(dir)
+    .filter((name) => name.startsWith(stem))
+    .sort();
+  for (const name of olds.slice(0, Math.max(0, olds.length - 3))) {
+    rmSync(join(dir, name), { force: true });
+  }
+}
 
 export const db = new Database(DB_PATH);
 db.pragma("journal_mode = WAL");
@@ -531,6 +571,7 @@ function relaxAnchorConstraints() {
   });
   const names = columns.map((column) => column.name).join(", ");
 
+  backupBeforeRebuild("elements");
   db.pragma("foreign_keys = OFF");
   db.transaction(() => {
     db.exec(`CREATE TABLE elements_new (${columnDefs.join(", ")})`);
