@@ -1,26 +1,64 @@
-import { StrictMode } from "react";
+import { StrictMode, Suspense, lazy } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Outlet, Route, Routes } from "react-router-dom";
 
 import "./index.css";
 import { Toaster } from "@/components/ui/toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { DesignSystemPage } from "@/dev/design-system/design-system-page";
-import { SkinLabPage } from "@/dev/skin/skin-lab-page";
-import { PipelinePage } from "./routes/pipeline/pipeline-page";
-import { StylePage } from "@/dev/overlays/style-page";
 import { MENU } from "@/routes/dashboard/dashboard-menu";
 import { DashboardShell } from "@/routes/dashboard/dashboard-shell";
 import { PlaceholderPage } from "@/routes/dashboard/placeholder-page";
-import { EditorPage } from "@/routes/editor/editor-page";
 import { HomeRoute } from "@/routes/home-route";
 import { RequireSession } from "@/routes/require-session";
-import { AssetsPage } from "@/routes/library/assets-page";
-import { MusicPage } from "@/routes/library/music-page";
-import { SettingsPage } from "@/routes/library/settings-page";
 import { ProjectsPage } from "@/routes/projects/projects-page";
-import { UploadPage } from "@/routes/upload/upload-page";
 import { useTheme } from "@/hooks/use-theme";
+
+/*
+ * Màn nào KHÔNG nằm trên đường vào thì nạp khi cần, không nạp sẵn.
+ *
+ * Cả trang từng là MỘT tệp 1,74 MB, và trong đó có luôn ba màn `/_dev/*` —
+ * riêng trang design system đã bày đủ 60 component với mọi biến thể. Người dùng
+ * thật tải hết chỗ đó về để xem một danh sách dự án mà họ sẽ không bao giờ mở
+ * mấy trang kia.
+ *
+ * `HomeRoute` và `ProjectsPage` nạp thẳng: chúng CHÍNH LÀ đường vào, tách ra chỉ
+ * đổi một lần tải thành hai.
+ */
+const DesignSystemPage = lazy(() =>
+  import("@/dev/design-system/design-system-page").then((m) => ({
+    default: m.DesignSystemPage,
+  })),
+);
+const SkinLabPage = lazy(() =>
+  import("@/dev/skin/skin-lab-page").then((m) => ({ default: m.SkinLabPage })),
+);
+const StylePage = lazy(() =>
+  import("@/dev/overlays/style-page").then((m) => ({ default: m.StylePage })),
+);
+const PipelinePage = lazy(() =>
+  import("./routes/pipeline/pipeline-page").then((m) => ({
+    default: m.PipelinePage,
+  })),
+);
+const EditorPage = lazy(() =>
+  import("@/routes/editor/editor-page").then((m) => ({ default: m.EditorPage })),
+);
+const UploadPage = lazy(() =>
+  import("@/routes/upload/upload-page").then((m) => ({ default: m.UploadPage })),
+);
+const AssetsPage = lazy(() =>
+  import("@/routes/library/assets-page").then((m) => ({
+    default: m.AssetsPage,
+  })),
+);
+const MusicPage = lazy(() =>
+  import("@/routes/library/music-page").then((m) => ({ default: m.MusicPage })),
+);
+const SettingsPage = lazy(() =>
+  import("@/routes/library/settings-page").then((m) => ({
+    default: m.SettingsPage,
+  })),
+);
 
 /**
  * Áp giao diện sáng/tối cho CẢ ứng dụng.
@@ -41,6 +79,11 @@ createRoot(document.getElementById("root")!).render(
       <BrowserRouter>
         <Toaster>
           <TooltipProvider>
+            {/* Chỗ chờ IM LẶNG — một khối trống đúng chỗ, không con quay.
+                Chunk về gần như tức thì trên mạng bình thường, nên nháy một con
+                quay rồi hiện nội dung đọc ra như trang bị giật chứ không như
+                trang đang tải. */}
+            <Suspense fallback={<div className="min-h-svh" />}>
             <Routes>
               {/* MỘT đường duy nhất mở cho người chưa đăng nhập: `/`. `HomeRoute`
                   tự chọn giới thiệu hay bảng điều khiển, và cửa đăng nhập nằm ngay
@@ -112,6 +155,7 @@ createRoot(document.getElementById("root")!).render(
                 <Route path="/editor/:projectId" element={<EditorPage />} />
               </Route>
             </Routes>
+            </Suspense>
           </TooltipProvider>
         </Toaster>
       </BrowserRouter>
