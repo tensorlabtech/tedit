@@ -1,0 +1,31 @@
+# Bốn phép kiểm đã có sẵn trong repo, chạy tự động.
+#
+# `check:ownership` và `check:style-pack` là hai phép kiểm bất biến quan trọng
+# nhất của dự án — luật phân quyền và lời hứa "đổi bộ dáng không đụng nội dung
+# người dùng". Cả hai dựng CSDL tạm nên không cần dữ liệu thật, và không gọi
+# ffmpeg nên không cần cài gì thêm.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 22 — cùng bản với máy chủ (xem deploy/Dockerfile).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run check:all
+
+      # Build sau cùng: nó chậm nhất, nên để bốn phép kiểm nhanh báo lỗi trước.
+      - run: npm run build

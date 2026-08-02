@@ -12,6 +12,7 @@
     "server": "tsx watch server/main.ts",
     "check:ownership": "TEDDIT_DATA_ROOT=$(mktemp -d) tsx server/ownership-check.ts",
     "check:style-pack": "TEDDIT_DATA_ROOT=$(mktemp -d) tsx server/style-pack-check.ts",
+    "check:all": "npm run typecheck && npm run lint && npm run check:ownership && npm run check:style-pack",
     "dev:all": "concurrently -n web,api -c cyan,magenta \"vite\" \"tsx watch server/main.ts\""
   },
   "dependencies": {
