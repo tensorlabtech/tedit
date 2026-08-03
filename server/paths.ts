@@ -23,6 +23,19 @@ export function ensureProjectDirs(projectId: string) {
   return base;
 }
 
+/**
+ * Nơi các MẢNH của một lượt tải lên nằm chờ, trước khi đủ để thành một tệp.
+ *
+ * Ngoài `projects/` chứ không nằm trong thư mục dự án: mảnh dở dang chưa thuộc
+ * về dự án nào cả — chưa có hàng nào trong CSDL trỏ tới nó, và người dùng có thể
+ * bỏ ngang. Để lẫn vào `work/` thì nó thành thứ mọi phép dọn theo dự án phải học
+ * cách bỏ qua, mà quên một chỗ là xoá nhầm một lượt tải đang chạy.
+ *
+ * `/files/` không phơi thư mục này ra: `assertOwnsFilePath` chỉ cho qua
+ * `projects/`, `music/` và `assets/`, còn lại chối thẳng.
+ */
+export const uploadsDir = () => join(DATA_ROOT, "uploads");
+
 export const mediaDir = (id: string) => join(projectDir(id), "media");
 export const thumbDir = (id: string) => join(projectDir(id), "thumbs");
 export const workDir = (id: string) => join(projectDir(id), "work");

@@ -7,6 +7,8 @@
  * ở `5173`: trình duyệt không gửi cookie phiên kèm request, nên đăng nhập xong
  * mọi lệnh vẫn trả về 401.
  */
+import { Upload as TusUpload } from "tus-js-client";
+
 import type { StylePackId } from "../../server/style-pack";
 import type { MusicTags } from "../../server/music-tags";
 
@@ -489,9 +491,24 @@ export const api = {
     ),
 
   /**
-   * Tải tệp lên kèm báo tiến độ. Dùng XHR chứ không dùng `fetch` vì `fetch`
-   * không cho biết đã gửi được bao nhiêu byte — mà một video 500MB thì thanh
-   * tiến độ là thứ duy nhất giữ người dùng khỏi tưởng máy treo.
+   * Tải MỘT tệp lên, cắt mảnh và nối lại được sau khi đứt (giao thức tus).
+   *
+   * Trước đây đây là một request `multipart/form-data` duy nhất mang cả tệp.
+   * Hai chuyện giết cách đó:
+   *
+   * 1. Cloudflare đứng trước máy chủ CHỐI mọi thân request quá 100 MB — đo thật
+   *    ngày 03/08/2026. Nó trả 413 giữa lúc trình duyệt còn đang gửi, mà XHR
+   *    trong tình huống ấy không bắn `load` cũng không bắn `error`: ô video đứng
+   *    im ở vài phần trăm cho tới khi người dùng bỏ cuộc. Đúng lỗi đã nhận được
+   *    từ người dùng thật.
+   * 2. Đứt là mất trắng. Tệp 800 MB rơi mạng ở phút thứ mười hai phải tải lại từ
+   *    số không — chuyện xảy ra bất kể có Cloudflare hay không.
+   *
+   * Mảnh nhỏ hơn trần kia rất nhiều nên chuyện (1) hết đường xảy ra, và tus giữ
+   * mốc đã gửi tới đâu nên (2) chỉ còn là tải nốt phần thiếu.
+   *
+   * Chữ ký giữ NGUYÊN dạng cũ — vẫn nhận một mảng, vẫn trả `{saved, rejected}` —
+   * để `use-upload.ts` không phải biết bên dưới đã đổi giao thức.
    */
   uploadFiles(
     projectId: string,
@@ -500,44 +517,149 @@ export const api = {
     /**
      * Chỗ tệp này đứng trong danh sách người dùng đang thấy.
      *
-     * BẮT BUỘC khi các tệp được gửi song song — mà màn nạp tệp thì gửi song song.
      * Máy chủ không tự suy ra được: nó chỉ biết tệp nào tới trước, tức tệp nào
      * nhẹ nhất, chứ không biết người dùng xếp cảnh nào trước cảnh nào.
      */
     order?: number,
+    /** Gọi ngay khi lượt tải bắt đầu, để nơi gọi còn đường huỷ nửa chừng. */
+    onStart?: (control: { abort: () => void }) => void,
   ) {
     return new Promise<{
       saved: ApiFile[];
       rejected: Array<{ name: string; reason: string }>;
     }>((resolve, reject) => {
-      const form = new FormData();
-      // Trường `order` đi TRƯỚC tệp: máy chủ đọc multipart theo luồng, gặp phần
-      // nào xử lý phần ấy — đặt sau tệp thì lúc ghi hàng nó chưa thấy số này.
-      if (order !== undefined) form.append("order", String(order));
-      for (const file of files) form.append("file", file, file.name);
-      const xhr = new XMLHttpRequest();
-      xhr.open("POST", `${BASE}/api/projects/${projectId}/files`);
-      xhr.upload.onprogress = (event) => {
-        if (event.lengthComputable) {
-          onProgress(Math.round((event.loaded / event.total) * 100));
-        }
+      const file = files[0];
+      if (!file) {
+        resolve({ saved: [], rejected: [] });
+        return;
+      }
+
+      /**
+       * Đứng im quá lâu thì COI NHƯ HỎNG, đừng đợi mãi.
+       *
+       * Đây là chỗ vá lỗi đã ngốn của một người dùng mười lăm phút: Cloudflare
+       * cắt luồng giữa chừng, socket không đóng, và XHR không bắn sự kiện nào —
+       * thanh tiến độ nằm ở 5% cho tới khi người ta bỏ cuộc. Không sự kiện nào
+       * tới thì phải có người đi hỏi, nên có cái đồng hồ này.
+       *
+       * 90 giây vì `onProgress` bắn theo từng nhịp byte của một mảnh, kể cả trên
+       * đường truyền chậm — im lặng suốt ngần ấy nghĩa là không còn byte nào đi
+       * qua, chứ không phải đi chậm.
+       */
+      const STALL_MS = 90_000;
+      let lastMoved = Date.now();
+      let watchdog: ReturnType<typeof setInterval> | undefined;
+      const stopWatchdog = () => {
+        if (watchdog !== undefined) clearInterval(watchdog);
+        watchdog = undefined;
       };
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          resolve(JSON.parse(xhr.responseText));
-        } else {
-          // Đây là chỗ chuỗi JSON thô từng đổ ra tận nhãn dưới ô video: người
-          // dùng đọc được đúng thế này — {"error":"Không có dự án này"}.
+
+      const upload = new TusUpload(file, {
+        endpoint: `${BASE}/api/projects/${projectId}/uploads`,
+        /**
+         * 8 MB — nhỏ hơn TRẦN 100 MB của Cloudflare rất nhiều, và đủ nhỏ để một
+         * lần thử lại chỉ tốn vài giây.
+         *
+         * Không chọn sát trần: trần đó là của gói hiện tại và đổi gói là đổi số,
+         * còn mảnh nhỏ thì lúc mạng chập chờn mới là thứ cứu được lượt tải. Đổi
+         * lại là nhiều request hơn — không đáng kể so với thời gian truyền.
+         */
+        chunkSize: 8 * 1024 * 1024,
+        /**
+         * Tự thử lại theo bậc thang, rồi mới chịu thua.
+         *
+         * Mỗi lần thử lại nối tiếp từ mốc đã gửi chứ không quay về đầu, nên năm
+         * lần thử vẫn rẻ. Đây chính là thứ biến "mạng chập một cái là mất cả
+         * lượt" thành một quãng khựng người dùng không nhận ra.
+         */
+        retryDelays: [0, 1000, 3000, 5000, 10000],
+        metadata: {
+          filename: file.name,
+          filetype: file.type,
+          ...(order === undefined ? {} : { order: String(order) }),
+        },
+        /**
+         * Nhớ mốc dở dang qua cả lần TẢI LẠI TRANG.
+         *
+         * `tus-js-client` ghi dấu vào `localStorage`, nên đóng tab giữa chừng rồi
+         * mở lại vẫn tải tiếp được thay vì bắt đầu lại. Xong thì xoá dấu, không
+         * để `localStorage` phình mãi theo số tệp từng tải.
+         */
+        storeFingerprintForResuming: true,
+        removeFingerprintOnSuccess: true,
+        onProgress: (sent, total) => {
+          lastMoved = Date.now();
+          if (total > 0) onProgress(Math.round((sent / total) * 100));
+        },
+        onSuccess: ({ lastResponse }) => {
+          stopWatchdog();
+          try {
+            resolve(
+              JSON.parse(lastResponse.getBody()) as {
+                saved: ApiFile[];
+                rejected: Array<{ name: string; reason: string }>;
+              },
+            );
+          } catch {
+            // Máy chủ nhận xong mà thân trả về đọc không ra: tệp CÓ THỂ đã vào
+            // nơi vào chốn, nhưng ở đây không có gì để dựng ô video cả. Nói thật
+            // là hỏng còn hơn để một ô xanh không có dữ liệu phía sau.
+            reject(new ApiError("Máy chủ trả lời không đọc được", 0));
+          }
+        },
+        onError: (error) => {
+          stopWatchdog();
+          const status =
+            (error as { originalResponse?: { getStatus(): number } })
+              .originalResponse?.getStatus() ?? 0;
+          // 413 vẫn còn đường xảy ra nếu ai đó dựng thêm một lớp chặn ở giữa với
+          // trần thấp hơn cỡ mảnh. Nói thẳng ra thay vì để nó đội lốt lỗi mạng —
+          // đó đúng là chỗ đã ngốn của người dùng mười lăm phút.
+          if (status === 413) {
+            reject(new ApiError("Tệp bị chặn ở đường truyền vì quá lớn", 413));
+            return;
+          }
           reject(
             new ApiError(
-              errorMessage(xhr.responseText, xhr.status),
-              xhr.status,
+              status ? errorMessage(error.message, status) : "Mất kết nối tới máy chủ",
+              status,
             ),
           );
-        }
+        },
+      });
+
+      /**
+       * Có mốc cũ thì NỐI TIẾP, không tải lại từ đầu.
+       *
+       * `findPreviousUploads` tra dấu đã ghi ở lần trước cho đúng tệp này. Bỏ
+       * bước này thì `storeFingerprintForResuming` chỉ là ghi chép cho vui.
+       */
+      const begin = () => {
+        onStart?.({
+          abort: () => {
+            stopWatchdog();
+            void upload.abort();
+          },
+        });
+        lastMoved = Date.now();
+        watchdog = setInterval(() => {
+          if (Date.now() - lastMoved < STALL_MS) return;
+          stopWatchdog();
+          void upload.abort();
+          reject(
+            new ApiError("Đường truyền đứng im quá lâu — thử lại giúp mình", 0),
+          );
+        }, 5_000);
+        upload.start();
       };
-      xhr.onerror = () => reject(new ApiError("Mất kết nối tới máy chủ", 0));
-      xhr.send(form);
+
+      void upload
+        .findPreviousUploads()
+        .then((previous) => {
+          if (previous.length > 0) upload.resumeFromPreviousUpload(previous[0]);
+          begin();
+        })
+        .catch(begin);
     });
   },
 

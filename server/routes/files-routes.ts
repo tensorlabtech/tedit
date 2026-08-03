@@ -1,20 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import { createWriteStream } from "node:fs";
 import { unlink } from "node:fs/promises";
-import { basename, extname, join } from "node:path";
+import { basename, join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { db, newId } from "../db";
-import { IMAGE, VIDEO } from "./media-formats";
-import {
-  makeThumbnail,
-  probe,
-  type ProbeResult,
-} from "../media-tools";
-import {
-  ensureProjectDirs,
-  mediaDir,
-  thumbDir,
-} from "../paths";
+import { intakeMediaFile, isAcceptedMedia } from "../media-intake";
+import { ensureProjectDirs, workDir } from "../paths";
 
 export default async function filesRoutes(app: FastifyInstance) {
 app.post("/api/projects/:id/files", async (request, reply) => {
@@ -50,117 +41,49 @@ app.post("/api/projects/:id/files", async (request, reply) => {
       continue;
     }
     const name = basename(part.filename ?? "khong-ten");
-    const isVideo = VIDEO.test(name);
-    const isImage = IMAGE.test(name);
-    if (!isVideo && !isImage) {
+    if (!isAcceptedMedia(name)) {
       // Phải đọc hết luồng rồi mới bỏ, không thì phần sau của multipart lệch khung.
       await part.toBuffer();
       rejected.push({ name, reason: "Không nhận định dạng này" });
       continue;
     }
 
-    const fileId = newId("f");
-    const target = join(mediaDir(id), `${fileId}${extname(name)}`);
     /*
-     * Ghi hỏng thì DỌN tệp dở dang rồi mới đi tiếp.
+     * Hứng xuống một chỗ TẠM, rồi mới giao cho `intakeMediaFile`.
+     *
+     * Đường này và đường tus cắt mảnh phải nhận tệp theo đúng một luật, nên chỗ
+     * đo–dựng ảnh–ghi hàng nằm chung ở `media-intake.ts`. Còn ở đây chỉ còn đúng
+     * việc của HTTP: hứng byte và dọn nếu hứng hỏng.
      *
      * `@fastify/multipart` ném khi tệp vượt hạn mức, và ổ đầy cũng ném — cả hai
      * đều xảy ra SAU khi một phần tệp đã nằm trên đĩa. Không dọn thì mảnh ấy ở
      * lại mãi: không hàng nào trong CSDL trỏ tới nó nên không đường nào xoá được,
-     * mà nó vẫn chiếm chỗ. Đúng cách mà hai nhánh lỗi phía dưới đang làm.
+     * mà nó vẫn chiếm chỗ.
      */
+    const staged = join(workDir(id), `intake-${newId("u")}`);
     try {
-      await pipeline(part.file, createWriteStream(target));
+      await pipeline(part.file, createWriteStream(staged));
       // Vượt hạn mức mà thư viện KHÔNG ném thì cờ này là dấu duy nhất. Tệp cụt
       // đi tiếp sẽ thành một ô trông như dùng được, và chỗ vỡ dời tới tận lúc
       // dựng — sau khi người dùng đã đợi vài phút chép lời.
       if (part.file.truncated) throw new Error("Tệp vượt hạn mức");
     } catch {
-      await unlink(target).catch(() => {});
+      await unlink(staged).catch(() => {});
       rejected.push({ name, reason: "Tệp quá lớn hoặc đứt giữa chừng" });
       continue;
     }
 
-    // Khai đúng kiểu `ProbeResult`: để suy kiểu từ giá trị mặc định thì `info`
-    // chỉ còn bốn trường, và `info.warnings` phía dưới luôn là `undefined` —
-    // cảnh báo "tệp mất tiếng" / "nhịp khung thay đổi" không bao giờ tới người
-    // dùng. Máy chủ trước không được kiểm kiểu nên chỗ này im lặng suốt.
-    let info: ProbeResult = {
-      duration: 0,
-      width: null,
-      height: null,
-      hasAudio: false,
-      videoCodec: null,
-      audioCodec: null,
-      rotation: 0,
-      variableFrameRate: false,
-      warnings: [],
-    };
-    try {
-      info = await probe(target);
-    } catch {
-      await unlink(target).catch(() => {});
-      rejected.push({ name, reason: "Tệp hỏng, không đọc được" });
-      continue;
-    }
-
-    // ffprobe KHÔNG ném lỗi cho mọi tệp hỏng: ném vào nó 200KB byte ngẫu nhiên
-    // đặt đuôi `.mp4` thì nó vẫn đoán ra một luồng 352×288 dài 0 giây và trả về
-    // bình thường. Tệp đó đi tiếp thì thành một ô trông như dùng được, và chỗ
-    // vỡ dời tới tận lúc dựng — sau khi người dùng đã đợi vài phút chép lời.
-    // Không đo được khung hình, hoặc video không dài nổi một khung, là hỏng.
-    const unusable = !info.width || !info.height || (isVideo && !info.duration);
-    if (unusable) {
-      await unlink(target).catch(() => {});
-      rejected.push({ name, reason: "Tệp hỏng, không đọc được" });
-      continue;
-    }
-
-    let thumb: string | null = join(thumbDir(id), `${fileId}.jpg`);
-    try {
-      await makeThumbnail(target, thumb, isImage ? 0 : 0.5);
-    } catch {
-      thumb = null;
-    }
-
-    const role = isVideo && info.hasAudio ? "main" : "insert";
-    // Số của người dùng dùng chung cho CẢ HAI vai, nên trong một vai nó có thể
-    // nhảy cóc (0, 2, 5…). Không sao: mọi chỗ đọc đều `ORDER BY position` chứ
-    // không đòi số liền nhau. Đánh lại số cho liền chỉ tổ phải biết vai của tệp
-    // trước khi đo được nó có tiếng hay không — mà vai thì tới đây mới biết.
-    const position =
-      order ??
-      (
-        db
-          .prepare(
-            "SELECT COALESCE(MAX(position),-1) AS p FROM media_files WHERE project_id=? AND role=?",
-          )
-          .get(id, role) as { p: number }
-      ).p + 1;
-
-    db.prepare(
-      `INSERT INTO media_files (id, project_id, name, size, role, position, duration, width, height, has_audio, stored_path, thumb_path)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-    ).run(
-      fileId,
-      id,
-      name,
-      part.file.bytesRead ?? 0,
-      role,
-      position,
-      info.duration,
-      info.width,
-      info.height,
-      info.hasAudio ? 1 : 0,
-      target,
-      thumb,
-    );
-    const row = db
-      .prepare("SELECT * FROM media_files WHERE id=?")
-      .get(fileId) as Record<string, unknown>;
+    const result = await intakeMediaFile({
+      projectId: id,
+      stagedPath: staged,
+      originalName: name,
+      order,
+      bytes: part.file.bytesRead ?? 0,
+    });
     // Cảnh báo đi kèm TỆP, không gộp vào lỗi chung: người dùng cần biết đúng tệp
     // nào có vấn đề, mà mấy chuyện này không chặn việc dựng.
-    saved.push({ ...row, warnings: info.warnings });
+    if (result.ok) saved.push({ ...result.row, warnings: result.warnings });
+    else rejected.push({ name, reason: result.reason });
   }
 
   return { saved, rejected };

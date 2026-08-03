@@ -112,6 +112,14 @@ export function useUpload(openingProjectId?: string) {
   // Giữ File gốc để còn tải lại khi người dùng bấm "Thử lại".
   const sources = useRef(new Map<string, File>());
   const cancelled = useRef(new Set<string>());
+  /**
+   * Cách DỪNG THẬT một lượt tải đang chạy, theo mã ô.
+   *
+   * Trước đây bấm Huỷ chỉ đổi nhãn trên màn hình còn byte vẫn tiếp tục đi — vô
+   * hình nhưng vẫn ăn đường truyền. Giờ có hàng đợi thì nó còn tệ hơn: một lượt
+   * đã huỷ vẫn chặn mất chỗ của tệp đứng sau.
+   */
+  const aborts = useRef(new Map<string, () => void>());
   const projectRef = useRef<string | null>(null);
   // Giữ chính LỜI HỨA đang chạy, không chỉ giữ id đã có: thả hai tệp một lúc thì
   // hai lần tải chạy song song, cả hai đều thấy id còn rỗng và mỗi bên tạo một
@@ -202,7 +210,7 @@ export function useUpload(openingProjectId?: string) {
           serverId: undefined,
           error: undefined,
         });
-        void uploadRef.current?.(
+        void enqueueRef.current?.(
           { ...item, status: "uploading", progress: 0, serverId: undefined },
           source,
           item.role,
@@ -224,7 +232,22 @@ export function useUpload(openingProjectId?: string) {
    * thì `upload` mất `remakeProject` trong tay và vòng tròn chỉ đổi chiều).
    */
   const uploadRef = useRef<
-    | ((item: MediaFile, file: File, forcedRole?: MediaRole) => Promise<void>)
+    | ((
+        item: MediaFile,
+        file: File,
+        forcedRole?: MediaRole,
+        order?: number,
+      ) => Promise<void>)
+    | null
+  >(null);
+  /** Cùng lý do vòng tròn như `uploadRef`, cho lối vào có xếp hàng. */
+  const enqueueRef = useRef<
+    | ((
+        item: MediaFile,
+        file: File,
+        forcedRole?: MediaRole,
+        order?: number,
+      ) => Promise<unknown>)
     | null
   >(null);
 
@@ -378,6 +401,7 @@ export function useUpload(openingProjectId?: string) {
             patch(item.id, { progress: percent, status: "uploading" });
           },
           order,
+          ({ abort }) => aborts.current.set(item.id, abort),
         );
       try {
         const id = await ensureProject();
@@ -439,12 +463,43 @@ export function useUpload(openingProjectId?: string) {
           status: "error",
           error: (error as Error).message.slice(0, 120),
         });
+      } finally {
+        aborts.current.delete(item.id);
       }
     },
     [ensureProject, patch, remakeProject],
   );
 
   uploadRef.current = upload;
+
+  /**
+   * Hàng đợi tải lên: MỘT tệp một lúc.
+   *
+   * Trước đây thả năm tệp là năm lượt tải chạy song song. Chúng chia nhau đúng
+   * một đường lên nên cả năm cùng bò, và thanh tiến độ nào cũng nhích từng chút
+   * — nhìn như máy treo trong khi thật ra đang chạy. Tuần tự thì tệp đầu xong
+   * sớm, người dùng thấy ngay một ô hoàn tất, và biết mọi thứ vẫn đang tiến.
+   *
+   * Thứ tự cảnh KHÔNG dựa vào hàng đợi này: mỗi lượt vẫn gửi kèm `order` của nó.
+   * Hàng đợi chỉ quyết định tệp nào truyền trước, không quyết định cảnh nào đứng
+   * trước — hai chuyện khác nhau, và trộn chúng lại là cách cũ đã sai một lần.
+   */
+  const queueTail = useRef<Promise<unknown>>(Promise.resolve());
+  const enqueueUpload = useCallback(
+    (item: MediaFile, file: File, forcedRole?: MediaRole, order?: number) => {
+      queueTail.current = queueTail.current
+        .catch(() => {})
+        .then(() => {
+          // Huỷ lúc còn xếp hàng thì đừng bắt đầu nữa — người dùng đã nói rồi.
+          if (cancelled.current.has(item.id)) return;
+          return uploadRef.current?.(item, file, forcedRole, order);
+        });
+      return queueTail.current;
+    },
+    [],
+  );
+
+  enqueueRef.current = enqueueUpload;
 
   /**
    * @param forcedRole Cột người dùng thả vào. Bỏ trống thì để máy tự xếp theo
@@ -552,12 +607,12 @@ export function useUpload(openingProjectId?: string) {
           }
           if (Object.keys(measured).length > 0) patch(item.id, measured);
         });
-        void upload(item, file, forcedRole, order);
+        void enqueueUpload(item, file, forcedRole, order);
       }
 
       return { accepted: next.length - before, rejected };
     },
-    [patch, upload],
+    [enqueueUpload, patch],
   );
 
   /**
@@ -589,14 +644,14 @@ export function useUpload(openingProjectId?: string) {
         commit(next);
         // Tệp đã lên máy chủ thì bản trên đó vừa bị xoá — phải tải lại.
         if (source)
-          void upload(
+          void enqueueUpload(
             { ...gone, status: "uploading", progress: 0 },
             source,
             gone.role,
           );
       };
     },
-    [upload],
+    [enqueueUpload],
   );
 
   /** Đổi cột. Trả về `null` nếu đổi được, ngược lại là lý do để hiện cho người dùng. */
@@ -662,6 +717,10 @@ export function useUpload(openingProjectId?: string) {
   const cancelUpload = useCallback(
     (id: string) => {
       cancelled.current.add(id);
+      // Dừng THẬT, không chỉ đổi nhãn: byte còn đi tiếp là còn chiếm đường
+      // truyền của tệp đứng sau trong hàng đợi.
+      aborts.current.get(id)?.();
+      aborts.current.delete(id);
       patch(id, { status: "error", error: "Đã huỷ" });
     },
     [patch],
@@ -674,9 +733,9 @@ export function useUpload(openingProjectId?: string) {
       if (!item || !file) return;
       cancelled.current.delete(id);
       patch(id, { status: "uploading", progress: 0, error: undefined });
-      void upload({ ...item, status: "uploading", progress: 0 }, file);
+      void enqueueUpload({ ...item, status: "uploading", progress: 0 }, file);
     },
-    [patch, upload],
+    [enqueueUpload, patch],
   );
 
   /**

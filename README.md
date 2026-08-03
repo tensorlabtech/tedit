@@ -11,8 +11,36 @@ npm run build            # tsc + vite build
 npm run lint
 npm run check:ownership  # kiểm luật phân quyền trên CSDL tạm
 npm run check:style-pack # kiểm bất biến của bộ dáng chữ trên CSDL tạm
-npm run check:all        # cả bốn lệnh trên — đúng thứ CI chạy
+npm run check:upload     # tải lên cắt mảnh: ghép đúng, đứt rồi tải tiếp được
+npm run check:all        # cả năm lệnh trên — đúng thứ CI chạy
 ```
+
+## Tải tệp lên
+
+Tệp đi lên theo **giao thức tus**: cắt mảnh 8 MB, đứt ở đâu tải tiếp từ đó, và
+mốc dở dang sống qua cả lần tải lại trang (`tus-js-client` ghi dấu vào
+`localStorage`). Máy chủ ở `server/routes/upload-routes.ts`, màn nạp tệp gọi qua
+`api.uploadFiles` như cũ — chữ ký không đổi.
+
+**Cloudflare chối mọi thân request quá 100 MB.** Đo thật ngày 03/08/2026 trên
+`tedit.tensorlab.tech`: 100 MB qua, 105 MB trả `413` sau khi mới nuốt ~2 MB. Gói
+Free là vậy, và trang đang nấp sau Cloudflare nên đó là trần thật của mọi lượt
+tải. Trước khi cắt mảnh thì một video quay bằng điện thoại — thường vài trăm MB —
+không có đường nào lên tới máy chủ, mà triệu chứng còn tệ hơn cả một lỗi: XHR
+không bắn `load` cũng không bắn `error`, nên thanh tiến độ đứng im ở vài phần
+trăm cho tới khi người dùng bỏ cuộc. Mảnh 8 MB thì không bao giờ chạm trần đó.
+
+Đường tải lên nằm dưới `/api/projects/<mã>/uploads/...` **có chủ đích**: luật
+phân quyền theo đường dẫn ở `server/ownership.ts` phủ theo tiền tố nên nó tự
+được canh. Mặc định của tus là `/api/uploads/<mã mảnh>` — một đường không khớp
+mẫu nào, tức chỉ còn kiểm "đã đăng nhập chưa", và ai trong danh sách cho phép
+cũng ghi đè được lượt tải của người khác.
+
+Đường multipart cũ (`POST /api/projects/:id/files`) **giữ nguyên** cho công cụ
+ngoài và tệp nhỏ. Cả hai đi chung `server/media-intake.ts` nên luật "tệp thế nào
+thì bị chối" chỉ có một bản.
+
+Mảnh của lượt bỏ ngang nằm ở `server/data/uploads/`, tự dọn sau 24 giờ.
 
 Mở `http://localhost:5173`. Chưa đăng nhập thì mọi đường dẫn đều chuyển về
 `/login`.
@@ -322,6 +350,17 @@ Tiếng nói của người dùng không rời khỏi máy.
 
 - **Phần tử gắn vào KHOẢNG TỪ, không gắn vào giây.** Bỏ một câu phía trước thì
   mọi thứ phía sau vẫn dính đúng chỗ, không phải tính lại mốc.
+- **Tệp lên theo MẢNH, và mỗi lượt tải phải tự chết được.** Một request mang cả
+  tệp có hai đường hỏng mà không đường nào báo: Cloudflare cắt ở 100 MB, và mạng
+  rớt thì mất trắng phần đã gửi. Cả hai đều hiện ra y hệt nhau — thanh tiến độ
+  đứng im, không lỗi, không hết giờ. Nên ngoài việc cắt mảnh còn có đồng hồ canh:
+  90 giây không nhích byte nào là bỏ cuộc và nói ra. Thà báo sai một lần còn hơn
+  để người dùng ngồi đợi mười lăm phút một thứ đã chết.
+- **Tệp tải lên đi một lượt MỘT TỆP.** Năm lượt song song chia nhau cùng một
+  đường lên nên cả năm cùng bò; tuần tự thì ô đầu xong sớm và người dùng thấy
+  ngay là mọi thứ đang tiến. Thứ tự cảnh không dựa vào hàng đợi này — mỗi lượt
+  vẫn gửi kèm `order` của nó, vì "truyền trước" và "đứng trước trong phim" là hai
+  chuyện khác nhau.
 - **Cắt = toàn bộ trừ phần bị bỏ**, không phải hợp của phần giữ lại. Lấy hợp thì
   mọi quãng nghỉ giữa câu cũng bị cắt và người xem nghe ra một tràng dồn dập.
 - **`amix` phải có `normalize=0`.** Mặc định nó chia đều biên độ cho số luồng nên

@@ -15,6 +15,7 @@ import { collectHealth } from "./health";
 import projectsRoutes from "./routes/projects-routes";
 import settingsRoutes from "./routes/settings-routes";
 import filesRoutes from "./routes/files-routes";
+import uploadRoutes from "./routes/upload-routes";
 import elementsRoutes from "./routes/elements-routes";
 import musicRoutes from "./routes/music-routes";
 import libraryRoutes from "./routes/library-routes";
@@ -145,6 +146,7 @@ app.get("/api/health", async (request, reply) => {
 await app.register(projectsRoutes);
 await app.register(settingsRoutes);
 await app.register(filesRoutes);
+await app.register(uploadRoutes);
 await app.register(elementsRoutes);
 await app.register(musicRoutes);
 await app.register(libraryRoutes);
