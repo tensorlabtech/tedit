@@ -290,6 +290,17 @@ export async function buildPreview(projectId: string, sources: string[]) {
  */
 export async function buildMaster(projectId: string, sources: string[]) {
   const target = join(workDir(projectId), "base.mp4");
+  /*
+   * Dựng ra tên TẠM rồi mới đổi tên — `rename` trên cùng ổ là một thao tác
+   * không thể đứt đôi.
+   *
+   * Ghi thẳng vào `base.mp4` thì một lượt bị giết giữa chừng (máy chủ khởi động
+   * lại, Docker dừng container, hết đĩa) để lại một tệp CỤT mang đúng cái tên
+   * ấy. Lần sau `runMaster` thấy tệp tồn tại nên bỏ qua, và lượt xuất video cắt
+   * trên một tệp hỏng — hỏng ở đúng bước ăn tiền, sau khi người dùng đã sửa
+   * xong xuôi.
+   */
+  const partial = join(workDir(projectId), "base.dang-dung.mp4");
   const inputs = sources.flatMap((path) => ["-i", path]);
   const graph = await mainGraph(sources);
 
@@ -320,8 +331,9 @@ export async function buildMaster(projectId: string, sources: string[]) {
     "-movflags",
     "+faststart",
     "-y",
-    target,
+    partial,
   ]);
+  await rename(partial, target);
   return target;
 }
 
