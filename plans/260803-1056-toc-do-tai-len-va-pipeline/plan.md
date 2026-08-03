@@ -181,6 +181,48 @@ còn phục vụ bản xuất, không ai ngồi đợi nó nữa.
 
 ---
 
+## Máy nghe: đã đo, đã hết đường rẻ
+
+Chạy lại trọn lượt trên bản sao dữ liệu, cùng trần tài nguyên như bản thật
+(`-m 3500m --cpus 2.0`), 03/08/2026:
+
+```
+ghép video (buildBase)   12:26:25 → 12:32:27    6 phút 02
+nghe và chép lời         12:32:27 → 12:41:39    9 phút 12
+```
+
+**`mem_limit` đã ăn thua** — bằng chứng ở `memory.events` của cả lượt chạy:
+
+| | trần 2500m | trần 3500m |
+|---|---|---|
+| chạm trần | 1238 lần | **0** |
+| đỉnh / trần | 2.621.444.096 / 2.621.440.000 — kịch | 2.957.225.984 / 3.670.016.000 |
+| CPU lúc nghe | 0,59% (vật lộn thu hồi bộ nhớ) | **~200%** (hai lõi chạy hết) |
+
+Trước là nghẽn bộ nhớ, giờ là nghẽn phép tính. Nhưng thời gian không giảm — vì
+nghẽn CPU thì chỉ có ít CPU hơn hoặc nhiều việc hơn mới đổi được.
+
+### Hai đòn bẩy đã thử, cả hai đều BỎ
+
+Đo trên 60 giây tiếng thật của dự án, cùng máy, cùng trần:
+
+| | nhanh hơn | đổi lại | kết luận |
+|---|---|---|---|
+| `BatchedInferencePipeline` | **1,03×** | cắt 3 đoạn thay vì 10 | bỏ |
+| `beam_size` 5 → 1 | **1,08×** | chữ chép ra khác hẳn | bỏ |
+
+Lý thuyết "gom lô đỡ chi phí nạp trọng số" đúng với GPU chứ không đúng với CPU —
+ở đây nghẽn là phép tính thuần, gom lô không bớt được phép tính nào. Còn 8% thì
+không đáng đổi lấy một bản chép khác đi.
+
+**Đừng thử lại hai thứ này.** Số đo ở trên là trên chính phần cứng và chính đoạn
+tiếng của sản phẩm.
+
+Còn lại toàn đường đắt: thêm CPU (VPS dùng chung, 30 container), mô hình nhỏ hơn
+(mất độ chính xác), hoặc gửi tiếng đi nơi khác (trái với điều `README.md` đã hứa).
+Nên **~1,6× thời gian thực là giá của việc nghe trên hai lõi** — coi đó là hằng số
+và đi tối ưu chỗ khác.
+
 ## Đã cân nhắc rồi bỏ
 
 - **Nén video ở trình duyệt trước khi tải.** Cắt được ~60 giây tải, trong khi mục
@@ -257,10 +299,35 @@ Xong: mục 1 (trần bộ nhớ), 4 (xem trước), 5 (giải mã một lượt
   dựng sẵn một bản đã cắt để player chạy một mạch. Chỉ làm nếu người dùng còn thấy
   khựng ở chỗ cắt — đo xong lượt ba thì họ nói "đạt", nên chưa cần.
 
-Lối đi xa hơn cho mục 2, đáng cân nhắc: **hoãn hẳn `base.mp4` tới lúc xuất video.**
-Bàn dựng giờ chỉ cần `preview.mp4` (nhẹ, dựng nhanh) và `audio.wav`; `base.mp4`
-chỉ có `cutRanges` dùng. Làm vậy thì "Chuẩn bị video" xuống dưới hai phút, đổi lại
-lượt xuất lâu thêm — mà lượt xuất thì người ta bấm rồi đi làm việc khác.
+## Đòn bẩy DUY NHẤT còn lại: hoãn `base.mp4`
+
+Sau khi đo xong máy nghe, bức tranh còn lại rất gọn:
+
+```
+ghép video   6 phút    ← còn gỡ được
+nghe         9 phút    ← đã đo, hết đường rẻ
+```
+
+Bàn dựng giờ chỉ cần `preview.mp4` (nhẹ, dựng nhanh) và `audio.wav`. `base.mp4`
+**chỉ `cutRanges` lúc xuất video mới dùng** (`pipeline.ts:568`). Nên nó không có
+lý do gì chặn người dùng vào bàn dựng.
+
+Thiết kế:
+
+1. Tách `buildBase` thành `buildPreview` (chỉ `preview.mp4` + `audio.wav`) và
+   `buildMaster` (`base.mp4`). Bản xem trước ít hơn bốn lần số điểm ảnh nên dựng
+   nhanh hơn nhiều.
+2. `runTranscribe` gọi `buildPreview` → dải ảnh → máy nghe. Xong là báo done.
+3. `buildMaster` xếp thành MỘT việc riêng trong hàng đợi, chạy nền ngay sau đó.
+4. Nút Xuất video mờ kèm chữ *"đang chuẩn bị bản dựng"* cho tới khi `base.mp4`
+   xong. Cho bấm rồi im lặng chờ chính là cái bệnh cả tài liệu này đi chữa.
+
+Đánh đổi: giải mã nguồn hai lượt thay vì một, tức tổng công việc tăng ~30%. Nhưng
+thời gian **người dùng phải ngồi đợi** giảm từ 6 phút xuống dưới 2.
+
+**Chưa làm.** Nó đụng vào đường xuất video — bước ăn tiền — mà một lượt xuất mất
+hàng chục phút nên không thử được cho tử tế ở cuối một phiên dài. Đáng làm thành
+một việc riêng, có đo lượt xuất trước và sau.
 
 ## Câu chưa trả lời được
 
