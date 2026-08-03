@@ -161,5 +161,29 @@ const prevGap = await keyframeGap(preview);
 check("bản xem trước có khung khoá mỗi ~1 giây", prevGap <= 35,
   `trung bình ${prevGap.toFixed(0)} khung mới có một khung khoá`);
 
+console.log("\nDải ảnh không vượt trần texture của GPU");
+
+{
+  /*
+   * Card đồ hoạ hầu hết chỉ nạp được texture rộng 16.384px. Dải rộng hơn thế thì
+   * trình duyệt phải rã ra hoặc vẽ bằng CPU — mà dải thời gian vẽ tấm ấy ở hàng
+   * chục ô cùng lúc, nên bàn dựng giật.
+   *
+   * Đây là thứ KHÔNG lộ ra ở đâu khác: ảnh vẫn dựng thành công, vẫn hiện đúng,
+   * chỉ máy người dùng ì ra. Đo bằng một video DÀI vì video ngắn vốn đã dưới trần.
+   */
+  const { makeFilmstrip } = await import("../../server/media-tools");
+  const GPU_TEXTURE_LIMIT = 16384;
+  const strip = join(DATA_ROOT, "strip.jpg");
+  // Khai 600 giây: đủ dài để bản cũ (trần 60.000px) chắc chắn vượt trần GPU.
+  await makeFilmstrip(base, strip, 600);
+  const [width] = await probeValue(strip, "stream=width");
+  check(
+    `dải của video 10 phút vẫn dưới ${GPU_TEXTURE_LIMIT}px`,
+    Number(width) <= GPU_TEXTURE_LIMIT,
+    `${width}px`,
+  );
+}
+
 console.log(`\n${passed} đạt, ${failed} trượt\n`);
 process.exit(failed > 0 ? 1 : 0);

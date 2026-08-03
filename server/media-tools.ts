@@ -202,10 +202,24 @@ export async function makeFilmstrip(
   laneHeight = 44,
   density = 2,
 ) {
-  // JPEG không rộng quá 65.535px. Bản trước để `tile=4000x1` ra ảnh 200.000px
-  // nên ffmpeg lỗi, mà lỗi bị `catch` nuốt — dải vẫn dùng tệp cũ và không ai
-  // biết. Tự hạ độ nét cho vừa giới hạn, thà mờ còn hơn không có dải.
-  const MAX_WIDTH = 60000;
+  /*
+   * Trần bề ngang của dải — do GPU đặt ra, không phải do JPEG.
+   *
+   * JPEG chịu được tới 65.535px và bản trước lấy đúng con số đó làm mốc (60.000).
+   * Nhưng **card đồ hoạ hầu hết chỉ nạp được texture rộng 16.384px**. Vượt là
+   * trình duyệt không dựng nổi một texture cho cả tấm: nó phải rã ra nhiều mảnh
+   * hoặc rơi về vẽ bằng CPU — và dải thời gian thì vẽ tấm ấy ở HÀNG CHỤC ô, mỗi
+   * ô một `background-position` khác nhau.
+   *
+   * Đo thật trên một dự án 161 giây: dải ra 60.536 × 88px, mỗi ô khai
+   * `background-size: 30.268px`. Bàn dựng giật ngay cả sau khi đã thay video xem
+   * trước bằng bản nhẹ — vì thứ giật không phải video.
+   *
+   * Vừa giới hạn thì mất độ nét ngang với video dài: 161 giây được ~101px mỗi
+   * giây thay vì 376. Dải cao 44px nên ngần ấy vẫn thấy rõ từng khung — đổi lại
+   * nó chạy mượt. Video ngắn không đổi gì: chúng vốn đã dưới trần.
+   */
+  const MAX_WIDTH = 16384;
   const seconds = Math.max(1, Math.ceil(durationSeconds));
   // Ảnh chứa THỪA một giây ở cuối (xem `columns`), nên chia ngân sách cho
   // `seconds + 1` chứ không phải `seconds`.
@@ -219,9 +233,20 @@ export async function makeFilmstrip(
   while (framesPerSecond > 1 && perSecond / framesPerSecond < 12) {
     framesPerSecond -= 1;
   }
-  const cellWidth = chan(Math.max(8, Math.round(perSecond / framesPerSecond)));
+  let cellWidth = chan(Math.max(8, Math.round(perSecond / framesPerSecond)));
   const cellHeight = chan(Math.round(laneHeight * density));
   const columns = seconds * framesPerSecond + framesPerSecond;
+  /*
+   * Chốt lại bằng BỀ NGANG THẬT, không tin vào ngân sách tính trước.
+   *
+   * `perSecond / framesPerSecond` làm tròn một lượt, rồi `chan` ép lên số chẵn
+   * một lượt nữa — hai lượt ấy cộng dồn qua hơn nghìn cột là đủ đẩy tổng vượt
+   * trần. Đo thật với video 10 phút: ngân sách tính ra 16.384 mà ảnh ra 16.828px,
+   * tức vẫn vượt trần texture đúng cái mà cả phép tính này sinh ra để tránh.
+   *
+   * Bớt 2 mỗi lượt để giữ bề ngang CHẴN — ffmpeg đòi vậy với luồng yuv420.
+   */
+  while (cellWidth > 8 && columns * cellWidth > MAX_WIDTH) cellWidth -= 2;
 
   await run("ffmpeg", [
     "-y",
