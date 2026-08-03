@@ -26,6 +26,19 @@ import { useUpload } from "./use-upload";
 /** Quá số này thì gộp lại: thả nhầm cả thư mục sẽ đẻ ra hàng chục thông báo. */
 const MAX_REJECTION_TOASTS = 3;
 
+/**
+ * "còn khoảng 2 phút" — làm tròn THÔ, có chữ "khoảng".
+ *
+ * Con số này suy từ tốc độ trung bình cho tới lúc này nên nó sẽ trượt, và một
+ * con số chính xác tới từng giây tự hứa một độ chính xác nó không có. Người ta
+ * hỏi câu này chỉ để quyết định đứng đợi hay đi làm việc khác — thô là đủ.
+ */
+function formatRemaining(seconds: number) {
+  if (seconds < 15) return "sắp xong";
+  if (seconds < 60) return `còn khoảng ${Math.ceil(seconds / 10) * 10} giây`;
+  return `còn khoảng ${Math.ceil(seconds / 60)} phút`;
+}
+
 export function UploadPage() {
   const { projectId: openingProjectId } = useParams<{ projectId: string }>();
   const upload = useUpload(openingProjectId);
@@ -263,6 +276,8 @@ export function UploadPage() {
                     <p className="text-xs text-muted-foreground">
                       Đang tải {upload.uploadingFiles.length} tệp ·{" "}
                       {upload.uploadProgress}%
+                      {upload.secondsLeft !== null &&
+                        ` · ${formatRemaining(upload.secondsLeft)}`}
                     </p>
                   </>
                 )}

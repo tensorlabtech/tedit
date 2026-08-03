@@ -86,7 +86,24 @@ export function SequencePreviewCard({
     const next = URL.createObjectURL(source);
     setUrl(next);
     setAt(0);
-    return () => URL.revokeObjectURL(next);
+    return () => {
+      /*
+       * BUÔNG tệp ở thẻ video TRƯỚC khi thu hồi đường dẫn.
+       *
+       * Thu hồi thẳng thì mấy lượt đọc dở dang của thẻ `<video>` — nó tải video
+       * theo từng khoảng byte — trỏ vào một `blob:` không còn tồn tại, và console
+       * đỏ lên `ERR_FILE_NOT_FOUND`. Vô hại về mặt hình ảnh, nhưng một người dùng
+       * đã mở devtools đi tìm lý do tải tệp hỏng và tưởng đó là nguyên nhân.
+       *
+       * `load()` sau khi gỡ `src` là cách chuẩn để dừng hẳn các lượt đọc đó.
+       */
+      const video = videoRef.current;
+      if (video) {
+        video.removeAttribute("src");
+        video.load();
+      }
+      URL.revokeObjectURL(next);
+    };
   }, [source, remoteUrl]);
 
   // Đổi cảnh thì phát tiếp, không dừng lại: đang xem một mạch mà mỗi lần sang

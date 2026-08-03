@@ -13,7 +13,8 @@
     "check:ownership": "TEDDIT_DATA_ROOT=$(mktemp -d) tsx server/ownership-check.ts",
     "check:style-pack": "TEDDIT_DATA_ROOT=$(mktemp -d) tsx server/style-pack-check.ts",
     "check:upload": "tsx scripts/upload-check/check-resumable-upload.ts",
-    "check:all": "npm run typecheck && npm run lint && npm run check:ownership && npm run check:style-pack && npm run check:upload",
+    "check:render": "tsx scripts/render-check/check-base-and-preview.ts",
+    "check:all": "npm run typecheck && npm run lint && npm run check:ownership && npm run check:style-pack && npm run check:upload && npm run check:render",
     "dev:all": "concurrently -n web,api -c cyan,magenta \"vite\" \"tsx watch server/main.ts\""
   },
   "dependencies": {

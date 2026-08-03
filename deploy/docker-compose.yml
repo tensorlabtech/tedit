@@ -42,14 +42,26 @@ services:
     # vì lúc ấy nhân hệ điều hành chọn nạn nhân theo dung lượng chứ không theo
     # "ai vừa gây ra chuyện".
     #
-    # 2,5 GB đủ cho MỘT lượt máy nghe (`int8` ~1,5–2 GB) cộng Node và ffmpeg, mà
-    # vẫn chừa hơn 2 GB cho hai mươi chín container kia.
+    # 2,5 GB KHÔNG đủ — đo thật 03/08/2026 giữa một lượt chép lời:
+    #
+    #   memory.peak  2.621.444.096   ← vượt trần đúng 4 KB, tức đã kịch
+    #   memory.max   2.621.440.000
+    #   max          1238            ← chạm trần 1238 lần, mỗi lần ép thu hồi
+    #
+    # Kernel không giết (`oom_kill 0`) nhưng phải thu hồi bộ nhớ liên tục, nên
+    # lượt nghe bò ở 2,6× thời gian thực — 6 phút 49 cho 159 giây tiếng. Mô hình
+    # `int8` cần 1,5–2 GB, Node giữ ~320 MB; cộng lại là ép sát trần chứ không
+    # phải vừa vặn.
+    #
+    # 3,5 GB cho mô hình chỗ để thở mà vẫn chừa hơn 4 GB cho hai mươi chín
+    # container kia (đo cùng ngày: 7,8 GB tổng, 4,8 GB khả dụng). Lý do có trần
+    # vẫn nguyên như trên — để tedit đừng thành thứ kích hoạt OOM killer.
     #
     # 2 core: nền ~1 core, nên lúc tedit chạy hết sức thì tổng ~3/4 core, còn dư
     # một core cho mọi thứ khác. Xác nhận lại bằng `docker stats` sau lượt deploy
     # đầu có một video đang xuất.
     cpus: "2.0"
-    mem_limit: 2500m
+    mem_limit: 3500m
     environment:
       NODE_ENV: production
       PORT: 5190

@@ -928,6 +928,46 @@ export function useUpload(openingProjectId?: string) {
   );
   const uploadProgress =
     totalBytes > 0 ? Math.round((doneBytes / totalBytes) * 100) : 0;
+
+  /**
+   * Còn khoảng bao lâu nữa — đo bằng tốc độ THẬT của chính đợt tải này.
+   *
+   * "53%" không trả lời được câu người ta thật sự hỏi: đứng đây đợi hay đi làm
+   * việc khác. Một video 300 MB và một ảnh 2 MB cùng hiện 53%, mà một cái còn
+   * bốn mươi giây còn cái kia còn nửa giây.
+   *
+   * Mốc đo đặt lại mỗi khi một đợt tải mới bắt đầu, và chỉ nói ra sau khi đã đi
+   * được một quãng đủ dài — vài giây đầu thì tốc độ nhảy loạn vì TCP còn đang
+   * dò đường, và một con số sai ngay từ đầu còn tệ hơn không có con số nào.
+   */
+  const startedAt = useRef<number | null>(null);
+  const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+  useEffect(() => {
+    if (!uploading) {
+      startedAt.current = null;
+      setSecondsLeft(null);
+      return;
+    }
+    startedAt.current ??= Date.now();
+    const timer = window.setInterval(() => {
+      const began = startedAt.current;
+      if (!began) return;
+      const elapsed = (Date.now() - began) / 1000;
+      const sent = latest.current.reduce(
+        (sum, item) =>
+          sum +
+          (item.status === "done"
+            ? item.size
+            : item.size * (item.progress / 100)),
+        0,
+      );
+      const total = latest.current.reduce((sum, item) => sum + item.size, 0);
+      if (elapsed < 3 || sent <= 0) return;
+      const perSecond = sent / elapsed;
+      setSecondsLeft(Math.max(1, Math.round((total - sent) / perSecond)));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [uploading]);
   /**
    * Thời lượng video sẽ ra — chỉ cộng tệp đã đo xong. Đoán theo tệp đang tải sẽ
    * cho một con số nhảy loạn trong lúc tải, tệ hơn là chưa hiện gì.
@@ -1068,6 +1108,8 @@ export function useUpload(openingProjectId?: string) {
     uploading,
     uploadingFiles,
     uploadProgress,
+    /** Còn khoảng bao nhiêu giây; `null` là chưa đủ dữ liệu để đoán tử tế */
+    secondsLeft,
     totalBytes,
     clear,
   };

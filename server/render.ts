@@ -154,8 +154,31 @@ async function segmentLength(path: string) {
   return Math.max(...durations, num(data.format?.duration));
 }
 
+/**
+ * Bản XEM TRƯỚC: nửa bề ngang, đủ nét cho một khung cao chưa tới 700px trên màn.
+ *
+ * Bàn dựng từng phát thẳng `base.mp4` — đo thật một dự án 159 giây: 212 MB,
+ * 10,5 Mbps, `moov` nằm CUỐI tệp, khung khoá cách nhau 6–7 giây. Bốn thứ ấy cộng
+ * lại thành "kéo thanh thời gian thì hình giật đùng đùng", và Cloudflare không
+ * cache nên mỗi lượt xem kéo nguyên 212 MB từ VPS ở châu Âu.
+ *
+ * Bản này ra khoảng 1/8 dung lượng, `+faststart` để trình duyệt phát được ngay
+ * từ byte đầu, và `-g` bằng đúng một giây để tua tới đâu là hiện tới đó.
+ */
+export const PREVIEW_WIDTH = 540;
+export const PREVIEW_HEIGHT = 960;
+
+/**
+ * Ghép mạch chính thành MỘT tệp chuẩn hoá — và một bản xem trước đi kèm.
+ *
+ * Hai tệp ra từ MỘT lượt giải mã. Chạy ffmpeg lần thứ hai cho bản xem trước là
+ * giải mã lại toàn bộ nguồn lần nữa, mà giải mã chính là phần đắt: đo được lượt
+ * ghép mất 358 giây cho 159 giây video trên hai lõi. Bản xem trước nhỏ hơn bốn
+ * lần về số điểm ảnh nên phần mã hoá thêm gần như không thấy.
+ */
 export async function buildBase(projectId: string, sources: string[]) {
   const target = join(workDir(projectId), "base.mp4");
+  const previewTarget = join(workDir(projectId), "preview.mp4");
   const inputs = sources.flatMap((path) => ["-i", path]);
 
   // Độ dài CHỐT của từng mảnh, đo trước khi ghép.
@@ -188,9 +211,18 @@ export async function buildBase(projectId: string, sources: string[]) {
       );
     })
     .join(";");
+  /*
+   * Tách đôi cả hai luồng để xuất HAI tệp trong MỘT lượt giải mã.
+   *
+   * `split`/`asplit` là bắt buộc: một nhãn đầu ra của filter chỉ `-map` được
+   * đúng một lần. Thiếu nó thì ffmpeg báo nhãn đã dùng rồi và cả lệnh chết.
+   */
   const concat =
     sources.map((_, index) => `[v${index}][a${index}]`).join("") +
-    `concat=n=${sources.length}:v=1:a=1[vout][aout]`;
+    `concat=n=${sources.length}:v=1:a=1[vcat][acat];` +
+    `[vcat]split=2[vout][vsmall];` +
+    `[vsmall]scale=${PREVIEW_WIDTH}:${PREVIEW_HEIGHT}[vprev];` +
+    `[acat]asplit=2[aout][aprev]`;
 
   await ffmpeg([
     // Không cần cờ xoay: ffmpeg tự áp ma trận xoay của metadata theo mặc định.
@@ -199,6 +231,8 @@ export async function buildBase(projectId: string, sources: string[]) {
     ...inputs,
     "-filter_complex",
     `${parts};${concat}`,
+
+    // ── tệp 1: bản CHẤT LƯỢNG, nguồn cho bản xuất cuối ──────────────────────
     "-map",
     "[vout]",
     "-map",
@@ -216,8 +250,32 @@ export async function buildBase(projectId: string, sources: string[]) {
     // Không còn `-shortest`: mỗi mảnh đã cắt đúng độ dài của mình, nên tổng là
     // tổng. Để lại thì nó cắt theo luồng ngắn nhất của CẢ bản ghép và có ngày
     // nuốt mất đuôi mảnh cuối.
+    "-movflags",
+    "+faststart",
     "-y",
     target,
+
+    // ── tệp 2: bản XEM TRƯỚC cho bàn dựng ───────────────────────────────────
+    "-map",
+    "[vprev]",
+    "-map",
+    "[aprev]",
+    "-c:v",
+    "libx264",
+    "-preset",
+    "veryfast",
+    "-crf",
+    "28",
+    "-g",
+    String(FPS),
+    "-c:a",
+    "aac",
+    "-b:a",
+    "96k",
+    "-movflags",
+    "+faststart",
+    "-y",
+    previewTarget,
   ]);
   return target;
 }

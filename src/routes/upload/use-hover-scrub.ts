@@ -29,7 +29,15 @@ export function useHoverScrub(
   // của máy chủ không phải `blob:` nên gọi `revoke` lên nó là vô nghĩa.
   useEffect(() => {
     return () => {
-      if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
+      if (!url?.startsWith("blob:")) return;
+      // Buông tệp ở thẻ video trước đã: thu hồi thẳng thì lượt đọc dở dang trỏ
+      // vào một `blob:` đã biến mất và console đỏ lên `ERR_FILE_NOT_FOUND`.
+      const video = videoRef.current;
+      if (video) {
+        video.removeAttribute("src");
+        video.load();
+      }
+      URL.revokeObjectURL(url);
     };
   }, [url]);
 

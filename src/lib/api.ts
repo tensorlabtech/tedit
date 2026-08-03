@@ -1059,9 +1059,16 @@ export const api = {
       nativeSecondWidth: number;
     }>(`/api/projects/${projectId}/filmstrip`, { method: "POST" }),
 
-  /** Bản đã ghép và chuẩn hoá 9:16 — dựng ở bước chép lời, dùng luôn để xem trước. */
+  /**
+   * Video cho khung xem trước — bản NHẸ, không phải bản dựng cho bản xuất.
+   *
+   * Trước đây trỏ thẳng `/files/.../work/base.mp4`: 212 MB, 10,5 Mbps, `moov` ở
+   * cuối tệp và khung khoá cách nhau 6–7 giây — kéo thanh thời gian là hình giật.
+   * Máy chủ tự chọn `preview.mp4` khi có, rơi về `base.mp4` với dự án dựng bằng
+   * bản cũ.
+   */
   baseVideoUrl: (projectId: string) =>
-    `${BASE}/files/projects/${projectId}/work/base.mp4`,
+    `${BASE}/api/projects/${projectId}/preview`,
 
   exportUrl: (projectId: string) =>
     `${BASE}/files/projects/${projectId}/out/final.mp4`,

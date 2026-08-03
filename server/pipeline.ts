@@ -113,10 +113,24 @@ export async function runTranscribe(projectId: string) {
   // đang ở khoảnh khắc nào, mà bước chép lời thì đã ghép sẵn `base.mp4`.
   setJob(projectId, "transcribe", "running", 20, "Đang dựng dải ảnh");
   const baseInfo = await probe(base);
+  /*
+   * Dải ảnh dựng từ bản XEM TRƯỚC, không từ `base.mp4`.
+   *
+   * Cùng độ dài, cùng mạch, cùng khung hình — chỉ khác số điểm ảnh, mà dải ảnh
+   * thì thu về cao 44px nên bản 540×960 vẫn thừa nét. Giải mã một tệp 212 MB ở
+   * 1080×1920 để làm ra mấy dải ảnh tí xíu là trả giá cho thứ không ai nhìn thấy:
+   * đo được bước này mất 38 giây trên hai lõi.
+   *
+   * Rơi về `base.mp4` khi chưa có — dự án dựng bằng bản cũ, và cả lối gọi lại
+   * dải ảnh ở `media-routes.ts`.
+   */
+  const stripSource = existsSync(join(workDir(projectId), "preview.mp4"))
+    ? join(workDir(projectId), "preview.mp4")
+    : base;
   // Ghi lỗi ra thông báo việc thay vì nuốt im: lần trước lệnh ffmpeg vượt giới
   // hạn bề rộng JPEG, `catch` rỗng nuốt mất, dải vẫn dùng tệp cũ suốt hai lượt.
   const strip = await makeFilmstrip(
-    base,
+    stripSource,
     join(thumbDir(projectId), "strip.jpg"),
     baseInfo.duration,
   ).catch((error: Error) => {
