@@ -187,16 +187,21 @@ export async function runTranscribe(projectId: string) {
   const envelope = await buildEnvelope(projectId, audio).catch(() => null);
 
   /*
-   * TÁCH NGƯỜI KHỎI NỀN — một lần cho cả video, ngay sau khi có `base.mp4`.
+   * TÁCH NGƯỜI KHỎI NỀN — một lần cho cả video, ngay sau khi có bản xem trước.
    *
-   * Ở đây chứ không ở lúc xuất: đo được 58 giây cho một video 133 giây, mà mặt
-   * nạ chỉ phụ thuộc `base.mp4` — tính lại mỗi lượt xuất là bắt người dùng chờ
+   * Ở đây chứ không ở lúc xuất: đo được 58 giây cho một video 133 giây, và mặt
+   * nạ chỉ phụ thuộc vào nội dung — tính lại mỗi lượt xuất là bắt người dùng chờ
    * ngần ấy mỗi lần họ sửa một chữ.
+   *
+   * Đọc BẢN XEM TRƯỚC, không đọc bản chất lượng: mô hình chạy ở 256×256 rồi
+   * phóng ngược nên mặt nạ vốn đã mềm mép, mà bản xem trước lại nhẹ hơn nhiều
+   * lần. Hai bản cùng nội dung nên cùng độ dài và cùng nhịp khung — đó là điều
+   * duy nhất phép này cần.
    *
    * Hỏng thì thôi: bộ dáng nào cần mặt nạ sẽ rơi về lối không có, chứ một chặng
    * phụ không được làm hỏng cả lượt dựng.
    */
-  const mask = await buildSubjectMask(projectId, base);
+  const mask = await buildSubjectMask(projectId, preview);
 
   setStep(projectId, "prepare", "done", {
     result:
@@ -512,8 +517,10 @@ export async function runTranscribe(projectId: string) {
      */
     let band = (captionState?.subtitle_band ?? null) as Band | null;
     if (!band) {
+      // Đo trên bản xem trước: phép này thu nhỏ khung xuống 192px để đếm độ
+      // động, nên độ phân giải nguồn không đổi kết quả.
       const picked = await pickCaptionBand(
-        base,
+        preview,
         info.width ?? OUT_WIDTH,
         info.height ?? OUT_HEIGHT,
         pack,
