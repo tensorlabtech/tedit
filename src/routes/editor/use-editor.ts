@@ -288,6 +288,20 @@ export function useEditor(projectId: string | undefined) {
    */
   const maxSeekRef = useRef(0);
 
+  /**
+   * Thẻ `<video>` của khung xem trước — lên tới đây để VÒNG PHÁT đọc được nó.
+   *
+   * Khung xem trước tự giữ thẻ này thì vòng phát ở `editor-page.tsx` không với
+   * tới, và nó buộc phải tính mốc thời gian bằng đồng hồ tường rồi TUA video cho
+   * khớp. Đo trên máy người dùng thật: **38 lượt tua trong 15 giây** — mạng khựng
+   * làm video tụt lại, app tua, video nạp lại từ chỗ mới rồi tụt tiếp. Một vòng
+   * tự nuôi nhau, và đó chính là cái giật.
+   *
+   * Có thẻ ở đây thì vòng phát lấy `currentTime` của chính video làm mốc. Mạng
+   * khựng thì vạch chạy chậm lại theo — không ai tua ai.
+   */
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
   const seek = useCallback(
     (next: number) =>
       setTime(Math.min(Math.max(next, 0), maxSeekRef.current || 0)),
@@ -2026,6 +2040,7 @@ export function useEditor(projectId: string | undefined) {
     canZoomIn: pxPerSecond < MAX_PX_PER_SECOND - 1,
     canZoomOut: pxPerSecond > MIN_PX_PER_SECOND + 1,
     projectId,
+    videoRef,
     seek,
     scrubByPixels,
     zoomBy,

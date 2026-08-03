@@ -89,6 +89,25 @@ export function EditorPage() {
       // trí cũ — và vị trí cũ ấy thường đã quá mốc dừng, làm vòng lặp tắt phát
       // ngay ở khung hình đầu tiên.
       const audit = auditRef.current;
+      const video = editor.videoRef.current;
+      /*
+       * ĐỒNG HỒ LÀ VIDEO, không phải đồng hồ tường.
+       *
+       * Bản trước tính mốc bằng thời gian thật rồi để khung xem trước tua video
+       * cho khớp. Mạng khựng một cái là video tụt lại quá ngưỡng, bị tua, nạp lại
+       * từ chỗ mới rồi tụt tiếp — một vòng tự nuôi nhau. Đo trên máy người dùng
+       * thật: 38 lượt tua và 38 lượt chờ nạp trong 15 giây, trong khi FPS vẫn 60
+       * và không có tác vụ dài nào. Cái giật nằm ở đó.
+       *
+       * Lấy `currentTime` của chính video thì mạng khựng chỉ làm vạch chạy chậm
+       * lại theo — không ai tua ai, và thứ người dùng thấy luôn khớp thứ đang
+       * nghe.
+       *
+       * Rơi về đồng hồ tường khi: chưa có video, video đang dừng hoặc đang tua
+       * dở, hoặc đang nghe thử một quãng (lúc đó mốc do quãng đó chỉ huy).
+       */
+      const videoLeads =
+        !!video && !video.paused && !video.seeking && !audit && !video.ended;
       /*
        * `timeRef` lệch khỏi mốc ta vừa đẩy nghĩa là CÓ NGƯỜI TUA chen ngang —
        * lúc đó phải theo họ. Bằng nhau thì không ai đụng vào, dùng mốc đang tích
@@ -101,10 +120,19 @@ export function EditorPage() {
         audit && (current < audit.start || current >= audit.end)
           ? audit.start
           : current;
-      const raw = base + (now - last) / 1000;
+      const raw = videoLeads ? video.currentTime : base + (now - last) / 1000;
       last = now;
       // Nhảy qua chỗ đã bỏ: xem trước phải giống hệt video sẽ xuất ra.
       const next = auditRef.current ? raw : skipRef.current(raw);
+      /*
+       * Vào một quãng ĐÃ BỎ thì phải tua video tới chỗ tiếp theo — tua CÓ CHỦ Ý,
+       * khác hẳn tua để đuổi theo đồng hồ. Nó xảy ra đúng một lần ở mỗi chỗ cắt,
+       * không phải mỗi khung hình.
+       *
+       * Không làm thì video cứ phát tiếp qua đoạn người dùng đã gạch, còn vạch
+       * thì đã nhảy sang bên kia — hình một đằng, mốc một nẻo.
+       */
+      if (videoLeads && next - raw > 0.05) video.currentTime = next;
       if (stopAtRef.current != null && next >= stopAtRef.current) {
         setPlaying(false);
         // Hạ cờ nghe thử NGAY tại mốc dừng: còn treo thì vạch đứng lại bên trong
@@ -132,7 +160,7 @@ export function EditorPage() {
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [playing, seek, duration]);
+  }, [playing, seek, duration, editor.videoRef]);
 
   // Phím tắt và mọi thứ phải chặn của trình duyệt gom về một chỗ — xem
   // `use-editor-guards.ts` để biết đã chặn những gì và vì sao.

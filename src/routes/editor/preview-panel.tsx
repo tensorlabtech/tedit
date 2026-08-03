@@ -64,19 +64,32 @@ export function PreviewPanel({
     (item) => editor.time >= item.start && editor.time <= item.end,
   );
 
-  const videoRef = useRef<HTMLVideoElement>(null);
+  // Thẻ video giữ ở `useEditor` chứ không ở đây: vòng phát cần đọc `currentTime`
+  // của nó để làm đồng hồ. Xem chú thích ở `use-editor.ts`.
+  const videoRef = editor.videoRef;
   const insertRef = useRef<HTMLVideoElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
 
-  // Chỉ tua khi lệch quá 0,3 giây: gán `currentTime` mỗi khung hình lúc đang phát
-  // sẽ làm video giật vì mỗi lần gán là một lần tua lại.
+  /**
+   * Tua video chỉ khi NGƯỜI DÙNG nhảy chỗ, không phải để bám theo đồng hồ.
+   *
+   * Lúc đang phát thì `editor.time` giờ ĐI RA TỪ chính `video.currentTime`
+   * (`editor-page.tsx`), nên hai bên lệch nhau nhiều nhất là một nhịp đẩy state —
+   * dưới 0,05 giây. Chạm ngưỡng dưới đây nghĩa là có người kéo vạch hoặc bấm vào
+   * dải, tức một cú nhảy có chủ ý.
+   *
+   * Bản trước đặt 0,3 và tua để ép video khớp đồng hồ tường. Mạng khựng một cái
+   * là video tụt quá ngưỡng, bị tua, nạp lại từ chỗ mới rồi tụt tiếp — đo trên
+   * máy người dùng thật: 38 lượt tua và 38 lượt chờ nạp trong 15 giây, trong khi
+   * FPS vẫn 60 và không có tác vụ dài nào. Cái giật nằm ở đó, không ở chỗ vẽ.
+   */
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-    if (Math.abs(video.currentTime - editor.time) > 0.3) {
+    if (Math.abs(video.currentTime - editor.time) > 0.5) {
       video.currentTime = editor.time;
     }
-  }, [editor.time]);
+  }, [editor.time, videoRef]);
 
   // Đứng ngay trong một quãng đã bỏ thì báo rõ, đừng để người dùng tưởng video
   // vẫn còn đoạn này.
@@ -173,14 +186,9 @@ export function PreviewPanel({
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-  }, [editor.time]);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
     if (playing) void video.play().catch(() => {});
     else video.pause();
-  }, [playing]);
+  }, [playing, videoRef]);
 
   // Tư liệu video phải tua theo mốc của DẢI, không phát theo đồng hồ riêng: nó
   // bắt đầu từ giây 0 của chính nó nên phải trừ đi mốc bắt đầu của lần chèn.
