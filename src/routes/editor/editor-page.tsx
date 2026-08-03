@@ -61,16 +61,46 @@ export function EditorPage() {
     if (!playing) return;
     let frame = 0;
     let last = performance.now();
+    /*
+     * Đồng hồ chạy 60 lần/giây, nhưng chỉ ĐẨY VÀO STATE 20 lần.
+     *
+     * `setTime` sinh ra một object `editor` mới, mà hai mươi component của bàn
+     * dựng đều nhận nguyên object ấy và không cái nào được memo hoá — nên mỗi
+     * lượt đẩy là dựng lại 6.600 dòng component, kèm cả danh sách hàng trăm từ
+     * của bản chép lời. Sáu mươi lần một giây thì máy không theo kịp, và người
+     * dùng thấy đúng cái đó: kéo thanh thời gian thì giật.
+     *
+     * Hai mươi lần/giây là đủ cho MẮT nhìn vạch chạy — video thì tự nó phát ở
+     * nhịp riêng, `preview-panel` chỉ tua khi lệch quá 0,3 giây. Vẫn tính mốc ở
+     * 60fps để không tích luỹ sai số.
+     *
+     * Sửa tận gốc là tách `time` ra khỏi object `editor` để chỉ thứ nào thật sự
+     * đọc nó mới phải dựng lại. Đó là việc trong `use-editor.ts`, để riêng.
+     */
+    const PUSH_EVERY_MS = 50;
+    /** Mốc đã tính nhưng chưa đẩy vào state. */
+    let carried: number | null = null;
+    /** Mốc lần cuối đã đẩy — để nhận ra có người tua chen ngang hay không. */
+    let pushed: number | null = null;
+    let lastPush = 0;
     const tick = (now: number) => {
       // Đang nghe thử mà con trỏ còn nằm ngoài quãng thì kéo về đầu quãng.
       // `seek` đặt state, nên trong một hai lượt vẽ đầu `timeRef` vẫn giữ vị
       // trí cũ — và vị trí cũ ấy thường đã quá mốc dừng, làm vòng lặp tắt phát
       // ngay ở khung hình đầu tiên.
       const audit = auditRef.current;
+      /*
+       * `timeRef` lệch khỏi mốc ta vừa đẩy nghĩa là CÓ NGƯỜI TUA chen ngang —
+       * lúc đó phải theo họ. Bằng nhau thì không ai đụng vào, dùng mốc đang tích
+       * luỹ ở đây (state có thể còn chưa kịp cập nhật giữa hai lượt đẩy).
+       */
+      const seeked =
+        pushed === null || Math.abs(timeRef.current - pushed) > 0.001;
+      const current = seeked ? timeRef.current : (carried ?? timeRef.current);
       const base =
-        audit && (timeRef.current < audit.start || timeRef.current >= audit.end)
+        audit && (current < audit.start || current >= audit.end)
           ? audit.start
-          : timeRef.current;
+          : current;
       const raw = base + (now - last) / 1000;
       last = now;
       // Nhảy qua chỗ đã bỏ: xem trước phải giống hệt video sẽ xuất ra.
@@ -90,7 +120,14 @@ export function EditorPage() {
         seek(duration);
         return;
       }
-      seek(next);
+      if (now - lastPush >= PUSH_EVERY_MS) {
+        lastPush = now;
+        pushed = next;
+        carried = null;
+        seek(next);
+      } else {
+        carried = next;
+      }
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
