@@ -200,6 +200,39 @@ còn phục vụ bản xuất, không ai ngồi đợi nó nữa.
   trong `.claude/skills/deploy/SKILL.md`).
 - `git prune` — cảnh báo gc có sẵn từ trước.
 
+### Lượt ba — bàn dựng giật
+
+Đo trên máy người dùng thật, 15 giây phát, trước và sau:
+
+| | trước | sau | máy phát triển (qua hầm) |
+|---|---|---|---|
+| FPS | 60 | 60 | 60 |
+| tác vụ dài | 0 | 1 | 0–1 |
+| khung video rơi | 0 | 0 | 0 |
+| **video TUA lại** | **38** | **4** | 4 |
+| **video ĐỢI nạp** | **38** | **3** | 3 |
+
+**Cái giật không nằm ở chỗ vẽ.** FPS đã là 60 và không có tác vụ dài nào ngay từ
+đầu — React sạch. Nó nằm ở chỗ vòng phát tính mốc bằng **đồng hồ tường** rồi bắt
+video tua cho khớp khi lệch quá 0,3 giây: mạng khựng → video tụt → bị tua → nạp
+lại từ chỗ mới → tụt tiếp. Một vòng tự nuôi nhau, 2,5 lượt tua mỗi giây.
+
+Chỉ lộ ra khi có độ trễ mạng thật. Trên máy phát triển qua đường hầm thì tua 0 cả
+trước lẫn sau — nên **đọc mã không thấy được, phải đo trên máy người dùng**.
+
+Giờ vòng phát lấy `currentTime` của chính video làm mốc. Bốn lượt tua còn lại là
+bốn lần vượt qua chỗ cắt — dự án có **181 quãng bị bỏ** nên nhảy vài lần trong 15
+giây là đúng chức năng.
+
+**Ba lượt sửa trước không chạm tới nguyên nhân này.** Chúng vẫn đáng: video xem
+trước 202,6 MB → 7,5 MB, dải ảnh thôi vượt trần texture GPU, số lượt dựng lại
+React giảm ba lần. Nhưng thứ người dùng kêu là video nhảy, không phải giao diện ì
+— và tôi đã đoán sai ba lần trước khi chịu vào trình duyệt đo.
+
+**Bài học ghi lại:** đọc mã đoán được chỗ *có thể* chậm, không đoán được chỗ *đang*
+chậm. Ba lượt đoán tốn nhiều thời gian hơn một lượt dựng container thử rồi lái
+trình duyệt vào đo.
+
 ## Còn lại
 
 Xong: mục 1 (trần bộ nhớ), 4 (xem trước), 5 (giải mã một lượt), 6 (blob URL),
@@ -217,6 +250,12 @@ Xong: mục 1 (trần bộ nhớ), 4 (xem trước), 5 (giải mã một lượt
   được gì với bản chép lời khi chưa có hình không?) chứ không còn là tối ưu, nên
   để bạn quyết.
 - **Mục 8 — tiến độ thật + canh tiến trình con.** Việc thật, chưa làm.
+
+- **Bản xem trước của dòng thời gian ĐÃ CẮT.** Bốn lượt tua còn lại là bốn lần
+  nhảy qua quãng đã bỏ, và mỗi lần nhảy là một lần video nạp lại — trên đường Việt
+  Nam sang châu Âu thì lần nào cũng thấy. Chỉnh player hết đường rồi; lối đúng là
+  dựng sẵn một bản đã cắt để player chạy một mạch. Chỉ làm nếu người dùng còn thấy
+  khựng ở chỗ cắt — đo xong lượt ba thì họ nói "đạt", nên chưa cần.
 
 Lối đi xa hơn cho mục 2, đáng cân nhắc: **hoãn hẳn `base.mp4` tới lúc xuất video.**
 Bàn dựng giờ chỉ cần `preview.mp4` (nhẹ, dựng nhanh) và `audio.wav`; `base.mp4`
