@@ -11,8 +11,27 @@ ngày 03/08/2026 với chính ba tệp người dùng gửi.
 
 ## Đã sửa và đã lên máy chủ
 
-Nhánh `feat/resumable-upload`, commit `2e1f69b`. **Chưa merge vào `main`** —
-deploy từ `main` lần tới sẽ nuốt mất.
+Nhánh `feat/resumable-upload`, commit `2e1f69b` và `558f90b`. **Chưa merge vào
+`main`** — deploy từ `main` lần tới sẽ nuốt mất.
+
+### Lượt hai (`558f90b`)
+
+| | trước | sau |
+|---|---|---|
+| Trần bộ nhớ container | 2500 MB, chạm trần 1238 lần | **3500 MB** |
+| Video khung xem trước | `base.mp4` 202,6 MB | `preview.mp4` **7,5 MB** |
+| `moov` (bảng mục lục) | cuối tệp, byte 212.245.935 | **byte 32** |
+| Khung khoá | mỗi 6–7 giây | **mỗi 1,0 giây** |
+| Dải ảnh dựng từ | `base.mp4` 1080×1920 | `preview.mp4` 540×960 |
+| Màn nạp tệp | chỉ phần trăm | thêm "còn khoảng 2 phút" |
+| Đổi cảnh ở màn nạp | `ERR_FILE_NOT_FOUND` đỏ console | im |
+
+Hai tệp ra từ **một lượt giải mã** — giải mã mới là phần đắt, còn bản xem trước
+nhỏ hơn bốn lần về số điểm ảnh nên phần mã hoá thêm gần như không thấy.
+
+Phép kiểm: `npm run check:render`. Nó canh đúng ba thứ gãy im lặng — thiếu
+`+faststart` hay thiếu `-g` thì tệp **vẫn ra, vẫn phát được, vẫn qua mọi phép
+kiểm hình thức**, chỉ người dùng kéo thanh thời gian mới thấy giật.
 
 | | trước | sau |
 |---|---|---|
@@ -181,13 +200,28 @@ còn phục vụ bản xuất, không ai ngồi đợi nó nữa.
   trong `.claude/skills/deploy/SKILL.md`).
 - `git prune` — cảnh báo gc có sẵn từ trước.
 
-## Thứ tự đề nghị
+## Còn lại
 
-1. **Nâng `mem_limit` 3500m** rồi chạy lại đúng bộ ba tệp này, đo lại mục 3. Một
-   dòng, và nó là điều kiện để biết mục 3 có cần làm gì thêm không.
-2. **Gộp một lượt ffmpeg** (mục 2 + 4 + 5) — chỗ đáng làm nhất.
-3. **Báo tiến độ thật + canh tiến trình con** (mục 8).
-4. Còn lại: blob URL, thời gian còn lại.
+Xong: mục 1 (trần bộ nhớ), 4 (xem trước), 5 (giải mã một lượt), 6 (blob URL),
+7 (thời gian còn lại), và một phần mục 2 (dải ảnh nhẹ đi).
+
+**Chưa làm, và vì sao:**
+
+- **Mục 3 — chép lời 2,6× thời gian thực.** Cố ý chưa đụng: `mem_limit` vừa nới
+  là nghi can chính, mà sửa hai thứ cùng lúc thì không biết thứ nào có tác dụng.
+  Chạy lại một lượt rồi đo trước đã.
+- **Mục 2 — cho chép lời chạy TRƯỚC khi mã hoá video.** Tách tiếng thẳng từ nguồn
+  (vài giây) thay vì từ `base.mp4` (6 phút) thì bản chép lời tới sớm hơn sáu phút.
+  Nhưng nó đảo thứ tự cả `runTranscribe`, và **tổng thời gian không đổi** — chỉ
+  đổi thứ tự thứ gì xong trước. Đó là quyết định về sản phẩm (người dùng có làm
+  được gì với bản chép lời khi chưa có hình không?) chứ không còn là tối ưu, nên
+  để bạn quyết.
+- **Mục 8 — tiến độ thật + canh tiến trình con.** Việc thật, chưa làm.
+
+Lối đi xa hơn cho mục 2, đáng cân nhắc: **hoãn hẳn `base.mp4` tới lúc xuất video.**
+Bàn dựng giờ chỉ cần `preview.mp4` (nhẹ, dựng nhanh) và `audio.wav`; `base.mp4`
+chỉ có `cutRanges` dùng. Làm vậy thì "Chuẩn bị video" xuống dưới hai phút, đổi lại
+lượt xuất lâu thêm — mà lượt xuất thì người ta bấm rồi đi làm việc khác.
 
 ## Câu chưa trả lời được
 
