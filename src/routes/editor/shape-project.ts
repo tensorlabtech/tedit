@@ -231,6 +231,14 @@ export function shape(data: ApiProject) {
     textElements,
     inserts,
     music,
+    /**
+     * Bản chất lượng đã dựng xong chưa — nút Xuất video đọc cờ này.
+     *
+     * Nó dựng NỀN sau lượt chép lời, nên có một quãng bàn dựng đã mở mà tệp
+     * nguồn để cắt thì chưa có. Dự án dựng bằng bản cũ không có trường này nên
+     * mặc định là ĐÃ CÓ — chúng vốn luôn dựng `base.mp4` ngay trong lượt chép.
+     */
+    masterReady: data.masterReady ?? true,
     // Kho tư liệu đã tải lên: nguồn để chọn khi chèn, khác với `inserts` là
     // những lần đã đặt lên dải.
     insertLibrary: data.files.filter((file) => file.role === "insert"),

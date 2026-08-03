@@ -4,12 +4,35 @@ import {
   enqueue,
   queuePosition,
 } from "../job-queue";
-import { retryAiStep, runExport, runTranscribe, setJob } from "../pipeline";
+import {
+  retryAiStep,
+  runExport,
+  runMaster,
+  runTranscribe,
+  setJob,
+} from "../pipeline";
 
 export default async function jobsRoutes(app: FastifyInstance) {
 app.post("/api/projects/:id/transcribe", async (request, reply) => {
   const { id } = request.params as { id: string };
-  const outcome = enqueue(id, "transcribe", () => runTranscribe(id));
+  const outcome = enqueue(id, "transcribe", async () => {
+    await runTranscribe(id);
+    /*
+     * Bản CHẤT LƯỢNG (`base.mp4`) xếp hàng NGAY SAU, chạy nền.
+     *
+     * Bàn dựng mở được rồi — có bản xem trước, dải ảnh, bản chép lời. Thứ duy
+     * nhất còn thiếu chỉ dùng lúc XUẤT VIDEO, mà người dùng còn phải đọc và sửa
+     * lời mất vài phút trước khi tới đó.
+     *
+     * Xếp hàng từ TRONG việc đang chạy: lúc này ngăn việc vẫn còn bận nên nó rơi
+     * vào hàng chờ, và chỉ khởi động khi lượt chép lời nhả chỗ. Đó đúng là điều
+     * mong muốn — máy hai lõi không nên nhận hai việc nặng một lúc.
+     *
+     * Xếp ở đây chứ không trong `pipeline.ts`: `job-queue.ts` đã nhập `setJob` từ
+     * tệp đó, nhập ngược lại là một vòng tròn.
+     */
+    enqueue(id, "master", () => runMaster(id));
+  });
   if (outcome === "duplicate") {
     return reply.code(409).send({ error: "Đang chép lời rồi" });
   }

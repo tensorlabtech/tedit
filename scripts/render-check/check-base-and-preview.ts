@@ -1,5 +1,5 @@
 /**
- * `buildBase` phải ra HAI tệp dùng được, từ MỘT lượt giải mã.
+ * Hai lượt dựng hình phải ra đủ ba tệp dùng được.
  *
  * Vì sao đáng có phép kiểm riêng: lệnh ffmpeg hai đầu ra gãy rất im lặng. Quên
  * `split`/`asplit` thì ffmpeg chối vì nhãn dùng hai lần — cái đó lộ ngay. Nhưng
@@ -7,10 +7,12 @@
  * qua mọi phép kiểm hình thức** — chỉ có người dùng kéo thanh thời gian mới thấy
  * hình giật, mà lúc đó không ai nghĩ tới ffmpeg nữa. Đúng cái đã xảy ra.
  *
- * Ba điều được khẳng định:
- * 1. Ra đủ hai tệp, cùng độ dài, bản xem trước đúng khổ và nhẹ hơn hẳn.
- * 2. `moov` nằm TRƯỚC `mdat` ở cả hai — trình duyệt phát được từ byte đầu.
- * 3. Bản xem trước có khung khoá dày (~1 giây), tức tua tới đâu hiện tới đó.
+ * Bốn điều được khẳng định:
+ * 1. `buildPreview` ra CẢ tệp tiếng — máy nghe chờ đúng tệp đó, và giờ nó không
+ *    còn được tách ra từ `base.mp4` nữa. Thiếu nó thì cả lượt chép lời gãy.
+ * 2. Hai bản hình cùng độ dài, bản xem trước đúng khổ và nhẹ hơn hẳn.
+ * 3. `moov` nằm TRƯỚC `mdat` ở cả hai — trình duyệt phát được từ byte đầu.
+ * 4. Bản xem trước có khung khoá dày (~1 giây), tức tua tới đâu hiện tới đó.
  */
 
 import { execFile } from "node:child_process";
@@ -25,9 +27,8 @@ const DATA_ROOT = mkdtempSync(join(tmpdir(), "tedit-render-"));
 process.env.TEDDIT_DATA_ROOT = DATA_ROOT;
 
 const { ensureProjectDirs, workDir } = await import("../../server/paths");
-const { buildBase, PREVIEW_WIDTH, PREVIEW_HEIGHT } = await import(
-  "../../server/render"
-);
+const { buildPreview, buildMaster, PREVIEW_WIDTH, PREVIEW_HEIGHT } =
+  await import("../../server/render");
 
 let passed = 0;
 let failed = 0;
@@ -113,13 +114,19 @@ for (const [index, fps] of [60, 50].entries()) {
 
 console.log("\nGhép mạch chính");
 
-await buildBase(PROJECT, sources);
+// Hai lượt dựng riêng: bàn dựng chỉ chờ lượt đầu, lượt sau chạy nền.
+await buildPreview(PROJECT, sources);
+await buildMaster(PROJECT, sources);
 
 const base = join(workDir(PROJECT), "base.mp4");
 const preview = join(workDir(PROJECT), "preview.mp4");
 
+const audio = join(workDir(PROJECT), "audio.wav");
 check("ra tệp bản dựng", statSync(base).size > 0);
 check("ra tệp bản xem trước", statSync(preview).size > 0);
+// Máy nghe đọc đúng tệp này. Trước đây nó tách ra từ `base.mp4` nên chắc chắn có;
+// giờ nó ra từ chính lượt dựng bản xem trước, tức có đường để lặng lẽ mất.
+check("ra tệp tiếng cho máy nghe", statSync(audio).size > 0);
 
 const [baseW] = await probeValue(base, "stream=width");
 const [baseH] = await probeValue(base, "stream=height");

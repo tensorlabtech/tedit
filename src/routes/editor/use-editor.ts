@@ -1783,6 +1783,9 @@ export function useEditor(projectId: string | undefined) {
       textElements: [] as TextElement[],
       inserts: [] as Insert[],
       music: [] as MusicTrack[],
+      // Chưa nạp xong thì coi như CHƯA có bản dựng: nút Xuất mờ trong lúc chờ
+      // đúng hơn là sáng lên rồi tắt đi ngay khi dữ liệu về.
+      masterReady: false,
       insertLibrary: [] as ApiProject["files"],
       posterUrl: null as string | null,
       segments: [] as Clip[],

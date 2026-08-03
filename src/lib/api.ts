@@ -286,6 +286,13 @@ export type ApiProject = {
     /** Thang gốc của dải ảnh — px mỗi giây khi vẽ đúng chiều cao dải */
     strip_native_second_width?: number | null;
   };
+  /**
+   * Bản CHẤT LƯỢNG đã dựng xong chưa — thứ lượt xuất video cần.
+   *
+   * Nó dựng NỀN sau lượt chép lời, nên có một quãng bàn dựng mở được mà xuất thì
+   * chưa. Nút Xuất đọc cờ này để mờ đi kèm lý do.
+   */
+  masterReady: boolean;
   music: ApiMusicTrack[];
   files: ApiFile[];
   /** Đoạn do máy chủ dựng — máy chủ vẫn trả về, chỉ là kiểu này thiếu khai báo */

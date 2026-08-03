@@ -28,11 +28,13 @@ export function useHoverScrub(
   // không bao giờ bắn trong trường hợp đó. Chỉ thu hồi thứ mình tự tạo: đường
   // của máy chủ không phải `blob:` nên gọi `revoke` lên nó là vô nghĩa.
   useEffect(() => {
+    // Chụp thẻ video NGAY BÂY GIỜ, không đợi tới lúc dọn: tới lúc ấy `.current`
+    // có thể đã trỏ sang ô khác.
+    const video = videoRef.current;
     return () => {
       if (!url?.startsWith("blob:")) return;
       // Buông tệp ở thẻ video trước đã: thu hồi thẳng thì lượt đọc dở dang trỏ
       // vào một `blob:` đã biến mất và console đỏ lên `ERR_FILE_NOT_FOUND`.
-      const video = videoRef.current;
       if (video) {
         video.removeAttribute("src");
         video.load();

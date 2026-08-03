@@ -169,18 +169,12 @@ export const PREVIEW_WIDTH = 540;
 export const PREVIEW_HEIGHT = 960;
 
 /**
- * Ghép mạch chính thành MỘT tệp chuẩn hoá — và một bản xem trước đi kèm.
+ * Bộ lọc chuẩn hoá và nối mạch chính — dùng chung cho cả hai bản dựng.
  *
- * Hai tệp ra từ MỘT lượt giải mã. Chạy ffmpeg lần thứ hai cho bản xem trước là
- * giải mã lại toàn bộ nguồn lần nữa, mà giải mã chính là phần đắt: đo được lượt
- * ghép mất 358 giây cho 159 giây video trên hai lõi. Bản xem trước nhỏ hơn bốn
- * lần về số điểm ảnh nên phần mã hoá thêm gần như không thấy.
+ * Trả về đồ thị kết thúc bằng `[vout]` (1080×1920, 30fps) và `[aout]` (48kHz
+ * stereo). Ai dùng thì tự nối tiếp phần của mình vào hai nhãn đó.
  */
-export async function buildBase(projectId: string, sources: string[]) {
-  const target = join(workDir(projectId), "base.mp4");
-  const previewTarget = join(workDir(projectId), "preview.mp4");
-  const inputs = sources.flatMap((path) => ["-i", path]);
-
+async function mainGraph(sources: string[]) {
   // Độ dài CHỐT của từng mảnh, đo trước khi ghép.
   //
   // Mỗi mảnh phải ra đúng một độ dài cho CẢ hình lẫn tiếng, không thì `concat`
@@ -211,18 +205,93 @@ export async function buildBase(projectId: string, sources: string[]) {
       );
     })
     .join(";");
-  /*
-   * Tách đôi cả hai luồng để xuất HAI tệp trong MỘT lượt giải mã.
-   *
-   * `split`/`asplit` là bắt buộc: một nhãn đầu ra của filter chỉ `-map` được
-   * đúng một lần. Thiếu nó thì ffmpeg báo nhãn đã dùng rồi và cả lệnh chết.
-   */
   const concat =
     sources.map((_, index) => `[v${index}][a${index}]`).join("") +
-    `concat=n=${sources.length}:v=1:a=1[vcat][acat];` +
-    `[vcat]split=2[vout][vsmall];` +
-    `[vsmall]scale=${PREVIEW_WIDTH}:${PREVIEW_HEIGHT}[vprev];` +
-    `[acat]asplit=2[aout][aprev]`;
+    `concat=n=${sources.length}:v=1:a=1[vout][aout]`;
+  return `${parts};${concat}`;
+}
+
+/**
+ * Thứ BÀN DỰNG cần: bản xem trước nhẹ và tệp tiếng cho máy nghe. KHÔNG có
+ * `base.mp4`.
+ *
+ * Đây là cú tách quan trọng nhất về thời gian chờ. Trước đây `audio.wav` được
+ * tách RA TỪ `base.mp4`, nên máy nghe phải đợi xong cả lượt mã hoá 1080×1920 mới
+ * được bắt đầu — đo thật trên một dự án 159 giây: **6 phút 26 giây** ngồi nhìn
+ * "Chuẩn bị video", trong khi thứ máy nghe cần chỉ là mấy MB tiếng.
+ *
+ * Bản 540×960 ít hơn bốn lần số điểm ảnh nên dựng nhanh hơn hẳn, và bàn dựng
+ * không cần gì hơn thế: `base.mp4` chỉ `cutRanges` lúc XUẤT VIDEO mới đụng tới.
+ *
+ * Hai tệp vẫn ra từ MỘT lượt giải mã — `asplit` cho tiếng đi hai đường, một
+ * đường nén AAC cho bản xem trước, một đường PCM 16kHz mono cho máy nghe.
+ */
+export async function buildPreview(projectId: string, sources: string[]) {
+  const preview = join(workDir(projectId), "preview.mp4");
+  const audio = join(workDir(projectId), "audio.wav");
+  const inputs = sources.flatMap((path) => ["-i", path]);
+  const graph = await mainGraph(sources);
+
+  await ffmpeg([
+    ...inputs,
+    "-filter_complex",
+    `${graph};[vout]scale=${PREVIEW_WIDTH}:${PREVIEW_HEIGHT}[vprev];` +
+      `[aout]asplit=2[axem][anghe]`,
+
+    // ── bản xem trước cho bàn dựng ──────────────────────────────────────────
+    "-map",
+    "[vprev]",
+    "-map",
+    "[axem]",
+    "-c:v",
+    "libx264",
+    "-preset",
+    "veryfast",
+    "-crf",
+    "28",
+    // Khung khoá mỗi giây: tua tới đâu hiện tới đó. Mặc định của x264 là 250
+    // khung (hơn 8 giây), và kéo thanh thời gian trên đó thì hình giật.
+    "-g",
+    String(FPS),
+    // `moov` lên đầu tệp để trình duyệt phát được ngay từ byte đầu.
+    "-movflags",
+    "+faststart",
+    "-c:a",
+    "aac",
+    "-b:a",
+    "96k",
+    "-y",
+    preview,
+
+    // ── tệp tiếng cho máy nghe: 16kHz mono, đúng thứ whisper ăn ─────────────
+    "-map",
+    "[anghe]",
+    "-ac",
+    "1",
+    "-ar",
+    "16000",
+    "-c:a",
+    "pcm_s16le",
+    "-y",
+    audio,
+  ]);
+  return { preview, audio };
+}
+
+/**
+ * Bản CHẤT LƯỢNG — nguồn duy nhất cho bản xuất cuối (`cutRanges`).
+ *
+ * Chạy NỀN, sau khi bàn dựng đã mở được. Không ai ngồi đợi nó: người dùng đang
+ * đọc bản chép lời thì nó dựng xong từ lúc nào không biết.
+ *
+ * Đổi lại là giải mã nguồn hai lượt thay vì một — tổng công việc của máy tăng
+ * khoảng 30%. Đáng, vì thứ đắt không phải công của máy mà là thời gian người
+ * ngồi chờ, và chỗ này cắt được hơn bốn phút khỏi quãng chờ ấy.
+ */
+export async function buildMaster(projectId: string, sources: string[]) {
+  const target = join(workDir(projectId), "base.mp4");
+  const inputs = sources.flatMap((path) => ["-i", path]);
+  const graph = await mainGraph(sources);
 
   await ffmpeg([
     // Không cần cờ xoay: ffmpeg tự áp ma trận xoay của metadata theo mặc định.
@@ -230,9 +299,7 @@ export async function buildBase(projectId: string, sources: string[]) {
     // hiểu thành tên tệp xuất và cả lệnh chết.
     ...inputs,
     "-filter_complex",
-    `${parts};${concat}`,
-
-    // ── tệp 1: bản CHẤT LƯỢNG, nguồn cho bản xuất cuối ──────────────────────
+    graph,
     "-map",
     "[vout]",
     "-map",
@@ -254,28 +321,6 @@ export async function buildBase(projectId: string, sources: string[]) {
     "+faststart",
     "-y",
     target,
-
-    // ── tệp 2: bản XEM TRƯỚC cho bàn dựng ───────────────────────────────────
-    "-map",
-    "[vprev]",
-    "-map",
-    "[aprev]",
-    "-c:v",
-    "libx264",
-    "-preset",
-    "veryfast",
-    "-crf",
-    "28",
-    "-g",
-    String(FPS),
-    "-c:a",
-    "aac",
-    "-b:a",
-    "96k",
-    "-movflags",
-    "+faststart",
-    "-y",
-    previewTarget,
   ]);
   return target;
 }

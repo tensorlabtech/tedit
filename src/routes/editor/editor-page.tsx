@@ -248,15 +248,23 @@ export function EditorPage() {
             ) : (
               <Button
                 // Chưa có lời thì không có gì để cắt, và máy chủ sẽ lỗi ngay.
+                //
+                // Chưa dựng xong bản chất lượng thì cũng chưa xuất được: nó dựng
+                // NỀN sau lượt chép lời, nên có một quãng bàn dựng đã mở mà tệp
+                // nguồn để cắt thì chưa có. Nói thẳng lý do trên chính cái nút,
+                // đừng cho bấm rồi im lặng bắt chờ.
                 disabled={
                   editor.exportJob?.status === "running" ||
-                  editor.sentences.length === 0
+                  editor.sentences.length === 0 ||
+                  !editor.masterReady
                 }
                 onClick={() => void editor.startExport()}
               >
                 {editor.exportJob?.status === "running"
                   ? (editor.exportJob.message ?? "Đang xuất…")
-                  : "Xuất video"}
+                  : !editor.masterReady
+                    ? "Đang chuẩn bị bản dựng…"
+                    : "Xuất video"}
               </Button>
             )}
           </CardAction>

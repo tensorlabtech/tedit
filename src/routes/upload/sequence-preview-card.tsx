@@ -86,6 +86,9 @@ export function SequencePreviewCard({
     const next = URL.createObjectURL(source);
     setUrl(next);
     setAt(0);
+    // Chụp thẻ video NGAY BÂY GIỜ: tới lúc dọn dẹp thì `videoRef.current` có thể
+    // đã trỏ sang thẻ khác, và lúc ấy ta gỡ nhầm tệp của người khác.
+    const video = videoRef.current;
     return () => {
       /*
        * BUÔNG tệp ở thẻ video TRƯỚC khi thu hồi đường dẫn.
@@ -97,7 +100,6 @@ export function SequencePreviewCard({
        *
        * `load()` sau khi gỡ `src` là cách chuẩn để dừng hẳn các lượt đọc đó.
        */
-      const video = videoRef.current;
       if (video) {
         video.removeAttribute("src");
         video.load();

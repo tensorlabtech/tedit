@@ -5,13 +5,13 @@ import { join } from "node:path";
 import { buildEnvelope } from "./audio-envelope";
 import { db, newId } from "./db";
 import { filterHallucinations } from "./hallucination-filter";
-import { extractAudio, makeFilmstrip, probe } from "./media-tools";
+import { makeFilmstrip, probe } from "./media-tools";
 import { thumbDir, workDir } from "./paths";
 import { existsSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 
 import { listMusic } from "./music-tracks";
-import {buildBase, burnElements, type CrossAt, cutRanges, keptBefore, mixMusic, mapToOutput, type KeptRange, normalizeReveal, type RenderElement} from "./render";
+import {buildMaster, buildPreview, burnElements, type CrossAt, cutRanges, keptBefore, mixMusic, mapToOutput, type KeptRange, normalizeReveal, type RenderElement} from "./render";
 import {CROSS_SECONDS, findJunction, junctionHalves, normalizeJunction, type JunctionId} from "./junction-kinds";
 import { keptFromSegments, listSegments } from "./segments";
 import { seedSegmentsByCaption } from "./segment-seed";
@@ -80,6 +80,34 @@ export function setJob(
   return id;
 }
 
+/**
+ * Dựng bản CHẤT LƯỢNG cho một dự án — việc nền, xếp sau lượt chép lời.
+ *
+ * Có sẵn rồi thì thôi: `ensureMaster` gọi hàm này lúc xuất video, mà lúc ấy việc
+ * nền thường đã xong từ lâu. Dựng lại một tệp 200 MB cho vui là mất sáu phút.
+ */
+export async function runMaster(projectId: string) {
+  const target = join(workDir(projectId), "base.mp4");
+  if (existsSync(target)) return target;
+  const sources = mainSources(projectId);
+  if (sources.length === 0) throw new Error("Chưa có video chính");
+  setJob(projectId, "master", "running", 0, "Đang dựng bản chất lượng");
+  const made = await buildMaster(projectId, sources);
+  setJob(projectId, "master", "done", 100, "Xong");
+  return made;
+}
+
+/**
+ * `base.mp4` PHẢI có trước khi cắt — dựng ngay tại chỗ nếu chưa.
+ *
+ * Đường nền có thể chưa chạy tới, hoặc đã chạy mà hỏng, hoặc máy chủ khởi động
+ * lại giữa chừng. Lượt xuất không được phép gãy vì mấy chuyện đó: nó chỉ cần
+ * thêm thời gian, và người bấm Xuất thì vốn đã đi làm việc khác.
+ */
+export async function ensureMaster(projectId: string) {
+  return runMaster(projectId);
+}
+
 function mainSources(projectId: string): string[] {
   return (
     db
@@ -105,32 +133,26 @@ export async function runTranscribe(projectId: string) {
   // sách cũ thì màn chờ mở ra đã thấy sẵn dấu tích của lượt trước.
   resetSteps(projectId);
 
-  setStep(projectId, "prepare", "running");
-  setJob(projectId, "transcribe", "running", 5, "Đang ghép video chính");
-  const base = await buildBase(projectId, sources);
-
-  // Dựng dải ảnh ngay ở bước này: bàn dựng cần nó để người dùng nhìn ra mình
-  // đang ở khoảnh khắc nào, mà bước chép lời thì đã ghép sẵn `base.mp4`.
-  setJob(projectId, "transcribe", "running", 20, "Đang dựng dải ảnh");
-  const baseInfo = await probe(base);
+  markStepRunning(projectId, "prepare");
   /*
-   * Dải ảnh dựng từ bản XEM TRƯỚC, không từ `base.mp4`.
+   * Chỉ dựng thứ BÀN DỰNG CẦN: bản xem trước nhẹ và tệp tiếng cho máy nghe.
    *
-   * Cùng độ dài, cùng mạch, cùng khung hình — chỉ khác số điểm ảnh, mà dải ảnh
-   * thì thu về cao 44px nên bản 540×960 vẫn thừa nét. Giải mã một tệp 212 MB ở
-   * 1080×1920 để làm ra mấy dải ảnh tí xíu là trả giá cho thứ không ai nhìn thấy:
-   * đo được bước này mất 38 giây trên hai lõi.
-   *
-   * Rơi về `base.mp4` khi chưa có — dự án dựng bằng bản cũ, và cả lối gọi lại
-   * dải ảnh ở `media-routes.ts`.
+   * `base.mp4` (1080×1920, chất lượng cho bản xuất) tách hẳn ra một việc chạy
+   * nền phía dưới. Trước đây nó nằm ngay đây và `audio.wav` được tách ra TỪ nó,
+   * nên máy nghe phải đợi xong cả lượt mã hoá mới được bắt đầu — đo thật trên
+   * một dự án 159 giây: 6 phút 26 giây ngồi nhìn "Chuẩn bị video" trước khi có
+   * chữ đầu tiên.
    */
-  const stripSource = existsSync(join(workDir(projectId), "preview.mp4"))
-    ? join(workDir(projectId), "preview.mp4")
-    : base;
+  const { preview, audio } = await buildPreview(projectId, sources);
+
+  // Dựng dải ảnh từ chính bản xem trước: cùng mạch, cùng độ dài, mà dải thu về
+  // cao 44px nên 540×960 vẫn thừa nét.
+  setJob(projectId, "transcribe", "running", 20, "Đang dựng dải ảnh");
+  const baseInfo = await probe(preview);
   // Ghi lỗi ra thông báo việc thay vì nuốt im: lần trước lệnh ffmpeg vượt giới
   // hạn bề rộng JPEG, `catch` rỗng nuốt mất, dải vẫn dùng tệp cũ suốt hai lượt.
   const strip = await makeFilmstrip(
-    stripSource,
+    preview,
     join(thumbDir(projectId), "strip.jpg"),
     baseInfo.duration,
   ).catch((error: Error) => {
@@ -154,9 +176,8 @@ export async function runTranscribe(projectId: string) {
     );
   }
 
-  setJob(projectId, "transcribe", "running", 30, "Đang tách tiếng");
-  const audio = join(workDir(projectId), "audio.wav");
-  await extractAudio(base, audio);
+  // Tệp tiếng đã ra cùng lượt với bản xem trước — không phải tách lại từ đâu nữa.
+  setJob(projectId, "transcribe", "running", 30, "Đang đo tiếng");
   // Đo đường bao ngay sau khi có tệp tiếng: dải sóng trên bàn dựng, mép các
   // quãng lặng, và phép lọc câu bịa đều đọc từ đây. Hỏng thì thôi — cả ba chỗ
   // đều có đường lùi.
@@ -176,7 +197,7 @@ export async function runTranscribe(projectId: string) {
    * vứt mất một kênh chống nghe nhầm không tốn thêm gì.
    */
   if (hasModel()) {
-    setStep(projectId, "describe", "running");
+    markStepRunning(projectId, "describe");
     try {
       const { described, failed } = await describeInserts(projectId);
       setStep(projectId, "describe", "done", {
@@ -195,8 +216,7 @@ export async function runTranscribe(projectId: string) {
     setStep(projectId, "describe", "failed", { error: "chưa có khoá mô hình" });
   }
 
-  setStep(projectId, "transcribe", "running");
-  setJob(projectId, "transcribe", "running", 45, "Đang nghe và chép lời");
+  markStepRunning(projectId, "transcribe");
   // Mồi từ vựng: tên dự án, lời tự khai của người dùng, mô tả tư liệu vừa đọc.
   const heard = await transcribeAudio(audio, "vi", buildAsrPrompt(projectId));
   // Đóng mốc lời dặn đã dùng: sửa nó sau lượt này thì màn nạp tệp còn biết mà
@@ -299,7 +319,7 @@ export async function runTranscribe(projectId: string) {
    * đều đọc từ bảng từ, nên sửa sau là phải dựng lại tất cả.
    */
   if (hasModel()) {
-    setStep(projectId, "fix", "running");
+    markStepRunning(projectId, "fix");
     try {
       const { fixed, rejected, rounds, settled } =
         await fixTranscript(projectId);
@@ -343,8 +363,10 @@ export async function runTranscribe(projectId: string) {
   }
 
   // Dựng đoạn ngay sau khi có lời: bàn dựng mở ra là đã thấy khối rõ ràng.
-  setStep(projectId, "captions", "running");
-  const info = await probe(base);
+  markStepRunning(projectId, "captions");
+  // Độ dài đọc từ bản xem trước — nó và bản chất lượng ra từ cùng một đồ thị lọc
+  // nên dài bằng nhau tới từng khung, mà bản chất lượng thì lúc này chưa có.
+  const info = await probe(preview);
   db.prepare("DELETE FROM segments WHERE project_id=?").run(projectId);
   await seedSegmentsByCaption(projectId, info.duration, readStylePack(projectId));
   db.prepare("UPDATE projects SET segments_by_caption=3 WHERE id=?").run(
@@ -444,6 +466,23 @@ export async function runTranscribe(projectId: string) {
   });
 
   await runAiSteps(projectId);
+
+  /*
+   * Bản CHẤT LƯỢNG xếp thành một việc riêng, chạy sau — không ai đợi nó.
+   *
+   * Bàn dựng mở được rồi: có bản xem trước, có dải ảnh, có bản chép lời. Thứ duy
+   * nhất còn thiếu là `base.mp4`, mà nó chỉ dùng lúc XUẤT VIDEO (`cutRanges`).
+   * Người dùng đọc và sửa lời mất vài phút — thừa thời gian cho nó dựng xong.
+   *
+   * Việc xếp hàng ở `jobs-routes.ts` chứ không gọi `enqueue` ngay tại đây:
+   * `job-queue.ts` đã nhập `setJob` từ tệp này, nhập ngược lại là một vòng tròn.
+   *
+   * Đi qua hàng đợi chứ không thả chạy song song: máy chỉ có hai lõi và
+   * `TEDDIT_MAX_JOBS=1` — thả một ffmpeg chạy ngoài hàng đợi là phá đúng cái luật
+   * giữ cho máy khỏi nhận hai việc nặng một lúc.
+   *
+   * Hỏng thì KHÔNG chặn gì cả — lượt xuất tự dựng lại (`ensureMaster`).
+   */
 
   db.prepare("UPDATE projects SET status='ready' WHERE id=?").run(projectId);
   setJob(
@@ -579,10 +618,18 @@ export async function runExport(projectId: string) {
   const sources = mainSources(projectId);
   if (sources.length === 0) throw new Error("Chưa có video chính");
 
+  /*
+   * `base.mp4` thường đã có sẵn — việc nền dựng nó xong từ lúc người dùng còn
+   * đang sửa lời. `ensureMaster` chỉ dựng khi thật sự thiếu: việc nền chưa chạy
+   * tới, đã chạy mà hỏng, hay máy chủ khởi động lại giữa chừng.
+   *
+   * Bản trước gọi thẳng `buildBase` nên MỖI lượt xuất đều ghép lại từ đầu, kể cả
+   * khi tệp còn nguyên đó — sáu phút trả cho một thứ đã có.
+   */
   const base = join(workDir(projectId), "base.mp4");
-  const baseVideo = sources.length ? base : base;
-  setJob(projectId, "export", "running", 15, "Đang ghép video chính");
-  await buildBase(projectId, sources);
+  const baseVideo = base;
+  setJob(projectId, "export", "running", 15, "Đang chuẩn bị bản dựng");
+  await ensureMaster(projectId);
 
   const baseInfo = await probe(base);
   const kept = keptRanges(projectId, baseInfo.duration);
@@ -931,6 +978,54 @@ function resolveElements(
  * nên hỏng thì đánh dấu rồi đi tiếp. `runOne` đã tự nuốt lỗi của từng chặng, nên
  * chạy cùng lúc cũng không có lượt nào kéo lượt nào xuống.
  */
+/**
+ * Tiến độ và lời báo của việc `transcribe`, suy từ CHẶNG ĐANG CHẠY.
+ *
+ * Trước đây chỉ ba chặng đầu gọi `setJob`, nên từ giây thứ 45% trở đi con số
+ * đứng im và dòng chữ vẫn là "Đang nghe và chép lời" — trong khi máy đã đi qua
+ * `fix`, `captions`, `silence`, `cuts`, `effects`. Đo trên một dự án thật: **10
+ * phút cuối của 16 phút** báo sai như vậy.
+ *
+ * Hậu quả không chỉ là khó chịu. Nó làm "đang chạy" và "đã chết" trông giống hệt
+ * nhau — người dùng hỏi "sao lâu thế", và chính tôi cũng đã một lần kết luận
+ * nhầm là việc đã chết trong khi nó đang chạy bình thường.
+ *
+ * Con số là MỐC ƯỚC LƯỢNG, không phải phần trăm công việc thật: các chặng dài
+ * ngắn rất khác nhau và còn đổi theo độ dài video. Nó chỉ cần đi tới, và đi tới
+ * đúng lúc có chuyện xảy ra.
+ */
+const STEP_PROGRESS: Record<string, [number, string]> = {
+  prepare: [5, "Đang ghép video chính"],
+  describe: [40, "Đang đọc tư liệu chèn"],
+  transcribe: [45, "Đang nghe và chép lời"],
+  fix: [62, "Đang sửa chỗ nghe nhầm"],
+  captions: [70, "Đang chia đoạn và sinh chữ"],
+  silence: [75, "Đang cắt chỗ im lặng"],
+  cuts: [80, "Đang tìm chỗ nên bỏ"],
+  keywords: [88, "Đang chọn từ khoá"],
+  place: [90, "Đang ghép tư liệu chèn"],
+  effects: [93, "Đang chọn hiệu ứng"],
+  music: [96, "Đang chọn nhạc nền"],
+};
+
+/**
+ * Đánh dấu một chặng bắt đầu chạy, VÀ báo lên việc đang chạy tới đâu.
+ *
+ * Tiến độ chỉ ĐƯỢC PHÉP ĐI TỚI. Chặng cuối chạy song song bốn cái một lúc
+ * (`keywords`, `place`, `effects`, `music`) nên đứa nào ghi sau cùng sẽ thắng —
+ * không chặn thì thanh tiến độ lùi lại, mà thanh lùi thì đọc ra như hỏng.
+ */
+function markStepRunning(projectId: string, key: string) {
+  setStep(projectId, key, "running");
+  const at = STEP_PROGRESS[key];
+  if (!at) return;
+  const now = db
+    .prepare("SELECT progress FROM jobs WHERE project_id=? AND kind='transcribe'")
+    .get(projectId) as { progress: number } | undefined;
+  if (now && now.progress > at[0]) return;
+  setJob(projectId, "transcribe", "running", at[0], at[1]);
+}
+
 async function runAiSteps(projectId: string) {
   for (const stage of aiStages(projectId)) {
     await Promise.all(stage.map((job) => runOne(projectId, job)));
@@ -1046,7 +1141,7 @@ async function runOne(
     setStep(projectId, job.key, "failed", { error: "chưa có khoá mô hình" });
     return;
   }
-  setStep(projectId, job.key, "running");
+  markStepRunning(projectId, job.key);
   try {
     setStep(projectId, job.key, "done", { result: await job.run() });
   } catch (error) {

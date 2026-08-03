@@ -1,11 +1,13 @@
 import type { FastifyInstance } from "fastify";
 import { normalizeJunction } from "../junction-kinds";
+import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
-import { basename } from "node:path";
+import { basename, join } from "node:path";
 import { db, newId } from "../db";
 import {
   ensureProjectDirs,
   projectDir,
+  workDir,
 } from "../paths";
 import {
   absorbLegacyMusic,
@@ -363,6 +365,17 @@ app.get("/api/projects/:id", async (request, reply) => {
 
   return {
     project,
+    /**
+     * Bản CHẤT LƯỢNG đã dựng xong chưa — thứ `cutRanges` cần lúc xuất video.
+     *
+     * Nó dựng NỀN sau lượt chép lời, nên có một quãng bàn dựng mở được mà xuất
+     * thì chưa. Nói ra để nút Xuất video mờ đi kèm lý do: cho bấm rồi im lặng
+     * chờ chính là kiểu hỏng mà cả dự án này đang đi chữa.
+     *
+     * Đọc bằng `existsSync` chứ không hỏi bảng `jobs`: tệp có mặt mới là sự thật,
+     * còn hàng việc thì có thể chết giữa chừng mà không ai xoá dòng của nó.
+     */
+    masterReady: existsSync(join(workDir(id), "base.mp4")),
     music: listMusic(id),
     // `kind` do MÁY CHỦ chốt, suy từ đuôi của đường dẫn thật trên đĩa. Giao diện
     // từng tự đoán bằng đuôi của `name`, mà `name` là chữ người dùng đặt — tệp
