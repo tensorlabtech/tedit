@@ -5,6 +5,7 @@ import {
   advanceWidth,
   fitLines,
   indentShare,
+  inkTopOffset,
   textWidth,
   usableWidthOf,
   type AlignId,
@@ -15,7 +16,7 @@ import {
   boxPadShare,
   boxPadShareY,
   styleCase,
-  type StylePack,
+  type ShownPack,
   type Tone,
 } from "./style-pack";
 
@@ -99,7 +100,7 @@ type Sized = {
 export function splitPieces(
   content: string,
   keywords: string[],
-  pack: StylePack,
+  pack: ShownPack,
 ): Piece[] {
   const marked = new Set(keywords.map((word) => word.toLowerCase()));
   return content
@@ -143,7 +144,7 @@ async function fitRow(
   usable: number,
   rows: number,
   videoWidth: number,
-  pack: StylePack,
+  pack: ShownPack,
 ) {
   const byHeight = pack.density.maxScale * (rows > 2 ? 0.7 : rows > 1 ? 0.85 : 1);
   // Đo ở cỡ 100 rồi suy: bề rộng tỉ lệ thuận với cỡ chữ.
@@ -164,7 +165,7 @@ async function buildRows(
   emphasis: EmphasisId,
   usable: number,
   videoWidth: number,
-  pack: StylePack,
+  pack: ShownPack,
 ): Promise<Sized[][]> {
   const px = (scale: number) => Math.round(videoWidth * scale);
   const { main, dim, key } = pack.color;
@@ -303,7 +304,7 @@ async function buildRows(
  * Tiếng cuối phải tính vết mực vì nét nghiêng của nó là thứ chạm mép khung —
  * tính bước tiến thì hàng căn phải bị nhô ra ngoài lề.
  */
-async function rowWidth(row: Sized[], pack: StylePack) {
+async function rowWidth(row: Sized[], pack: ShownPack) {
   const padShare = boxPadShare(pack);
   let width = 0;
   for (const [index, word] of row.entries()) {
@@ -329,7 +330,7 @@ export async function placeWords(
   band: Band,
   videoWidth: number,
   videoHeight: number,
-  pack: StylePack,
+  pack: ShownPack,
 ): Promise<PlacedBlock> {
   const empty = { top: 0, bottom: 0, left: 0, width: 0 };
   const pieces = splitPieces(content, keywords, pack);
@@ -340,6 +341,47 @@ export async function placeWords(
   const left = Math.round(videoWidth * SAFE.left);
   const right = left + usable;
   const rows = await buildRows(pieces, emphasis, usable, videoWidth, pack);
+
+  /*
+   * CHỐT CHẶN CUỐI: hàng nào vẫn rộng hơn chỗ nó có thì thu cả hàng cho vừa.
+   *
+   * Bốn nhánh của `buildRows` mỗi nhánh tự ƯỚC bề rộng theo một công thức riêng,
+   * còn chỗ ĐẶT lại đo bằng `rowWidth`. Hai phép đo đó không bằng nhau, và chênh
+   * lệch đủ để chữ chạy ra ngoài khung:
+   *
+   * - `keyword-large` dồn toàn bộ phần dẫn vào MỘT hàng ở cỡ cố định
+   *   `min(heroScale × 0,4 ; 0,075)` — không hỏi bề rộng lấy một câu. Cụm mười
+   *   ba tiếng chưa đánh dấu từ khoá nào thì hàng dẫn dài gấp đôi khung.
+   * - `mixed-size` ước bằng VẾT MỰC còn `rowWidth` cộng BƯỚC TIẾN, mà bước tiến
+   *   gồm cả khoảng đệm hai bên chữ nên lớn hơn vết mực ở font không nghiêng.
+   *   Nó cũng quên khoảng đệm của nền khối.
+   *
+   * Sửa từng nhánh là sửa bốn công thức ước và chờ nhánh thứ năm. Thu ở đây thì
+   * bảo đảm nằm ở chỗ ĐẶT — nơi con số cuối cùng được quyết định — nên không
+   * phép ước nào bất đồng với nó được.
+   *
+   * Thu được đúng bằng phép nhân vì bề rộng TUYẾN TÍNH theo cỡ chữ: mọi phép đo
+   * đều lấy ở cỡ 100 rồi nhân tỉ lệ. `floor` để phần dôi rơi về phía an toàn.
+   *
+   * Chữ thu nhỏ hơn ngưỡng đọc là cái giá đã chốt từ trước, cùng lý lẽ với phép
+   * kẹp `x` ở cuối hàm này: giữa "chữ nhỏ quá" và "chữ ra ngoài khung" thì bảo
+   * đảm KHÔNG BAO GIỜ TRÀN là thứ không được hy sinh.
+   */
+  for (const row of rows) {
+    const width = await rowWidth(row, pack);
+    if (width <= usable) continue;
+    /*
+     * Chừa lại một pixel cho MỖI tiếng trước khi chia tỉ lệ.
+     *
+     * Vòng đặt chữ làm tròn toạ độ một lần cho mỗi tiếng, nên sai số dồn lên tới
+     * nửa pixel một tiếng. Thu vừa khít `usable` thì hàng tám tiếng vẫn nhô ra
+     * một hai pixel — đo được, và nó biến một bảo đảm thành "gần như luôn đúng".
+     */
+    const shrink = Math.max(0, usable - row.length) / width;
+    for (const word of row) {
+      word.fontSize = Math.max(1, Math.floor(word.fontSize * shrink));
+    }
+  }
 
   // Chiều cao cả khối để neo được từ mép DƯỚI: hai dải dưới mọc lên, không thì khối
   // ba hàng chữ khổ lớn ở dải `bottom` chạy hẳn ra ngoài đáy khung.
@@ -386,26 +428,45 @@ export async function placeWords(
     else if (align === "right") x = Math.round(right - width - shift);
     else x = left + shift;
     // Không bao giờ để tràn: thà lệch khỏi kiểu căn còn hơn chữ ra ngoài khung.
-    x = Math.max(left, Math.min(x, Math.round(right - width)));
+    //
+    // `floor` chứ không `round`: đây là phép KẸP, mà kẹp làm tròn LÊN thì nó
+    // tự cho phép nửa pixel vượt ra đúng cái mép nó sinh ra để giữ.
+    x = Math.max(left, Math.min(x, Math.floor(right - width)));
 
+    /*
+     * Con trỏ chạy bằng SỐ THỰC, chỉ làm tròn lúc phát ra toạ độ từng tiếng.
+     *
+     * Bản trước làm tròn rồi CỘNG DỒN, nên sai số nửa pixel mỗi tiếng chồng lên
+     * nhau: hàng tám tiếng lệch tới bốn pixel, và tiếng cuối của hàng căn phải
+     * nhô ra ngoài mép dù `rowWidth` đã tính vừa khít. Đo được: sáu bộ dáng vượt
+     * mép phải 1–2 pixel ở các cụm chạm trần bề rộng.
+     *
+     * Làm tròn một lần cho mỗi tiếng thì sai số của tiếng này không truyền sang
+     * tiếng sau — cả hàng lệch nhiều nhất nửa pixel. Trang xem cũng đặt chữ bằng
+     * số thực, nên cách này còn kéo hai đường vẽ lại gần nhau hơn.
+     */
+    let cursor = x;
     for (const [col, word] of row.entries()) {
       out.push({
         text: word.text,
         // `x` của lệnh vẽ là chỗ CHỮ bắt đầu, còn nền khối chìa ra trước nó một
         // khoảng đệm. Không dời thì mép trái của nền nằm ngoài mép hàng.
-        x: x + Math.round(word.fontSize * boxPadShare(pack)),
-        y,
+        x: Math.round(cursor + word.fontSize * boxPadShare(pack)),
+        // `y` của lệnh vẽ là mép trên VỆT MỰC, không phải mép trên hộp dòng —
+        // nên tiếng có dấu chồng dấu phải dịch xuống đúng bằng khoảng trống mà
+        // tiếng không dấu để lại phía trên. Không bù thì cả hàng có chân chữ
+        // nhấp nhô, và trang xem không có lỗi đó vì CSS xếp theo chân chữ.
+        y: y + Math.round(await inkTopOffset(word.text, word.fontSize, pack)),
         fontSize: word.fontSize,
         row: index,
         col,
         color: word.color,
         alpha: word.alpha,
       });
-      x += Math.round(
+      cursor +=
         (await advanceWidth(word.text, word.fontSize, pack)) +
-          word.fontSize * pack.density.wordGap +
-          word.fontSize * boxPadShare(pack) * 2,
-      );
+        word.fontSize * pack.density.wordGap +
+        word.fontSize * boxPadShare(pack) * 2;
     }
     y += rowHeights[index];
   }

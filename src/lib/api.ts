@@ -276,6 +276,8 @@ export type ApiProject = {
      * đọc phải rơi về bộ gốc, xem `findStylePack`.
      */
     style_pack?: string | null;
+    /** Dòng tiêu đề của cả video — một cột trên `projects`, không nằm trong `elements`. */
+    headline?: string | null;
     /** Bộ dáng đang dùng lúc chặng hiệu ứng chạy lần cuối; `null` là chưa chạy. */
     effects_style_pack?: string | null;
     /**
@@ -434,6 +436,8 @@ export const api = {
        * không lặng lẽ rơi về mặc định — màn chọn phải biết mình vừa lưu hụt.
        */
       stylePack?: StylePackId;
+      /** Dòng tiêu đề của cả video. Chuỗi rỗng là XOÁ, không phải "giữ nguyên". */
+      headline?: string;
     },
   ) =>
     request<{
@@ -445,6 +449,7 @@ export const api = {
       want_music: number | null;
       insert_source: string | null;
       style_pack: string | null;
+      headline: string | null;
     }>(`/api/projects/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
 
   /** Chạy lại ĐÚNG MỘT chặng AI — không dựng lại cả mạch từ đầu. */
@@ -478,11 +483,15 @@ export const api = {
    * Ba câu mở gợi ý cho "3 giây đầu". Mảng rỗng nghĩa là chưa có lời hoặc chưa
    * có khoá mô hình — hai đường xử lý kia của màn đó vẫn chạy được.
    */
-  suggestOpeningLines: (projectId: string) =>
-    request<{ lines: string[] }>(
-      `/api/projects/${projectId}/opening-lines`,
-      { method: "POST" },
-    ),
+  suggestOpeningLines: (
+    projectId: string,
+    /** `headline` cho chữ IN LÊN khung hình — 3–6 tiếng, không phải câu để nói. */
+    mode: "opening" | "headline" = "opening",
+  ) =>
+    request<{ lines: string[] }>(`/api/projects/${projectId}/opening-lines`, {
+      method: "POST",
+      body: JSON.stringify({ mode }),
+    }),
 
   /** Bỏ qua một lời nhắc ở hàng soát — ghi xuống máy chủ để tải lại không hỏi lại */
   dismissIssue: (projectId: string, issueId: string) =>
@@ -939,7 +948,13 @@ export const api = {
       method: "DELETE",
     }),
 
-  layoutText: (content: string, band: string, projectId?: string) =>
+  layoutText: (
+    content: string,
+    band: string,
+    projectId?: string,
+    /** Từ khoá của cụm — chốt vai chữ, nên chốt luôn cỡ và chỗ bẻ dòng. */
+    keywords?: string[],
+  ) =>
     request<{
       lines: string[];
       truncated: boolean;
@@ -950,7 +965,7 @@ export const api = {
       lineHeightRatio: number;
     }>("/api/layout", {
       method: "POST",
-      body: JSON.stringify({ content, band, projectId }),
+      body: JSON.stringify({ content, band, projectId, keywords }),
     }),
 
   listSegments: (projectId: string) =>

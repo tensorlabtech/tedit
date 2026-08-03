@@ -110,6 +110,51 @@
       "instanceAxes": {
         "wght": 700
       }
+    },
+    {
+      "id": "playfair-display-bold",
+      "label": "Playfair Display Bold",
+      "file": "PlayfairDisplay-Bold.ttf",
+      "remote": "ofl/playfairdisplay/PlayfairDisplay[wght].ttf",
+      "instanceAxes": {
+        "wght": 700
+      },
+      "license": "ofl/playfairdisplay/OFL.txt",
+      "licenseName": "SIL OFL 1.1",
+      "italic": false,
+      "cssStack": "'Playfair Display', serif",
+      "cssWeight": 700,
+      "feel": "Serif chân thẳng, nét thanh nét đậm chênh nhau rất mạnh — dáng tạp chí. Đây là họ đứng XA sans nhất trong kho, nên nó là vai cảm xúc tương phản mạnh nhất"
+    },
+    {
+      "id": "lora-bold-italic",
+      "label": "Lora Bold Italic",
+      "file": "Lora-BoldItalic.ttf",
+      "remote": "ofl/lora/Lora-Italic[wght].ttf",
+      "instanceAxes": {
+        "wght": 700
+      },
+      "license": "ofl/lora/OFL.txt",
+      "licenseName": "SIL OFL 1.1",
+      "italic": true,
+      "cssStack": "Lora, serif",
+      "cssWeight": 700,
+      "feel": "Serif nghiêng, chân cong mềm — dáng kể chuyện. Ấm hơn Playfair, dùng khi cần cảm xúc mà không cần chói"
+    },
+    {
+      "id": "dancing-script-bold",
+      "label": "Dancing Script Bold",
+      "file": "DancingScript-Bold.ttf",
+      "remote": "ofl/dancingscript/DancingScript[wght].ttf",
+      "instanceAxes": {
+        "wght": 700
+      },
+      "license": "ofl/dancingscript/OFL.txt",
+      "licenseName": "SIL OFL 1.1",
+      "italic": false,
+      "cssStack": "'Dancing Script', cursive",
+      "cssWeight": 700,
+      "feel": "Chữ viết tay nối nét — họ script DUY NHẤT trong kho đủ dấu Việt (Caveat trượt 80 chữ cái). Chỉ hợp vai cảm xúc: cụm ngắn, không dùng cho câu tường thuật"
     }
   ],
   "reference": {

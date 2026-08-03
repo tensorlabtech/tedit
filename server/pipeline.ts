@@ -2,7 +2,7 @@ import { levelAudio, measureAudio } from "./auto-audio";
 import { autoGradeOn, gradeImage, measureImage } from "./auto-grade";
 import { join } from "node:path";
 
-import { buildEnvelope } from "./audio-envelope";
+import { buildEnvelope, readEnvelope } from "./audio-envelope";
 import { db, newId } from "./db";
 import { filterHallucinations } from "./hallucination-filter";
 import { makeFilmstrip, probe } from "./media-tools";
@@ -11,11 +11,13 @@ import { existsSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 
 import { listMusic } from "./music-tracks";
-import {buildMaster, buildPreview, burnElements, type CrossAt, cutRanges, keptBefore, mixMusic, mapToOutput, type KeptRange, normalizeReveal, type RenderElement} from "./render";
+import {buildMaster, buildPreview, burnElements, type CrossAt, cutRanges, keptBefore, mixMusic, mapToOutput, type KeptRange, normalizeReveal, OUT_HEIGHT, OUT_WIDTH, type RenderElement} from "./render";
 import {CROSS_SECONDS, findJunction, junctionHalves, normalizeJunction, type JunctionId} from "./junction-kinds";
 import { keptFromSegments, listSegments } from "./segments";
 import { seedSegmentsByCaption } from "./segment-seed";
 import { buildAsrPrompt } from "./asr-bias";
+import { pickCaptionBand } from "./caption-band";
+import { buildSubjectMask, emptiestBand, hasSubject, subjectPath } from "./subject-mask";
 import { proposeCuts } from "./ai-cuts";
 import { fixTranscript } from "./ai-fix-transcript";
 import { trimSilence } from "./auto-trim-silence";
@@ -27,6 +29,7 @@ import { pickMusic } from "./ai-music";
 import { createCaptionElements } from "./caption-elements";
 import { hasModel } from "./llm";
 import { readStylePack } from "./style-pack-store";
+import { behindPhrase } from "./style-pack";
 import { fromLegacyLayout, type Band } from "./text-layout";
 import { failStrandedSteps, resetSteps, setStep } from "./pipeline-steps";
 import { transcribeAudio } from "./transcribe";
@@ -183,10 +186,23 @@ export async function runTranscribe(projectId: string) {
   // đều có đường lùi.
   const envelope = await buildEnvelope(projectId, audio).catch(() => null);
 
+  /*
+   * TÁCH NGƯỜI KHỎI NỀN — một lần cho cả video, ngay sau khi có `base.mp4`.
+   *
+   * Ở đây chứ không ở lúc xuất: đo được 58 giây cho một video 133 giây, mà mặt
+   * nạ chỉ phụ thuộc `base.mp4` — tính lại mỗi lượt xuất là bắt người dùng chờ
+   * ngần ấy mỗi lần họ sửa một chữ.
+   *
+   * Hỏng thì thôi: bộ dáng nào cần mặt nạ sẽ rơi về lối không có, chứ một chặng
+   * phụ không được làm hỏng cả lượt dựng.
+   */
+  const mask = await buildSubjectMask(projectId, base);
+
   setStep(projectId, "prepare", "done", {
     result:
       `${formatClock(baseInfo.duration)} · ${sources.length} tệp` +
-      (strip ? ` · ${Math.round(strip.totalSeconds)} khung` : ""),
+      (strip ? ` · ${Math.round(strip.totalSeconds)} khung` : "") +
+      (mask ? " · đã tách nền" : ""),
   });
 
   /**
@@ -257,13 +273,18 @@ export async function runTranscribe(projectId: string) {
    */
   const anchors = db
     .prepare(
-      `SELECT e.id, wf.start_sec AS from_sec, wt.end_sec AS to_sec
+      `SELECT e.id, e.kind, wf.start_sec AS from_sec, wt.end_sec AS to_sec
        FROM elements e
        JOIN words wf ON wf.id = e.from_word_id
        JOIN words wt ON wt.id = e.to_word_id
        WHERE e.project_id = ?`,
     )
-    .all(projectId) as Array<{ id: string; from_sec: number; to_sec: number }>;
+    .all(projectId) as Array<{
+    id: string;
+    kind: string;
+    from_sec: number;
+    to_sec: number;
+  }>;
 
   const clearOld = db.transaction(() => {
     db.prepare("DELETE FROM words WHERE project_id=?").run(projectId);
@@ -386,6 +407,7 @@ export async function runTranscribe(projectId: string) {
   }>;
 
   let reanchored = 0;
+  let refreshed = 0;
   if (fresh.length > 0 && anchors.length > 0) {
     const nearest = (time: number, key: "start_sec" | "end_sec") =>
       fresh.reduce((best, word) =>
@@ -394,14 +416,49 @@ export async function runTranscribe(projectId: string) {
     const update = db.prepare(
       "UPDATE elements SET from_word_id=?, to_word_id=? WHERE id=?",
     );
+    /*
+     * Chép LẠI `content` của cụm chữ từ những từ vừa neo vào.
+     *
+     * `content` là một BẢN SAO của lời chứ không phải phép nối lúc dựng, nên
+     * neo lại thôi thì chữ trên video vẫn là lời của lần chép TRƯỚC. Đo thật:
+     * chặng sửa lời đã đổi "Fanandef" thành "frontend dev" trong bảng từ, mà
+     * video xuất ra vẫn hiện "Fanandef" — cả chặng sửa lời lẫn ô lời dặn thành
+     * ra vô nghĩa với đúng thứ người xem đọc được.
+     *
+     * Làm mới VÔ ĐIỀU KIỆN, không cố đoán xem người dùng đã sửa tay hay chưa:
+     *
+     * · Sửa chữ trên bàn dựng vốn đã ghi ngược vào bảng từ (`applyTextBackToWords`
+     *   ở `elements-routes.ts`). Hai bên vốn là một, không phải hai nguồn.
+     * · Mà chép lại lời thì xoá sạch bảng từ rồi ghi từ mới. Bản sửa tay ở mức
+     *   từ đã mất từ trước rồi; giữ riêng nó ở mức cụm chữ chỉ tạo ra một cụm
+     *   chữ nói khác hẳn lời bên dưới nó.
+     * · Và một khi đã lệch thì không tự lành: phép so "content có bằng lời cũ
+     *   không" hỏng ngay từ lượt chép thứ hai, nên cụm ấy giữ chữ sai VĨNH VIỄN.
+     */
+    const rewrite = db.prepare("UPDATE elements SET content=? WHERE id=?");
+    const textIn = db.prepare(
+      `SELECT group_concat(text, ' ') AS says FROM (
+         SELECT text FROM words
+          WHERE project_id=? AND start_sec>=? AND end_sec<=? ORDER BY start_sec)`,
+    );
     db.transaction(() => {
       for (const anchor of anchors) {
-        update.run(
-          nearest(anchor.from_sec, "start_sec").id,
-          nearest(anchor.to_sec, "end_sec").id,
-          anchor.id,
-        );
+        const from = nearest(anchor.from_sec, "start_sec");
+        const to = nearest(anchor.to_sec, "end_sec");
+        update.run(from.id, to.id, anchor.id);
         reanchored += 1;
+        // Chỉ cụm CHỮ. Phần tử tư liệu chèn cũng neo vào từ nhưng `content` của
+        // nó không phải lời nói, ghi đè là xoá mất thứ người dùng đã đặt.
+        if (anchor.kind !== "text") continue;
+        const says = (
+          textIn.get(projectId, from.start_sec, to.end_sec) as {
+            says: string | null;
+          }
+        ).says;
+        if (says) {
+          rewrite.run(says, anchor.id);
+          refreshed += 1;
+        }
       }
     })();
   }
@@ -445,11 +502,30 @@ export async function runTranscribe(projectId: string) {
   // là chỗ cắt, không phải chữ — nên bàn dựng vẫn cắt được như thường.
   const wantCaptions = captionState?.want_captions !== 0;
   if (wantCaptions && !captionState?.captions_seeded) {
-    await createCaptionElements(
-      projectId,
-      (captionState?.subtitle_band ?? "bottom") as Band,
-      readStylePack(projectId),
-    );
+    const pack = readStylePack(projectId);
+    /*
+     * Chọn dải, không mặc định `bottom` nữa.
+     *
+     * Chỉ chọn khi người dùng CHƯA tự đặt: cột này cũng là ô họ chỉnh được, và
+     * máy đè lên lựa chọn của người là lỗi nặng hơn hẳn một dải đặt chưa khéo.
+     * Ghi lại kết quả để bàn dựng và mọi cụm chữ thêm sau đều theo cùng một dải.
+     */
+    let band = (captionState?.subtitle_band ?? null) as Band | null;
+    if (!band) {
+      const picked = await pickCaptionBand(
+        base,
+        info.width ?? OUT_WIDTH,
+        info.height ?? OUT_HEIGHT,
+        pack,
+      );
+      band = picked.band;
+      db.prepare("UPDATE projects SET subtitle_band=? WHERE id=?").run(
+        band,
+        projectId,
+      );
+      setJob(projectId, "transcribe", "running", 70, `Phụ đề đặt ${band === "top" ? "trên" : "dưới"}: ${picked.why}`);
+    }
+    await createCaptionElements(projectId, band, pack);
     db.prepare(
       "UPDATE projects SET captions_seeded=1, subtitles=0 WHERE id=?",
     ).run(projectId);
@@ -497,7 +573,8 @@ export async function runTranscribe(projectId: string) {
       ? "Không nghe được lời nào — video này không có tiếng nói"
       : `Chép được ${segments.length} câu` +
           (dropped.length > 0 ? ` · bỏ ${dropped.length} câu máy bịa` : "") +
-          (reanchored > 0 ? ` · neo lại ${reanchored} phần tử` : ""),
+          (reanchored > 0 ? ` · neo lại ${reanchored} phần tử` : "") +
+          (refreshed > 0 ? ` · làm mới ${refreshed} cụm chữ` : ""),
   );
 }
 
@@ -613,6 +690,48 @@ export function buildCrossAt(
   return out;
 }
 
+/**
+ * Từ khoá ĐẮT NHẤT của cả video. `null` khi chưa nhấn gì.
+ *
+ * Chấm bằng `số lần × độ dài`, không bằng số lần trần. Đo trên một bản thật:
+ * đếm trần thì "anh" thắng với 4 lượt — một đại từ, vẽ nó to bằng một phần năm
+ * khung thì không nói lên điều gì. Nhân thêm độ dài thì "frontend" (3 lượt, 8
+ * chữ) vượt lên, và đó đúng là chủ đề của video.
+ *
+ * Lý lẽ: tiếng NGẮN mà lặp nhiều gần như luôn là từ chức năng; tiếng DÀI mà lặp
+ * nhiều thì phải là thứ bài đang nói về.
+ *
+ * So không phân biệt hoa thường và bỏ dấu câu — cùng phép chuẩn hoá mà chặng
+ * nhấn dùng, nếu không thì "layoff" với "Layoff," đếm thành hai từ khác nhau và
+ * không từ nào đủ nhiều để thắng.
+ */
+function topKeyword(projectId: string): string | null {
+  const rows = db
+    .prepare(
+      "SELECT keywords FROM elements WHERE project_id=? AND kind='text' AND keywords IS NOT NULL AND keywords<>''",
+    )
+    .all(projectId) as Array<{ keywords: string }>;
+  const norm = (value: string) =>
+    value.toLowerCase().replace(/^[^\p{L}\p{N}]+/gu, "").replace(/[^\p{L}\p{N}]+$/gu, "");
+  const count = new Map<string, { text: string; n: number }>();
+  for (const row of rows) {
+    for (const word of row.keywords.split("|")) {
+      const key = norm(word);
+      // Bỏ tiếng một chữ cái và số trần: chúng lặp nhiều mà không mang chủ đề.
+      if (key.length < 3 || /^\d+$/.test(key)) continue;
+      const seen = count.get(key);
+      if (seen) seen.n += 1;
+      else count.set(key, { text: word.replace(/[^\p{L}\p{N}]+$/gu, ""), n: 1 });
+    }
+  }
+  let best: { text: string; n: number } | null = null;
+  const score = (item: { text: string; n: number }) => item.n * item.text.length;
+  for (const item of count.values()) {
+    if (!best || score(item) > score(best)) best = item;
+  }
+  return best && best.n >= 2 ? best.text : null;
+}
+
 export async function runExport(projectId: string) {
   setJob(projectId, "export", "running", 5, "Đang chuẩn bị");
   const sources = mainSources(projectId);
@@ -664,6 +783,17 @@ export async function runExport(projectId: string) {
 
   setJob(projectId, "export", "running", 35, "Đang bỏ các đoạn đã gạch");
   const cut = await cutRanges(projectId, baseVideo, kept, crossAt);
+  /*
+   * Cắt MẶT NẠ theo đúng bộ khoảng ấy.
+   *
+   * Mặt nạ dựng trên `base.mp4` chưa cắt. Nạp thẳng nó vào đồ thị lọc thì nó
+   * chạy theo trục của bản ĐÃ cắt, và hai bên lệch đúng bằng phần đã bỏ — đo
+   * được trên một bản: bỏ 26 giây, và cái viền bám dáng người ôm một tư thế của
+   * mấy giây trước đó.
+   */
+  const maskCut = hasSubject(projectId)
+    ? await cutRanges(projectId, subjectPath(projectId), kept, crossAt, "cut-mask.mp4")
+    : null;
 
   setJob(projectId, "export", "running", 60, "Đang in chữ và chèn tư liệu");
   const elements = resolveElements(projectId, kept);
@@ -771,13 +901,40 @@ export async function runExport(projectId: string) {
    * hàng chục giây.
    */
   const autoGradeWanted = autoGradeOn(projectId);
-  const graded = autoGradeWanted ? gradeImage(await measureImage(cut)) : null;
+  // Đo MỘT lần, dùng cho hai việc: tự cân hình, và chọn độ đục cho hình dán.
+  const stats = await measureImage(cut);
+  const graded = autoGradeWanted ? gradeImage(stats) : null;
   if (graded) console.log(`[render] tự cân hình: ${graded.lyDo.join(" · ")}`);
 
   // Đo TIẾNG trên cùng bản đã cắt, cùng lý do với hình: nhiều tệp ghép lại thì
   // mỗi tệp một mức, đo riêng rồi chỉnh riêng là đoạn nọ to hơn đoạn kia.
   const gradedAudio = autoGradeWanted ? levelAudio(await measureAudio(cut)) : null;
   if (gradedAudio) console.log(`[render] tự cân tiếng: ${gradedAudio.lyDo.join(" · ")}`);
+
+  /*
+   * Dải ít người nhất — đo một lần ở GIỮA phim.
+   *
+   * Giữa phim chứ không đầu: mấy giây đầu hay là lúc người ta còn chỉnh máy, và
+   * một khung ở đó không đại diện cho chỗ họ ngồi suốt phần còn lại.
+   */
+  const behindPack = readStylePack(projectId);
+  /*
+   * Chữ chạy sau người lấy từ TỪ KHOÁ, không lấy từ dòng tiêu đề.
+   *
+   * Tiêu đề là một câu; cắt mấy tiếng đầu của nó ra được "Thị trường" — đúng
+   * ngữ pháp mà không mang gì. Thiết bị này vẽ MỘT từ ở cỡ bằng một phần năm
+   * bề rộng khung, chồng ba tầng: nó cần từ ĐẮT nhất của video, không cần chủ
+   * ngữ của câu đầu.
+   *
+   * Chặng `keywords` đã chọn sẵn những từ ấy rồi. Lấy từ được nhấn NHIỀU LẦN
+   * nhất: lặp lại là dấu hiệu rõ nhất rằng cả video xoay quanh nó.
+   */
+  const behindLine = behindPack.behindText
+    ? behindPhrase(topKeyword(projectId))
+    : null;
+  const behindBand = behindLine
+    ? ((await emptiestBand(projectId, baseInfo.duration / 2))?.index ?? 0)
+    : 0;
 
   const finalPath = await burnElements(
     projectId,
@@ -788,6 +945,25 @@ export async function runExport(projectId: string) {
     readStylePack(projectId),
     junctions,
     graded,
+    // Đọc cùng lúc với bộ dáng, cùng lý do: bản đang dựng dở không đổi tiêu đề
+    // ở nửa sau video khi người dùng sửa ô nhập giữa chừng.
+    (
+      db.prepare("SELECT headline FROM projects WHERE id=?").get(projectId) as
+        | { headline: string | null }
+        | undefined
+    )?.headline ?? null,
+    stats?.yAvg ?? null,
+    maskCut,
+    /*
+     * Chữ chạy sau người dùng lại chính DÒNG TIÊU ĐỀ.
+     *
+     * Không thêm một ô nhập nữa: người dùng đã gõ một câu đại diện cho video
+     * rồi, và bắt họ gõ câu thứ hai cho một thiết bị của bộ dáng là bắt họ học
+     * bộ dáng. Bộ nào có `behindText` thì câu ấy được vẽ theo lối này; bộ nào
+     * không thì nó vẫn là dòng tiêu đề như cũ.
+     */
+    behindLine,
+    behindBand,
   );
 
   // Nhạc đặt theo thời gian NGUỒN trên dải, nên phải quy sang dải ĐÃ CẮT: bỏ
@@ -1060,7 +1236,7 @@ function aiJobs(projectId: string): AiJob[] {
       // và hai bên không tranh nhau cắt cùng một quãng.
       key: "silence",
       run: async () => {
-        const { trimmed, saved } = trimSilence(projectId);
+        const { trimmed, saved } = trimSilence(projectId, await readEnvelope(projectId));
         return trimmed > 0
           ? `rút ${trimmed} chỗ · ${saved.toFixed(1)}s`
           : "không có chỗ nào";
@@ -1076,9 +1252,11 @@ function aiJobs(projectId: string): AiJob[] {
     {
       key: "keywords",
       run: async () => {
-        const { applied, rejected } = await pickKeywords(projectId);
+        const { applied, rejected, rounds } = await pickKeywords(projectId);
         return (
-          `nhấn ${applied} cụm` + (rejected > 0 ? ` · gạt ${rejected}` : "")
+          `nhấn ${applied} cụm` +
+          (rounds > 1 ? ` · ${rounds} lượt` : "") +
+          (rejected > 0 ? ` · gạt ${rejected}` : "")
         );
       },
     },

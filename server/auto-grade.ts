@@ -177,5 +177,5 @@ export function autoGradeOn(projectId: string): boolean {
   const row = db
     .prepare("SELECT auto_grade FROM projects WHERE id=?")
     .get(projectId) as { auto_grade?: number | null } | undefined;
-  return (row?.auto_grade ?? 1) !== 0;
+  return (row?.auto_grade ?? 0) !== 0;
 }

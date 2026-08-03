@@ -52,16 +52,88 @@ con số, tên riêng, động từ quyết định, thứ người xem cần nh
 KHÔNG chọn: từ nối, đại từ, từ đệm, từ vừa nhấn ở cụm ngay trước.
 KHÔNG chọn từ chỉ lượng chung chung: "một", "vài", "nhiều", "mấy", "các", "những".
 Con số CÓ NGHĨA thì được ("30 tuổi", "3 tệp") — chỉ cấm từ đếm không mang tin.
-Phần lớn cụm KHÔNG cần nhấn gì — chỉ chọn khi cụm đó thật sự có một từ nổi bật.
 Chọn dàn trải cả video, đừng dồn hết vào một đoạn.
 
 Từ trả về phải chép ĐÚNG NGUYÊN VĂN như trong cụm, không đổi dấu, không chia lại.
 Cụm không có gì đáng nhấn thì đừng đưa vào kết quả.`;
 
+/**
+ * Câu nói TỈ LỆ NHẮM, ghép vào cuối chỉ dẫn.
+ *
+ * Bản trước chỉ dẫn viết cứng *"Phần lớn cụm KHÔNG cần nhấn gì"* trong khi bộ
+ * dáng khai `keywordShare` tới 0,45 — hai câu trái nhau, và câu trong chỉ dẫn
+ * thắng vì mô hình chỉ đọc được câu ấy. Đo ra: bộ khai 45% mà mô hình chỉ đề
+ * xuất 32%, rồi qua phép khớp chỉ còn 5% cụm thật sự có nhấn.
+ *
+ * Trần `keywordShare` vẫn cắt ở phía code — mô hình quá tay thì bị chặn. Nhưng
+ * giờ nó biết đích mình nhắm, thay vì bị bảo một đằng rồi bị đo bằng một nẻo.
+ */
+/** Bỏ dấu câu hai đầu, hạ về chữ thường — dạng để SO, không phải dạng để lưu. */
+const norm = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/^[^\p{L}\p{N}]+/gu, "")
+    .replace(/[^\p{L}\p{N}]+$/gu, "");
+
+const nhamTiLe = (share: number) =>
+  `\n\nNhắm khoảng ${Math.round(share * 100)}% số cụm có từ nhấn. Đây là NHỊP của video, ` +
+  `không phải phần thưởng cho cụm hay nhất — thấp hơn nhiều thì video đọc ra đều đều một mạch, ` +
+  `cao hơn nhiều thì không còn gì là nhấn nữa.`;
+
+/**
+ * Số lượt hỏi tối đa.
+ *
+ * Một lượt không bao giờ đủ. Đo trên một video 133 cụm với bộ khai 45%: lượt
+ * đầu mô hình chỉ đề xuất 32% số cụm, và sau phép khớp còn 20%. Nó đọc cả bản
+ * chép rồi chọn những chỗ nổi nhất — hỏi lại lần nữa, lần này chỉ đưa những cụm
+ * CHƯA có nhấn, thì nó thấy được lớp nổi tiếp theo.
+ *
+ * Dừng sớm khi đã chạm tỉ lệ nhắm hoặc khi một lượt không thêm được gì. Ba là
+ * trần cho ca bản chép quá nhạt, để khỏi hỏi mãi một câu không có câu trả lời.
+ */
+const MAX_ROUNDS = 3;
+
 export async function pickKeywords(projectId: string): Promise<{
   applied: number;
   rejected: number;
+  rounds: number;
 }> {
+  const { keywordShare } = readStylePack(projectId).intensity;
+  const total = (
+    db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM elements
+         WHERE project_id=? AND kind='text' AND content IS NOT NULL AND content<>''`,
+      )
+      .get(projectId) as { n: number }
+  ).n;
+  const target = Math.floor(total * keywordShare);
+
+  let applied = 0;
+  let rejected = 0;
+  let rounds = 0;
+  for (let round = 0; round < MAX_ROUNDS; round += 1) {
+    // Trần còn lại tính trên TỔNG số cụm, không tính trên số cụm chưa đánh dấu:
+    // lượt sau chỉ thấy phần chưa đánh dấu, nên `floor(còn lại × tỉ lệ)` cộng
+    // dồn qua ba lượt sẽ vượt xa tỉ lệ bộ dáng khai.
+    const pass = await pickOnce(projectId, target - applied);
+    rounds = round + 1;
+    applied += pass.applied;
+    rejected += pass.rejected;
+    if (pass.applied === 0 || applied >= target) break;
+  }
+  return { applied, rejected, rounds };
+}
+
+async function pickOnce(
+  projectId: string,
+  /** Còn được đánh dấu bao nhiêu cụm nữa. */
+  room: number,
+): Promise<{
+  applied: number;
+  rejected: number;
+}> {
+  if (room <= 0) return { applied: 0, rejected: 0 };
   const rows = db
     .prepare(
       `SELECT id, content FROM elements
@@ -73,8 +145,16 @@ export async function pickKeywords(projectId: string): Promise<{
     .all(projectId) as Row[];
   if (rows.length < 5) return { applied: 0, rejected: 0 };
 
+  // Đọc bộ dáng TRƯỚC lượt hỏi: tỉ lệ nhắm phải đi vào chính chỉ dẫn, không
+  // chỉ dùng để cắt phía sau.
+  const { keywordsPerGroup } = readStylePack(projectId).intensity;
+  // Tỉ lệ nói với mô hình là tỉ lệ trên PHẦN CÒN LẠI của lượt này — lượt hai
+  // chỉ thấy những cụm lượt một đã bỏ qua, bảo nó nhắm 45% của cả video ở đó là
+  // bảo một con số không có nghĩa với thứ nó đang nhìn.
+  const share = Math.min(1, room / Math.max(1, rows.length));
+
   const proposal = await ask<Proposal>({
-    instructions: voiBoiCanh(INSTRUCTIONS, projectId),
+    instructions: voiBoiCanh(INSTRUCTIONS + nhamTiLe(share), projectId),
     input: rows.map((row) => `${row.id}|${row.content}`).join("\n"),
     schemaName: "keywords",
     // Việc này không cần suy luận sâu — dùng bậc mô hình rẻ.
@@ -84,8 +164,7 @@ export async function pickKeywords(projectId: string): Promise<{
 
   const byId = new Map(rows.map((row) => [row.id, row.content ?? ""]));
   const update = db.prepare("UPDATE elements SET keywords=? WHERE id=?");
-  const { keywordShare, keywordsPerGroup } = readStylePack(projectId).intensity;
-  let budget = Math.max(1, Math.floor(rows.length * keywordShare));
+  let budget = Math.max(1, Math.min(room, rows.length));
   let applied = 0;
   let rejected = 0;
 
@@ -100,12 +179,42 @@ export async function pickKeywords(projectId: string): Promise<{
         rejected += 1;
         continue;
       }
-      // Từ phải CÓ THẬT trong cụm. Mô hình chia lại từ hoặc bỏ dấu là chuyện
-      // thường, mà lưu một từ không khớp thì khâu dựng chữ không tìm ra nó và
-      // cụm ấy im lặng mất phần nhấn — không chỗ nào báo.
-      const words = content.split(/\s+/);
+      /*
+       * Khớp RỘNG TAY, không đòi chép y hệt.
+       *
+       * Luật cũ là `words.includes(keyword)` — bằng nhau từng ký tự. Đo trên
+       * một video thật: mô hình đề xuất 43 cụm, chỉ 8 cụm khớp, **35 bị gạt**.
+       * Ba kiểu trượt, không cái nào là lỗi của mô hình:
+       *
+       * · **Dấu câu** — nó trả "content" còn trong cụm là "content,".
+       * · **Từ ghép bị cắt qua hai cụm** — nó trả "tương lai" mà cụm dứt ở
+       *   "tương", vì phép chia cụm cắt ngang từ ghép. Tiếng Việt ghi rời từng
+       *   tiếng nên chuyện này xảy ra liên tục.
+       * · **Chữ hoa đầu câu** — "Mình" ở đầu cụm, "mình" ở giữa.
+       *
+       * Nên: bỏ dấu câu hai đầu, so không phân biệt hoa thường, và TÁCH từ ghép
+       * ra từng tiếng rồi giữ những tiếng có mặt. Nhấn nửa từ ghép ở cụm này
+       * rồi nửa kia ở cụm sau đọc ra liền mạch — chính vì phụ đề vốn đã cắt
+       * ngang nó.
+       *
+       * Vẫn phải CÓ MẶT trong cụm: cái đó là bất biến thật, vì khâu dựng chữ
+       * tìm từ nhấn bằng chuỗi. Chỉ bỏ phần khắt khe vô cớ.
+       */
+      const words = content.split(/\s+/).filter(Boolean);
+      const byNorm = new Map<string, string>();
+      for (const word of words) {
+        const key = norm(word);
+        if (key && !byNorm.has(key)) byNorm.set(key, word);
+      }
+      const seen = new Set<string>();
       const valid = pick.keywords
-        .filter((keyword) => words.includes(keyword))
+        .flatMap((keyword) => keyword.split(/\s+/))
+        .map((piece) => byNorm.get(norm(piece)))
+        .filter((word): word is string => {
+          if (!word || seen.has(word)) return false;
+          seen.add(word);
+          return true;
+        })
         .slice(0, keywordsPerGroup);
       if (valid.length === 0) {
         rejected += 1;

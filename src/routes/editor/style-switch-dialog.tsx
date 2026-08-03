@@ -16,7 +16,7 @@ import { useRevealLoop } from "@/dev/overlays/use-reveal-loop";
 import type { BandId } from "@/dev/overlays/overlay-model";
 
 import type { StylePackId } from "../../../server/style-pack";
-import { describeStyleFeel } from "../../../server/style-pack";
+import { describeStyleFeel, packForElement } from "../../../server/style-pack";
 import { STYLE_PACKS, findStylePack } from "../../../server/style-pack-catalog";
 
 /**
@@ -129,7 +129,7 @@ export function StyleSwitchDialog({
             )}
             <OverlayTextBlock
               config={{ ...shown, insert: { kind: "none", shape: "wide" } }}
-              pack={draftPack}
+              pack={packForElement(draftPack, null, shown.keywords)}
               seconds={seconds}
             />
           </div>

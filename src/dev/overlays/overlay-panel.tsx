@@ -70,6 +70,7 @@ export function OverlayPanel() {
   const [emphasis, setEmphasis] = useState<EmphasisId>("even");
   const [band, setBand] = useState<BandId>("top");
   const [keywords, setKeywords] = useState<string[]>(["30", "tuổi"]);
+  const [headline, setHeadline] = useState("Ba năm mới hiểu");
   const seconds = useRevealLoop();
   const media = useDemoMedia();
 
@@ -136,6 +137,17 @@ export function OverlayPanel() {
             kia. Máy lo cỡ chữ và bẻ dòng: người chọn ý, máy chọn số đo.
           </p>
           <FieldSet>
+            <Row
+              label="0 · Dòng tiêu đề"
+              hint="Chữ đại diện cho cả video. Đi ĐƯỜNG VẼ RIÊNG: một dòng, không qua dải an toàn, được tràn mép. Bộ dáng không khai `title` thì không vẽ gì."
+            >
+              <Textarea
+                value={headline}
+                onChange={(event) => setHeadline(event.target.value)}
+                rows={1}
+                placeholder="Ví dụ: Ba năm mới hiểu"
+              />
+            </Row>
             <Row
               label="1 · Chữ"
               hint={`Gõ lời cần hiện. Quá ${MAX_LINES} dòng thì máy tự tách thành nhiều cụm hiện lần lượt, không co chữ lại.`}
@@ -267,6 +279,11 @@ export function OverlayPanel() {
               config={config}
               seconds={seconds}
               background={media.main}
+              // Dòng tiêu đề đi vào đây để trang này so được CẢ HAI loại chữ.
+              // Không truyền thì nửa trang xem của phép so không có gì để so, và
+              // trục tiêu đề chỉ được canh ở đường in — đúng nửa mà lỗi "xem một
+              // đằng xuất một nẻo" không bao giờ lộ ra.
+              headline={headline}
             />
           </div>
         </CardContent>

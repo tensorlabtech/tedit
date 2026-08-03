@@ -3,7 +3,7 @@ import {
   type AlignId,
   type EmphasisId,
 } from "@/dev/overlays/overlay-model";
-import type { StylePack } from "../../../server/style-pack";
+import { packForElement, type StylePack } from "../../../server/style-pack";
 import { OverlayTextBlock } from "@/dev/overlays/overlay-render";
 import {
   Tooltip,
@@ -136,7 +136,7 @@ export function TextShapeTiles({
                   keywords,
                   insert: { kind: "none", shape: "wide" },
                 }}
-                pack={pack}
+                pack={packForElement(pack, null, keywords)}
                 seconds={DONE}
               />
               </span>

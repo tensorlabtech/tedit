@@ -23,8 +23,17 @@
  * `/_dev/overlays` sinh ra để bắt.
  */
 import { BASE_PACK } from "../../../server/style-pack-catalog";
-import { boxPadShare } from "../../../server/style-pack";
-import type { StylePack } from "../../../server/style-pack";
+import { boxPadShare, withFontRole } from "../../../server/style-pack";
+import type { ShownPack } from "../../../server/style-pack";
+
+/**
+ * Bộ gốc đã chốt vai PHỤ ĐỀ — mặc định cho những chỗ gọi chưa có cụm nào.
+ *
+ * Không để mặc định là `StylePack` chưa chốt vai: chốt vai là việc nơi gọi
+ * phải nghĩ, và một mặc định lặng lẽ chọn hộ chính là cách cụm cảm xúc bị vẽ
+ * bằng font phụ đề mà không ai thấy.
+ */
+const BASE_SHOWN = withFontRole(BASE_PACK, "voice");
 
 
 /** Trần dòng: dài hơn thì TÁCH CỤM, không co chữ. Khớp `MAX_LINES` của máy chủ. */
@@ -47,7 +56,7 @@ const measurer =
  * chục phần trăm: "IIIII" và "mmmmm" cùng năm ký tự mà rộng gấp đôi nhau. Sai số
  * đó đẩy cả cỡ chữ lẫn chỗ bẻ dòng lệch khỏi bản in ra.
  */
-function baseWidth(text: string, pack: StylePack) {
+function baseWidth(text: string, pack: ShownPack) {
   const { cssStack, cssWeight, italic } = pack.font;
   // Khoá nhớ gồm cả font: hai bộ dáng khác font thì cùng một chữ ra hai bề rộng.
   const key = `${cssStack}|${cssWeight}|${italic}|${text}`;
@@ -164,7 +173,7 @@ export function bandsOverlap(a: BandId, b: BandId) {
 }
 
 /** Bề rộng một chuỗi theo tỉ lệ khung, ở cỡ `size`. */
-export const widthOf = (text: string, size: number, pack: StylePack = BASE_PACK) =>
+export const widthOf = (text: string, size: number, pack: ShownPack = BASE_SHOWN) =>
   (baseWidth(text, pack) / BASE_SIZE) * size;
 
 /**
@@ -179,7 +188,7 @@ function wrapAt(
   words: string[],
   size: number,
   avail: number,
-  pack: StylePack,
+  pack: ShownPack,
 ) {
   // Nền khối nới MỖI tiếng ra hai bên — cộng vào đây, cùng con số với
   // `wrapAtSize` của máy chủ. Thiếu nó thì bộ có nền khối chọn cỡ to hơn chỗ nó
@@ -224,7 +233,7 @@ export type Fitted = {
 export function fitGroup(
   text: string,
   avail: number,
-  pack: StylePack = BASE_PACK,
+  pack: ShownPack = BASE_SHOWN,
 ): Fitted {
   const maxScale = pack.density.maxScale;
   const words = text.trim().split(/\s+/).filter(Boolean);
@@ -258,7 +267,7 @@ export function fitGroup(
 export function splitGroup(
   text: string,
   avail = 0.9,
-  pack: StylePack = BASE_PACK,
+  pack: ShownPack = BASE_SHOWN,
   depth = 0,
 ): string[] {
   const words = text.trim().split(/\s+/).filter(Boolean);
@@ -292,7 +301,7 @@ export function fitRow(
   text: string,
   avail: number,
   rows: number,
-  pack: StylePack = BASE_PACK,
+  pack: ShownPack = BASE_SHOWN,
 ) {
   // Chia theo số hàng để cả khối không cao quá nửa khung.
   const byHeight = pack.density.maxScale * (rows > 2 ? 0.7 : rows > 1 ? 0.85 : 1);

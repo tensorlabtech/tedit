@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { OverlayTextBlock } from "@/dev/overlays/overlay-render";
 import { api } from "@/lib/api";
 
+import { packForElement } from "../../../server/style-pack";
 import { findStylePack } from "../../../server/style-pack-catalog";
 import type { EditorState } from "./use-editor";
 
@@ -187,7 +188,7 @@ export function OpeningHookPane({
                     keywords: firstText.keywords,
                     insert: { kind: "none", shape: "wide" },
                   }}
-                  pack={pack}
+                  pack={packForElement(pack, null, firstText.keywords)}
                   seconds={99}
                 />
               </div>

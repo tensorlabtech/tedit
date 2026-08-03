@@ -2,7 +2,13 @@
 status: pending
 created: 2026-08-02
 source: plans/reports/260802-1725-project-improvement-review.md
+blockedBy: [260802-2130-do-hoa-cho-bo-dang-chu]
 ---
+
+> **Chặng 06 chờ `260802-2130-do-hoa-cho-bo-dang-chu`.** Plan đó sửa sâu
+> `server/style-pack-catalog.ts` (thêm cặp font, mảng màu, tiêu đề cho 10 pack),
+> nên đổi tên `GOC` → `BASE_PACK` trước rồi sửa sâu sau là làm hai lần. Chặng
+> 01/02/03/05 ở miền khác, không bị chặn.
 
 # Vững cho nhiều người dùng
 

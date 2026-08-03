@@ -155,6 +155,7 @@ app.patch("/api/projects/:id", async (request, reply) => {
     wantMusic?: boolean;
     insertSource?: string;
     stylePack?: string;
+    headline?: string;
   };
   const sets: string[] = [];
   const values: Array<string | number> = [];
@@ -213,6 +214,17 @@ app.patch("/api/projects/:id", async (request, reply) => {
     sets.push("auto_grade=?");
     values.push(body.autoGrade ? 1 : 0);
   }
+  // DÒNG TIÊU ĐỀ. Chuỗi rỗng là XOÁ — khác `title` (tên dự án), nơi rỗng phải
+  // rơi về một tên mặc định: một dự án luôn cần tên để gọi, còn tiêu đề thì
+  // không có mới là mặc định.
+  //
+  // Trần 200 ký tự ở đây rộng hơn trần 80 lúc VẼ (`HEADLINE_MAX_CHARS`), và cố
+  // ý: chữ người dùng gõ vào là của họ, phần gọt chỉ thuộc về lúc vẽ. Gọt lúc
+  // lưu thì họ gõ dài rồi xoá bớt cũng không lấy lại được.
+  if (body.headline !== undefined) {
+    sets.push("headline=?");
+    values.push(body.headline.trim().slice(0, 200));
+  }
   if (body.stylePack !== undefined) {
     if (!STYLE_PACKS.some((pack) => pack.id === body.stylePack)) {
       return reply.code(400).send({ error: "Không có bộ dáng này" });
@@ -232,7 +244,7 @@ app.patch("/api/projects/:id", async (request, reply) => {
   }
   return db
     .prepare(
-      "SELECT id, title, profile, min_silence, want_captions, want_music, insert_source, style_pack, auto_grade FROM projects WHERE id=?",
+      "SELECT id, title, profile, min_silence, want_captions, want_music, insert_source, style_pack, auto_grade, headline FROM projects WHERE id=?",
     )
     .get(id);
 });
@@ -428,9 +440,15 @@ app.get("/api/projects/:id", async (request, reply) => {
  */
 app.post("/api/projects/:id/opening-lines", async (request) => {
   const { id } = request.params as { id: string };
+  // Cùng một đường cho cả câu mở lẫn tiêu đề: hai lời nhắc khác nhau, một
+  // đường ống. Thêm một route nữa là thêm một chỗ phải nhớ đặt sau `auth-guard`.
+  const mode =
+    (request.body as { mode?: string } | undefined)?.mode === "headline"
+      ? ("headline" as const)
+      : ("opening" as const);
   // Không có khoá mô hình thì trả mảng rỗng, KHÔNG trả lỗi: hai đường xử lý kia
   // của màn "3 giây đầu" không cần AI, nên một lỗi ở đây sẽ chặn cả ba.
-  const lines = await suggestOpeningLines(id).catch(() => []);
+  const lines = await suggestOpeningLines(id, mode).catch(() => []);
   return { lines };
 });
 

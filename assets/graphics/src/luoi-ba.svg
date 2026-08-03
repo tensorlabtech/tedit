@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
+  <!-- Sinh bởi scripts/graphics/make-shapes.mjs — nét TRẮNG, màu áp lúc chạy -->
+  <line x1="360" y1="0" x2="360" y2="1920" stroke="#FFFFFF" stroke-width="3"/>
+  <line x1="0" y1="640" x2="1080" y2="640" stroke="#FFFFFF" stroke-width="3"/>
+  <line x1="720" y1="0" x2="720" y2="1920" stroke="#FFFFFF" stroke-width="3"/>
+  <line x1="0" y1="1280" x2="1080" y2="1280" stroke="#FFFFFF" stroke-width="3"/>
+</svg>

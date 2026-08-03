@@ -391,11 +391,14 @@ export function useReviewIssues(editor: EditorState) {
     for (const element of editor.textElements) {
       // Bộ dáng nằm trong khoá nhớ: đổi bộ dáng là cỡ chữ và chỗ bẻ dòng đổi
       // theo, nên số đo cũ không còn đúng nữa.
-      const key = `${element.id}|${element.position}|${element.content}|${editor.stylePack}`;
+      // Từ khoá nằm trong khoá nhớ: chúng chốt vai chữ, mà đổi vai là đổi cả
+      // cỡ chữ lẫn chỗ bẻ dòng.
+      const keywords = element.keywords ?? [];
+      const key = `${element.id}|${element.position}|${element.content}|${editor.stylePack}|${keywords.join(",")}`;
       if (measuredRef.current.has(key)) continue;
       measuredRef.current.add(key);
       void api
-        .layoutText(element.content, element.position, editor.projectId)
+        .layoutText(element.content, element.position, editor.projectId, keywords)
         .then((layout) => {
           if (!alive) return;
           setMeasurements((current) => ({

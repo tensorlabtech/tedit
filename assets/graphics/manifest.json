@@ -1,0 +1,128 @@
+{
+  "note": "Danh mục hình đồ hoạ. Mỗi mục có tệp SVG cùng tên trong `src/` và tệp PNG cùng tên trong `png/`. `npm run check:graphics` canh CẢ HAI CHIỀU — tệp mồ côi là tệp không ai biết còn dùng hay không. Hình loại `wrap` khai thêm `nominal` (khổ lúc vẽ) và `cap` (bề rộng hai đầu giữ nguyên khi cắt ba lát). Hình `wrap` khai thêm `fit`: `around` bao quanh cả khối chữ (vòng khoanh), `under` nằm dưới chân khối (gạch chân) — hai cách đặt khác hẳn nhau, và đặt nhầm thì gạch chân cắt ngang giữa chữ. Hình loại `mask` áp vào chính VIDEO qua `alphamerge` (nét ĐẶC, không phải viền); loại `doodle` là nét vẽ tay rời đặt vào chỗ trống của trang.",
+  "kinds": {
+    "plate": "Dán một lần cả video, phủ đúng khung, không co theo chữ",
+    "wrap": "Bám theo chữ, co giãn kiểu ba lát",
+    "spot": "Đặt vào một vùng trống đã khai",
+    "mask": "Mặt nạ cắt VIDEO thành một hình — nét đặc, không phải viền",
+    "doodle": "Nét vẽ tay rời, đặt vào chỗ trống của trang"
+  },
+  "graphics": {
+    "khung-mong": {
+      "kind": "plate",
+      "feel": "Viền mảnh sát mép — dấu 'có chủ ý' nhẹ nhất, không tranh với chữ",
+      "excludes": []
+    },
+    "khung-day": {
+      "kind": "plate",
+      "feel": "Viền dày, đọc ra ngay ở ảnh thu nhỏ. Ăn vào chỗ của chữ nên hợp bộ đã có `frame`",
+      "excludes": []
+    },
+    "luoi-ba": {
+      "kind": "plate",
+      "feel": "Lưới một phần ba — dấu bố cục của máy ảnh, hợp nhóm 'giao diện giả'",
+      "excludes": []
+    },
+    "dau-goc": {
+      "kind": "plate",
+      "feel": "Bốn dấu góc kiểu khung ngắm. Chỉ có góc nên không bao giờ chạm chữ",
+      "excludes": []
+    },
+    "khoanh-oval": {
+      "kind": "wrap",
+      "feel": "Vòng khoanh ê-líp — dáng bút khoanh tay quanh một cụm",
+      "nominal": {
+        "w": 900,
+        "h": 300
+      },
+      "cap": 170,
+      "excludes": [
+        "box"
+      ],
+      "fit": "around"
+    },
+    "gach-chan": {
+      "kind": "wrap",
+      "feel": "Gạch chân cong nhẹ, thon hai đầu — nhấn mà không bao quanh",
+      "nominal": {
+        "w": 900,
+        "h": 90
+      },
+      "cap": 120,
+      "excludes": [],
+      "fit": "under"
+    },
+    "o-bo-goc": {
+      "kind": "mask",
+      "feel": "Chữ nhật bo góc — ô hình cơ bản nhất, hợp mọi trang",
+      "nominal": {
+        "w": 820,
+        "h": 1080
+      },
+      "excludes": []
+    },
+    "o-oval": {
+      "kind": "mask",
+      "feel": "Ê-líp trọn — dáng ống kính, mềm hẳn so với hình vuông vức",
+      "nominal": {
+        "w": 820,
+        "h": 1080
+      },
+      "excludes": []
+    },
+    "o-vom": {
+      "kind": "mask",
+      "feel": "Vòm — nửa tròn trên, vuông dưới. Dáng cửa sổ, rất dễ nhận ra",
+      "nominal": {
+        "w": 820,
+        "h": 1120
+      },
+      "excludes": []
+    },
+    "o-mep-rach": {
+      "kind": "mask",
+      "feel": "Mép rách bốn cạnh — dáng ảnh xé từ tạp chí, hợp trang cắt dán",
+      "nominal": {
+        "w": 820,
+        "h": 1040
+      },
+      "excludes": []
+    },
+    "net-ngoan-ngoeo": {
+      "kind": "doodle",
+      "feel": "Ngoằn ngoèo ba nhịp — nét lấp chỗ trống rẻ nhất",
+      "nominal": {
+        "w": 320,
+        "h": 120
+      },
+      "excludes": []
+    },
+    "net-mat-cuoi": {
+      "kind": "doodle",
+      "feel": "Mặt cười không vòng mặt — lối vẽ vội",
+      "nominal": {
+        "w": 320,
+        "h": 320
+      },
+      "excludes": []
+    },
+    "net-dau-tich": {
+      "kind": "doodle",
+      "feel": "Dấu tích hai nét",
+      "nominal": {
+        "w": 320,
+        "h": 240
+      },
+      "excludes": []
+    },
+    "net-may": {
+      "kind": "doodle",
+      "feel": "Đám mây ba cung, hở đáy",
+      "nominal": {
+        "w": 320,
+        "h": 200
+      },
+      "excludes": []
+    }
+  }
+}

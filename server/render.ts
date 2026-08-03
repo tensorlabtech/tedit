@@ -19,12 +19,27 @@ import {
   SLIDE_SHIFT,
 } from "./insert-reveal";
 import { ffmpeg, probe, run } from "./media-tools";
-import { outDir, resolvePackFont, workDir } from "./paths";
+import { wrapMeta } from "./graphics-manifest";
+import { layoutHeadline } from "./headline";
+import { GRAPHICS_DIR, outDir, resolvePackFont, workDir } from "./paths";
 import {
   boxBorderW,
   ffmpegColor,
+  contentRect,
+  subjectCutChain,
+  subjectEdgeSteps,
+  HEADLINE_FADE,
+  headlineHold,
+  fontRoleFor,
+  frameFilter,
+  graphicsSteps,
+  sweepSteps,
+  wrapBox,
+  wrapSteps,
   gradeFilter,
   packForElement,
+  plateFilter,
+  withFontRole,
   type StylePack,
 } from "./style-pack";
 import type { RevealId } from "./style-pack";
@@ -55,6 +70,12 @@ import { alphaExpr, positionExpr } from "./reveal-expr";
  * dày tới mức nhìn ra ngay là nhãn dán.
  */
 
+/** Mỗi tầng chữ-sau-người vào sau tầng trước ngần này giây. */
+const BEHIND_TIER_STEP = 0.22;
+/** Cả chồng chữ trôi lên ngần này điểm ảnh trong suốt lúc nó hiện. */
+const BEHIND_DRIFT = 90;
+/** Số dải mà `emptiestBand` chia khung — phải khớp bên đo. */
+export const BEHIND_BANDS = 5;
 export const OUT_WIDTH = 1080;
 export const OUT_HEIGHT = 1920;
 const FPS = 30;
@@ -360,8 +381,17 @@ export async function cutRanges(
   base: string,
   kept: KeptRange[],
   crossAt: CrossAt[] = [],
+  /**
+   * Tên tệp ra. Đổi khi cần cắt một luồng KHÁC theo cùng bộ khoảng.
+   *
+   * Ca thật: mặt nạ người dựng trên `base.mp4` chưa cắt, mà bản xuất thì đã bỏ
+   * hai mươi sáu giây — hai trục lệch nhau, và cái viền bám dáng người rơi vào
+   * một tư thế cách đó mấy giây. Cắt mặt nạ bằng CHÍNH hàm này, cùng `kept`,
+   * cùng `crossAt`, là cách duy nhất bảo đảm chúng không lệch một khung nào.
+   */
+  outName = "cut.mp4",
 ) {
-  const target = join(workDir(projectId), "cut.mp4");
+  const target = join(workDir(projectId), outName);
   if (kept.length === 0) throw new Error("Không còn đoạn nào để xuất");
 
   const cross = new Map(crossAt.map((item) => [item.sau, item]));
@@ -469,7 +499,7 @@ export async function cutRanges(
     joins.push("[v0]null[vout]", "[a0]anull[aout]");
   }
 
-  const scriptPath = join(workDir(projectId), "cut-filter.txt");
+  const scriptPath = join(workDir(projectId), `${outName}.filter.txt`);
   await writeFile(scriptPath, `${parts};${joins.join(";")}`, "utf8");
 
   await ffmpeg([
@@ -988,8 +1018,38 @@ export async function burnElements(
   effects: Array<{ start: number; end: number; kind: JunctionId }> = [],
   /** Bộ tự cân hình đã đo sẵn; `null` là không chỉnh gì. */
   canh: CanHinh | null = null,
+  /**
+   * Dòng tiêu đề của dự án. `null` là không vẽ.
+   *
+   * Nhận qua tham số chứ không tự đọc CSDL: tệp này là tầng ffmpeg, và một tầng
+   * vẽ mà biết đường tới bảng `projects` thì lần sau nó biết thêm một bảng nữa.
+   * Mọi dữ liệu khác cũng đã vào theo đúng đường này (`elements`, `pack`).
+   */
+  headlineText: string | null = null,
+  /**
+   * Độ sáng trung bình khung hình (`yAvg`, thang 0–255), do `auto-grade.ts` đo.
+   *
+   * `null` là chưa đo — người dùng tắt tự cân hình. Lúc đó độ đục hình dán lấy
+   * điểm giữa hai mức, một con số xác định chứ không phải một nhánh lặng lẽ.
+   */
+  sceneLuma: number | null = null,
+  /**
+   * Đường tới `work/subject.mp4`. `null` là dự án chưa tách nền.
+   *
+   * Nạp bằng `movie=` chứ không bằng `-i`: mọi nhãn `[N:v]` trong đồ thị này
+   * đánh theo SỐ TƯ LIỆU CHÈN, nên thêm một đầu vào là dịch hết chúng đi một
+   * bậc — và lỗi ấy chỉ lộ ra ở dự án CÓ tư liệu chèn.
+   */
+  subjectPath: string | null = null,
+  /**
+   * Chữ vẽ chạy sau người, và dải nào của khung để đặt nó.
+   *
+   * Dải do `emptiestBand` đo từ chính mặt nạ; truyền vào đây thay vì tự đo, vì
+   * tệp này là tầng vẽ và phép đo cần đọc tệp mặt nạ.
+   */
+  behindLine: string | null = null,
+  behindBand = 0,
 ) {
-  const fontPath = resolvePackFont(pack.font.file);
   const target = join(outDir(projectId), "final.mp4");
   const inserts = elements.filter(
     (item) =>
@@ -1069,31 +1129,295 @@ export async function burnElements(
     stream = next;
   });
 
+  /*
+   * KHUNG BAO QUANH HÌNH — sau tư liệu chèn, trước mọi thứ bộ dáng vẽ.
+   *
+   * Đặt ở đây chứ không sớm hơn: tư liệu chèn thuộc phần HÌNH nên nó phải bị thu
+   * vào khung cùng với hình. Đặt sớm hơn thì b-roll vẽ ở toạ độ khung ngoài rồi
+   * bị thu nhỏ hai lần.
+   *
+   * `scale`+`crop` giữ tỉ lệ rồi cắt, KHÔNG kéo giãn: lề bốn phía khác nhau thì
+   * vùng hình có tỉ lệ khác 9:16, và kéo cho vừa là mặt người bị bóp méo. Cùng
+   * cách `buildBase` xử lý tệp nguồn nhiều tỉ lệ khác nhau.
+   *
+   * `pad` dán vùng hình lên nền màu — một bộ lọc, không thêm luồng đầu vào, nên
+   * không phải lo chuyện luồng nền vô hạn kéo dài cả video.
+   */
+  /*
+   * CHỮ CHẠY SAU NGƯỜI — sớm nhất trong mọi thứ bộ dáng vẽ.
+   *
+   * Phải sớm vì nó không phải một lớp phủ: nó tách khung hình làm hai, vẽ chữ
+   * lên phần nền, rồi dán người trở lại lên trên. Mọi thứ vẽ sau đó — khung,
+   * hình dán, mảng màu, phụ đề — đều nằm trên cả hai.
+   *
+   * Đặt muộn hơn thì chữ chui ra sau cả những lớp ấy, và một cái viền khung
+   * cũng che mất nó.
+   */
+  const behind = pack.behindText;
+  if (behind && subjectPath && behindLine) {
+    const size = Math.round(OUT_WIDTH * behind.sizeShare);
+    const file = textFileFor(projectId, "behind", behindLine);
+    const font = resolvePackFont(pack.fonts[behind.font].file);
+    // Dải ít người nhất, đo từ chính mặt nạ — xem `emptiestBand`.
+    const bandTop = Math.round((OUT_HEIGHT * behindBand) / BEHIND_BANDS);
+    const draws: string[] = [];
+    for (let tier = 0; tier < behind.repeats; tier += 1) {
+      // Mỗi tầng nhạt dần: tầng đầu đặc, các tầng sau lùi về nền.
+      const alpha = behind.tone.alpha * (1 - tier / (behind.repeats + 0.6));
+      /*
+       * Mỗi tầng vào MUỘN dần rồi cùng tắt — chữ xây lên từng tầng.
+       *
+       * Chalk dựng "YOUTH" bằng cách thêm từng chữ cái. Ta không tách được chữ
+       * cái trong một lệnh `drawtext`, nhưng tách được TẦNG — và ba tầng lần
+       * lượt hiện ra đọc cũng ra "đang xây", không ra "đã có sẵn".
+       */
+      const enterAt = tier * BEHIND_TIER_STEP;
+      draws.push(
+        `drawtext=fontfile='${font}':textfile='${file}':fontsize=${size}:` +
+          `x=(w-tw)/2:` +
+          // Cả chồng chữ TRÔI LÊN chậm suốt lúc nó hiện. Đứng im thì ba tầng
+          // đọc ra một khối in sẵn; trôi thì đọc ra một thứ đang chạy qua sau
+          // lưng người nói. `drawtext` tính lại `y` theo từng khung — đã đo.
+          `y='${bandTop + Math.round(size * 1.02 * tier)}` +
+          `-${BEHIND_DRIFT}*min(1,t/${behind.seconds})':` +
+          `fontcolor=${behind.tone.color}:` +
+          `alpha='${alpha.toFixed(3)}*min(min(1,max(0,(t-${enterAt.toFixed(2)})/${HEADLINE_FADE})),` +
+          `max(0,1-(t-${behind.seconds})/${HEADLINE_FADE}))':` +
+          `enable='lt(t,${(behind.seconds + HEADLINE_FADE).toFixed(2)})'`,
+      );
+    }
+    const cut = subjectCutChain("[bhfg]", subjectPath, OUT_WIDTH, OUT_HEIGHT, "bh");
+    filters.push(`${stream}split[bhbg][bhfg]`);
+    filters.push(`[bhbg]${draws.join(",")}[bhtext]`);
+    filters.push(cut.chain);
+    filters.push(`[bhtext]${cut.label}overlay=0:0[bhon]`);
+    stream = "[bhon]";
+  }
+
+  const rect = contentRect(pack, OUT_WIDTH, OUT_HEIGHT);
+  const framed = frameFilter(pack, rect, OUT_WIDTH, OUT_HEIGHT);
+  if (framed) {
+    filters.push(`${stream}${framed}[framed]`);
+    stream = "[framed]";
+  }
+
+  /*
+   * HÌNH DÁN — sau khung, trước mảng màu và chữ.
+   *
+   * Sau khung vì hình dán phủ đúng khổ KHUNG, không phủ vùng hình: một cái viền
+   * chạy quanh mép video đã thu vào thì nó là hai lớp viền chồng nhau, còn chạy
+   * quanh mép khung mới ra dáng "cả video nằm trong một cái gì đó".
+   *
+   * Trước chữ vì nó là NỀN, cùng lý lẽ với mảng màu.
+   */
+  // Độ dài bản ĐÃ CẮT — mép cuối của quãng cuối khi chia quãng bật/tắt, và cũng
+  // là `-t` của lệnh xuất ở cuối hàm. Đo một lần, dùng hai chỗ.
+  const cutSeconds = (await probe(cut)).duration;
+  const cutMarks = effects
+    .filter((item) => item.kind !== "none")
+    .map((item) => effectPeak(item.start, item.end, item.kind));
+  for (const step of graphicsSteps(
+    pack, GRAPHICS_DIR, OUT_WIDTH, OUT_HEIGHT, sceneLuma, true, cutMarks,
+  )) {
+    const next = `[gfxon${filters.length}]`;
+    filters.push(step.chain);
+    filters.push(`${stream}${step.label}overlay=0:0${next}`);
+    stream = next;
+    if (step.pulse) {
+      const hit = `[gfxhit${filters.length}]`;
+      filters.push(step.pulse.chain);
+      filters.push(
+        `${stream}${step.pulse.label}overlay=0:0:enable='${step.pulse.enable}'${hit}`,
+      );
+      stream = hit;
+    }
+  }
+
+  /*
+   * VIỀN QUANH NGƯỜI — trên hình dán, dưới vệt quét.
+   *
+   * Trên hình dán vì nó bám vào NGƯỜI, mà người thì nổi trên mọi thứ trang trí
+   * của khung. Dưới vệt quét vì vệt quét đậy vết cắt, và lúc đậy thì nó phải
+   * đậy cả cái viền.
+   */
+  /*
+   * Mạch viền bắt đầu SAU khi chữ-sau-người tắt hẳn, cộng một quãng nghỉ.
+   *
+   * Hai thiết bị dính liền nhau thì cái sau mất hết sức nặng — bảng Chalk chừa
+   * đúng một ô trống giữa hai mạch. Không có chữ-sau-người thì mạch viền vào
+   * ngay từ đầu, vì lúc ấy nó là thiết bị mở màn.
+   */
+  const vien = subjectEdgeSteps(
+    pack, subjectPath, OUT_WIDTH, OUT_HEIGHT, cutMarks, cutSeconds,
+    behind && behindLine ? behind.seconds + HEADLINE_FADE : 0,
+  );
+  if (vien) {
+    filters.push(vien.chain);
+    filters.push(`${stream}${vien.label}overlay=0:0:enable='${vien.enable}'[svienon]`);
+    stream = "[svienon]";
+  }
+
+  /*
+   * VỆT QUÉT — trên hình dán, dưới mảng màu và chữ.
+   *
+   * Trên hình dán vì nó là thứ ĐẬY cú cắt: một cái viền hay bốn dấu góc mà nổi
+   * lên trên vệt thì vệt hoá ra chạy phía sau khung hình, và cú đậy hỏng.
+   *
+   * Dưới chữ vì chữ vẫn phải đọc được lúc vệt đi qua. Chỗ nối là chỗ phụ đề
+   * đang đổi cụm, nên hai thứ gặp nhau là chuyện thường — mà thứ đọc được luôn
+   * phải nằm trên.
+   *
+   * Mốc lấy từ chính các hiệu ứng chỗ nối: đó là những chỗ mô hình đã chọn để
+   * đánh dấu. Chọn riêng một tập mốc khác thì video có hai nhịp không liên quan
+   * gì tới nhau.
+   */
+  for (const step of sweepSteps(
+    pack,
+    cutMarks,
+    OUT_WIDTH,
+    OUT_HEIGHT,
+  )) {
+    const next = `[swpon${filters.length}]`;
+    filters.push(step.chain);
+    filters.push(
+      `${stream}${step.label}overlay=x='${step.xExpr}':y=0:` +
+        `${enableRange(step.from, step.to)}${next}`,
+    );
+    stream = next;
+  }
+
+  /*
+   * MẢNG MÀU — sau hình và tư liệu chèn, TRƯỚC chữ.
+   *
+   * Thứ tự này là cả ý nghĩa của trục: mảng màu là NỀN cho chữ, không phải lớp
+   * phủ lên chữ. Đặt sau lớp chữ thì nó che mất đúng thứ nó sinh ra để đỡ.
+   *
+   * Đặt sau tư liệu chèn chứ không trước: tư liệu chèn thuộc về phần HÌNH, mà
+   * mảng màu phải nổi trên hình. Vẽ trước thì một đoạn b-roll toàn màn phủ kín
+   * mảng màu và bộ dáng nhấp nháy mất một trục mỗi lần có tư liệu.
+   *
+   * Một tấm màu phủ lên chứ không phải `drawbox`: xem `plateFilter`.
+   */
+  /*
+   * Xếp chữ tiêu đề SỚM hơn chỗ vẽ nó, vì mảng màu cần biết tiêu đề sống bao
+   * lâu — mảng màu nào chở tiêu đề thì nó tắt cùng lúc.
+   */
+  const headline = pack.title
+    ? await layoutHeadline(
+        headlineText,
+        // Tiêu đề dùng lại cặp font của chính bộ dáng, không khai họ mới.
+        withFontRole(pack, pack.title.font),
+        rect.w,
+        rect.h,
+      )
+    : null;
+  const headlineUntil = headline ? headlineHold(headline.text) : null;
+
+  const plate = plateFilter(pack, rect, true, headlineUntil);
+  if (plate) {
+    filters.push(plate.chain);
+    filters.push(
+      `${stream}${plate.label}overlay=${plate.x}:'${plate.yExpr}'` +
+        // Thôi vẽ hẳn sau khi trượt ra: ghép một lớp nằm ngoài khung cho mọi
+        // khung hình còn lại của phim là công đổ đi.
+        (plate.until === null ? "" : `:enable='lt(t,${plate.until.toFixed(2)})'`) +
+        `[plate]`,
+    );
+    stream = "[plate]";
+  }
+
+  /*
+   * DÒNG TIÊU ĐỀ — sau mảng màu, TRƯỚC lớp phụ đề.
+   *
+   * Vẽ thẳng lên dòng hình chứ không vào lớp chữ trong suốt: lớp đó tồn tại để
+   * làm quầng tối mềm cho phụ đề, mà tiêu đề thường nằm trên mảng màu đặc nên
+   * nó không cần quầng — và cho nó vào lớp ấy là quầng của nó lan sang phụ đề.
+   *
+   * Dưới phụ đề vì phụ đề là chữ PHẢI đọc được: hai thứ có chồng nhau thì thứ
+   * đọc được phải ở trên.
+   *
+   * Chỉ hiện ĐẦU video rồi mờ dần — xem `headlineHold`.
+   */
+  if (pack.title && headline && headlineUntil !== null) {
+    {
+      // Chữ đi qua một TỆP, không qua tham số `text` — cùng đường thoát ký tự
+      // với phụ đề. Đây là chữ người dùng gõ vào, và `drawtext` đọc `:` `'` `%`
+      // `\` như cú pháp của chính nó.
+      const file = textFileFor(projectId, "headline", headline.text);
+      /*
+       * `enable` cắt hẳn lệnh vẽ sau khi mờ xong, `alpha` lo phần mờ dần.
+       *
+       * Cần CẢ HAI: chỉ có `alpha` thì ffmpeg vẫn dựng chữ ở mọi khung rồi nhân
+       * với 0 — tốn công cho một thứ không ai thấy, suốt phần còn lại của phim.
+       * Còn chỉ có `enable` thì chữ tắt phụt.
+       */
+      const hold = headlineUntil;
+      const alpha = headline.tone.alpha;
+      filters.push(
+        `${stream}drawtext=fontfile='${resolvePackFont(pack.fonts[pack.title.font].file)}':` +
+          `textfile='${file}':fontsize=${headline.fontSize}:` +
+          `x=${rect.x + headline.x}:y=${rect.y + headline.y}:` +
+          `fontcolor=${headline.tone.color}:` +
+          /*
+           * Hiện dần vào rồi mờ dần ra, cùng một khoảng thời gian.
+           *
+           * Phần hiện dần không phải để cho đẹp: mảng màu chở tiêu đề mất nửa
+           * giây trượt vào, mà chữ thì đứng sẵn ngay từ khung đầu. Đo được ở
+           * giây 0,05 — chữ lơ lửng trên áo người nói trong khi cái khay của nó
+           * còn chưa tới. Cho hai thứ cùng một nhịp là hết.
+           */
+          `alpha='${alpha}*min(min(1,t/${HEADLINE_FADE}),max(0,1-(t-${hold})/${HEADLINE_FADE}))':` +
+          `enable='lt(t,${(hold + HEADLINE_FADE).toFixed(2)})'[headline]`,
+      );
+      stream = "[headline]";
+    }
+  }
+
   // Mọi chữ đi CHUNG một đường: xếp theo từng tiếng, rồi mỗi tiếng một lệnh vẽ
   // có biểu thức thời gian riêng. Trước đây kiểu "cỡ đều" đi đường bẻ dòng (một
   // lệnh mỗi DÒNG) cho nhẹ, nhưng vẽ cả dòng bằng một lệnh thì không cách nào
   // cho từng tiếng hiện lần lượt — mà đó lại là kiểu chữ của cả hệ này.
   const draws: string[] = [];
+  // Số thứ tự riêng cho hình bám chữ — mỗi cụm cần một bộ nhãn không trùng.
+  let wrapSeq = 0;
   // Số thứ tự phẳng cho tên tệp chữ — chỉ cần duy nhất trong một lượt dựng.
   let textFileSeq = 0;
 
   for (const text of texts) {
     // Bộ dáng HIỆU LỰC của riêng cụm này: bộ của dự án, cộng phần nó tự đè.
     // Mọi phép đo và mọi biểu thức phía dưới đều chạy theo bộ này.
-    const shown = packForElement(pack, {
-      letterCase: text.letterCase ?? null,
-      keyColor: text.keyColor ?? null,
-    });
-    const { words: placed } = await placeWords(
+    const shown = packForElement(
+      pack,
+      {
+        letterCase: text.letterCase ?? null,
+        keyColor: text.keyColor ?? null,
+      },
+      // VAI CHỮ theo chính cụm này: có từ khoá thì `accent`, không thì `voice`.
+      // Đọc `elements.keywords` — dữ liệu `ai-keywords.ts` đã ghi sẵn, không mở
+      // thêm trục nào.
+      text.keywords,
+    );
+    // Tệp font nằm TRONG vòng lặp vì mỗi cụm chọn vai riêng. Để ngoài vòng như
+    // trước là mọi cụm in bằng một font trong khi phép đo đã tính theo font
+    // khác — chữ tràn khung mà không lệnh nào sai.
+    const fontPath = resolvePackFont(shown.font.file);
+    const { words: rawPlaced } = await placeWords(
       text.content!,
       text.keywords ?? [],
       text.align ?? "center",
       text.emphasis ?? "even",
       text.band ?? "top",
-      OUT_WIDTH,
-      OUT_HEIGHT,
+      rect.w,
+      rect.h,
       shown,
     );
+    // Bố cục tính trong hệ toạ độ VÙNG HÌNH; dời một lần ở đây thay vì cộng gốc
+    // vào từng biểu thức phía dưới — cộng rải rác là chỗ để quên đúng một chỗ.
+    const placed = rawPlaced.map((word) => ({
+      ...word,
+      x: word.x + rect.x,
+      y: word.y + rect.y,
+    }));
     // Mốc bắt đầu của TỪNG tiếng, tính trước cả lượt: lớp tô sáng cần biết
     // tiếng SAU bắt đầu lúc nào để tắt đúng chỗ, mà trong vòng lặp thì chưa có.
     const startsAt = placed.map((_, flat) => {
@@ -1106,6 +1430,85 @@ export async function burnElements(
         : text.start;
     });
 
+    /*
+     * HÌNH BÁM CHỮ — vẽ lên dòng hình, TRƯỚC lớp chữ, và chỉ hiện trong đúng
+     * khoảng của cụm.
+     *
+     * Hộp bao lấy từ VỆT MỰC thật của từng tiếng, không lấy từ `box` mà
+     * `placeWords` trả về: `box` là vùng DÙNG ĐƯỢC của dải, rộng bằng cả bề ngang
+     * cho phép, nên khoanh theo nó là khoanh một hình chữ nhật trống hai bên.
+     */
+    const inScope =
+      pack.wrap &&
+      (pack.wrap.scope === "all" || fontRoleFor(text.keywords) === "accent");
+    if (inScope && placed.length > 0) {
+      let left = Infinity;
+      let right = -Infinity;
+      let top = Infinity;
+      let bottom = -Infinity;
+      for (const word of placed) {
+        const ink = await textWidth(word.text, word.fontSize, shown);
+        left = Math.min(left, word.x);
+        right = Math.max(right, word.x + ink);
+        top = Math.min(top, word.y);
+        bottom = Math.max(bottom, word.y + word.fontSize);
+      }
+      const meta = wrapMeta(pack.wrap!.id);
+      const box = wrapBox(
+        meta.fit,
+        { left, right, top, bottom },
+        Math.max(...placed.map((word) => word.fontSize)),
+        pack.wrap!.padShare,
+        rect,
+      );
+      /*
+       * Hình khoanh vào khi cụm đã hiện QUÁ NỬA — không sớm hơn, không muộn hơn.
+       *
+       * Vào cùng tiếng đầu thì nó bao quanh một khoảng trống: nó được cắt theo
+       * bề rộng CẢ cụm, mà chữ chạy vào từng tiếng. Đúng cái lỗi "mảng màu
+       * trống" phiên brainstorm đã đo được một lần.
+       *
+       * Đợi tiếng CUỐI hiện xong thì nó không bao giờ vào: phụ đề khớp lời nói
+       * nên tiếng cuối bắt đầu gần đúng lúc cụm tắt. Thử thật — không cụm nào
+       * trong năm cụm đầu vẽ ra được gì.
+       *
+       * Nửa cụm là chỗ cả hai điều kia cùng thoả, và nó cũng đúng nhịp: người
+       * ta khoanh lại khi đã nghe đủ để biết mình muốn khoanh cái gì.
+       */
+      const halfWay =
+        shown.motion.reveal === "none"
+          ? text.start
+          : (startsAt[Math.floor(startsAt.length / 2)] ?? text.start) +
+            shown.motion.enterSeconds;
+      // Luôn kịp hiện ít nhất 0,3 giây. Ngắn hơn thì mắt đọc ra một cái nháy,
+      // và một cái nháy trông như lỗi vẽ chứ không như một nét thiết kế.
+      const settled = Math.min(halfWay, text.end - 0.3);
+      // Mốc `settled` tính TRƯỚC khi dựng hình: phần hiện dần của hình bám vào
+      // đúng mốc ấy, nên `wrapSteps` phải nhận được nó.
+      const step = wrapSteps(
+        pack,
+        meta,
+        GRAPHICS_DIR,
+        box,
+        sceneLuma,
+        wrapSeq++,
+        settled,
+      );
+      if (step) {
+        if (settled > text.start - 0.01) {
+          filters.push(step.chain);
+          for (const piece of step.overlays) {
+            const next = `[wrapon${filters.length}]`;
+            filters.push(
+              `${stream}${piece.label}overlay=${piece.x}:${piece.y}:` +
+                `${enableRange(settled, text.end)}${next}`,
+            );
+            stream = next;
+          }
+        }
+      }
+    }
+
     for (const [flat, word] of placed.entries()) {
       // Thứ tự phẳng của `placed` giữ nguyên thứ tự tiếng trong câu ở mọi kiểu
       // nhấn, nên chỉ số này khớp thẳng với mảng mốc.
@@ -1115,7 +1518,7 @@ export async function burnElements(
         y: word.y,
         width: await textWidth(word.text, word.fontSize, shown),
         fontSize: word.fontSize,
-        scale: word.fontSize / OUT_WIDTH,
+        scale: word.fontSize / rect.w,
         startAt,
       });
       // Không viền thì BỎ HẲN hai tham số, đừng đặt `borderw=0`: `drawtext` vẫn
@@ -1225,7 +1628,20 @@ export async function burnElements(
 
   // Lớp chữ dài hơn dải đã cắt một giây cho chắc; đầu ra bị cắt lại đúng độ dài
   // dải bằng `-t` phía dưới.
-  const cutSeconds = (await probe(cut)).duration;
+  /*
+   * BƯỚC CHUẨN HOÁ CUỐI — chốt định dạng và dải màu ngay trong đồ thị lọc.
+   *
+   * Không có bước này thì đầu ra là thứ chuỗi lọc tình cờ đàm phán được, và nó
+   * khác nhau theo từng bộ dáng: bộ dùng hình bám chữ ép `format=rgba` nên cả
+   * chuỗi chạy ở RGB và ra `yuvj420p` (dải đầy đủ), còn bộ khác ra `yuv420p`
+   * (dải hẹp). Hai video cùng một dự án ra hai dải màu khác nhau — và lệch dải
+   * là hình xỉn đi hoặc cháy sáng, tuỳ trình phát.
+   *
+   * `-pix_fmt` ở phía ĐẦU RA không đủ: nó chốt cách xếp mẫu, không chốt dải.
+   * Chốt ở đây thì mọi nhánh của đồ thị đều đi qua đúng một cửa.
+   */
+  filters.push(`${stream}scale=out_range=tv,format=yuv420p[xuat]`);
+
   const layerSeconds = cutSeconds + 1;
 
   await ffmpeg([
@@ -1277,14 +1693,31 @@ export async function burnElements(
       return value;
     })(),
     "-map",
-    (() => {
-      if (process.env.TEDDIT_LOG_FILTER) console.log("[map]", stream);
-      return stream;
-    })(),
+    "[xuat]",
     "-map",
     "0:a?",
     "-c:v",
     "libx264",
+    /*
+     * CHỐT `yuv420p` cho đầu ra, đừng để đồ thị lọc tự thoả thuận.
+     *
+     * Không chốt thì định dạng ra là thứ chuỗi lọc tình cờ đàm phán được, và đo
+     * thật trên chính repo này:
+     *
+     * - phần lớn bộ dáng ra `yuv444p` → **H.264 High 4:4:4 Predictive**, mà
+     *   Chrome, Safari và Firefox đều KHÔNG giải mã được. Video mở bằng
+     *   QuickTime thì chạy, mở bằng trình duyệt thì đen sì.
+     * - bộ có hình bám chữ (chuỗi ép `format=rgba`) ra thẳng `gbrp`, và trình
+     *   phát đọc RGB phẳng như YUV nên cả video **ám tím**.
+     *
+     * Cả hai đều là lỗi không có triệu chứng ở máy phát triển: `ffprobe` báo tệp
+     * hợp lệ, thời lượng đúng, `magick` mở được. Chỉ người xem mới thấy.
+     *
+     * `yuv420p` là định dạng duy nhất mọi trình duyệt và mọi điện thoại đều
+     * giải mã được, và là thứ TikTok/Reels nhận.
+     */
+    "-pix_fmt",
+    "yuv420p",
     "-preset",
     "veryfast",
     "-crf",

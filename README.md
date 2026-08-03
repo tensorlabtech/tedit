@@ -12,7 +12,10 @@ npm run lint
 npm run check:ownership  # kiểm luật phân quyền trên CSDL tạm
 npm run check:style-pack # kiểm bất biến của bộ dáng chữ trên CSDL tạm
 npm run check:upload     # tải lên cắt mảnh: ghép đúng, đứt rồi tải tiếp được
-npm run check:all        # cả năm lệnh trên — đúng thứ CI chạy
+npm run check:fonts      # kiểm mọi font trong assets/fonts/ đủ dấu Việt
+npm run check:layout     # quét 260 tổ hợp bố cục: chữ không bao giờ tràn khung
+npm run check:graphics   # kho hình đồ hoạ: manifest, tệp dựng, kênh trong suốt
+npm run check:all        # cả bảy lệnh trên — đúng thứ CI chạy
 ```
 
 ## Tải tệp lên
@@ -41,6 +44,46 @@ ngoài và tệp nhỏ. Cả hai đi chung `server/media-intake.ts` nên luật 
 thì bị chối" chỉ có một bản.
 
 Mảnh của lượt bỏ ngang nằm ở `server/data/uploads/`, tự dọn sau 24 giờ.
+
+## Kho hình đồ hoạ
+
+```
+assets/graphics/
+├── src/            # SVG nguồn — nét TRẮNG, sinh từ scripts/graphics/make-shapes.mjs
+├── png/            # PNG đã dựng — ĐI THEO GIT, xem lý do dưới
+└── manifest.json   # loại hình, luật loại trừ
+```
+
+Ba tầng: **SVG (nguồn) → PNG (bản dựng) → tô màu lúc chạy**. Màu tách khỏi hình
+nên MỘT hình dùng cho cả mười bộ dáng, mỗi bộ chỉ khai một mã màu — đó là thứ giữ
+cho việc thêm một bộ dáng vẫn là sửa một bảng số, không thành thuê người vẽ.
+
+```bash
+npm run graphics:svg   # sinh lại SVG từ tham số
+npm run graphics:png   # SVG → PNG, cần `brew install librsvg`
+```
+
+**PNG đi theo git, và SVG→PNG chỉ chạy lúc phát triển.** Đo được trên máy: cùng
+một tệp SVG, `rsvg-convert` dựng đúng còn `magick` ra ảnh **đục 100%** — vẫn có
+kênh trong suốt, vẫn đúng khổ, nên nó qua mọi phép kiểm hình thức mà video xuất ra
+thì bị một khối màu phủ kín. Một phụ thuộc render âm thầm sai còn tệ hơn một phụ
+thuộc thiếu hẳn, nên `graphics:png` **dừng hẳn** khi không có `rsvg-convert` thay
+vì rơi về `magick`. Đổi lại: máy chủ không cần thêm phụ thuộc nào.
+
+`check:layout` chạy `placeWords` thật trên 260 tổ hợp
+`{độ dài câu} × {dải} × {căn} × {nhấn} × {vai chữ} × {10 bộ dáng}` rồi khẳng định
+hai điều **cứng**: không tiếng nào ra ngoài dải an toàn, và không cụm nào quá trần
+dòng. Ngoài ra nó so với `scripts/layout-guard/baseline.json` — lệch không tự nó
+là sai, nhưng nó phải là thứ bạn chủ ý đổi. Đổi có chủ đích thì chạy
+`npx tsx scripts/layout-guard/check-layout.ts --update` rồi commit tệp baseline
+cùng lượt sửa.
+
+`check:fonts` cần `python3` kèm `fontTools` (`pip install fonttools`) — cùng lớp
+phụ thuộc với `ffmpeg`/`ffprobe`/`magick`, và CI phải có nó thì `check:all` mới
+chạy được. Nó đọc bảng `cmap` của từng tệp `.ttf` chứ không nhìn ảnh: ffmpeg in ô
+vuông rỗng khi thiếu glyph, mà ô vuông rỗng thu nhỏ trông y hệt một chữ đậm. Nó
+cũng chặn font **biến thiên** chưa đông cứng — thứ mà mọi phép kiểm khác đều xanh
+còn bản xuất thì ra chữ mảnh dính.
 
 Mở `http://localhost:5173`. Chưa đăng nhập thì mọi đường dẫn đều chuyển về
 `/login`.

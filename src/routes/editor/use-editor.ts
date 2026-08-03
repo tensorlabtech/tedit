@@ -256,6 +256,7 @@ export function useEditor(projectId: string | undefined) {
             .catch(boQuaLoi());
         }
         setStylePackState(findStylePack(project.project.style_pack).id);
+        setHeadlineState(project.project.headline ?? "");
         setEffectsStylePack(project.project.effects_style_pack ?? null);
         // Giá trị cũ vẫn đọc được: 1 và "in" đều là nhấn zoom vào.
         const raw = project.project.zoom_punch;
@@ -1562,6 +1563,14 @@ export function useEditor(projectId: string | undefined) {
    */
   const [stylePack, setStylePackState] = useState<StylePackId>("goc");
   /**
+   * DÒNG TIÊU ĐỀ của cả video.
+   *
+   * Đi đúng nếp `stylePack`: một cột trên `projects`, đổi bộ dáng không đụng
+   * tới nó và ngược lại. Nó cũng không nằm trong `elements` nên cắt mất câu đầu
+   * thì nó vẫn còn.
+   */
+  const [headline, setHeadlineState] = useState("");
+  /**
    * Bộ dáng ĐANG DÙNG lúc chặng hiệu ứng chạy lần cuối.
    *
    * Khác `stylePack` nghĩa là người dùng đã đổi dáng sau đó — hàng soát mời họ
@@ -1626,6 +1635,17 @@ export function useEditor(projectId: string | undefined) {
       description: "Xong thì mở lại dự án để thấy — mất chừng nửa phút.",
     });
   }, [projectId]);
+
+  const setHeadline = useCallback(
+    async (next: string) => {
+      if (!projectId) return;
+      // Đặt trước, gửi sau: ô nhập phải theo kịp phím gõ. Hỏng đường mạng thì
+      // `boQuaLoi` báo, và lần gõ sau gửi lại toàn bộ chuỗi nên không mất chữ.
+      setHeadlineState(next);
+      await api.updateProject(projectId, { headline: next }).catch(boQuaLoi());
+    },
+    [projectId],
+  );
 
   const setStylePack = useCallback(
     async (next: StylePackId) => {
@@ -2083,6 +2103,8 @@ export function useEditor(projectId: string | undefined) {
     setZoomPunch,
     stylePack,
     setStylePack,
+    headline,
+    setHeadline,
     effectsStylePack,
     redoEffects,
     setInsertStyle,

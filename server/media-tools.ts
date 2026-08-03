@@ -175,6 +175,48 @@ export async function measureText(
   return { width, height };
 }
 
+/**
+ * VỆT MỰC của một chuỗi bắt đầu cách mép trên hộp dòng bao xa.
+ *
+ * Cần vì `drawtext` neo theo mép trên VỆT MỰC, không neo theo hộp dòng: hai
+ * tiếng vẽ ở cùng một `y` mà một tiếng có dấu chồng dấu còn tiếng kia không thì
+ * chân chữ của chúng lệch nhau. Đo trên chính ffmpeg ở cỡ 120: lệch 37px với
+ * Anton, 73px với Dancing Script — tức 31–61% cỡ chữ.
+ *
+ * Trang xem KHÔNG có lỗi này (CSS xếp theo chân chữ), nên đây là lỗi "xem một
+ * đằng xuất một nẻo" mà phép so hộp bao không bắt được: nó so hộp DÒNG, còn chỗ
+ * lệch nằm ở vệt mực bên trong hộp.
+ *
+ * Trả `0` cho chuỗi không có nét mực nào — `-trim` trên ảnh trong suốt hoàn toàn
+ * thì ImageMagick báo lỗi chứ không trả số.
+ */
+export async function measureInkTop(
+  text: string,
+  fontFile: string,
+  fontSize: number,
+): Promise<number> {
+  try {
+    const { stdout } = await run("magick", [
+      "-background",
+      "none",
+      "-font",
+      fontFile,
+      "-pointsize",
+      String(fontSize),
+      `label:${text}`,
+      "-trim",
+      "-format",
+      "%O",
+      "info:",
+    ]);
+    // `%O` viết theo dạng `+x+y`; chỉ cần phần dọc.
+    const match = /^[+-]\d+([+-]\d+)$/.exec(stdout.trim());
+    return match ? Number(match[1]) : 0;
+  } catch {
+    return 0;
+  }
+}
+
 /** Làm tròn lên số chẵn — ffmpeg đòi bề rộng/cao chẵn với luồng yuv420. */
 const chan = (value: number) => (value % 2 === 0 ? value : value + 1);
 

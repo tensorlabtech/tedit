@@ -1,4 +1,4 @@
-import { measureText } from "./media-tools";
+import { measureInkTop, measureText } from "./media-tools";
 import { resolvePackFont } from "./paths";
 import {
   boxPadShare,
@@ -6,7 +6,7 @@ import {
   type AlignId,
   type Band,
   type EmphasisId,
-  type StylePack,
+  type ShownPack,
 } from "./style-pack";
 
 export type { AlignId, Band, EmphasisId } from "./style-pack";
@@ -156,7 +156,7 @@ export async function layoutText(
   band: Band,
   videoWidth: number,
   videoHeight: number,
-  pack: StylePack,
+  pack: ShownPack,
 ): Promise<LaidOutText> {
   const { maxScale, lineHeight: lineHeightShare, wordGap } = pack.density;
   const usableWidth = videoWidth * (1 - SAFE.left - RIGHT_MARGIN[band]);
@@ -242,7 +242,7 @@ export async function layoutText(
 const BASE_SIZE = 100;
 const widthCache = new Map<string, number>();
 
-async function baseWidth(text: string, pack: StylePack) {
+async function baseWidth(text: string, pack: ShownPack) {
   // Khoá nhớ gồm cả TỆP FONT: hai bộ dáng dùng hai font khác nhau thì cùng một
   // chữ ra hai bề rộng, và nhớ chung một khoá là bộ dáng thứ hai đọc số của bộ
   // thứ nhất — chữ tràn khung mà không lệnh nào sai.
@@ -261,7 +261,7 @@ type Measured = { words: string[]; widths: number[] };
 
 async function measureWords(
   content: string,
-  pack: StylePack,
+  pack: ShownPack,
 ): Promise<Measured> {
   // Áp trục HOA TRƯỚC khi đo: chữ hoa rộng hơn chữ thường, đo bằng chuỗi thường
   // rồi in ra chuỗi hoa là chữ tràn khung.
@@ -324,7 +324,7 @@ export async function fitLines(
   content: string,
   usable: number,
   videoWidth: number,
-  pack: StylePack,
+  pack: ShownPack,
 ): Promise<{ lines: string[]; scale: number; needsSplit: boolean }> {
   const { maxScale, wordGap } = pack.density;
   const padPerWord = boxPadShare(pack) * 2;
@@ -445,7 +445,7 @@ export function usableWidthOf(band: Band, videoWidth: number) {
 export async function textWidth(
   text: string,
   fontSize: number,
-  pack: StylePack,
+  pack: ShownPack,
 ) {
   return ((await baseWidth(text, pack)) * fontSize) / BASE_SIZE;
 }
@@ -461,10 +461,44 @@ export async function textWidth(
  * Đo bằng cách nhân đôi chuỗi: vết mực của "AA" bằng bước tiến của "A" cộng vết
  * mực của "A", nên hiệu hai phép đo chính là bước tiến. Cả hai đều đã nhớ sẵn.
  */
+/**
+ * Cộng bao nhiêu vào `y` để CHÂN CHỮ của tiếng này thẳng hàng với các tiếng khác.
+ *
+ * `drawtext` đặt mép trên VỆT MỰC vào đúng `y`, chứ không đặt hộp dòng. Nên hai
+ * tiếng cùng `y` mà một tiếng có dấu chồng dấu (`ấ`, `Ừ`) còn tiếng kia chỉ có
+ * chữ thấp (`an`) thì chân chữ lệch nhau tới 61% cỡ chữ — đo trên chính ffmpeg,
+ * và có ở CẢ MƯỜI MỘT font trong kho.
+ *
+ * Bù bằng chính khoảng trống phía trên vệt mực: cộng nó vào thì mọi tiếng đều
+ * đặt chân lên cùng một đường, đúng chỗ mà hộp dòng chỉ định. Đó cũng chính là
+ * chỗ CSS đặt chân chữ ở trang xem, nên phép bù này kéo hai đường vẽ về một mối
+ * chứ không phải thêm một luật riêng cho máy chủ.
+ *
+ * Nhớ theo tiếng như `baseWidth`, và đo ở cỡ gốc rồi nhân tỉ lệ — khoảng trống
+ * ấy tỉ lệ thuận với cỡ chữ.
+ */
+const inkTopCache = new Map<string, number>();
+
+export async function inkTopOffset(
+  text: string,
+  fontSize: number,
+  pack: ShownPack,
+) {
+  const fontPath = resolvePackFont(pack.font.file);
+  const key = `${fontPath}|${text}`;
+  let base = inkTopCache.get(key);
+  if (base === undefined) {
+    base = await measureInkTop(text, fontPath, BASE_SIZE);
+    if (inkTopCache.size > 5000) inkTopCache.clear();
+    inkTopCache.set(key, base);
+  }
+  return (base * fontSize) / BASE_SIZE;
+}
+
 export async function advanceWidth(
   text: string,
   fontSize: number,
-  pack: StylePack,
+  pack: ShownPack,
 ) {
   const [single, doubled] = await Promise.all([
     baseWidth(text, pack),

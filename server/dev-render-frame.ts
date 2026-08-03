@@ -19,12 +19,14 @@ import {
   type EmphasisId,
 } from "./text-layout";
 import { BASE_PACK } from "./style-pack-catalog";
-import { ffmpegColor } from "./style-pack";
+import { ffmpegColor, packForElement } from "./style-pack";
 import { placeWords } from "./word-layout";
 
 const [content, align, emphasis, band, target, bgArg, ...keywords] =
   process.argv.slice(2);
-const pack = BASE_PACK;
+// Vai chữ suy từ chính danh sách từ khoá nhận qua dòng lệnh — CÙNG luật với
+// đường in thật. Truyền từ khoá là thấy vai `accent`, không truyền là `voice`.
+const pack = packForElement(BASE_PACK, null, keywords);
 const fontPath = resolvePackFont(pack.font.file);
 const bgColor = bgArg && bgArg !== "-" ? bgArg : "#3a3a3a";
 

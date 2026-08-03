@@ -8,6 +8,7 @@
  *   npx tsx scripts/overlay-parity/dump-server-layout.ts
  */
 import { OUT_WIDTH } from "../../server/render";
+import { packForElement } from "../../server/style-pack";
 import { STYLE_PACKS } from "../../server/style-pack-catalog";
 import { fitLines, usableWidthOf } from "../../server/text-layout";
 import { CASES } from "./parity-cases";
@@ -24,11 +25,14 @@ const rows = [];
 for (const pack of STYLE_PACKS) {
   for (const item of CASES) {
     const usable = usableWidthOf(item.band, OUT_WIDTH);
-    const laid = await fitLines(item.text, usable, OUT_WIDTH, pack);
+    // Vai chữ theo chính ca thử — cùng hàm `fontRoleFor` mà đường in dùng.
+    const shown = packForElement(pack, null, item.keywords);
+    const laid = await fitLines(item.text, usable, OUT_WIDTH, shown);
     rows.push({
       pack: pack.id,
       text: item.text,
       band: item.band,
+      role: shown.font.file,
       lines: laid.lines.length,
       // Cỡ theo BỀ RỘNG khung — cùng trục với `fitGroup` của trang xem.
       scale: laid.scale,

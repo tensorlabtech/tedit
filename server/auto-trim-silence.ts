@@ -1,3 +1,4 @@
+import { type AudioEnvelope } from "./audio-envelope";
 import { db } from "./db";
 import { removeRange } from "./segments";
 
@@ -41,7 +42,67 @@ const KEEP = 0.45;
 const HEAD = 0.35;
 const TAIL = 0.6;
 
-export function trimSilence(projectId: string): {
+/**
+ * Ba chỗ lặng KHÔNG phải nhịp thở, nên không được chừa `KEEP`.
+ *
+ * · **Đầu và cuối video** — đó là lúc người ta với tay bật rồi tắt máy quay.
+ *   `HEAD`/`TAIL` đã chừa sẵn phần cần chừa; cộng thêm `KEEP` nữa thành 0,8 giây
+ *   mở màn không ai nói gì, mà mở màn mới là chỗ người xem quyết định lướt tiếp
+ *   hay không.
+ *
+ * · **Mép nối giữa hai tệp quay** — hai lần bấm máy khác nhau ghép lại. Chỗ ấy
+ *   ĐÃ là một cú cắt hình rồi, nên không cần thêm nhịp nghỉ nào để đỡ giật; thứ
+ *   duy nhất nằm trong đó là cảnh với tay ra bấm máy.
+ *
+ * Đo trên một dự án ba tệp: lặng đầu 0,96s, lặng cuối 1,34s, hai mép nối mỗi
+ * chỗ chừng một giây — cộng lại hơn bốn giây chết mà chặng cũ để nguyên.
+ */
+const KEEP_JOIN = 0;
+
+/**
+ * Nhịp nghỉ được giữ phải THẬT SỰ im.
+ *
+ * Chỗ không có chữ nào không có nghĩa là chỗ không có tiếng: máy nghe bỏ qua
+ * tiếng hắng giọng, tiếng "ậm", tiếng với tay chạm vào máy quay — chúng không
+ * thành từ nên không vào bản chép, nhưng người xem thì nghe rõ.
+ *
+ * Đo đường bao trong đúng phần định giữ của mười bốn quãng lặng ở một dự án
+ * thật, lấy mức giọng làm mốc 100%: đầu này 1344%, 987%, 791%, 672% — to hơn cả
+ * giọng nói — trong khi đầu kia của chính quãng ấy chỉ 59%, 32%, 47%. Gần như
+ * quãng nào cũng có một đầu sạch và một đầu bẩn.
+ *
+ * Nên: giữ ĐẦU NÀO SẠCH HƠN, và nếu cả hai đầu đều kêu thì không giữ gì. Lấy
+ * mốc là `speechLevel` của chính bản ghi, cùng mốc mà `hasSpeech` dùng — to
+ * ngang giọng nói mà lại nằm ngoài mọi từ thì đó là tiếng động, không phải nhịp
+ * thở.
+ */
+const ON_MAX = 1;
+
+/**
+ * Ngưỡng riêng cho hai MÉP video — nhỏ hơn hẳn `minSilence`.
+ *
+ * `minSilence` trả lời câu hỏi "quãng lặng này có phải nhịp thở không". Giữa
+ * hai từ thì đó là câu hỏi đúng. Ở đầu và cuối video thì không: trước từ đầu
+ * tiên chưa có câu nào để mà thở, và sau từ cuối cùng thì hết bài rồi.
+ *
+ * Đo được ca này: lặng đầu 0,96 giây, trừ `HEAD` còn 0,61 — không chạm 0,8 nên
+ * chặng cũ để nguyên cả 0,96 giây đứng hình mở màn. Đuôi còn sát hơn: 0,74 so
+ * với 0,8, hụt sáu phần trăm giây.
+ *
+ * Lấy đúng mức sàn của phép cắt bên dưới: cắt được bao nhiêu thì cắt.
+ */
+const MIN_EDGE = 0.12;
+
+export function trimSilence(
+  projectId: string,
+  /**
+   * Đường bao tiếng. `null` thì rơi về lối cũ — giữ đầu trước, không soi tiếng.
+   *
+   * Dự án dựng bằng bản cũ chưa có tệp đường bao, và một chặng rút lặng chạy
+   * kém tinh hơn vẫn hơn hẳn một chặng ném lỗi.
+   */
+  envelope: AudioEnvelope | null = null,
+): {
   trimmed: number;
   saved: number;
 } {
@@ -67,35 +128,82 @@ export function trimSilence(projectId: string): {
       .get(projectId) as { total: number }
   ).total;
 
+  /*
+   * Mốc nối giữa các tệp quay, tính dồn trên trục đã ghép.
+   *
+   * Bỏ mốc cuối cùng (hết tệp cuối) — nó không phải mối nối mà là hết phim, và
+   * quãng lặng ở đó đã do nhánh `TAIL` lo.
+   */
+  const boundaries: number[] = [];
+  let running = 0;
+  for (const file of db
+    .prepare(
+      "SELECT duration FROM media_files WHERE project_id=? AND role='main' ORDER BY position",
+    )
+    .all(projectId) as Array<{ duration: number | null }>) {
+    running += file.duration ?? 0;
+    boundaries.push(running);
+  }
+  boundaries.pop();
+
   /** Mọi quãng lặng: hai đầu video, và khe giữa mỗi cặp từ liền nhau. */
-  const gaps: Array<{ start: number; end: number }> = [];
-  if (words[0].start_sec > HEAD + minSilence) {
-    gaps.push({ start: 0, end: words[0].start_sec - HEAD });
+  const gaps: Array<{ start: number; end: number; keep: number; least: number }> = [];
+  // Hai mép dùng `MIN_EDGE`, khe giữa các từ dùng `minSilence` — xem chỗ khai
+  // hai hằng số ấy. Phần `HEAD`/`TAIL` vẫn được chừa nguyên.
+  if (words[0].start_sec - HEAD >= MIN_EDGE) {
+    gaps.push({ start: 0, end: words[0].start_sec - HEAD, keep: KEEP_JOIN, least: MIN_EDGE });
   }
   for (let index = 0; index < words.length - 1; index += 1) {
-    gaps.push({ start: words[index].end_sec, end: words[index + 1].start_sec });
+    const start = words[index].end_sec;
+    const end = words[index + 1].start_sec;
+    const atJoin = boundaries.some((mark) => mark > start && mark < end);
+    gaps.push({ start, end, keep: atJoin ? KEEP_JOIN : KEEP, least: minSilence });
   }
   const last = words[words.length - 1].end_sec;
-  if (total > last + TAIL + minSilence) {
-    gaps.push({ start: last + TAIL, end: total });
+  if (total - (last + TAIL) >= MIN_EDGE) {
+    gaps.push({ start: last + TAIL, end: total, keep: KEEP_JOIN, least: MIN_EDGE });
   }
 
   // Bỏ từ CUỐI lên ĐẦU: `removeRange` tách đoạn, nên làm ngược lại thì các mốc
   // phía sau xê dịch hết sau lần bỏ đầu tiên.
   const targets = gaps
-    .filter((gap) => gap.end - gap.start >= minSilence)
+    .filter((gap) => gap.end - gap.start >= gap.least)
     .sort((a, b) => b.start - a.start);
+
+  /** Chỗ ồn nhất trong một quãng, lấy mức giọng làm mốc 1. */
+  const loudness = (from: number, to: number) => {
+    if (!envelope) return 0;
+    const { hop, values, speechLevel } = envelope;
+    if (speechLevel <= 0) return 0;
+    let peak = 0;
+    for (let at = Math.floor(from / hop); at <= Math.floor(to / hop); at += 1) {
+      peak = Math.max(peak, values[at] ?? 0);
+    }
+    return peak / speechLevel;
+  };
 
   let trimmed = 0;
   let saved = 0;
   for (const gap of targets) {
     const length = gap.end - gap.start;
-    // Chừa MỘT KHỐI LIỀN ngay sau câu vừa dứt rồi cắt phần còn lại. Chia đôi
-    // hai bên thì sinh ra hai mẩu vụn, mà mẩu dưới `MIN_LENGTH` thì không tách
-    // được nên mất sạch. Nhịp nghỉ vốn cũng thuộc về câu vừa nói xong.
-    const cutLength = length - KEEP;
+    /*
+     * Chừa MỘT KHỐI LIỀN ở một đầu rồi cắt phần còn lại. Chia đôi hai bên thì
+     * sinh ra hai mẩu vụn, mà mẩu dưới `MIN_LENGTH` thì không tách được nên mất
+     * sạch.
+     */
+    let keep = gap.keep;
+    let atHead = true;
+    if (keep > 0) {
+      const head = loudness(gap.start, gap.start + keep);
+      const tail = loudness(gap.end - keep, gap.end);
+      atHead = head <= tail;
+      if (Math.min(head, tail) > ON_MAX) keep = 0;
+    }
+    const cutLength = length - keep;
     if (cutLength < 0.12) continue;
-    removeRange(projectId, gap.start + KEEP, gap.end);
+    // Giữ đầu trước thì bỏ phần sau, giữ đầu sau thì bỏ phần trước.
+    if (atHead) removeRange(projectId, gap.start + keep, gap.end);
+    else removeRange(projectId, gap.start, gap.end - keep);
     trimmed += 1;
     saved += cutLength;
   }

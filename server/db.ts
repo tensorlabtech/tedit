@@ -426,6 +426,19 @@ for (const [table, column, type] of [
   // Hình dáng khung tư liệu: square | portrait | wide | full
   ["elements", "shape", "TEXT DEFAULT 'full'"],
   ["projects", "subtitle_band", "TEXT DEFAULT 'bottom'"],
+  // DÒNG TIÊU ĐỀ của cả video — một dòng chữ đại diện, không neo vào tiếng nào.
+  //
+  // MỘT cột ở đây chứ không phải một hàng trong `elements`, và đó là cả quyết
+  // định: mọi chữ trong `elements` neo bằng `from_word_id`/`to_word_id`, mà
+  // tiêu đề không thuộc tiếng nào. Neo nó vào một từ thì người dùng cắt mất câu
+  // đầu là tiêu đề biến mất theo — một lỗi hẹn giờ.
+  //
+  // Đi đúng nếp của `style_pack`: nằm trên `projects` nên đổi bộ dáng không đụng
+  // tới nó, và ngược lại. Watermark, thanh tiến trình, chữ CTA cuối video sau
+  // này cũng thuộc loại này.
+  //
+  // `NULL` mặc định nên dự án cũ không cần migration nào.
+  ["projects", "headline", "TEXT"],
   // BỘ DÁNG CHỮ của cả dự án — font, màu, viền, quầng, mật độ, nhịp.
   //
   // MỘT cột cho cả bộ dáng, và bảng `elements` không có cột nào của nó. Đó là
@@ -459,7 +472,9 @@ for (const [table, column, type] of [
   //
   // Tắt được vì có người quay bằng máy tử tế và tự nắn màu rồi — với họ, chỉnh
   // thêm một lần nữa là làm hỏng.
-  ["projects", "auto_grade", "INTEGER DEFAULT 1"],
+  // Mặc định TẮT: nắn màu tự động là quyết định của người dùng, không phải
+  // của máy. Máy đoán sai một lần là cả video lệch màu mà không ai bảo nó làm.
+  ["projects", "auto_grade", "INTEGER DEFAULT 0"],
   // HAI TRỤC người dùng đè được cho RIÊNG một cụm. `NULL` = theo bộ dáng.
   //
   // Đây là cột ĐÈ, không phải cột giá trị: đổi bộ dáng KHÔNG BAO GIỜ ghi vào

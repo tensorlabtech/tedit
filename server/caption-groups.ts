@@ -1,7 +1,7 @@
 import { db } from "./db";
 import { skippedSpans } from "./segments";
 import { OUT_HEIGHT, OUT_WIDTH } from "./render";
-import type { StylePack } from "./style-pack";
+import { contentRect, shownPacks, type StylePack } from "./style-pack";
 import { layoutText, type Band } from "./text-layout";
 
 /** Một từ trong bản chép lời, mang theo mã để chữ còn neo vào được. */
@@ -169,14 +169,30 @@ async function fitGroup(
   pack: StylePack,
   depth = 0,
 ): Promise<CaptionGroup[]> {
-  const laid = await layoutText(group.text, band, OUT_WIDTH, OUT_HEIGHT, pack);
+  /*
+   * Đo bằng CẢ HAI vai chữ, không chỉ vai phụ đề.
+   *
+   * Chia cụm chạy lúc SINH chữ, còn `ai-keywords.ts` đánh dấu từ khoá SAU đó —
+   * nên cụm vừa chốt "vừa một dòng" theo vai `voice` hoàn toàn có thể về sau
+   * được vẽ bằng vai `accent`. Vai đó rộng hơn thì chữ tràn khung, và không
+   * lệnh nào sai: chỉ là phép đo đã hỏi nhầm font.
+   *
+   * Vừa cho vai rộng nhất thì vừa cho mọi vai, nên lấy hợp của các cờ. Bộ chưa
+   * dùng vai thứ hai chỉ đo một lần, y như trước.
+   */
+  let needsSplit = false;
+  let truncated = false;
+  // Đo trong VÙNG HÌNH: bộ đưa video vào khung thì chỗ cho chữ hẹp lại, và cụm
+  // chốt "vừa một dòng" theo khung ngoài sẽ tràn khi vẽ vào khung trong.
+  const rect = contentRect(pack, OUT_WIDTH, OUT_HEIGHT);
+  for (const shown of shownPacks(pack)) {
+    const laid = await layoutText(group.text, band, rect.w, rect.h, shown);
+    needsSplit ||= laid.needsSplit;
+    truncated ||= laid.truncated;
+  }
   // Dừng ở độ sâu 3: cụm một tiếng mà vẫn không vừa thì tách nữa cũng vô ích,
   // và `truncated` sẽ báo lên hàng "Cần bạn xem".
-  if (
-    (!laid.needsSplit && !laid.truncated) ||
-    group.words.length < 2 ||
-    depth >= 3
-  ) {
+  if ((!needsSplit && !truncated) || group.words.length < 2 || depth >= 3) {
     return [group];
   }
   const mid = Math.ceil(group.words.length / 2);

@@ -1,9 +1,18 @@
 import { BASE_PACK } from "../../../server/style-pack-catalog";
 import {
   cssColor,
+  headlineRoom,
+  headlineTopShare,
+  trimHeadline,
   styleCase,
+  withFontRole,
+  type ShownPack,
   type StylePack,
 } from "../../../server/style-pack";
+
+
+/** Bộ gốc đã chốt vai PHỤ ĐỀ — cùng mặc định với `overlay-model.ts`. */
+const BASE_SHOWN = withFontRole(BASE_PACK, "voice");
 import { OverlayFrame } from "./overlay-frame";
 import {
   BANDS,
@@ -90,7 +99,7 @@ export const availOf = (band: BandId) => (band === "top" ? 0.78 : 0.71);
  * chỗ đứng thì hai lựa chọn của người dùng dính vào nhau, và đổi một cái thì cái
  * kia thành gì không ai đoán được.
  */
-export function buildRows(config: OverlayConfig, pack: StylePack = BASE_PACK): Row[] {
+export function buildRows(config: OverlayConfig, pack: ShownPack = BASE_SHOWN): Row[] {
   const COLOR = {
     main: cssColor(pack.color.main),
     key: cssColor(pack.color.key),
@@ -230,7 +239,7 @@ function Syllable({
   onPick,
 }: {
   word: Placed;
-  pack: StylePack;
+  pack: ShownPack;
   order: number;
   index: number;
   seconds: number;
@@ -360,7 +369,7 @@ function Syllable({
  */
 export function OverlayTextBlock({
   config,
-  pack = BASE_PACK,
+  pack = BASE_SHOWN,
   seconds,
   ring,
   wordStarts,
@@ -369,7 +378,7 @@ export function OverlayTextBlock({
 }: {
   config: OverlayConfig;
   /** Bộ dáng của dự án — quyết định font, màu, viền, quầng, nhịp */
-  pack?: StylePack;
+  pack?: ShownPack;
   seconds: number;
   /** Viền báo đang chọn — chỉ dùng trong editor */
   ring?: boolean;
@@ -409,7 +418,14 @@ export function OverlayTextBlock({
         ? "flex-end"
         : "flex-start";
   return (
-    <div className="absolute" style={bandStyle(config.band)}>
+    <>
+      <StylePlate pack={pack} />
+      <div
+        className="absolute"
+        data-text-block=""
+        // Tầng 2 — trên hình dán. Xem ghi chú `zIndex` ở `StyleGraphics`.
+        style={{ ...bandStyle(config.band), zIndex: 2 }}
+      >
       <div
         className={ring ? "rounded-md ring-2 ring-primary" : undefined}
         style={{
@@ -417,6 +433,20 @@ export function OverlayTextBlock({
           flexDirection: "column",
           alignItems: items,
           position: "relative",
+          /*
+           * HÌNH BÁM CHỮ — `-webkit-mask-box-image` là phép cắt ba lát của CSS,
+           * đúng cùng mô hình với ba `overlay` bên máy chủ: hai đầu giữ nguyên
+           * `cap` điểm ảnh, khúc giữa `stretch`.
+           *
+           * Dùng mặt nạ chứ không dùng `border-image`: `border-image` vẽ thẳng
+           * ảnh nên không tô màu được, mà cả kiến trúc này sống bằng việc MỘT
+           * hình dùng cho mọi bộ dáng, màu do bộ dáng khai.
+           *
+           * Một chỗ hai đường vẽ lệch, cố ý: bên đây khoanh hiện NGAY, bên máy
+           * chủ đợi cụm hiện quá nửa. Khung xem của bàn dựng phần lớn thời gian
+           * đứng yên ở một mốc, nên chờ ở đây chỉ làm người dùng tưởng nó hỏng.
+           */
+          ...wrapMaskStyle(pack),
         }}
       >
         {rows.map((row, index) => {
@@ -466,24 +496,274 @@ export function OverlayTextBlock({
             </div>
           );
         })}
+        </div>
       </div>
+    </>
+  );
+}
+
+/**
+ * Đường dẫn PNG đồ hoạ, do Vite băm sẵn.
+ *
+ * `import.meta.glob` chứ không ghép chuỗi `/assets/...`: chuỗi ghép tay chỉ chạy
+ * ở máy phát triển, còn bản dựng băm tên tệp — và lúc đó hình biến mất trên máy
+ * chủ mà không lỗi nào báo.
+ */
+const GRAPHIC_URLS = import.meta.glob("../../../assets/graphics/png/*.png", {
+  eager: true,
+  query: "?url",
+  import: "default",
+}) as Record<string, string>;
+
+/**
+ * Bề rộng hai đầu của từng hình bám chữ, chép từ `assets/graphics/manifest.json`.
+ *
+ * Chép chứ không đọc thẳng: manifest đọc bằng `node:fs`, mà tệp này chạy ở trình
+ * duyệt. Ba con số, và `check:style-pack` canh chúng khớp manifest — nên bản chép
+ * này không trôi được.
+ */
+const WRAP_CAPS: Record<string, number> = {
+  "khoanh-oval": 170,
+  "gach-chan": 120,
+};
+
+const graphicUrl = (id: string) =>
+  Object.entries(GRAPHIC_URLS).find(([path]) => path.endsWith(`/${id}.png`))?.[1];
+
+/**
+ * HÌNH DÁN ở trang xem — bản sinh đôi của `graphicsSteps`.
+ *
+ * `mask-image` + `background-color` chính là `alphamerge` viết bằng CSS: hình chỉ
+ * cho biết CHỖ NÀO có nét, màu đến từ bộ dáng. Một tệp PNG, mười bộ dáng.
+ *
+ * ## Một chỗ hai đường vẽ KHÔNG khớp, và nó cố ý
+ *
+ * Độ đục ở bản xuất nội suy theo độ sáng khung hình mà `auto-grade.ts` đo được.
+ * Trang xem không có con số ấy — đo độ sáng một video đang chạy ở trình duyệt là
+ * việc nặng và kết quả đổi theo từng khung. Nên trang xem lấy ĐIỂM GIỮA hai mức.
+ *
+ * Chênh lệch cao nhất là nửa khoảng cách giữa `onDark` và `onLight`. Ghi ra đây
+ * vì nó là một khoản nợ có ý thức, không phải một chỗ ai đó quên.
+ */
+function StyleGraphics({ pack }: { pack: Pick<StylePack, "graphics"> }) {
+  if (!pack.graphics) return null;
+  return (
+    <>
+      {pack.graphics.map((item) => {
+        const url = graphicUrl(item.id);
+        if (!url) return null;
+        return (
+          <div
+            key={item.id}
+            data-graphic={item.id}
+            style={{
+              position: "absolute",
+              inset: 0,
+              // Tầng 1: trên video, dưới chữ. Viết số ra thay vì trông vào thứ tự
+              // thẻ — bàn dựng và trang thử xếp thẻ khác nhau, mà thứ tự LỚP thì
+              // phải giống nhau ở cả hai.
+              zIndex: 1,
+              backgroundColor: item.color,
+              opacity: (item.opacity.onDark + item.opacity.onLight) / 2,
+              maskImage: `url(${url})`,
+              maskSize: "100% 100%",
+              WebkitMaskImage: `url(${url})`,
+              WebkitMaskSize: "100% 100%",
+            }}
+          />
+        );
+      })}
+    </>
+  );
+}
+
+/**
+ * VÙNG HÌNH — bản sinh đôi của `contentRect` ở phía CSS.
+ *
+ * Nó làm hai việc, và việc thứ hai mới là việc chính:
+ *
+ * 1. Thu hình lại, chừa lề, lề là nền màu.
+ * 2. **Trở thành `@container` mới.** Mọi số đo bên trong viết bằng `cqw`, nên
+ *    chuyển mốc container sang vùng hình là toàn bộ chữ, mảng màu, tiêu đề tự
+ *    thu theo — không phải sửa một dòng nào ở các thành phần đó.
+ *
+ * Vế thứ hai là lý do bên máy chủ cũng chỉ cần truyền `rect.w`/`rect.h` vào
+ * `placeWords`: hai đường vẽ giải cùng một bài bằng cùng một cách.
+ *
+ * ## Vì sao lề dọc dùng `cqw` chứ không dùng `%`
+ *
+ * `contentRect` đo cả bốn lề theo BỀ RỘNG khung. Trong CSS, `left: 3%` là 3% bề
+ * rộng — đúng; nhưng `top: 3%` là 3% CHIỀU CAO — sai, và trên khung 9:16 nó lệch
+ * 1,78 lần. `cqw` quy về bề rộng container cho cả bốn phía.
+ */
+export function ContentRect({
+  pack,
+  children,
+}: {
+  pack: Pick<StylePack, "frame" | "graphics">;
+  children: React.ReactNode;
+}) {
+  const frame = pack.frame;
+  return (
+    <>
+      {frame && (
+        <div
+          data-frame-bg=""
+          style={{
+            position: "absolute",
+            inset: 0,
+            backgroundColor: cssColor(frame.background),
+          }}
+        />
+      )}
+      {/* Hình dán đứng GIỮA: trên hình, dưới chữ — cùng thứ tự lớp với
+          `render.ts`. Nó phủ đúng khổ KHUNG chứ không phủ vùng hình, vì một cái
+          viền chạy quanh mép video đã thu vào thì thành hai lớp viền chồng nhau. */}
+      <StyleGraphics pack={pack} />
+      <div
+        data-content-rect=""
+        className="@container"
+        style={{
+          position: "absolute",
+          overflow: "hidden",
+          left: frame ? `${frame.inset.left * 100}cqw` : 0,
+          right: frame ? `${frame.inset.right * 100}cqw` : 0,
+          top: frame ? `${frame.inset.top * 100}cqw` : 0,
+          bottom: frame ? `${frame.inset.bottom * 100}cqw` : 0,
+        }}
+      >
+        {children}
+      </div>
+    </>
+  );
+}
+
+/**
+ * Style cắt ba lát cho hình bám chữ. `{}` là bộ dáng không có.
+ *
+ * `cap` đọc từ manifest — cùng một con số với phép `crop` bên máy chủ, nên hai
+ * đường vẽ giữ nguyên hai đầu ở đúng cùng một bề rộng.
+ */
+function wrapMaskStyle(pack: Pick<StylePack, "wrap">): React.CSSProperties {
+  if (!pack.wrap) return {};
+  const url = graphicUrl(pack.wrap.id);
+  const cap = WRAP_CAPS[pack.wrap.id];
+  if (!url || cap === undefined) return {};
+  return {
+    backgroundColor: pack.wrap.color,
+    opacity: (pack.wrap.opacity.onDark + pack.wrap.opacity.onLight) / 2,
+    WebkitMaskBoxImage: `url(${url}) 0 ${cap} 0 ${cap} stretch`,
+  } as React.CSSProperties;
+}
+
+/**
+ * MẢNG MÀU — dải màu đặc bám mép trên hoặc mép dưới khung.
+ *
+ * Nằm TRONG `OverlayTextBlock` chứ không đứng riêng ở từng chỗ dựng khung: mảng
+ * màu và chữ là một cặp, và bốn chỗ tự ghép lấy là bốn chỗ có thể quên một nửa.
+ * Vẽ TRƯỚC khối chữ trong cây DOM nên chữ luôn nằm trên — cùng thứ tự lớp với
+ * `drawbox` rồi `drawtext` ở máy chủ.
+ *
+ * Cao theo phần trăm CHIỀU CAO khung, đúng trục mà `heightShare` khai; `cqw` là
+ * trục bề rộng nên dùng nó ở đây sẽ ra một chiều cao khác hẳn ở khổ 9:16.
+ */
+function StylePlate({ pack }: { pack: ShownPack }) {
+  if (!pack.plate) return null;
+  return (
+    <div
+      data-plate=""
+      style={{
+        position: "absolute",
+        left: 0,
+        right: 0,
+        [pack.plate.band === "top" ? "top" : "bottom"]: 0,
+        height: `${pack.plate.heightShare * 100}%`,
+        backgroundColor: cssColor(pack.plate.tone),
+      }}
+    />
+  );
+}
+
+/**
+ * DÒNG TIÊU ĐỀ ở trang xem — bản sinh đôi của `server/headline.ts`.
+ *
+ * Cùng công thức, khác PHÉP ĐO: máy chủ đo bằng ImageMagick với đúng tệp `.ttf`,
+ * trình duyệt đo bằng canvas với đúng `@font-face` của tệp ấy. Hai phép đo, một
+ * công thức — `headlineRoom` và `headlineTopShare` khai ở `style-pack.ts` nên
+ * không có bản thứ hai để lệch.
+ *
+ * Đứng ở tầng KHUNG chứ không ở tầng cụm chữ: tiêu đề thuộc về cả dự án, một
+ * dòng cho cả video. Đặt nó trong `OverlayTextBlock` thì mỗi cụm phụ đề vẽ thêm
+ * một bản.
+ */
+export function Headline({
+  text,
+  pack,
+}: {
+  text: string | null | undefined;
+  /** Bộ dáng của dự án — CHƯA chốt vai; tiêu đề tự chọn vai của nó. */
+  pack: StylePack;
+}) {
+  if (!pack.title) return null;
+  const clean = trimHeadline(text ?? "");
+  if (!clean) return null;
+
+  const shown = withFontRole(pack, pack.title.font);
+  // Cùng lề với máy chủ: dải TRÊN, dải rộng nhất. Ở đây mọi số đo là PHẦN
+  // bề rộng khung nên bề rộng khung là 1.
+  const room = headlineRoom(pack.title, 1, availOf("top"));
+  const wanted = pack.title.sizeShare;
+  const width = widthOf(clean, wanted, shown);
+  // Chỉ thu khi buộc phải — cùng luật với máy chủ, kể cả chỗ `floor`.
+  const size = width > room ? Math.floor((wanted * room * 1e6) / width) / 1e6 : wanted;
+
+  return (
+    <div
+      data-headline=""
+      style={{
+        position: "absolute",
+        zIndex: 2,
+        left: 0,
+        right: 0,
+        top: `${headlineTopShare(pack, size) * 100}%`,
+        display: "flex",
+        justifyContent: "center",
+        // Cấm bẻ dòng: một dòng là cả định nghĩa của trục này. Thiếu nó thì tiêu
+        // đề dài tự xuống hàng và đọc ra như một cụm phụ đề khổ lớn.
+        whiteSpace: "nowrap",
+        fontSize: `${size * 100}cqw`,
+        // Hộp dòng cao đúng bằng cỡ chữ — `headlineTopShare` nhận vào con số đó.
+        lineHeight: 1,
+        fontFamily: shown.font.cssStack,
+        fontWeight: shown.font.cssWeight,
+        fontStyle: shown.font.italic ? "italic" : "normal",
+        color: cssColor(pack.title.tone),
+      }}
+    >
+      {clean}
     </div>
   );
 }
 
 export function OverlayRender({
   config,
-  pack = BASE_PACK,
+  pack = BASE_SHOWN,
   seconds,
   showSafeArea = true,
   background,
+  headline,
+  headlinePack = BASE_PACK,
 }: {
   config: OverlayConfig;
-  pack?: StylePack;
+  pack?: ShownPack;
   seconds: number;
   showSafeArea?: boolean;
   /** Video thật làm nền — xem chữ trên chất liệu thật, không trên ảnh tĩnh */
   background?: string | null;
+  /** Dòng tiêu đề của dự án. Bỏ trống là không vẽ gì. */
+  headline?: string | null;
+  /** Bộ dáng CHƯA chốt vai — tiêu đề tự chọn vai của nó qua `title.font`. */
+  headlinePack?: StylePack;
 }) {
   return (
     <OverlayFrame showSafeArea={showSafeArea} background={background}>
@@ -502,7 +782,10 @@ export function OverlayRender({
             />
           </div>
         ))}
-      <OverlayTextBlock config={config} pack={pack} seconds={seconds} />
+      <ContentRect pack={headlinePack}>
+        <Headline text={headline} pack={headlinePack} />
+        <OverlayTextBlock config={config} pack={pack} seconds={seconds} />
+      </ContentRect>
     </OverlayFrame>
   );
 }

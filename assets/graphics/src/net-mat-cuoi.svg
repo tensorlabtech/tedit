@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320">
+  <!-- Sinh bởi scripts/graphics/make-shapes.mjs — nét TRẮNG, màu áp lúc chạy -->
+  <circle cx="108" cy="118" r="13" fill="#FFFFFF"/>
+  <circle cx="212" cy="112" r="13" fill="#FFFFFF"/>
+  <path d="M84 186 Q160 252 238 178" fill="none" stroke="#FFFFFF" stroke-width="14" stroke-linecap="round"/>
+</svg>

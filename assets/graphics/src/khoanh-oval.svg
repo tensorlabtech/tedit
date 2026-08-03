@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="300" viewBox="0 0 900 300">
+  <!-- Sinh bởi scripts/graphics/make-shapes.mjs — nét TRẮNG, màu áp lúc chạy -->
+  <ellipse cx="450" cy="150" rx="436" ry="136" fill="none" stroke="#FFFFFF" stroke-width="14"/>
+</svg>

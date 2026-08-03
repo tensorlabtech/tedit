@@ -5,6 +5,7 @@ import { OUT_HEIGHT, OUT_WIDTH } from "../render";
 import {
   refreshCaptionsAfterWordEdit,
 } from "../caption-elements";
+import { contentRect, packForElement } from "../style-pack";
 import { BASE_PACK } from "../style-pack-catalog";
 import { readStylePack } from "../style-pack-store";
 import { layoutText, type Band } from "../text-layout";
@@ -22,6 +23,13 @@ app.post("/api/layout", async (request) => {
     content: string;
     band?: Band;
     projectId?: string;
+    /**
+     * Từ khoá của cụm — thứ chốt VAI CHỮ, tức chốt luôn cỡ chữ và chỗ bẻ dòng.
+     *
+     * Bỏ trống thì đo bằng vai phụ đề. Với bộ dáng dùng hai họ chữ thì bỏ
+     * trống là khung xem trước báo một con số mà bản in ra một con số khác.
+     */
+    keywords?: string[];
   };
   // Bộ dáng đổi cả cỡ chữ lẫn chỗ bẻ dòng, nên khung xem trước phải hỏi bằng bộ
   // dáng của ĐÚNG dự án đang mở. Thiếu `projectId` thì rơi về bộ gốc.
@@ -33,12 +41,16 @@ app.post("/api/layout", async (request) => {
   if (body.projectId) {
     assertOwnerIs(request.viewer!, "project", body.projectId);
   }
+  // Khung xem trước phải đo trong VÙNG HÌNH của chính bộ dáng ấy — không thì nó
+  // báo "vừa" cho một chỗ rộng hơn chỗ thật sự có.
+  const projectPack = body.projectId ? readStylePack(body.projectId) : BASE_PACK;
+  const rect = contentRect(projectPack, OUT_WIDTH, OUT_HEIGHT);
   const layout = await layoutText(
     body.content ?? "",
     body.band ?? "top",
-    OUT_WIDTH,
-    OUT_HEIGHT,
-    body.projectId ? readStylePack(body.projectId) : BASE_PACK,
+    rect.w,
+    rect.h,
+    packForElement(projectPack, null, body.keywords),
   );
   return {
     lines: layout.lines,

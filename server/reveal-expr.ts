@@ -1,4 +1,4 @@
-import type { StylePack } from "./style-pack";
+import type { ShownPack, StylePack } from "./style-pack";
 
 /**
  * Hiệu ứng HIỆN CHỮ cho bản in ra, viết bằng biểu thức thời gian của ffmpeg.
@@ -22,7 +22,7 @@ import type { StylePack } from "./style-pack";
  */
 
 /** Trễ của tiếng thứ `col` ở hàng thứ `row`. Khớp `unitDelay` của trang xem. */
-export function unitDelay(pack: StylePack, row: number, col: number) {
+export function unitDelay(pack: Pick<StylePack, "motion">, row: number, col: number) {
   const { baseDelay, rowDelay, colDelay } = pack.motion;
   return baseDelay + row * rowDelay + col * colDelay;
 }
@@ -48,7 +48,7 @@ function restExpr(startAt: number, enterSeconds: number) {
  * hai lớp đục với nhau, để riêng thì chữ nhạt gấp đôi ý muốn.
  */
 export function alphaExpr(
-  pack: StylePack,
+  pack: ShownPack,
   startAt: number,
   colorAlpha: number,
 ) {
@@ -67,7 +67,7 @@ export function alphaExpr(
  * nhận một chuỗi số cũng không tốn gì.
  */
 export function positionExpr(
-  pack: StylePack,
+  pack: ShownPack,
   options: {
     x: number;
     y: number;

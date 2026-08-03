@@ -47,6 +47,12 @@ export const PROJECT_ROOT = resolve(join(here, ".."));
 /** Font đóng gói theo repo — cùng tệp trên mọi máy, không mượn của hệ điều hành. */
 export const FONTS_DIR = join(PROJECT_ROOT, "assets", "fonts");
 
+/**
+ * Kho PNG đồ hoạ đã dựng. Đi theo repo y như font, vì `rsvg-convert` chỉ có
+ * lúc phát triển — xem `scripts/graphics/render-svg-to-png.mjs`.
+ */
+export const GRAPHICS_DIR = join(PROJECT_ROOT, "assets", "graphics", "png");
+
 export const fontFile = (name: string) => join(FONTS_DIR, name);
 
 /**

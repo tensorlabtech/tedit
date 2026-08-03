@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="1120" viewBox="0 0 820 1120">
+  <!-- Sinh bởi scripts/graphics/make-shapes.mjs — nét TRẮNG, màu áp lúc chạy -->
+  <path d="M0 1120 V410 A410 410 0 0 1 820 410 V1120 Z" fill="#FFFFFF"/>
+</svg>

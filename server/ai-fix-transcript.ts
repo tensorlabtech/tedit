@@ -1,4 +1,4 @@
-import { db } from "./db";
+import { db, newId } from "./db";
 import { ask, object } from "./llm";
 import { soundsAlike } from "./phonetic-distance";
 
@@ -32,7 +32,31 @@ const MAX_SHARE = 0.15;
  */
 const MAX_ROUNDS = 3;
 
-type Word = { id: string; text: string; start_sec: number; end_sec: number };
+/**
+ * Bản sửa được phép DÀI HƠN gốc nhiều nhất ngần này từ.
+ *
+ * Máy nghe gộp cả một cụm tiếng Anh thành MỘT từ tiếng Việt vô nghĩa — đo thật:
+ * "frontend dev" chép ra "Fanandef". Đó chính là ca mô-đun này sinh ra để sửa,
+ * mà luật cũ "không được nhiều từ hơn gốc" lại chặn đúng nó: một từ không bao
+ * giờ sửa được thành hai.
+ *
+ * Mốc thời gian cho từ mới chia theo SỐ CHỮ CÁI trong khoảng của cụm gốc. Không
+ * phải mốc thật, nhưng cụm gốc chỉ dài vài phần mười giây nên sai số nằm dưới
+ * ngưỡng thấy được, và phụ đề vẫn hiện đúng lúc người ta nói tới.
+ *
+ * Trần đặt ở hai: quá đó thì không còn là một cụm nghe nhầm nữa mà là mô hình
+ * đang viết thêm lời.
+ */
+const MAX_TACH = 2;
+
+type Word = {
+  id: string;
+  text: string;
+  start_sec: number;
+  end_sec: number;
+  sentence_id: string;
+  position: number;
+};
 
 type Proposal = {
   topic: string;
@@ -69,7 +93,9 @@ KHÔNG viết lại cho hay hơn, KHÔNG sửa ngữ pháp, KHÔNG rút gọn. C
 máy nghe nhầm.
 Tên riêng thì lấy ĐÚNG cách viết trong phần tự giới thiệu, đừng đoán theo cảm giác
 "tên này nghe hợp lý hơn".
-Chữ thay thế phải có SỐ TỪ BẰNG HOẶC ÍT HƠN đoạn gốc.`;
+Chữ thay thế được dài hơn đoạn gốc NHIỀU NHẤT 2 từ. Máy nghe hay gộp cả một cụm
+tiếng Anh thành một từ vô nghĩa, nên tách ra là đúng — nhưng tách xong phải vẫn
+là đúng cụm người ta đã nói, không thêm chữ cho câu xuôi tai.`;
 
 export async function fixTranscript(projectId: string): Promise<{
   fixed: number;
@@ -111,7 +137,7 @@ async function fixOnce(projectId: string): Promise<{
 }> {
   const words = db
     .prepare(
-      "SELECT id, text, start_sec, end_sec FROM words WHERE project_id=? ORDER BY start_sec",
+      "SELECT id, text, start_sec, end_sec, sentence_id, position FROM words WHERE project_id=? ORDER BY start_sec",
     )
     .all(projectId) as Word[];
   if (words.length < 20) return { fixed: 0, rejected: 0, topic: "" };
@@ -158,22 +184,28 @@ async function fixOnce(projectId: string): Promise<{
   const index = new Map(words.map((word, at) => [word.id, at]));
   // Từ nào đang là MÉP của một phần tử thì không được xoá: phần tử neo vào mã
   // từ, mất mép là phần tử mồ côi và biến khỏi bản dựng mà không ai báo.
+  const meps = db
+    .prepare("SELECT from_word_id, to_word_id FROM elements WHERE project_id=?")
+    .all(projectId) as Array<{
+    from_word_id: string | null;
+    to_word_id: string | null;
+  }>;
   const anchors = new Set(
-    (
-      db
-        .prepare(
-          "SELECT from_word_id, to_word_id FROM elements WHERE project_id=?",
-        )
-        .all(projectId) as Array<{
-        from_word_id: string | null;
-        to_word_id: string | null;
-      }>
-    ).flatMap((row) => [row.from_word_id, row.to_word_id].filter(Boolean)),
+    meps.flatMap((row) => [row.from_word_id, row.to_word_id].filter(Boolean)),
   );
+  // Riêng mép CUỐI: chỉ chỗ này mới chặn phép tách. Xem lý do ở nơi dùng.
+  const endAnchors = new Set(meps.map((row) => row.to_word_id).filter(Boolean));
 
   const setText = db.prepare("UPDATE words SET text=? WHERE id=?");
   const stretch = db.prepare("UPDATE words SET end_sec=? WHERE id=?");
   const drop = db.prepare("DELETE FROM words WHERE id=?");
+  const retime = db.prepare("UPDATE words SET start_sec=?, end_sec=? WHERE id=?");
+  const shift = db.prepare(
+    "UPDATE words SET position=position+? WHERE sentence_id=? AND position>?",
+  );
+  const insertWord = db.prepare(
+    "INSERT INTO words (id, project_id, sentence_id, position, text, start_sec, end_sec) VALUES (?,?,?,?,?,?,?)",
+  );
 
   let budget = Math.max(1, Math.floor(words.length * MAX_SHARE));
   let fixed = 0;
@@ -189,9 +221,7 @@ async function fixOnce(projectId: string): Promise<{
         continue;
       }
       const inside = words.slice(from, to + 1);
-      // Nhiều từ hơn gốc thì phải bịa ra mốc thời gian cho từ mới — không có
-      // căn cứ nào để bịa, nên từ chối.
-      if (next.length === 0 || next.length > inside.length) {
+      if (next.length === 0 || next.length > inside.length + MAX_TACH) {
         rejected += 1;
         continue;
       }
@@ -208,13 +238,62 @@ async function fixOnce(projectId: string): Promise<{
         rejected += 1;
         continue;
       }
+      /*
+       * Tách thì từ CUỐI của cụm gốc không được là mép CUỐI của phần tử nào.
+       *
+       * Từ mới chèn vào SAU từ cuối ấy. Phần tử nào dừng ở đó thì sau khi tách
+       * nó dừng ở "frontend" và bỏ rơi "dev" — phụ đề thiếu chữ mà không chỗ
+       * nào báo. Mép ĐẦU thì ngược lại, không sao: hàng đầu giữ nguyên mã, và
+       * phần chèn thêm nằm gọn bên trong khoảng của phần tử.
+       */
+      const themVao = next.length - inside.length;
+      if (themVao > 0 && endAnchors.has(inside.at(-1)!.id)) {
+        rejected += 1;
+        continue;
+      }
 
-      next.forEach((text, at) => setText.run(text, inside[at].id));
+      next.slice(0, inside.length).forEach((text, at) => setText.run(text, inside[at].id));
       // Gộp phần dư vào từ cuối còn lại: đoạn tiếng vẫn kéo dài bấy nhiêu, chỉ
       // là giờ nó thuộc về một từ thay vì hai.
       if (extras.length > 0) {
         stretch.run(extras.at(-1)!.end_sec, inside[next.length - 1].id);
         for (const word of extras) drop.run(word.id);
+      }
+      if (themVao > 0) {
+        /*
+         * Chia khoảng của CẢ cụm theo số chữ cái, không chia đều: "frontend"
+         * dài gấp đôi "dev" nên nó cũng chiếm chừng gấp đôi thời gian đọc.
+         */
+        const dau = inside[0].start_sec;
+        const cuoi = inside.at(-1)!.end_sec;
+        const tongChu = next.reduce((sum, text) => sum + text.length, 0);
+        let moc = dau;
+        const bien = next.map((text) => {
+          const tu = moc;
+          moc += ((cuoi - dau) * text.length) / tongChu;
+          return { text, start: tu, end: moc };
+        });
+        // Từ cuối lấy đúng mép gốc, không lấy mốc vừa cộng dồn: cộng dồn số
+        // thực để lại vài phần triệu giây lệch, mà mép này là chỗ phần tử kế
+        // tiếp nối vào.
+        bien.at(-1)!.end = cuoi;
+
+        inside.forEach((word, at) => retime.run(bien[at].start, bien[at].end, word.id));
+        // Dời chỗ cho từ mới TRƯỚC khi chèn, nếu không hai từ trùng số thứ tự
+        // trong câu và thứ tự đọc ra thành tuỳ bảng trả về.
+        const chot = inside.at(-1)!;
+        shift.run(themVao, chot.sentence_id, chot.position);
+        bien.slice(inside.length).forEach((phan, at) => {
+          insertWord.run(
+            newId("w"),
+            projectId,
+            chot.sentence_id,
+            chot.position + 1 + at,
+            phan.text,
+            phan.start,
+            phan.end,
+          );
+        });
       }
       budget -= 1;
       fixed += 1;

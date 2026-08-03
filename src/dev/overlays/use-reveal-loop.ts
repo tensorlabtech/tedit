@@ -78,7 +78,11 @@ export function useRevealLoop(active = true) {
 }
 
 /** Trễ của tiếng thứ `wordIndex` ở dòng thứ `lineIndex`. */
-export function unitDelay(pack: StylePack, lineIndex: number, wordIndex = 0) {
+export function unitDelay(
+  pack: Pick<StylePack, "motion">,
+  lineIndex: number,
+  wordIndex = 0,
+) {
   const { baseDelay, rowDelay, colDelay } = pack.motion;
   return baseDelay + lineIndex * rowDelay + wordIndex * colDelay;
 }
@@ -88,7 +92,7 @@ export function unitDelay(pack: StylePack, lineIndex: number, wordIndex = 0) {
  * chữ trượt theo trục khác nhau.
  */
 export function revealStyle(
-  pack: StylePack,
+  pack: Pick<StylePack, "motion">,
   seconds: number,
   lineIndex: number,
   scale: number,

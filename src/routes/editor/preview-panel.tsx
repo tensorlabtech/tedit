@@ -8,7 +8,11 @@ import {
   gradeStyle,
 } from "@/dev/overlays/grade-filter";
 import { revealCss, shapeBox, type BandId } from "@/dev/overlays/overlay-model";
-import { OverlayTextBlock } from "@/dev/overlays/overlay-render";
+import {
+  ContentRect,
+  Headline,
+  OverlayTextBlock,
+} from "@/dev/overlays/overlay-render";
 
 import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { Button } from "@/components/ui/button";
@@ -277,6 +281,13 @@ export function PreviewPanel({
             {/* Bộ lọc NẮN MÀU khai một lần cho cả khung. Nó chỉ là khai báo,
                 không chiếm chỗ trong bố cục. */}
             <GradeFilterDefs pack={projectPack} />
+            {/* VÙNG HÌNH bọc video, tư liệu chèn, tiêu đề và chữ — mọi thứ sẽ
+                có trong bản xuất. Nút phát và đồng hồ nằm NGOÀI: chúng là
+                giao diện của bàn dựng, không phải nội dung khung hình. */}
+            <ContentRect pack={projectPack}>
+            {/* Tiêu đề đứng ở tầng KHUNG, vẽ một lần — không đi theo từng cụm
+                phụ đề như `OverlayTextBlock`. */}
+            <Headline text={editor.headline} pack={projectPack} />
             {editor.projectId && editor.duration > 0 && (
               <video
                 ref={videoRef}
@@ -381,7 +392,7 @@ export function PreviewPanel({
                   // cụm tự đè. Thiếu dòng này thì khung xem vẽ bằng bộ gốc
                   // trong khi video xuất ra vẽ bằng bộ đã chọn — đúng lỗi "xem
                   // một đằng xuất một nẻo" mà cả hệ này chống.
-                  pack={packForElement(projectPack, element)}
+                  pack={packForElement(projectPack, element, element.keywords)}
                   // Đang CHỌN cụm này mà không phát: hiện chữ ĐỦ, không theo
                   // nhịp từng tiếng.
                   //
@@ -460,6 +471,8 @@ export function PreviewPanel({
                 </span>
               </div>
             )}
+
+            </ContentRect>
 
             {/* Nút phát và đồng hồ nằm ĐÈ lên đáy khung, không đứng dưới nó:
                 một hàng riêng bên ngoài lấy mất mấy chục điểm ảnh chiều cao, mà

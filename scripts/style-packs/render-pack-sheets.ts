@@ -13,13 +13,18 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { ffmpeg } from "../../server/media-tools";
-import { PROJECT_ROOT, resolvePackFont } from "../../server/paths";
+import { GRAPHICS_DIR, PROJECT_ROOT, resolvePackFont } from "../../server/paths";
 import { OUT_HEIGHT, OUT_WIDTH } from "../../server/render";
 import { alphaExpr, positionExpr, unitDelay } from "../../server/reveal-expr";
 import {
   boxBorderW,
+  contentRect,
+  frameFilter,
+  graphicsSteps,
   ffmpegColor,
+  plateFilter,
   type StylePack,
+  withFontRole,
 } from "../../server/style-pack";
 import { STYLE_PACKS } from "../../server/style-pack-catalog";
 import type { AlignId, Band, EmphasisId } from "../../server/style-pack";
@@ -102,7 +107,9 @@ const escape = (value: string) =>
     .replace(/%/g, "\\%");
 
 async function renderScene(pack: StylePack, scene: (typeof SCENES)[number]) {
-  const fontPath = resolvePackFont(pack.font.file);
+  // Bảng bày vai PHỤ ĐỀ: đây là dáng chiếm gần hết thời lượng video.
+  const shown = withFontRole(pack, "voice");
+  const fontPath = resolvePackFont(shown.font.file);
   // Áp luật CHIA CỤM của bộ dáng ngay tại đây.
   //
   // Trong mạch thật, việc chia cụm xảy ra ở `buildCaptionGroups` — tức TRƯỚC
@@ -112,25 +119,27 @@ async function renderScene(pack: StylePack, scene: (typeof SCENES)[number]) {
     .split(/\s+/)
     .slice(0, pack.grouping.maxWords)
     .join(" ");
-  const { words: placed } = await placeWords(
+  const rect = contentRect(pack, OUT_WIDTH, OUT_HEIGHT);
+  const { words: rawPlaced } = await placeWords(
     shownText,
     scene.keywords,
     scene.align ?? pack.defaults.align,
     scene.emphasis ?? pack.defaults.emphasis,
     scene.band,
-    OUT_WIDTH,
-    OUT_HEIGHT,
-    pack,
+    rect.w,
+    rect.h,
+    shown,
   );
+  const placed = rawPlaced.map((w) => ({ ...w, x: w.x + rect.x, y: w.y + rect.y }));
 
   const draws: string[] = [];
   const startsAt = placed.map((word) => unitDelay(pack, word.row, word.col));
   for (const [flat, word] of placed.entries()) {
     const startAt = startsAt[flat];
-    const spot = positionExpr(pack, {
+    const spot = positionExpr(shown, {
       x: word.x,
       y: word.y,
-      width: await textWidth(word.text, word.fontSize, pack),
+      width: await textWidth(word.text, word.fontSize, shown),
       fontSize: word.fontSize,
       scale: word.fontSize / OUT_WIDTH,
       startAt,
@@ -150,7 +159,7 @@ async function renderScene(pack: StylePack, scene: (typeof SCENES)[number]) {
       box;
     draws.push(
       `drawtext=${body}:` +
-        `fontcolor=${word.color}:alpha='${alphaExpr(pack, startAt, word.alpha)}'`,
+        `fontcolor=${word.color}:alpha='${alphaExpr(shown, startAt, word.alpha)}'`,
     );
     // Lớp TÔ SÁNG, vẽ đè — cùng cách `render.ts` làm. Không có nó thì bộ dáng
     // bật trục tô sáng ra ảnh y hệt bộ không bật, và cả tấm ảnh nói dối.
@@ -172,15 +181,44 @@ async function renderScene(pack: StylePack, scene: (typeof SCENES)[number]) {
     }
   }
 
+  // MẢNG MÀU trước lớp chữ — cùng thứ tự lớp với `render.ts`.
+  // `false`: bảng dựng một khung tĩnh nên phải là trạng thái ĐÃ YÊN của
+  // mảng màu, không phải nửa đường trượt vào.
+  const plate = plateFilter(pack, rect, false);
+  // Cùng thứ tự lớp với `render.ts`: khung → HÌNH DÁN → mảng màu.
+  //
+  // Hình dán tách khỏi chuỗi nối tiếp vì mỗi hình cần một luồng riêng rồi
+  // `overlay` vào. Bỏ nó thì bảng bày ra một dáng không tồn tại.
+  const before = frameFilter(pack, rect, OUT_WIDTH, OUT_HEIGHT);
+  const gfx = graphicsSteps(pack, GRAPHICS_DIR, OUT_WIDTH, OUT_HEIGHT, null, false, []);
+  const bits: string[] = [];
+  let bg = "[0:v]";
+  if (before) {
+    bits.push(`${bg}${before}[bg0]`);
+    bg = "[bg0]";
+  }
+  for (const [index, step] of gfx.entries()) {
+    bits.push(step.chain);
+    bits.push(`${bg}${step.label}overlay=0:0[bg${index + 1}]`);
+    bg = `[bg${index + 1}]`;
+  }
+  if (plate) {
+    bits.push(plate.chain);
+    bits.push(`${bg}${plate.label}overlay=${plate.x}:${plate.yExpr}[bgc]`);
+    bg = "[bgc]";
+  }
+  const prep = bits.length > 0 ? `${bits.join(";")};` : "";
+  const source = bg;
+
   const glow = pack.glow;
-  const chain = glow
+  const chain = prep + (glow
     ? `[1:v]${draws.join(",")}[txt];[txt]split[g][m];` +
       `[g]colorchannelmixer=rr=0:rg=0:rb=0:gr=0:gg=0:gb=0:br=0:bg=0:bb=0:aa=${glow.opacity},` +
       `scale=${OUT_WIDTH / 2}:${OUT_HEIGHT / 2},` +
       `boxblur=luma_radius=${glow.radiusPx / 2}:alpha_radius=${glow.radiusPx / 2},` +
       `scale=${OUT_WIDTH}:${OUT_HEIGHT}[glow];` +
-      `[0:v][glow]overlay=format=rgb[bg];[bg][m]overlay=format=rgb[out]`
-    : `[1:v]${draws.join(",")}[txt];[0:v][txt]overlay=format=rgb[out]`;
+      `${source}[glow]overlay=format=rgb[bg];[bg][m]overlay=format=rgb[out]`
+    : `[1:v]${draws.join(",")}[txt];${source}[txt]overlay=format=rgb[out]`);
 
   const target = join(outputDir, `${pack.id}-${scene.id}.png`);
   await ffmpeg([

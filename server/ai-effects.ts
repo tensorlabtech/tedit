@@ -30,8 +30,27 @@ import { readStylePack } from "./style-pack-store";
  * chỉ có mặt người nói).
  */
 const SECONDS_PER_EFFECT = 10;
+/**
+ * Cửa sổ PHÔ TRƯƠNG — dày hơn hẳn phần còn lại.
+ *
+ * Khớp `SHOWCASE_SECONDS` của `style-pack.ts`: viền quanh người và chuyển cảnh
+ * phải dồn về CÙNG một cửa sổ, không thì hai thứ đập lệch nhau và phần đầu vừa
+ * dày vừa lộn xộn.
+ */
+const SHOWCASE_SECONDS = 30;
 /** Hai hiệu ứng gần nhau quá thì đọc ra là giật, không phải nhịp. */
 const MIN_GAP_SECONDS = 2.5;
+/**
+ * `junctionShare` của bộ THAM CHIẾU — mốc để quy các bộ khác thành hệ số nhân.
+ *
+ * Bằng đúng số của bộ `Mộc`, bộ không có trục riêng nào và là chuẩn so sánh của
+ * cả kho. Nhờ vậy `Mộc` giữ nguyên nhịp mà người dùng đặt, còn các bộ khác lệch
+ * đi quanh nó: 0,25 thành một nửa, 0,8 thành gấp rưỡi.
+ *
+ * Sửa số này là dịch nhịp của CẢ MƯỜI bộ cùng lúc — nó là gốc toạ độ, không
+ * phải một tham số chỉnh cho đẹp.
+ */
+const NHIP_GOC = 0.5;
 
 type Proposal = {
   picks: Array<{ index: number; kind: string }>;
@@ -175,17 +194,27 @@ export async function pickEffects(
   const nhip =
     settingsForProject(projectId).secondsPerEffect || SECONDS_PER_EFFECT;
   const pack = readStylePack(projectId);
-  // Bộ dáng quyết định BAO NHIÊU PHẦN TRĂM chỗ nối được đánh dấu.
-  //
-  // Đây mới là thứ tách "nhanh" khỏi "êm", chứ không phải danh sách kiểu: một bộ
-  // chỉ nhặt `flash` + `zoom-in` mà vẫn đặt 3 giây một cái thì không nhanh, nó
-  // chỉ chói. Kẹp bằng chính số chỗ nối có thật, và luôn để lại ít nhất một chỗ.
-  const wantByTime = Math.round(outputSeconds / nhip);
-  const wantByShare = Math.round(joins.length * pack.rhythm.junctionShare);
-  const want = Math.min(
-    joins.length,
-    Math.max(1, Math.min(wantByTime, wantByShare) || 1),
-  );
+  /*
+   * Bộ dáng NHÂN vào nhịp của người dùng, không tranh với nó.
+   *
+   * Hai con số này trả lời hai câu khác nhau: `nhip` là "bao lâu thì nên có một
+   * cú" — một nhịp độ; `junctionShare` là "bao nhiêu phần trăm chỗ nối đáng
+   * đánh dấu" — một tỉ lệ. Bản trước lấy `Math.min` của hai cái, tức là bên nào
+   * dè dặt hơn thì bên ấy thắng, nên bộ dáng chỉ làm ÊM được chứ không bao giờ
+   * làm NHANH được.
+   *
+   * Và với video bị cắt nhiều thì nó tắt hẳn: đo một bản 132 chỗ nối, `Nhịp`
+   * muốn 86 còn trần thời gian cho 14 — mọi bộ dáng đều ra đúng 14, tức trục
+   * này chưa từng có tác dụng. Sau khi sửa, cùng bản ấy: `Lặng` 7, `Mộc` 14,
+   * `Thép` 23.
+   *
+   * Tỉ lệ vẫn giữ vai trò TRẦN — "đừng đánh dấu quá ngần này phần trăm chỗ nối"
+   * là một câu vẫn đúng. Nó chỉ thôi làm trần cho cả nhịp độ.
+   */
+  const wantByTime = outputSeconds / nhip;
+  const paced = Math.round((wantByTime * pack.rhythm.junctionShare) / NHIP_GOC);
+  const ceiling = Math.round(joins.length * pack.rhythm.junctionShare);
+  const want = Math.min(joins.length, Math.max(1, Math.min(paced, ceiling) || 1));
 
   // Kho ưu tiên của bộ dáng — THIÊN LỆCH, không phải hàng rào: mô hình vẫn được
   // chọn kiểu ngoài kho khi mạch chuyển đòi thế, và bảng sửa vẫn bày đủ mọi kiểu.
@@ -199,8 +228,23 @@ export async function pickEffects(
     instructions: voiBoiCanh(INSTRUCTIONS, projectId),
     input:
       `Phim dài ${outputSeconds.toFixed(0)} giây. Nhắm khoảng ${want} chỗ.${biasLine}\n\n` +
+      `DỒN VỀ ĐẦU: đặt chừng một nửa số cú ấy vào ${SHOWCASE_SECONDS} giây đầu, ` +
+      `phần còn lại rải thưa dần về cuối. Mấy giây đầu là chỗ người xem quyết định ` +
+      `ở lại hay lướt, nên phải phô ra ngay; sau khi họ đã ở lại thì thứ họ theo là lời nói.\n\n` +
       joins
-        .map((join) => `${join.index}| …${join.before} ⟨CẮT⟩ ${join.after}…`)
+        /*
+         * Đánh dấu chỗ nối nào nằm trong cửa sổ phô trương.
+         *
+         * Bảo suông "dồn về đầu" thì không ăn — đo được: 1/7 cú rơi vào 30 giây
+         * đầu. Mô hình đọc một danh sách chỗ nối không có mốc thời gian nào, nên
+         * nó không biết chỗ nào là "đầu". Ghi dấu vào chính dòng dữ liệu thì nó
+         * thấy, và đó là chỗ duy nhất nó thấy được.
+         */
+        .map(
+          (join) =>
+            `${join.index}|${join.cut < SHOWCASE_SECONDS ? "[ĐẦU]" : ""} ` +
+            `…${join.before} ⟨CẮT⟩ ${join.after}…`,
+        )
         .join("\n"),
     schemaName: "effects",
     schema: SCHEMA,

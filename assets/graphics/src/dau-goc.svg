@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
+  <!-- Sinh bởi scripts/graphics/make-shapes.mjs — nét TRẮNG, màu áp lúc chạy -->
+  <path d="M 52 148 L 52 52 L 148 52" fill="none" stroke="#FFFFFF" stroke-width="9" stroke-linecap="square"/>
+  <path d="M 1028 148 L 1028 52 L 932 52" fill="none" stroke="#FFFFFF" stroke-width="9" stroke-linecap="square"/>
+  <path d="M 52 1772 L 52 1868 L 148 1868" fill="none" stroke="#FFFFFF" stroke-width="9" stroke-linecap="square"/>
+  <path d="M 1028 1772 L 1028 1868 L 932 1868" fill="none" stroke="#FFFFFF" stroke-width="9" stroke-linecap="square"/>
+</svg>

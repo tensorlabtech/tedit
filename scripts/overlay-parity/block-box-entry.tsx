@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { OverlayTextBlock } from "@/dev/overlays/overlay-render";
 import "@/index.css";
 
+import { packForElement } from "../../server/style-pack";
 import { STYLE_PACKS } from "../../server/style-pack-catalog";
 import { CASES } from "./parity-cases";
 
@@ -44,10 +45,11 @@ function Frame({
           align: pack.defaults.align,
           emphasis: pack.defaults.emphasis,
           band: item.band,
-          keywords: [],
+          keywords: item.keywords ?? [],
           insert: { kind: "none", shape: "wide" },
         }}
-        pack={pack}
+        // Cùng luật vai chữ với nửa máy chủ — đó CHÍNH LÀ thứ phép so này đo.
+        pack={packForElement(pack, null, item.keywords)}
         // Số lớn: mọi tiếng đã hiện xong nên khối đứng ở chỗ CUỐI CÙNG của nó.
         // Đo giữa lúc chữ đang chạy vào là đo một vị trí tạm.
         seconds={99}
@@ -97,7 +99,9 @@ window.__blockBoxes = () =>
       frame.getAttribute("data-frame") ?? "|"
     ).split("|");
     const outer = frame.getBoundingClientRect();
-    const block = frame.querySelector(":scope > div > div")!.getBoundingClientRect();
+    const block = // Trỏ thẳng vào khối CHỮ: từ khi có mảng màu, `:scope > div` cũng khớp
+    // cả thẻ mảng màu, và phép so sẽ đo nhầm một hình chữ nhật đặc.
+    frame.querySelector("[data-text-block] > div")!.getBoundingClientRect();
     return {
       pack,
       caseIndex: Number(caseIndex),
@@ -116,17 +120,19 @@ window.__blockBoxes = () =>
  * vô nghĩa, mà chúng vẫn trông hợp lý.
  */
 async function loadPackFonts() {
+  // CẢ HAI vai, không chỉ vai phụ đề: bộ dùng hai họ chữ mà chỉ nạp một thì
+  // các ca vai cảm xúc đo bằng font thay thế, và phép so báo lệch ở chỗ sản
+  // phẩm không sai gì.
   for (const pack of STYLE_PACKS) {
-    const family = pack.font.cssStack
-      .split(",")[0]
-      .replace(/['"]/g, "")
-      .trim();
-    const face = new FontFace(family, `url(/${pack.font.file})`, {
-      weight: String(pack.font.cssWeight),
-      style: pack.font.italic ? "italic" : "normal",
-    });
-    await face.load();
-    document.fonts.add(face);
+    for (const font of [pack.fonts.voice, pack.fonts.accent]) {
+      const family = font.cssStack.split(",")[0].replace(/['"]/g, "").trim();
+      const face = new FontFace(family, `url(/${font.file})`, {
+        weight: String(font.cssWeight),
+        style: font.italic ? "italic" : "normal",
+      });
+      await face.load();
+      document.fonts.add(face);
+    }
   }
   await document.fonts.ready;
 }

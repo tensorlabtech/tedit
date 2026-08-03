@@ -1,4 +1,8 @@
-import { describeStyleFeel, type StylePack } from "../../../server/style-pack";
+import {
+  describeStyleFeel,
+  withFontRole,
+  type StylePack,
+} from "../../../server/style-pack";
 import { GradeFilterDefs, gradeStyle } from "@/dev/overlays/grade-filter";
 import { OverlayTextBlock } from "@/dev/overlays/overlay-render";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -134,7 +138,15 @@ export function StylePreviewTile({
               keywords: shownWords.slice(-1),
               insert: { kind: "none", shape: "wide" },
             }}
-            pack={pack}
+            // Vai PHỤ ĐỀ, cố ý — dù ô có đánh dấu một tiếng từ khoá.
+            //
+            // Luật chọn vai là theo CỤM: cụm có từ khoá thì cả cụm vẽ bằng
+            // `accent`. Áp thẳng luật đó vào đây thì ô mẫu hiện TOÀN BỘ câu
+            // bằng họ chữ cảm xúc — mà họ đó chọn cho cụm ngắn cỡ lớn, nên ô
+            // mẫu bày ra đúng thứ người dùng sẽ KHÔNG nhận được cho phần lớn
+            // video. Từ khoá ở đây tồn tại để bày trục MÀU NHẤN, không phải
+            // để đổi font.
+            pack={withFontRole(pack, "voice")}
             wordStarts={wordStarts}
             span={span}
             seconds={restingAt}

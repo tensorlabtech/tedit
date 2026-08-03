@@ -27,6 +27,7 @@ import {
 import { MusicInspector } from "./inspector-music";
 import { EffectPane } from "./inspector-effect-pane";
 import { InsertShapeTiles } from "./inspector-insert-shape-tiles";
+import { InspectorHeadlinePane } from "./inspector-headline-pane";
 import { TextPane } from "./inspector-text-pane";
 import { demElement, type EditorState } from "./use-editor";
 
@@ -72,7 +73,11 @@ export function InspectorPanel({
         {/* Lời mách phải CO ĐƯỢC: khối `Empty` cao cố định ~120px, mà ở màn 720px
             thẻ này chỉ được chia 110px nên nó tràn ra 10px. Dùng chữ thường, căn
             giữa, cho phép cuộn — giống cách hàng soát làm khi hết chỗ. */}
-        <CardContent className="flex min-h-0 flex-1 items-center justify-center overflow-hidden">
+        <CardContent className="flex min-h-0 flex-1 flex-col justify-center gap-4 overflow-y-auto no-scrollbar">
+          {/* Thứ cấp DỰ ÁN sống ở đây: không chọn gì thì khung sửa nói về cả
+              video, không nói về một phần tử. Bộ dáng nào không khai `title`
+              thì pane này tự ẩn. */}
+          <InspectorHeadlinePane editor={editor} />
           {/* Dự án còn rỗng thì đừng bảo người ta bấm vào thứ chưa có. Lời mách
               phải nói bước TIẾP THEO của đúng trạng thái đang đứng. */}
           <p className="text-center text-sm text-muted-foreground">
