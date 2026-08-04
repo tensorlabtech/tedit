@@ -24,6 +24,7 @@ import {
 import { FlowSidebar } from "./flow-sidebar";
 import { MediaPickerDialog } from "@/components/media-picker-dialog";
 import { BRollList } from "./broll-list";
+import { SetupNotes } from "../upload/setup-notes";
 import { SceneStrip } from "./scene-strip";
 import { SequencePreviewCard } from "../upload/sequence-preview-card";
 import { useUpload } from "../upload/use-upload";
@@ -224,7 +225,23 @@ export function FlowPage() {
           Tên bước đã nằm ở sidebar và ở hàng tiêu đề trên cùng. Nhắc lần thứ ba
           không thêm gì.
         */}
-        <div className="grid min-h-0 gap-2">
+        <div className="grid min-h-0 gap-2 lg:grid-rows-[auto_minmax(0,1fr)]">
+          {/*
+            Dải cảnh báo của `/upload`, bê nguyên sang.
+
+            So hai trang cạnh nhau mới thấy tôi bỏ sót nó: trang cũ có một thẻ
+            "Tiếp theo" báo "Mạch đổi sau khi chép lời, lời không còn khớp" kèm
+            nút "Chép lại". Đúng cái vừa xảy ra ở bước 1 — đổi thứ tự cảnh sau
+            khi đã chép lời thì bản chép lệch hẳn, mà trang mới im lặng.
+
+            Đây là lỗ hổng CHỨC NĂNG, không phải thẩm mỹ: người dùng kéo một
+            cảnh rồi đi tiếp, và mọi thứ sau đó dựng trên một bản chép sai.
+          */}
+          <SetupNotes
+            upload={upload}
+            onOpen={setPreviewId}
+            onPick={() => openPicker("main")}
+          />
           <input
             ref={pickRef}
             type="file"
