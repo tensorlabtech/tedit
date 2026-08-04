@@ -62,6 +62,29 @@ for (const step of STEP_PLAN) {
   );
 }
 
+/*
+ * ══ MỌI CHẶNG PHẢI CÓ TÊN TIẾNG VIỆT ══
+ *
+ * `STEP_LABELS` nằm ở client còn `STEP_PLAN` ở máy chủ — hai danh sách, và
+ * thêm một chặng chỉ sửa một bên là chuyện xảy ra ngay lần đầu: ba chặng mới
+ * hiện lên màn chờ dưới dạng "soat-cat", "chot", "soat-chu".
+ *
+ * Không hỏng gì cả, nên không phép kiểm nào thấy — chỉ người dùng thấy.
+ */
+console.log("\nMọi chặng có tên tiếng Việt trên màn chờ");
+const PAGE = readFileSync(
+  join(import.meta.dirname, "..", "..", "src", "routes", "pipeline", "pipeline-page.tsx"),
+  "utf8",
+);
+const labels = PAGE.slice(PAGE.indexOf("const STEP_LABELS"), PAGE.indexOf("};", PAGE.indexOf("const STEP_LABELS")));
+for (const step of STEP_PLAN) {
+  check(
+    `"${step.key}" có tên hiện ra`,
+    new RegExp(`["']?${step.key}["']?\\s*:`).test(labels),
+    "chặng này sẽ hiện ra dưới dạng khoá thô trên màn chờ",
+  );
+}
+
 console.log("\nHai cổng chờ người mở đúng chỗ");
 const gates = STEP_PLAN.filter((s) =>
   SRC.includes(`setStep(projectId, "${s.key}", "cho-nguoi"`),

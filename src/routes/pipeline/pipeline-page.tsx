@@ -62,6 +62,11 @@ const STEP_LABELS: Record<string, string> = {
   captions: "Chia đoạn, sinh chữ",
   silence: "Cắt chỗ im lặng",
   cuts: "Tìm chỗ nên bỏ",
+  // Hai cổng chờ người và chặng chốt nằm giữa mạch. Tên nói rõ AI ĐANG LÀM GÌ:
+  // hai cái đầu là việc của người ("Bạn soát…"), cái giữa là việc của máy.
+  "soat-cat": "Bạn soát chỗ cắt",
+  chot: "Chốt lát cắt, chép lời lại",
+  "soat-chu": "Bạn soát chính tả",
   keywords: "Chọn từ khoá",
   describe: "Đọc tư liệu chèn",
   place: "Ghép tư liệu chèn",
