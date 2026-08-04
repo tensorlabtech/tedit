@@ -1736,8 +1736,20 @@ export async function burnElements(
     "-filter_complex",
     (() => {
       const value = filters.join(";");
-      if (process.env.TEDDIT_LOG_FILTER)
-        console.log("[bộ lọc]", value.slice(0, 600));
+      /*
+       * Ghi RA TỆP, không in 600 ký tự đầu.
+       *
+       * Đồ thị lọc của một lượt dựng thật dài hơn 20 KB, nên 600 ký tự đầu chỉ
+       * cho thấy nền trang — đúng phần không bao giờ hỏng. Mọi câu hỏi cần tới
+       * biến này ("tệp tư liệu nào được nạp", "màn nào có số hạng dồn") đều nằm
+       * ở giữa đồ thị.
+       */
+      if (process.env.TEDDIT_LOG_FILTER) {
+        const at = process.env.TEDDIT_LOG_FILTER;
+        const path = at === "1" ? join(outDir(projectId), "bo-loc.txt") : at;
+        writeFileSync(path, value, "utf8");
+        console.log(`[bộ lọc] ${value.length} ký tự → ${path}`);
+      }
       return value;
     })(),
     "-map",
