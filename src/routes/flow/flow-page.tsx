@@ -22,8 +22,9 @@ import {
   type FlowStepId,
 } from "../../../server/flow-steps";
 import { FlowSidebar } from "./flow-sidebar";
+import { MediaPickerDialog } from "@/components/media-picker-dialog";
 import { InsertMediaCard } from "../upload/insert-media-card";
-import { MainTimelineCard } from "../upload/main-timeline-card";
+import { SceneStrip } from "./scene-strip";
 import { SequencePreviewCard } from "../upload/sequence-preview-card";
 import { useUpload } from "../upload/use-upload";
 import { toast } from "@/components/ui/toast";
@@ -128,6 +129,7 @@ export function FlowPage() {
   const pickRef = useRef<HTMLInputElement>(null);
   const pickRole = useRef<MediaRole | undefined>(undefined);
   const [previewId, setPreviewId] = useState<string | null>(null);
+  const [libraryOpen, setLibraryOpen] = useState(false);
 
   const handleFiles = (incoming: File[], role?: MediaRole) => {
     const result = upload.addFiles(incoming, role);
@@ -240,17 +242,15 @@ export function FlowPage() {
           />
           {at === "main-footage" ? (
             /*
-             * Hai hàng đều có SÀN, và khung cha CUỘN được.
+             * Xem trước bên TRÁI, dải phim dựng ĐỨNG bên phải.
              *
-             * Bản trước dùng `minmax(0,1fr)_auto`: hàng dưới chỉ nhận phần
-             * thừa, mà ô xem trước có `min-h-60` nên chẳng còn thừa gì — danh
-             * sách rơi khỏi khung và bị cắt cụt. Chụp màn ba lần mới thấy tôi
-             * đang chữa sai chỗ.
+             * Đo bản trước: video dọc 250px nằm giữa khung 1176 — phí 79% bề
+             * ngang; sáu ô cảnh chiếm 370px trong thẻ 1176 — phí thêm 800px
+             * nữa, mà tên tệp lại bị cắt còn "mai…".
              *
-             * `upload-page` vốn đã đúng: mỗi hàng một sàn `minmax(...)`, kèm
-             * `overflow-y-auto` để phần vượt thì cuộn chứ không biến mất.
+             * Xếp hai cột thì cả hai chỗ phí ấy biến mất cùng lúc.
              */
-            <div className="grid gap-2 lg:min-h-0 lg:grid-rows-[minmax(18rem,1.15fr)_minmax(12rem,auto)] lg:overflow-y-auto">
+            <div className="grid gap-2 lg:min-h-0 lg:grid-cols-[1fr_18rem]">
               <SequencePreviewCard
                 pack={findStylePack(upload.stylePack)}
                 scenes={upload.mainFiles.filter((i) => i.status !== "error")}
@@ -261,19 +261,12 @@ export function FlowPage() {
                   void upload.saveDescription(id, description)
                 }
               />
-              <MainTimelineCard
+              <SceneStrip
                 files={upload.mainFiles}
-                sourceOf={upload.sourceOf}
+                selectedId={previewing?.id ?? null}
                 onOpen={setPreviewId}
                 onPick={() => openPicker("main")}
-                onDropFiles={(files) => handleFiles(files, "main")}
                 onRemove={handleRemove}
-                onMove={(id) => handleMove(id, "insert")}
-                onCancel={upload.cancelUpload}
-                onRetry={upload.retryUpload}
-                selectedId={previewing?.id ?? null}
-                onReorder={upload.moveFile}
-                onReorderTo={upload.moveFileTo}
               />
             </div>
           ) : at === "b-roll" ? (
@@ -282,7 +275,7 @@ export function FlowPage() {
               sourceOf={upload.sourceOf}
               onOpen={setPreviewId}
               onPick={() => openPicker("insert")}
-              onPickFromLibrary={() => openPicker("insert")}
+              onPickFromLibrary={() => setLibraryOpen(true)}
               onDropFiles={(files) => handleFiles(files, "insert")}
               onRemove={handleRemove}
               onMove={(id) => handleMove(id, "main")}
@@ -310,6 +303,20 @@ export function FlowPage() {
           )}
         </div>
       </div>
+
+      {/* Hộp kho tư liệu — nút "Từ kho" ở thẻ cảnh phụ mở cái này. Thiếu nó thì
+          nút ấy rơi về hộp chọn tệp của hệ điều hành, tức là sai hẳn việc. */}
+      <MediaPickerDialog
+        open={libraryOpen}
+        onOpenChange={setLibraryOpen}
+        title="Kho tư liệu"
+        projectItems={upload.insertItems}
+        alreadyIn={upload.libraryFilesInProject}
+        onTake={upload.addFromLibrary}
+        onUpload={(files) => handleFiles(files, "insert")}
+        defaultTab="library"
+        tabs={false}
+      />
     </div>
   );
 }
