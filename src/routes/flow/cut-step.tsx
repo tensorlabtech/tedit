@@ -287,8 +287,13 @@ export function CutStep({
               onZoom={zoom.zoomBy}
               onResize={(id, start, end) => void cut.resizeSpan(id, start, end)}
               onAddAt={async (at) => {
-                // Không thêm được thì NÓI. Im lặng ở đây đọc ra thành "nút hỏng".
-                if (!(await cut.addSpanAt(at))) {
+                const created = await cut.addSpanAt(at);
+                if (created) {
+                  // Thêm xong ACTIVE luôn: người dùng biết ngay đoạn nào vừa hiện
+                  // ra để còn kéo mép cho vừa.
+                  setSelectedId(created);
+                } else {
+                  // Không thêm được thì NÓI — im lặng đọc ra thành "nút hỏng".
                   toast.add({
                     title: "Chỗ này không thêm được",
                     description:

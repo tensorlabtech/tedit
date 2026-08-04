@@ -241,13 +241,13 @@ export function useCutEdit(projectId: string | undefined) {
    * cho vừa; hẹp quá mới chịu thua, và lúc ấy phải NÓI, không im.
    */
   const addSpanAt = useCallback(
-    async (at: number): Promise<boolean> => {
-      if (!projectId || total <= 0) return false;
+    async (at: number): Promise<string | null> => {
+      if (!projectId || total <= 0) return null;
       const before = spans.filter((span) => span.end <= at).at(-1);
       const after = spans.find((span) => span.start > at);
       const floor = before?.end ?? 0;
       const ceiling = after?.start ?? total;
-      if (at < floor || at >= ceiling) return false;
+      if (at < floor || at >= ceiling) return null;
 
       const quiet = silenceAround(at);
       let start: number;
@@ -259,11 +259,17 @@ export function useCutEdit(projectId: string | undefined) {
         start = Math.max(floor, Math.min(at - NEW_SPAN / 2, ceiling - MIN_NEW_SPAN));
         end = Math.min(start + NEW_SPAN, ceiling);
       }
-      if (end - start < MIN_NEW_SPAN) return false;
+      if (end - start < MIN_NEW_SPAN) return null;
 
       remember();
-      setSegments(await api.removeRange(projectId, start, end, true));
-      return true;
+      const rows = await api.removeRange(projectId, start, end, true);
+      setSegments(rows);
+      // Trả về đoạn VỪA TẠO để nơi gọi active luôn — đoạn phủ giữa khoảng vừa bỏ.
+      const mid = (start + end) / 2;
+      const created = rows.find(
+        (row) => row.removed === 1 && row.start_sec <= mid && row.end_sec >= mid,
+      );
+      return created?.id ?? null;
     },
     [projectId, total, spans, remember, silenceAround],
   );

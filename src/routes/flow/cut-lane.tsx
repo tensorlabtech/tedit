@@ -96,6 +96,15 @@ export function CutLane({
   const [dragSpan, setDragSpan] = useState<Span | null>(null);
   const dragRef = useRef<Span | null>(null);
   /**
+   * Chênh giữa con trỏ và mép LÚC BẮT ĐẦU kéo.
+   *
+   * Không có nó thì cú `trim` đầu tiên snap mép thẳng vào con trỏ — mà tay nắm
+   * rộng 14px, nên bắt ở đâu trong đó là mép nhảy tới đó: "kéo bị dật một phát".
+   * Giữ chênh này rồi trừ đi thì mép đi theo ĐỘ DỜI của con trỏ, khởi hành đúng
+   * chỗ nó đang đứng. `null` là chưa bắt đầu kéo mép nào.
+   */
+  const trimGrab = useRef<number | null>(null);
+  /**
    * Mốc của cú CHUỘT PHẢI vừa rồi — để "Thêm tại đây" thêm ĐÚNG chỗ bấm.
    *
    * Menu chuột phải không chuyền được toạ độ vào mục của nó, mà người dùng bấm ở
@@ -143,18 +152,24 @@ export function CutLane({
       toOutput: (at: number) => at,
       toSource: (at: number) => at,
       trim: (_kind, id, edge, at) => {
-        const base = spans.find((span) => span.id === id);
+        const base = dragRef.current?.id === id ? dragRef.current : spans.find((span) => span.id === id);
         if (!base) return;
+        // Lần đầu: ghi chênh giữa con trỏ và mép đang bắt, rồi trừ đi ở mọi lần
+        // sau — mép khởi hành đúng chỗ cũ và đi theo tay, không nhảy.
+        const edgeValue = edge === "start" ? base.start : base.end;
+        if (trimGrab.current === null) trimGrab.current = at - edgeValue;
+        const want = at - trimGrab.current;
         const next =
           edge === "start"
-            ? { ...base, start: clamp(at, 0, base.end - MIN_SPAN) }
-            : { ...base, end: clamp(at, base.start + MIN_SPAN, total) };
+            ? { ...base, start: clamp(want, 0, base.end - MIN_SPAN) }
+            : { ...base, end: clamp(want, base.start + MIN_SPAN, total) };
         dragRef.current = next;
         setDragSpan(next);
       },
       commitTrim: () => {
         const next = dragRef.current;
         dragRef.current = null;
+        trimGrab.current = null;
         setDragSpan(null);
         if (next) onResize(next.id, next.start, next.end);
       },
@@ -200,7 +215,7 @@ export function CutLane({
         <DropdownMenuContent align="center">
           <DropdownMenuItem onClick={() => onAddAt(time)}>
             <ScissorsIcon />
-            Thêm đoạn cắt tại vạch
+            Thêm đoạn cắt
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -228,9 +243,10 @@ export function CutLane({
           }
         >
           <div
-            // `gap-3`: chừa khoảng thở giữa thước và dải phim — sát nhau thì hai
-            // hàng đọc ra như một mảng.
-            className="relative grid gap-3 p-2"
+            // Thước TRÊN CÙNG, dải phim ÉP XUỐNG ĐÁY (`mt-auto`), khoảng dôi ra
+            // dồn vào GIỮA hai hàng — đó là dải trống để kéo tua, thay vì phí ở
+            // đáy. Dải cao bằng cột ba nút nên luôn có khoảng này.
+            className="relative flex h-full flex-col p-2"
             style={{
               transform: `translateX(${offset}px)`,
               width: laneWidth || "100%",
@@ -238,7 +254,7 @@ export function CutLane({
           >
           <TimelineRuler pxPerSecond={pxPerSecond} range={range} />
 
-          <div className="relative">
+          <div className="relative mt-auto">
             {/* Dải phim KHÔNG bắt chuột: mọi cú bấm rơi xuống viewport thành tua.
                 Lớp che cắt nằm TRÊN nó và bắt riêng. */}
             <div className="pointer-events-none">
@@ -274,7 +290,10 @@ export function CutLane({
                         width: Math.max(4, (span.end - span.start) * pxPerSecond),
                       }}
                       className={cn(
-                        "absolute inset-y-0 z-10 grid cursor-pointer place-items-center overflow-hidden rounded-lane border border-border bg-background/80 bg-[repeating-linear-gradient(45deg,color-mix(in_oklab,var(--color-foreground)_25%,transparent)_0_1px,transparent_1px_14px)] text-foreground",
+                        // Nền che NHẠT hơn (55%) để còn thấy khung hình bên dưới
+                        // — biết đang bỏ đúng cái gì. Sọc chéo vẫn đủ để đọc ra
+                        // "chỗ này sẽ mất" mà không cần nền đặc.
+                        "absolute inset-y-0 z-10 grid cursor-pointer place-items-center overflow-hidden rounded-lane border border-border bg-background/55 bg-[repeating-linear-gradient(45deg,color-mix(in_oklab,var(--color-foreground)_22%,transparent)_0_1px,transparent_1px_14px)] text-foreground",
                         "data-[state=here]:ring-2 data-[state=here]:ring-primary data-[state=here]:ring-inset",
                       )}
                     >
@@ -315,7 +334,7 @@ export function CutLane({
         <ContextMenuContent>
           <ContextMenuItem onClick={() => onAddAt(rmbTime.current)}>
             <PlusIcon />
-            Thêm đoạn cắt tại đây
+            Thêm đoạn cắt
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>

@@ -64,6 +64,16 @@ def restore(page, base):
     )
 
 
+def settle(page):
+    # Đợi mọi portal menu (backdrop inert) đóng hẳn — nếu không, cú bấm sau bị
+    # cái backdrop nuốt. Đây là chuyện của TEST, không phải sản phẩm.
+    page.keyboard.press("Escape")
+    for _ in range(20):
+        if page.evaluate("()=>document.querySelectorAll('[data-base-ui-inert]').length") == 0:
+            return
+        page.wait_for_timeout(50)
+
+
 def now(page):
     return page.evaluate("() => document.querySelector('video')?.currentTime ?? -1")
 
@@ -192,24 +202,32 @@ def main() -> int:
         before = spans(page)
         page.get_by_label("Thêm đoạn cắt tại vạch").click()
         page.wait_for_timeout(400)
-        item = page.get_by_role("menuitem", name="Thêm đoạn cắt tại vạch")
+        item = page.get_by_role("menuitem", name="Thêm đoạn cắt")
         check("nút + ra menu Thêm đoạn cắt", item.count() > 0)
         if item.count():
             item.click()
             page.wait_for_timeout(1500)
             check("nút + thêm được một khoảng ở vạch",
                   len(spans(page)) == len(before) + 1, f"{len(before)}→{len(spans(page))}")
+        settle(page)
         restore(page, base)
         page.wait_for_timeout(500)
 
         # ── Chuột phải CHỖ TRỐNG → thêm tại đúng chỗ bấm ──────────────────
-        gap = widest_gap(base)
+        # Tải lại cho state sạch: chuỗi thao tác trước để lại menu/zoom/chọn lửng
+        # lơ mà người thật không gặp, làm bước định vị chính xác này chập chờn.
+        page.reload(); page.wait_for_load_state("networkidle"); page.wait_for_timeout(3000)
+        box = page.locator("[data-cut-lane]").bounding_box()
+        cx, cy = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+        zoom_out_fully(page)  # thu nhỏ để scrub tới khe chắc chắn ở mọi mức phóng
+        gap = widest_gap(spans(page))
         if gap:
             scrub_to(page, cx, cy, gap)
             before = spans(page)
+            settle(page)
             page.mouse.click(cx, cy, button="right")
-            page.wait_for_timeout(400)
-            add = page.get_by_role("menuitem", name="Thêm đoạn cắt tại đây")
+            page.wait_for_timeout(500)
+            add = page.get_by_role("menuitem", name="Thêm đoạn cắt")
             check("chuột phải chỗ trống ra menu Thêm", add.count() > 0)
             if add.count():
                 add.click()
@@ -219,6 +237,7 @@ def main() -> int:
                 check("thêm đúng chỗ bấm (không phải chỗ khác)",
                       len(after) == len(before) + 1 and new and abs((new[0]["s"] + new[0]["e"]) / 2 - gap) < 1.5,
                       f'khe {gap:.1f}s · khoảng {new[0]["s"]:.1f}→{new[0]["e"]:.1f}' if new else "không thêm")
+            settle(page)
             restore(page, base)
             page.wait_for_timeout(500)
 
@@ -264,16 +283,17 @@ def main() -> int:
         page.wait_for_timeout(500)
 
         # ── PHÁT nhảy qua chỗ bỏ; NGHE THỬ thì không nhảy ─────────────────
+        page.reload(); page.wait_for_load_state("networkidle"); page.wait_for_timeout(3000)
         head = next((s for s in spans(page) if s["e"] - s["s"] > 1.2), None)
         if head:
             page.evaluate("(at) => { document.querySelector('video').currentTime = at; }",
                           max(0, head["s"] - 0.4))
             page.wait_for_timeout(400)
-            page.get_by_role("button", name="Phát bản đã cắt").click()
+            page.locator("body").press(" ")  # Space phát — chắc hơn nhắm nút nhỏ
             page.wait_for_timeout(1200)
             check("phát thì nhảy qua chỗ bỏ", now(page) >= head["e"] - 0.05,
                   f'dừng {now(page):.1f} · bỏ {head["s"]:.1f}→{head["e"]:.1f}')
-            page.get_by_role("button", name="Tạm dừng").click()
+            page.locator("body").press(" ")  # dừng
             page.wait_for_timeout(300)
         listen = page.get_by_label("Nghe chỗ này").first
         if listen.count():
