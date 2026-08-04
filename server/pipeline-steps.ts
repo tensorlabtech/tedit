@@ -8,7 +8,15 @@ import { db } from "./db";
  * bao giờ đè mất việc người dùng đã làm; đó là cả lý do chọn chạy tuần tự.
  */
 
-export type StepStatus = "waiting" | "running" | "done" | "failed";
+/**
+ * `cho-nguoi` — máy dừng lại, đến lượt người.
+ *
+ * Khác `waiting` ở chỗ: `waiting` là "chưa tới lượt, máy sẽ chạy", còn
+ * `cho-nguoi` là "máy xong phần nó, không ai đánh thức nữa cho tới khi người
+ * dùng bấm tiếp". Hai thứ nhìn giống nhau trên bảng mà xử lý ngược nhau —
+ * `failStrandedSteps` phải đánh hỏng cái đầu và chừa cái sau.
+ */
+export type StepStatus = "waiting" | "running" | "done" | "failed" | "cho-nguoi";
 
 export type Step = {
   key: string;
@@ -46,21 +54,48 @@ type StepRow = {
 export const STEP_PLAN: Array<{ key: string; required: boolean }> = [
   { key: "prepare", required: true },
   // Đọc tư liệu chèn TRƯỚC khi nghe: nó không cần bản chép lời, mà từ vựng nó
-  // sinh ra ("hợp đồng", "bàn phím cơ"…) lại mồi được cho máy nghe. Đặt sau thì
-  // phí mất cả một kênh chống nghe nhầm.
+  // sinh ra ("hợp đồng", "bàn phím cơ"…) lại mồi được cho máy nghe.
   { key: "describe", required: false },
   { key: "transcribe", required: true },
-  // Sửa lời chạy TRƯỚC khi sinh chữ: sinh xong rồi mới sửa thì phải dựng lại
-  // toàn bộ chữ, mà chữ lúc ấy có thể đã mang lựa chọn của người dùng.
-  { key: "fix", required: false },
-  { key: "captions", required: true },
-  // Từ đây là các lượt AI. Tất cả `required: false` — chúng LÀM ĐẸP chứ không
-  // dựng nên sản phẩm, nên hỏng thì bỏ qua rồi đi tiếp. Giam người dùng lại vì
-  // một lượt chọn từ khoá gãy là đổi một video xem được lấy không gì cả.
-  // Cắt lặng KHÔNG cần mô hình nên không bao giờ hỏng vì hết khoá hay mạng —
-  // nhưng vẫn để `required: false` cho cùng luật với các chặng làm đẹp khác.
+  /*
+   * ── CẮT LÊN TRƯỚC CHỮ ──
+   *
+   * Trước đây `silence` và `cuts` chạy SAU `captions`, tức chữ dựng xong rồi
+   * mới quyết cắt ở đâu — nên mọi cụm chữ phải neo lại và mọi mốc phải quy đổi
+   * giữa trục gốc và trục đã cắt. Đếm được 29 chỗ quy đổi như thế, và ba lỗi
+   * lệch nặng nhất đều từ chúng.
+   *
+   * Hai chặng này KHÔNG đụng bảng `elements` (soát: 0 chỗ), nên chuyển lên
+   * trước được, và chuyển lên rồi thì `chot` xoá sạch được hai trục.
+   */
   { key: "silence", required: false },
   { key: "cuts", required: false },
+  /*
+   * ── CỔNG MỘT: SOÁT CẮT ──
+   *
+   * Máy dừng ở đây. Người dùng xem máy định bỏ những đoạn nào, sửa, rồi bấm
+   * tiếp. Đây là thứ người không chuyên khó chịu nhất khi máy làm sai, và cũng
+   * là thứ nằm THƯỢNG NGUỒN của mọi quyết định sau — một vết cắt sai làm lệch
+   * cả lịch màn, chỗ đặt tư liệu, lẫn từ nhấn.
+   */
+  { key: "soat-cat", required: true },
+  // Nướng lát cắt vào tệp rồi chép lời LẠI trên tệp mới. Từ đây chỉ còn MỘT
+  // trục thời gian.
+  { key: "chot", required: true },
+  // Sửa chỗ nghe nhầm chạy SAU khi chốt: chép lại là ghi đè sạch bảng từ, nên
+  // sửa trước là ném đi công sửa.
+  { key: "fix", required: false },
+  /*
+   * ── CỔNG HAI: SOÁT CHÍNH TẢ ──
+   *
+   * Trên bản chép LẦN HAI — bản duy nhất sống tiếp. `words.confidence` chỉ ra
+   * chỗ máy không chắc, nên chỉ cần hỏi mấy chỗ ấy chứ không bắt soát cả bài.
+   */
+  { key: "soat-chu", required: true },
+  { key: "captions", required: true },
+  // Từ đây là các lượt làm đẹp. Tất cả `required: false` — hỏng thì bỏ qua rồi
+  // đi tiếp, vì giam người dùng lại vì một lượt chọn từ khoá gãy là đổi một
+  // video xem được lấy không gì cả.
   { key: "keywords", required: false },
   { key: "place", required: false },
   { key: "effects", required: false },
@@ -134,6 +169,9 @@ export function failRunningStep(projectId: string, message: string) {
 export function failStrandedSteps(projectId: string, message: string) {
   db.prepare(
     `UPDATE steps SET status='failed', error=?, updated_at=?
+     -- 'cho-nguoi' KHÔNG nằm trong danh sách này, và đó là cả cơ chế chừa
+     -- cổng ra: cổng là chặng không ai đánh thức được trừ người dùng, quét
+     -- nó thành 'failed' là giết mạch ngay tại chỗ.
      WHERE project_id=? AND status IN ('waiting','running')`,
   ).run(message, Date.now(), projectId);
 }
@@ -169,6 +207,8 @@ export function pipelineState(projectId: string): {
   settled: boolean;
   blocked: boolean;
   skipped: number;
+  /** Cổng nào đang mở chờ người, `null` là không cổng nào. */
+  awaiting: string | null;
 } {
   const steps = listSteps(projectId);
   const blocked = steps.some(
@@ -181,6 +221,9 @@ export function pipelineState(projectId: string): {
     steps,
     settled,
     blocked,
+    // Cổng mở thì `settled` tự sai — nó đòi mọi chặng `done` hoặc `failed`, mà
+    // `cho-nguoi` không phải cái nào. Nên bàn dựng vẫn đóng, đúng ý.
+    awaiting: steps.find((step) => step.status === "cho-nguoi")?.key ?? null,
     skipped: steps.filter((step) => step.status === "failed" && !step.required)
       .length,
   };

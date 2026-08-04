@@ -3,6 +3,7 @@ import { autoGradeOn, gradeImage, measureImage } from "./auto-grade";
 import { join } from "node:path";
 
 import { buildEnvelope, readEnvelope } from "./audio-envelope";
+import { commitCut } from "./commit-cut";
 import { db, newId } from "./db";
 import { filterHallucinations } from "./hallucination-filter";
 import { makeFilmstrip, probe } from "./media-tools";
@@ -278,20 +279,6 @@ export async function runTranscribe(projectId: string) {
    *
    * Neo lại theo THỜI GIAN vì đó là thứ duy nhất sống sót qua lần chép lại.
    */
-  const anchors = db
-    .prepare(
-      `SELECT e.id, e.kind, wf.start_sec AS from_sec, wt.end_sec AS to_sec
-       FROM elements e
-       JOIN words wf ON wf.id = e.from_word_id
-       JOIN words wt ON wt.id = e.to_word_id
-       WHERE e.project_id = ?`,
-    )
-    .all(projectId) as Array<{
-    id: string;
-    kind: string;
-    from_sec: number;
-    to_sec: number;
-  }>;
 
   const clearOld = db.transaction(() => {
     db.prepare("DELETE FROM words WHERE project_id=?").run(projectId);
@@ -338,6 +325,55 @@ export async function runTranscribe(projectId: string) {
     .get(projectId) as { n: number };
   setStep(projectId, "transcribe", "done", {
     result: `${wordCount.n} từ · ${segments.length} câu`,
+  });
+
+
+  /*
+   * ── CỔNG MỘT: SOÁT CẮT ──
+   *
+   * Chạy hai lượt cắt rồi DỪNG. Người dùng xem máy định bỏ đoạn nào, sửa, rồi
+   * bấm tiếp — `resumeAfterCutReview` đi tiếp từ đây.
+   *
+   * Dừng ở đúng chỗ này vì lát cắt nằm THƯỢNG NGUỒN mọi thứ sau: một vết cắt
+   * sai làm lệch cả lịch màn, chỗ đặt tư liệu, lẫn từ nhấn. Chốt trước rồi mới
+   * dựng chữ thì không có gì phải làm lại.
+   */
+  await runAiWaves(projectId, ["silence", "cuts"]);
+
+  /*
+   * Đánh dấu dự án dùng được NGAY, không đợi tới cuối mạch.
+   *
+   * Cổng này mở ra là người dùng ngồi đọc vài phút — `base.mp4` dựng nền trong
+   * lúc ấy, và `commitCut` ở pha hai cần nó.
+   */
+  db.prepare("UPDATE projects SET status='ready' WHERE id=?").run(projectId);
+  setStep(projectId, "soat-cat", "cho-nguoi", {
+    result: "đang chờ bạn soát chỗ cắt",
+  });
+  setJob(
+    projectId, "transcribe", "done", 100,
+    segments.length === 0
+      ? "Không nghe được lời nào — video này không có tiếng nói"
+      : `Chép được ${segments.length} câu` +
+          (dropped.length > 0 ? ` · bỏ ${dropped.length} câu máy bịa` : "") +
+          " · mời soát chỗ cắt",
+  );
+}
+
+/**
+ * ── PHA HAI ── chốt lát cắt, chép lời lại, sửa chỗ nghe nhầm.
+ *
+ * Gọi khi người dùng đã soát xong chỗ cắt. Từ sau `chot` thì phim chỉ còn MỘT
+ * trục thời gian — không còn gì phải quy đổi.
+ */
+export async function resumeAfterCutReview(projectId: string) {
+  markStepRunning(projectId, "chot");
+  const baseInfo = await probe(join(workDir(projectId), "base.mp4"));
+  const cut = await commitCut(projectId, baseInfo.duration);
+  setStep(projectId, "chot", "done", {
+    result: cut.skipped
+      ? "không có gì để cắt"
+      : `bỏ ${cut.removedSeconds.toFixed(1)}s · chép lại ${cut.wordsAfter} từ`,
   });
 
   /**
@@ -389,6 +425,34 @@ export async function runTranscribe(projectId: string) {
   } else {
     setStep(projectId, "fix", "failed", { error: "chưa có khoá mô hình" });
   }
+
+
+  setStep(projectId, "soat-chu", "cho-nguoi", {
+    result: "đang chờ bạn soát chính tả",
+  });
+}
+
+/**
+ * ── PHA BA ── dựng chữ rồi chạy nốt các lượt làm đẹp.
+ *
+ * Gọi khi người dùng đã soát xong chính tả. Từ đây bản chép không đổi nữa nên
+ * mọi thứ dựng trên nó đều an toàn.
+ */
+export async function resumeAfterTextReview(projectId: string) {
+  const preview = join(workDir(projectId), "preview.mp4");
+  /*
+   * `anchors` RỖNG ở luồng mới.
+   *
+   * Nó vốn để neo lại phần tử sau khi bảng từ bị thay. Mà `commitCut` đã xoá
+   * sạch phần tử ở pha hai, nên tới đây không còn gì để neo. Giữ biến để khối
+   * dưới không phải viết lại.
+   */
+  const anchors: Array<{
+    id: string;
+    kind: string;
+    from_sec: number;
+    to_sec: number;
+  }> = [];
 
   // Dựng đoạn ngay sau khi có lời: bàn dựng mở ra là đã thấy khối rõ ràng.
   markStepRunning(projectId, "captions");
@@ -550,42 +614,12 @@ export async function runTranscribe(projectId: string) {
     result: `${built.segments} đoạn · ${built.texts} chữ`,
   });
 
-  await runAiSteps(projectId);
 
-  /*
-   * Bản CHẤT LƯỢNG xếp thành một việc riêng, chạy sau — không ai đợi nó.
-   *
-   * Bàn dựng mở được rồi: có bản xem trước, có dải ảnh, có bản chép lời. Thứ duy
-   * nhất còn thiếu là `base.mp4`, mà nó chỉ dùng lúc XUẤT VIDEO (`cutRanges`).
-   * Người dùng đọc và sửa lời mất vài phút — thừa thời gian cho nó dựng xong.
-   *
-   * Việc xếp hàng ở `jobs-routes.ts` chứ không gọi `enqueue` ngay tại đây:
-   * `job-queue.ts` đã nhập `setJob` từ tệp này, nhập ngược lại là một vòng tròn.
-   *
-   * Đi qua hàng đợi chứ không thả chạy song song: máy chỉ có hai lõi và
-   * `TEDDIT_MAX_JOBS=1` — thả một ffmpeg chạy ngoài hàng đợi là phá đúng cái luật
-   * giữ cho máy khỏi nhận hai việc nặng một lúc.
-   *
-   * Hỏng thì KHÔNG chặn gì cả — lượt xuất tự dựng lại (`ensureMaster`).
-   */
-
-  db.prepare("UPDATE projects SET status='ready' WHERE id=?").run(projectId);
-  setJob(
-    projectId,
-    "transcribe",
-    "done",
-    100,
-    // Không nghe ra chữ nào thì NÓI THẲNG, đừng báo "chép được 0 câu" như một
-    // con số bình thường: người dùng vừa đợi vài phút, họ phải biết ngay là
-    // video này không có tiếng nói chứ không phải máy hỏng.
-    segments.length === 0
-      ? "Không nghe được lời nào — video này không có tiếng nói"
-      : `Chép được ${segments.length} câu` +
-          (dropped.length > 0 ? ` · bỏ ${dropped.length} câu máy bịa` : "") +
-          (reanchored > 0 ? ` · neo lại ${reanchored} phần tử` : "") +
-          (refreshed > 0 ? ` · làm mới ${refreshed} cụm chữ` : ""),
-  );
+  await runAiWaves(projectId, ["keywords", "place", "effects", "music"]);
+  failStrandedSteps(projectId, "chặng này không chạy được ở lượt vừa rồi");
+  setJob(projectId, "transcribe", "done", 100, "Xong — mời vào bàn dựng");
 }
+
 
 /**
  * Các khoảng còn giữ lại = TOÀN BỘ video trừ đi những câu đã gạch.
@@ -1311,31 +1345,35 @@ function markStepRunning(projectId: string, key: string) {
   setJob(projectId, "transcribe", "running", at[0], at[1]);
 }
 
-async function runAiSteps(projectId: string) {
-  for (const stage of aiStages(projectId)) {
-    await Promise.all(stage.map((job) => runOne(projectId, job)));
+/**
+ * Chạy một nhóm chặng làm đẹp theo TÊN.
+ *
+ * Trước đây là `runAiSteps` chạy hết một lượt, vì cả mạch đi thẳng từ đầu tới
+ * cuối. Nay mạch có hai cổng chờ người nên mỗi pha chỉ chạy phần của nó, và
+ * phần ấy phải gọi được bằng tên.
+ *
+ * Bốn chặng cuối chạy SONG SONG vì chúng đọc cùng bảng từ mà không ghi đè nhau;
+ * `silence` và `cuts` thì tuần tự — chúng cùng quyết định bỏ đoạn nào, chạy
+ * song song là hai bên tranh nhau cắt một quãng.
+ */
+const SONG_SONG = new Set(["keywords", "place", "effects", "music"]);
+
+async function runAiWaves(projectId: string, keys: readonly string[]) {
+  const byKey = new Map(aiJobs(projectId).map((job) => [job.key, job]));
+  for (const key of keys.filter((k) => !SONG_SONG.has(k))) {
+    const job = byKey.get(key);
+    if (job) await runOne(projectId, job);
   }
-  // Chặng nào có tên trong bảng mà không có phép chạy thì tới đây vẫn đang chờ, và
-  // từ giây này trở đi không còn ai đánh thức nó nữa.
-  failStrandedSteps(projectId, "chặng này không chạy được ở lượt vừa rồi");
+  const together = keys
+    .filter((k) => SONG_SONG.has(k))
+    .map((k) => byKey.get(k))
+    .filter((job): job is AiJob => !!job);
+  if (together.length > 0) {
+    await Promise.all(together.map((job) => runOne(projectId, job)));
+  }
 }
 
 type AiJob = { key: string; run: () => Promise<string> };
-
-/**
- * Các chặng AI, gom theo lượt chạy: chặng sau chờ chặng trước, trong cùng một
- * chặng thì chạy song song.
- */
-function aiStages(projectId: string): AiJob[][] {
-  const byKey = new Map(aiJobs(projectId).map((job) => [job.key, job]));
-  const take = (...keys: string[]) =>
-    keys.map((key) => byKey.get(key)).filter((job): job is AiJob => !!job);
-  return [
-    take("silence"),
-    take("cuts"),
-    take("keywords", "place", "effects", "music"),
-  ];
-}
 
 /** Danh sách chặng AI theo đúng thứ tự chạy, kèm phép chạy của từng chặng. */
 function aiJobs(projectId: string): AiJob[] {
@@ -1458,10 +1496,15 @@ async function runOne(
  * liệu mà mọi chặng sau dựa vào, nên chạy lẻ chúng là để lại một bàn nửa cũ nửa mới.
  */
 export async function retryAiStep(projectId: string, key: string) {
-  const stages = aiStages(projectId);
-  const from = stages.findIndex((stage) =>
-    stage.some((job) => job.key === key),
-  );
+  /*
+   * Thứ tự chạy lại phải KHỚP thứ tự lượt đầu.
+   *
+   * Trước đây đọc từ `aiStages()` — một danh sách gom sẵn. Nay mạch chia ba pha
+   * nên danh sách ấy không còn; lấy thẳng từ `STEP_PLAN` là nguồn duy nhất, và
+   * như thế thêm một chặng chỉ phải khai một chỗ.
+   */
+  const order = aiJobs(projectId).map((job) => job.key);
+  const from = order.indexOf(key);
   if (from < 0) return false;
 
   const status = new Map(
@@ -1472,15 +1515,12 @@ export async function retryAiStep(projectId: string, key: string) {
     ).map((row) => [row.key, row.status]),
   );
 
-  // Đi theo đúng chặng như lượt dựng đầu: chặng sau chờ chặng trước, trong cùng
-  // một chặng thì chạy song song. Chạy lại phải giống hệt lần đầu, không phải một
-  // bản sao gần giống.
-  for (const stage of stages.slice(from)) {
-    const todo = stage.filter(
-      (job) => job.key === key || status.get(job.key) !== "done",
-    );
-    await Promise.all(todo.map((job) => runOne(projectId, job)));
-  }
+  // Chạy lại chính chặng được bấm và mọi chặng SAU nó chưa xong: chặng sau đọc
+  // kết quả chặng trước, để nguyên là để lại một bàn nửa cũ nửa mới.
+  const todo = order
+    .slice(from)
+    .filter((k) => k === key || status.get(k) !== "done");
+  await runAiWaves(projectId, todo);
   failStrandedSteps(projectId, "chặng này không chạy được ở lượt vừa rồi");
   return true;
 }

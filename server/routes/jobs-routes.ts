@@ -6,6 +6,8 @@ import {
 } from "../job-queue";
 import {
   retryAiStep,
+  resumeAfterCutReview,
+  resumeAfterTextReview,
   runExport,
   runMaster,
   runTranscribe,
@@ -13,6 +15,37 @@ import {
 } from "../pipeline";
 
 export default async function jobsRoutes(app: FastifyInstance) {
+/*
+ * ── HAI CỔNG CHỜ NGƯỜI ──
+ *
+ * Mạch dựng không còn đi thẳng một hơi. Nó dừng hai lần: sau khi đề xuất chỗ
+ * cắt, và sau khi sửa chỗ nghe nhầm. Người dùng bấm tiếp thì pha sau chạy.
+ *
+ * Dừng ở đúng hai chỗ ấy vì chúng là hai thứ người không chuyên khó chịu nhất
+ * khi máy làm sai — cắt hụt/cắt thừa, và sai chính tả — mà cả hai lại nằm
+ * THƯỢNG NGUỒN: sửa chúng sau khi đã dựng chữ là phải dựng lại từ đầu.
+ *
+ * Qua hàng đợi như mọi việc nặng khác: `chot` phải cắt lại tệp và chép lời một
+ * lượt nữa, không nhẹ hơn lượt dựng đầu là bao.
+ */
+app.post("/api/projects/:id/soat-cat/xong", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const outcome = enqueue(id, "transcribe", () => resumeAfterCutReview(id));
+  if (outcome === "duplicate") {
+    return reply.code(409).send({ error: "Đang chạy rồi" });
+  }
+  return reply.send({ ok: true, queued: outcome === "queued" });
+});
+
+app.post("/api/projects/:id/soat-chu/xong", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const outcome = enqueue(id, "transcribe", () => resumeAfterTextReview(id));
+  if (outcome === "duplicate") {
+    return reply.code(409).send({ error: "Đang chạy rồi" });
+  }
+  return reply.send({ ok: true, queued: outcome === "queued" });
+});
+
 app.post("/api/projects/:id/transcribe", async (request, reply) => {
   const { id } = request.params as { id: string };
   const outcome = enqueue(id, "transcribe", async () => {
