@@ -77,7 +77,7 @@ export const FLOW_STEPS: FlowStep[] = [
    * chênh 2,4 lần, và đó chính là ngưỡng quyết quãng lặng nào bị cắt. Chọn sau
    * khi đã soát cắt là làm phần vừa soát thành vô nghĩa.
    */
-  { id: "brief", label: "Đề bài & phong cách", group: "intake", actor: "user", blocks: false },
+  { id: "brief", label: "Đề bài", group: "intake", actor: "user", blocks: false },
   { id: "preparing", label: "Chuẩn bị", group: "intake", actor: "machine", blocks: true },
   { id: "cut", label: "Cắt đoạn lỗi", group: "review", actor: "user", blocks: true },
   { id: "proofread", label: "Soát lời", group: "review", actor: "user", blocks: true },

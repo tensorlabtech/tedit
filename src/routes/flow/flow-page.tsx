@@ -23,7 +23,7 @@ import {
 } from "../../../server/flow-steps";
 import { FlowSidebar } from "./flow-sidebar";
 import { MediaPickerDialog } from "@/components/media-picker-dialog";
-import { InsertMediaCard } from "../upload/insert-media-card";
+import { BRollList } from "./broll-list";
 import { SceneStrip } from "./scene-strip";
 import { SequencePreviewCard } from "../upload/sequence-preview-card";
 import { useUpload } from "../upload/use-upload";
@@ -150,10 +150,7 @@ export function FlowPage() {
       actionProps: { children: "Hoàn tác", onClick: restore },
     });
   };
-  const handleMove = (id: string, role: MediaRole) => {
-    const reason = upload.setRole(id, role);
-    if (reason) toast.add({ title: reason, type: "error" });
-  };
+
   const openPicker = (role?: MediaRole) => {
     pickRole.current = role;
     pickRef.current?.click();
@@ -250,7 +247,7 @@ export function FlowPage() {
              *
              * Xếp hai cột thì cả hai chỗ phí ấy biến mất cùng lúc.
              */
-            <div className="grid gap-2 lg:min-h-0 lg:grid-cols-[1fr_18rem]">
+            <div className="grid gap-2 lg:min-h-0 lg:grid-cols-[1fr_22rem]">
               <SequencePreviewCard
                 pack={findStylePack(upload.stylePack)}
                 scenes={upload.mainFiles.filter((i) => i.status !== "error")}
@@ -267,22 +264,35 @@ export function FlowPage() {
                 onOpen={setPreviewId}
                 onPick={() => openPicker("main")}
                 onRemove={handleRemove}
+                onReorderTo={upload.moveFileTo}
               />
             </div>
           ) : at === "b-roll" ? (
-            <InsertMediaCard
-              files={upload.insertFiles}
-              sourceOf={upload.sourceOf}
-              onOpen={setPreviewId}
-              onPick={() => openPicker("insert")}
-              onPickFromLibrary={() => setLibraryOpen(true)}
-              onDropFiles={(files) => handleFiles(files, "insert")}
-              onRemove={handleRemove}
-              onMove={(id) => handleMove(id, "main")}
-              onCancel={upload.cancelUpload}
-              onRetry={upload.retryUpload}
-              selectedId={previewing?.id ?? null}
-            />
+            /* Cùng hình dạng hai cột với bước cảnh chính — người dùng học một
+               bố cục, dùng cho cả hai bước. */
+            <div className="grid gap-2 lg:min-h-0 lg:grid-cols-[1fr_22rem]">
+              <SequencePreviewCard
+                pack={findStylePack(upload.stylePack)}
+                scenes={upload.insertFiles.filter((i) => i.status !== "error")}
+                file={previewing}
+                source={previewing ? upload.sourceOf(previewing.id) : undefined}
+                onSelect={setPreviewId}
+                onDescribe={(id, description) =>
+                  void upload.saveDescription(id, description)
+                }
+              />
+              <BRollList
+                files={upload.insertFiles}
+                selectedId={previewing?.id ?? null}
+                onOpen={setPreviewId}
+                onPick={() => openPicker("insert")}
+                onPickFromLibrary={() => setLibraryOpen(true)}
+                onRemove={handleRemove}
+                onDescribe={(id, description) =>
+                  void upload.saveDescription(id, description)
+                }
+              />
+            </div>
           ) : (
             <Card className="lg:min-h-0">
               <CardContent className="grid min-h-0 flex-1 place-items-center">

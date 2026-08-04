@@ -32,7 +32,6 @@ import {
  * là dạy bài trước khi có câu hỏi.
  */
 
-
 export function FlowSidebar({
   current,
   reached,
@@ -45,10 +44,8 @@ export function FlowSidebar({
    *
    * Tách khỏi `current` vì hai thứ khác nhau: bản đầu lấy `current` làm mốc,
    * nên vừa bấm về bước 1 là bước 2 thành "chưa tới" và không bấm lại được.
-   * Ảnh chụp mới thấy — người dùng lùi một bước rồi kẹt luôn ở đó.
    */
   reached: FlowStepId;
-  /** Bấm một bước đã qua. Bước chưa tới hoặc đã khoá thì không gọi. */
   onPick: (id: FlowStepId) => void;
 }) {
   const at = stepIndex(current);
@@ -56,47 +53,49 @@ export function FlowSidebar({
   const door = stepIndex(ONE_WAY_AFTER);
 
   return (
-    <div className="grid content-start gap-2 lg:min-h-0 lg:overflow-y-auto">
-      {FLOW_STEPS.map((step, index) => {
-        // Xong = máy đã đi qua. Đang đứng = cái đang xem.
-        const done = index < far;
-        const here = index === at;
-        // Bước sau cửa thì không về được bước trước cửa — xem `canGoBack`.
-        const locked = far > door && index <= door;
-        // Bấm được mọi bước máy ĐÃ TỚI, kể cả đi tới lại sau khi lùi.
-        const openable = index <= far && !locked && index !== at;
+    /*
+     * Bọc trong MỘT Card để cột trái phủ kín chiều cao.
+     *
+     * Trước đây tám thẻ rời nhau, hết thẻ thứ tám là 361px nền trơn — đo được
+     * ở 1440×900. `CLAUDE.md` dặn mọi thứ nằm trong một Card hoặc một thẻ trông
+     * cân bằng với Card.
+     */
+    <Card className="lg:min-h-0">
+      <CardContent className="grid content-start gap-1 overflow-y-auto">
+        {FLOW_STEPS.map((step, index) => {
+          const done = index < far;
+          const here = index === at;
+          const locked = far > door && index <= door;
+          // Bấm được mọi bước máy ĐÃ TỚI, kể cả đi tới lại sau khi lùi.
+          const openable = index <= far && !locked && index !== at;
 
-        return (
-          <Card
-            key={step.id}
-            data-state={here ? "here" : done ? "done" : "todo"}
-            onClick={() => openable && onPick(step.id)}
-            /*
-             * Dùng `ring` chứ không `border`: thẻ Card đã có `border` riêng và
-             * nó thắng, nên bước đang đứng không được tô gì cả — chụp màn mới
-             * thấy. `ring-inset` để vòng sáng không bị lưới ngoài cắt mất,
-             * đúng điều `CLAUDE.md` dặn về viền và ring.
-             */
-            className={
-              "data-[state=here]:ring-2 data-[state=here]:ring-primary data-[state=here]:ring-inset data-[state=todo]:opacity-45" +
-              (openable ? " cursor-pointer" : "")
-            }
-          >
-            <CardContent className="flex items-center gap-3">
-              <span className="text-muted-foreground tabular-nums">
+          return (
+            <div
+              key={step.id}
+              data-state={here ? "here" : done ? "done" : "todo"}
+              onClick={() => openable && onPick(step.id)}
+              className={
+                "flex items-center gap-3 rounded-lg border border-border px-3 py-2.5 data-[state=here]:ring-2 data-[state=here]:ring-primary data-[state=here]:ring-inset data-[state=todo]:opacity-45" +
+                (openable ? " cursor-pointer" : "")
+              }
+            >
+              <span className="text-muted-foreground w-3 shrink-0 tabular-nums text-xs">
                 {index + 1}
               </span>
-              <span className="flex-1">{step.label}</span>
-              {/* Ai đang làm — nhìn một cái là biết đợi hay tới lượt mình. */}
-              {done ? <CheckIcon /> : null}
-              {locked ? <LockIcon /> : null}
+              <span className="flex-1 text-sm">{step.label}</span>
+              {/* Dấu tích màu NHẤN: nó là tin vui duy nhất trên cột này, và
+                  màu xám thì nó chìm nghỉm giữa bảy dòng xám khác. */}
+              {done ? <CheckIcon className="text-primary size-4" /> : null}
+              {locked ? (
+                <LockIcon className="text-muted-foreground size-4" />
+              ) : null}
               {here && step.actor === "machine" ? (
                 <span className="text-muted-foreground text-xs">máy</span>
               ) : null}
-            </CardContent>
-          </Card>
-        );
-      })}
-    </div>
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
   );
 }
