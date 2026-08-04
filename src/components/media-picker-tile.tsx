@@ -33,11 +33,14 @@ export function MediaPickerTile({
   item,
   active,
   onSelect,
+  disabled = false,
   onUseNow,
 }: {
   item: PickerItem;
   active: boolean;
   onSelect: () => void;
+  /** Đã nằm trong dự án — bấm nữa chỉ đẻ ra bản sao. */
+  disabled?: boolean;
   /** Bấm đúp — làm luôn việc chính, khỏi đi thêm một vòng xuống nút ở chân */
   onUseNow?: () => void;
 }) {
@@ -47,10 +50,11 @@ export function MediaPickerTile({
         render={
           <button
             type="button"
+            disabled={disabled}
             onClick={onSelect}
             onDoubleClick={onUseNow}
             aria-pressed={active}
-            className="group/tile relative aspect-[9/16] w-full cursor-pointer overflow-hidden rounded-lg bg-muted text-left"
+            className="group/tile relative aspect-[9/16] w-full cursor-pointer overflow-hidden rounded-lg bg-muted text-left disabled:cursor-default disabled:opacity-45"
           />
         }
       >

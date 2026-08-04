@@ -183,18 +183,25 @@ export function MediaPickerDialog({
     setDangLam(true);
     try {
       const ids = await onTake(chonKho);
-      // Ở LẠI trong hộp, chuyển sang tab dự án: tệp vừa lấy về giờ nằm trong dự
-      // án, mà việc tiếp theo (chèn vào vạch) làm ở tab ấy. Đóng hộp đi là bắt
-      // người dùng mở lại và tự tìm lại tệp mình vừa lấy.
-      //
-      // Và CHỌN SẴN cái cuối: người ta vào kho là để dùng nó, không phải để nhìn
-      // nó nằm thêm một chỗ nữa.
-      if (Array.isArray(ids) && ids.length > 0)
-        setChonDuAn(ids[ids.length - 1]!);
+      /*
+       * Hộp KHÔNG có tab thì lấy xong là ĐÓNG.
+       *
+       * Ở lại rồi nhảy sang tab dự án chỉ đúng khi hộp có tab — lúc ấy việc
+       * tiếp theo (chèn vào vạch) làm ở tab kia. Với hộp mở từ nút "Từ kho"
+       * thì tab kia không tồn tại, nên người dùng ở lại nhìn đúng thứ vừa lấy
+       * nằm thêm một chỗ nữa, chẳng để làm gì.
+       */
       setChonKho([]);
-      setTab("project");
       setTim("");
       setLoc("all");
+      if (!tabs) {
+        onOpenChange(false);
+        return;
+      }
+      // Có tab thì ở lại và CHỌN SẴN cái cuối: người ta vào kho là để dùng nó.
+      if (Array.isArray(ids) && ids.length > 0)
+        setChonDuAn(ids[ids.length - 1]!);
+      setTab("project");
     } finally {
       setDangLam(false);
     }
@@ -291,6 +298,10 @@ export function MediaPickerDialog({
                         ? item.key === chonDuAn
                         : chonKho.includes(item.key)
                     }
+                    /* Đã nằm trong dự án thì không bấm được nữa: lấy lần hai
+                       chỉ đẻ ra một bản sao, mà dấu "đã có" ngay trên ô đã nói
+                       rõ vì sao nó không bấm được. */
+                    disabled={tab !== "project" && daCo.has(item.key)}
                     onSelect={() => {
                       if (tab === "project") setChonDuAn(item.key);
                       else
