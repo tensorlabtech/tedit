@@ -19,7 +19,9 @@
     "check:graphics": "tsx scripts/graphics/check-graphics.ts",
     "check:fonts": "python3 scripts/font-audit/check-glyph-coverage.py",
     "check:layout": "tsx scripts/layout-guard/check-layout.ts",
-    "check:all": "npm run typecheck && npm run lint && npm run check:fonts && npm run check:graphics && npm run check:ownership && npm run check:style-pack && npm run check:layout && npm run check:upload && npm run check:render",
+    "check:timing": "tsx scripts/timing-guard/check-timing.ts",
+    "check:slots": "tsx scripts/layout-guard/check-slots.ts",
+    "check:all": "npm run typecheck && npm run lint && npm run check:fonts && npm run check:graphics && npm run check:ownership && npm run check:style-pack && npm run check:layout && npm run check:timing && npm run check:slots && npm run check:upload && npm run check:render",
     "dev:all": "concurrently -n web,api -c cyan,magenta \"vite\" \"tsx watch server/main.ts\""
   },
   "dependencies": {
