@@ -207,12 +207,21 @@ export function EditorPage() {
   });
 
   /**
-   * Máy chưa buông tay thì đẩy về màn chờ.
+   * Máy ĐANG CHẠY thì đẩy về màn chờ — nhưng cổng chờ người thì mở bàn dựng.
    *
    * Cổng nằm ở CẢ HAI đầu: nút "Mở trình sửa" tắt là chưa đủ, vì mã dự án nằm
    * trên đường dẫn nên người dùng gõ thẳng hoặc mở lại thẻ cũ là vào được. Vào
-   * lúc này thì thấy ba cột rỗng, mà tệ hơn là sửa được — đúng cái tranh chấp
-   * mà lối chạy tuần tự sinh ra để tránh.
+   * lúc MÁY ĐANG GHI thì thấy ba cột rỗng, mà tệ hơn là sửa được — đúng cái
+   * tranh chấp mà lối chạy tuần tự sinh ra để tránh.
+   *
+   * Nhưng khi mạch DỪNG ở một cổng chờ người (`awaiting` = review-cut/review-text)
+   * thì máy đã buông tay — và soát chỗ cắt / soát chính tả CHÍNH LÀ việc phải làm
+   * ở bàn dựng (nhìn video, nghe tiếng, đọc lời trong ngữ cảnh). `settled` luôn
+   * sai khi cổng mở, nên nếu chỉ nhìn `settled` thì bàn dựng đá người dùng về
+   * `/pipeline`, mà nút "Soát chính tả" ngoài đó lại trỏ ngược vào đây — thành
+   * một vòng không lối ra, không bao giờ soát được. Cho qua khi có `awaiting`:
+   * nút góc phải lúc này là "Xong — chốt…", không phải "Xuất video", nên vẫn
+   * không lách được cổng.
    *
    * Dự án CŨ không có chặng nào (dựng xong từ trước khi có bảng này) nên
    * `steps.length === 0` phải cho qua, không thì chúng bị nhốt vĩnh viễn.
@@ -220,7 +229,7 @@ export function EditorPage() {
   const pipeline = editor.pipeline;
   useEffect(() => {
     if (!projectId || !pipeline) return;
-    if (pipeline.steps.length > 0 && !pipeline.settled) {
+    if (pipeline.steps.length > 0 && !pipeline.settled && !pipeline.awaiting) {
       navigate(`/pipeline/${projectId}`, { replace: true });
     }
   }, [projectId, pipeline, navigate]);
