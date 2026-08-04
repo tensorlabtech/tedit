@@ -1,4 +1,4 @@
-import { Fragment, useRef, useState } from "react";
+import { Fragment, useMemo, useRef, useState } from "react";
 import { CheckIcon, PauseIcon, PlayIcon } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -6,25 +6,25 @@ import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { toast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 
 import { useTextReview, type ReviewWord } from "./use-text-review";
 
 /**
- * BƯỚC SOÁT LỜI — bản chép bày ra, chấm dưới chỗ máy nghe không chắc.
+ * BƯỚC SOÁT LỜI — bản chép bày ra, sửa chính tả tại chỗ.
  *
- * ══ VÌ SAO KHÔNG MƯỢN BÀN DỰNG NỮA ══
+ * ══ MỌI CHỮ ĐỀU SỬA ĐƯỢC ══
  *
- * Trước đây bước này để trống và mời "Mở bàn dựng". Nhưng soát chính tả không
- * cần cả dòng thời gian, sáu lớp và một mê cung điều kiện của bàn dựng — nó chỉ
- * cần đọc bản chép và sửa vài từ. Một màn riêng thì gọn đúng việc, và người dùng
- * không rời khỏi mạch.
+ * Chấm dưới chỉ là GỢI Ý mời mắt tới chỗ máy tự nhận không chắc — nhưng máy tự
+ * tin vẫn sai ở đồng âm ("chuyện/chuyến"). Nên bấm chữ NÀO cũng mở được ô sửa,
+ * không riêng chữ gạch chân. Bấm là nghe lại đúng quãng của từ ấy luôn.
  *
- * ══ CHẤM DƯỚI, KHÔNG PHẢI DANH SÁCH ══
+ * ══ SỬA MỘT CHỖ, ÁP HẾT ══
  *
- * Chỗ ngờ nằm TRONG câu, nên chấm ngay dưới chữ thì đọc ra được ngữ cảnh — "nem
- * quốc" giữa câu nói về lập công ty phần mềm lộ ngay là "network". Bấm vào chữ
- * là nghe lại đúng đoạn ấy và sửa tại chỗ; sửa xong chấm dưới biến mất.
+ * Tên riêng / từ mượn sai thì sai đều: "network" chép nhầm "nem quốc" ở mấy chỗ.
+ * Nên ô sửa mời "Sửa cả N chỗ giống" — một thao tác thay cho N. Chỉ đổi chữ nên
+ * an toàn, và sửa nhầm thì có "Hoàn tác" ngay ở thông báo.
  */
 
 export function SoatLoiStep({
@@ -38,8 +38,19 @@ export function SoatLoiStep({
   const review = useTextReview(projectId);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(false);
-  /** Bộ đếm để dừng phát sau khi nghe hết đoạn của một từ. */
   const stopAt = useRef<number>(0);
+
+  /** Số chỗ trùng mỗi chữ (không phân biệt hoa–thường) — để mời "Sửa cả N chỗ". */
+  const counts = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const sentence of review.sentences) {
+      for (const word of sentence.words) {
+        const key = word.text.trim().toLowerCase();
+        map.set(key, (map.get(key) ?? 0) + 1);
+      }
+    }
+    return map;
+  }, [review.sentences]);
 
   /** Nghe lại đúng quãng của một từ — chừa một nhịp hai đầu cho đủ ngữ cảnh. */
   const hear = (start: number, end: number) => {
@@ -60,9 +71,26 @@ export function SoatLoiStep({
   const togglePlay = () => {
     const video = videoRef.current;
     if (!video) return;
-    stopAt.current = Number.POSITIVE_INFINITY; // phát tay thì không tự dừng
+    stopAt.current = Number.POSITIVE_INFINITY;
     if (video.paused) void video.play();
     else video.pause();
+  };
+
+  const undoToast = (title: string, revert: () => Promise<void>) =>
+    toast.add({
+      title,
+      timeout: 8000,
+      actionProps: { children: "Hoàn tác", onClick: () => void revert() },
+    });
+
+  const onFix = async (word: ReviewWord, text: string) => {
+    if (text.trim() === word.text.trim()) return review.confirm(word.id);
+    const undo = await review.fix(word.id, text);
+    undoToast(`Đã sửa “${word.text}” → “${text.trim()}”`, undo.revert);
+  };
+  const onFixAll = async (word: ReviewWord, text: string) => {
+    const { count, revert } = await review.fixAll(word.text, text);
+    undoToast(`Đã sửa ${count} chỗ thành “${text.trim()}”`, revert);
   };
 
   const done = !review.loading && review.unsure.length === 0;
@@ -84,12 +112,9 @@ export function SoatLoiStep({
           </CardAction>
         </CardHeader>
         <CardContent className="min-h-0 overflow-y-auto">
-          {/* Nhắc một dòng: đây là chấm dưới, bấm vào để nghe và sửa. Không có nó
-              thì người dùng không biết mấy chữ gạch chân là bấm được. */}
           <p className="text-muted-foreground mb-3 text-sm">
-            {done
-              ? "Không còn chữ nào đáng ngờ. Bấm “Chốt chính tả” để máy dựng nốt."
-              : "Chữ gạch chân là chỗ máy nghe không chắc — bấm để nghe lại và sửa."}
+            Bấm chữ bất kỳ để nghe lại và sửa · chữ gạch chân là chỗ máy nghe
+            không chắc.
           </p>
           <div className="space-y-3 text-lg leading-relaxed">
             {review.sentences.map((sentence) => (
@@ -97,16 +122,14 @@ export function SoatLoiStep({
                 {sentence.words.map((word, index) => (
                   <Fragment key={word.id}>
                     {index > 0 ? " " : null}
-                    {word.unsure ? (
-                      <UnsureWord
-                        word={word}
-                        onHear={() => hear(word.start, word.end)}
-                        onFix={(text) => void review.fix(word.id, text)}
-                        onConfirm={() => review.confirm(word.id)}
-                      />
-                    ) : (
-                      word.text
-                    )}
+                    <EditableWord
+                      word={word}
+                      count={counts.get(word.text.trim().toLowerCase()) ?? 1}
+                      onHear={() => hear(word.start, word.end)}
+                      onFix={(text) => void onFix(word, text)}
+                      onFixAll={(text) => void onFixAll(word, text)}
+                      onConfirm={() => void review.confirm(word.id)}
+                    />
                   </Fragment>
                 ))}
               </p>
@@ -138,7 +161,7 @@ export function SoatLoiStep({
                   {playing ? <PauseIcon /> : <PlayIcon />}
                 </Button>
                 <span className="text-xs text-white">
-                  Bấm một chữ gạch chân để nghe lại đúng chỗ đó
+                  Bấm một chữ để nghe lại đúng chỗ đó
                 </span>
               </div>
             </div>
@@ -154,28 +177,38 @@ export function SoatLoiStep({
 }
 
 /**
- * Một từ ĐÁNG NGỜ — gạch chân, bấm mở ô sửa ngay tại chỗ.
+ * Một từ trong bản chép — bấm mở ô sửa ngay tại chỗ, nghe lại đúng quãng của nó.
  *
- * Mở ra là nghe lại đúng quãng của nó luôn: soát chính tả mà không nghe thì chỉ
- * là đoán chữ, mà cái cần là "tai nghe ra gì".
+ * Chữ ngờ gạch chân để mời mắt; chữ thường chỉ sáng nền khi rê vào — đủ để biết
+ * bấm được mà không làm cả bản chép thành một hàng nút nhấp nháy.
  */
-function UnsureWord({
+function EditableWord({
   word,
+  count,
   onHear,
   onFix,
+  onFixAll,
   onConfirm,
 }: {
   word: ReviewWord;
+  /** Số chỗ trùng chữ này — >1 thì mời "Sửa cả N chỗ". */
+  count: number;
   onHear: () => void;
   onFix: (text: string) => void;
+  onFixAll: (text: string) => void;
   onConfirm: () => void;
 }) {
+  const [open, setOpen] = useState(false);
   const [text, setText] = useState(word.text);
+
+  const close = () => setOpen(false);
 
   return (
     <Popover
-      onOpenChange={(open) => {
-        if (open) {
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) {
           setText(word.text);
           onHear();
         }
@@ -186,8 +219,10 @@ function UnsureWord({
           <button
             type="button"
             className={cn(
-              "cursor-pointer rounded-sm underline decoration-primary decoration-dotted decoration-2 underline-offset-4",
-              "text-primary hover:bg-primary/10",
+              "cursor-pointer rounded-sm underline-offset-4",
+              word.unsure
+                ? "text-primary underline decoration-primary decoration-dotted decoration-2 hover:bg-primary/10"
+                : "hover:bg-muted",
             )}
           />
         }
@@ -195,27 +230,62 @@ function UnsureWord({
         {word.text}
       </PopoverTrigger>
       <PopoverContent align="center" side="top" className="grid w-64 gap-2">
-        <p className="text-muted-foreground text-xs">
-          Máy nghe không chắc chữ này
-        </p>
+        {word.unsure ? (
+          <p className="text-muted-foreground text-xs">
+            Máy nghe không chắc chữ này
+          </p>
+        ) : null}
         <Input
           value={text}
           autoFocus
           onChange={(event) => setText(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === "Enter") onFix(text);
+            if (event.key === "Enter") {
+              close();
+              onFix(text);
+            }
           }}
         />
         <div className="flex gap-1">
-          <Button size="sm" className="flex-1" onClick={() => onFix(text)}>
+          <Button
+            size="sm"
+            className="flex-1"
+            onClick={() => {
+              close();
+              onFix(text);
+            }}
+          >
             Sửa lại
           </Button>
-          {/* "Đúng rồi" giữ nguyên chữ, chỉ hạ cờ ngờ — máy nghe không sai. */}
-          <Button size="sm" variant="secondary" onClick={onConfirm}>
-            <CheckIcon />
-            Đúng rồi
-          </Button>
+          {/* "Đúng rồi" chỉ cho chữ ngờ — chữ máy đã chắc thì không cần xác nhận. */}
+          {word.unsure ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                close();
+                onConfirm();
+              }}
+            >
+              <CheckIcon />
+              Đúng rồi
+            </Button>
+          ) : null}
         </div>
+        {/* Sửa-tất-cả: chỉ hiện khi chữ này lặp — tên riêng/từ mượn sai đều. */}
+        {count > 1 ? (
+          <button
+            type="button"
+            className="border-primary/40 text-primary hover:bg-primary/10 cursor-pointer rounded-md border border-dashed px-2 py-1.5 text-left text-xs font-medium"
+            onClick={() => {
+              close();
+              onFixAll(text);
+            }}
+          >
+            Sửa cả <span className="tabular-nums">{count}</span> chỗ “{word.text}”
+            giống nhau
+          </button>
+        ) : null}
       </PopoverContent>
     </Popover>
   );

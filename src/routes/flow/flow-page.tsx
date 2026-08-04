@@ -95,6 +95,8 @@ type Snapshot = {
   words: CutWord[];
   /** Thống kê bản cắt cho nút chốt trên đầu trang. */
   cut: { count: number; seconds: number; kept: number };
+  /** Số chữ máy còn chưa chắc — nút "Chốt chính tả" nhắc nếu còn. */
+  unsureCount: number;
 };
 
 const TRONG: Snapshot = {
@@ -106,6 +108,7 @@ const TRONG: Snapshot = {
   steps: [],
   words: [],
   cut: { count: 0, seconds: 0, kept: 0 },
+  unsureCount: 0,
 };
 
 export function FlowPage() {
@@ -149,6 +152,9 @@ export function FlowPage() {
             start: row.start_sec,
             end: row.end_sec,
           })),
+          unsureCount: (data.words ?? []).filter(
+            (row) => (row.confidence ?? 1) < 0.6,
+          ).length,
         });
       } finally {
         if (alive) setLoading(false);
@@ -303,7 +309,10 @@ export function FlowPage() {
             ) : machineBusy ? null : at === "proofread" && projectId ? (
               // Cổng thứ hai — soát chính tả xong thì máy dựng nốt. Không phải
               // cửa một chiều (khác `cut`), nên một nút thẳng là đủ, không hỏi.
-              <FinishTextButton projectId={projectId} />
+              <FinishTextButton
+                projectId={projectId}
+                unsureCount={snap.unsureCount}
+              />
             ) : step.actor === "user" ? (
               <Button onClick={() => navigate(`/editor/${projectId}`)}>
                 Mở bàn dựng

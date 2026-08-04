@@ -7,17 +7,16 @@ import { api } from "@/lib/api";
  *
  * ══ SOÁT CÁI GÌ ══
  *
- * Máy nghe gán mỗi từ một ĐỘ TIN. Dưới ngưỡng thì nó tự nhận "chỗ này tôi không
- * chắc" — đó đúng là chỗ đáng người nhìn: tên riêng, từ mượn tiếng Anh, số liệu.
- * Màn này bày trọn bản chép, chấm dưới những từ ngờ, để người soát nhảy thẳng
- * tới chúng thay vì đọc lại từng chữ.
+ * Máy nghe gán mỗi từ một ĐỘ TIN; dưới ngưỡng thì nó tự nhận không chắc. Nhưng
+ * chỗ đáng ngờ chỉ là GỢI Ý mời mắt — máy tự tin vẫn sai ở đồng âm, nên MỌI chữ
+ * đều sửa được, không riêng chữ ngờ.
  *
- * ══ MỘT ĐƯỜNG GHI CHO CẢ SỬA LẪN XÁC NHẬN ══
+ * ══ MỘT ĐƯỜNG GHI CHO CẢ SỬA, XÁC NHẬN, VÀ SỬA-TẤT-CẢ ══
  *
- * `PATCH /api/words/:id` vừa đổi chữ vừa đặt `confidence=1`. Nên "sửa thành chữ
- * khác" và "chữ này đúng rồi" đi chung một cửa: cái đầu ghi chữ mới, cái sau ghi
- * lại đúng chữ cũ. Cả hai đều hạ cờ ngờ, và đó là thứ người soát muốn thấy —
- * chấm dưới biến mất.
+ * `PATCH /api/words/:id` vừa đổi chữ vừa đặt `confidence=1`. Nên mọi thao tác đi
+ * chung một phép `apply`: "sửa" ghi chữ mới cho một từ, "đúng rồi" ghi lại đúng
+ * chữ cũ, "sửa tất cả" ghi cùng một chữ cho mọi từ trùng. Cả ba đều hạ cờ ngờ.
+ * `apply` chụp lại chữ cũ nên trả về được một hàm HOÀN TÁC — sửa nhầm thì lùi.
  */
 
 /** Dưới mức này thì máy nghe KHÔNG chắc — cùng mốc 0,6 với bàn dựng. */
@@ -34,6 +33,11 @@ export type ReviewWord = {
 
 export type ReviewSentence = { id: string; start: number; words: ReviewWord[] };
 
+/** Một phép sửa, kèm đường lùi để nơi gọi mời "Hoàn tác". */
+export type Undo = { revert: () => Promise<void> };
+
+const norm = (text: string) => text.trim().toLowerCase();
+
 export function useTextReview(projectId: string | undefined) {
   const [sentences, setSentences] = useState<ReviewSentence[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,7 +49,6 @@ export function useTextReview(projectId: string | undefined) {
       try {
         const data = await api.getProject(projectId);
         if (!alive) return;
-        // Gom từ về câu của nó rồi xếp theo thời gian — bản chép đọc xuôi.
         const byId = new Map<string, ReviewWord[]>();
         for (const word of data.words) {
           const list = byId.get(word.sentence_id) ?? [];
@@ -80,37 +83,91 @@ export function useTextReview(projectId: string | undefined) {
   }, [projectId]);
 
   /**
-   * Ghi chữ mới VÀ hạ cờ ngờ — máy chủ đặt `confidence=1` cùng lượt. Cập nhật
-   * lạc quan để chấm dưới biến ngay, không đợi máy chủ trả về.
+   * Áp một tập đổi chữ: cập nhật lạc quan (chấm dưới biến ngay) + ghi máy chủ,
+   * và trả về hàm lùi về nguyên trạng. Máy chủ đặt `confidence=1` khi ghi, nên
+   * lùi thì trả cả chữ cũ lẫn cờ ngờ cũ ở bản địa (đủ cho một cú hoàn tác).
    */
-  const fix = useCallback(async (wordId: string, text: string) => {
-    const next = text.trim();
-    if (!next) return;
-    setSentences((prev) =>
-      prev.map((sentence) => ({
-        ...sentence,
-        words: sentence.words.map((word) =>
-          word.id === wordId ? { ...word, text: next, unsure: false } : word,
-        ),
-      })),
-    );
-    await api.setWordText(wordId, next);
-  }, []);
+  const apply = useCallback(
+    async (changes: Array<{ id: string; text: string }>): Promise<Undo> => {
+      const clean = changes
+        .map((change) => ({ id: change.id, text: change.text.trim() }))
+        .filter((change) => change.text.length > 0);
+      const before = new Map<string, { text: string; unsure: boolean }>();
 
-  /** "Nghe đúng rồi" — giữ nguyên chữ, chỉ hạ cờ ngờ (cùng đường ghi). */
+      const patch = (
+        rows: ReviewSentence[],
+        pick: (word: ReviewWord) => { text: string; unsure: boolean } | null,
+      ) =>
+        rows.map((sentence) => ({
+          ...sentence,
+          words: sentence.words.map((word) => {
+            const next = pick(word);
+            return next ? { ...word, ...next } : word;
+          }),
+        }));
+
+      setSentences((rows) =>
+        patch(rows, (word) => {
+          const change = clean.find((item) => item.id === word.id);
+          if (!change) return null;
+          before.set(word.id, { text: word.text, unsure: word.unsure });
+          return { text: change.text, unsure: false };
+        }),
+      );
+      await Promise.all(clean.map((change) => api.setWordText(change.id, change.text)));
+
+      return {
+        revert: async () => {
+          setSentences((rows) =>
+            patch(rows, (word) => before.get(word.id) ?? null),
+          );
+          await Promise.all(
+            [...before].map(([id, prev]) => api.setWordText(id, prev.text)),
+          );
+        },
+      };
+    },
+    [],
+  );
+
+  /** Sửa một từ. */
+  const fix = useCallback(
+    (wordId: string, text: string) => apply([{ id: wordId, text }]),
+    [apply],
+  );
+
+  /** "Đúng rồi" — giữ nguyên chữ, chỉ hạ cờ ngờ. */
   const confirm = useCallback(
-    (wordId: string) => {
+    (wordId: string): Promise<Undo> => {
       const word = sentences
         .flatMap((sentence) => sentence.words)
         .find((item) => item.id === wordId);
-      if (word) void fix(wordId, word.text);
+      return word ? apply([{ id: wordId, text: word.text }]) : Promise.resolve({ revert: async () => {} });
     },
-    [sentences, fix],
+    [sentences, apply],
+  );
+
+  /**
+   * Sửa TẤT CẢ chỗ trùng chữ (không phân biệt hoa–thường) trong dự án này. Tên
+   * riêng / từ mượn sai thì sai đều, nên sửa một lần áp hết là chỗ tiết kiệm nhất.
+   * Chỉ đổi chữ, không đụng cấu trúc — nên không có chuyện mồ côi phần tử.
+   */
+  const fixAll = useCallback(
+    async (fromText: string, toText: string): Promise<Undo & { count: number }> => {
+      const from = norm(fromText);
+      const ids = sentences
+        .flatMap((sentence) => sentence.words)
+        .filter((word) => norm(word.text) === from)
+        .map((word) => word.id);
+      const undo = await apply(ids.map((id) => ({ id, text: toText })));
+      return { ...undo, count: ids.length };
+    },
+    [sentences, apply],
   );
 
   const unsure = sentences
     .flatMap((sentence) => sentence.words)
     .filter((word) => word.unsure);
 
-  return { sentences, unsure, loading, fix, confirm };
+  return { sentences, unsure, loading, fix, fixAll, confirm };
 }
