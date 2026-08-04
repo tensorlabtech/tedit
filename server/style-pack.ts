@@ -358,6 +358,30 @@ export type StylePack = {
    */
   layouts: LayoutKindId[];
   /**
+   * MÁY QUAY DỒN VÀO — ô lớn dần trong lúc một màn chạy. `null` là đứng yên.
+   *
+   * ══ VÌ SAO LÀ LỰA CHỌN CHỨ KHÔNG PHẢI LUẬT ══
+   *
+   * Đo phép phóng trực tiếp trên kho mẫu: lấy hai khung cách nhau nửa giây, thử
+   * vài hệ số phóng, chọn hệ số làm hai khung khớp nhất. Đo chính phép phóng
+   * chứ không đo "hình đổi nhiều hay ít" — người nói cử động cũng làm hình đổi,
+   * mà đó không phải chuyển động cảnh.
+   *
+   *   core 10 %/giây · focus 10 · pulse 6 · ember 4 · volt 2 · rocket 0
+   *
+   * Nhưng con số quan trọng hơn là TẦN SUẤT: chỉ 1–3 trên 15–59 cặp khung có
+   * phóng. Máy quay dồn vào là thứ xảy ra ở vài chỗ, không phải nền chạy suốt —
+   * nên nó khai `share`, cùng lối với thiết bị nổi.
+   *
+   * `rocket` được 0 và vẫn là một bộ hoàn chỉnh. Đó là lý do trục này có `null`.
+   */
+  scenePush: {
+    /** Dồn bao nhiêu phần khung trong MỘT GIÂY. Dải đo được: 0,02–0,10. */
+    ratePerSecond: number;
+    /** Bao nhiêu phần các màn có chuyển động này. */
+    share: number;
+  } | null;
+  /**
    * VỆT QUÉT — một dải màu chạy ngang khung ở mỗi chỗ nối. `null` là không có.
    *
    * Trục duy nhất của bộ dáng chỉ tồn tại LÚC CHUYỂN CẢNH. Mọi trục khác — mảng

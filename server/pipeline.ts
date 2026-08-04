@@ -980,13 +980,19 @@ export async function runExport(projectId: string) {
   )
     .map((row) => mapToOutput(kept, row.at))
     .filter((at): at is number => at !== null);
-  const firstInsert = (
+  /*
+   * TẤT CẢ tư liệu chèn, theo thứ tự người dùng xếp.
+   *
+   * Bản trước lấy `LIMIT 1`, nên mọi lần chèn b-roll trong cả phim đều là cùng
+   * một ảnh — ba bố cục b-roll khác hình dạng mà nội dung bên trong y hệt nhau.
+   */
+  const insertPaths = (
     db
       .prepare(
-        "SELECT stored_path FROM media_files WHERE project_id=? AND role='insert' ORDER BY position LIMIT 1",
+        "SELECT stored_path FROM media_files WHERE project_id=? AND role='insert' ORDER BY position",
       )
-      .get(projectId) as { stored_path: string } | undefined
-  )?.stored_path ?? null;
+      .all(projectId) as Array<{ stored_path: string }>
+  ).map((row) => row.stored_path);
   // Mốc các cụm CÓ từ nhấn — bộ xếp lịch dùng để biết đoạn nào mang tin.
   const keywordMarks = (
     db
@@ -1005,9 +1011,13 @@ export async function runExport(projectId: string) {
           // Độ dài phim ĐÃ CẮT = tổng các khoảng còn giữ. Không đo lại bằng
           // `probe` vì tệp cắt chưa dựng xong ở điểm này.
           kept.reduce((sum, range) => sum + (range.end - range.start), 0),
-          { layouts: layoutPack.layouts, heroes: layoutHeroes(layoutPack) },
+          {
+            layouts: layoutPack.layouts,
+            heroes: layoutHeroes(layoutPack),
+            pushShare: layoutPack.scenePush?.share ?? 0,
+          },
           { phrases: phraseMarks, cuts: junctions.map((j) => j.start), keywords: keywordMarks },
-          firstInsert !== null,
+          insertPaths.length,
         )
       : [];
   /*
@@ -1052,7 +1062,7 @@ export async function runExport(projectId: string) {
     behindLine,
     behindBand,
     schedule,
-    firstInsert,
+    insertPaths,
     sourceAspect,
     subjectShift,
   );

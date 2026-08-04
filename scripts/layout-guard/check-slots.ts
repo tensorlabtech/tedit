@@ -24,10 +24,18 @@ import {
   findLayout,
   freeBand,
   slotPixels,
+  type LayoutKindId,
   type Slot,
 } from "../../server/layout-kinds";
 import { layoutPlan } from "../../server/layout-render";
 import type { ScheduledScene } from "../../server/timing";
+
+/** Bộ dáng tối thiểu cho phép kiểm — chỉ ba trục `layoutPlan` thật sự đọc. */
+const PACK = {
+  page: { tone: { color: "#000", alpha: 1 }, grid: null },
+  layouts: [] as LayoutKindId[],
+  scenePush: null,
+};
 
 const W = 1080;
 const H = 1920;
@@ -132,13 +140,13 @@ const scenes: ScheduledScene[] = [
   { start: 3.5, end: 7.0, layout: "toan-khung", hero: null },
 ];
 const withPage = layoutPlan(
-  { page: { tone: { color: "#000", alpha: 1 }, grid: null }, layouts: [] },
+  PACK,
   scenes,
   ["[a]", "[b]"],
   "/png",
   W,
   H,
-  null,
+  [],
   7,
   DOC,
   0,
@@ -182,8 +190,8 @@ check(
  * hạng nội suy tâm — ô nở tại chỗ từ nền trang trống.
  */
 const lone = layoutPlan(
-  { page: { tone: { color: "#000", alpha: 1 }, grid: null }, layouts: [] },
-  [scenes[0]], ["[a]"], "/png", W, H, null, 4, DOC, 0,
+  PACK,
+  [scenes[0]], ["[a]"], "/png", W, H, [], 4, DOC, 0,
 );
 check(
   "màn đầu phim nở tại chỗ, không lướt từ đâu cả",
@@ -198,12 +206,98 @@ check(
  * cảnh.
  */
 const noPage = layoutPlan(
-  { page: null, layouts: [] }, scenes, ["[a]", "[b]"], "/png", W, H, null, 7, DOC, 0,
+  { ...PACK, page: null }, scenes, ["[a]", "[b]"], "/png", W, H, [], 7, DOC, 0,
 );
 check(
   "không nền trang thì KHÔNG nở",
   !noPage.chains.join(";").includes("eval=frame"),
 );
+
+/*
+ * ══ MỖI LẦN CHÈN MỘT TƯ LIỆU KHÁC ══
+ *
+ * Bản trước đọc `LIMIT 1` từ CSDL nên cả phim dùng chung một ảnh. Dự án thử
+ * nghiệm có BỐN tệp, dùng đúng một — và vì bố cục vẫn đổi hình dạng đều đặn,
+ * lỗi này đọc ra là "b-roll hơi lặp" chứ không đọc ra là "hệ thống bỏ quên ba
+ * tệp".
+ */
+console.log("\nTư liệu chèn xoay vòng, không dùng mãi một tệp");
+const brollScenes: ScheduledScene[] = [
+  { start: 0, end: 3.5, layout: "hai-o", hero: "a", heroSeconds: 2.5, insert: 0 },
+  { start: 3.5, end: 7.0, layout: "hai-o", hero: null, insert: 1 },
+  { start: 7.0, end: 10.5, layout: "hai-o", hero: "b", heroSeconds: 2.5, insert: 2 },
+];
+const rotated = layoutPlan(
+  PACK,
+  brollScenes, ["[a]"], "/png", W, H,
+  ["/tu-lieu/mot.mp4", "/tu-lieu/hai.mp4", "/tu-lieu/ba.mp4"],
+  11, DOC, 0,
+);
+const graph = rotated.chains.join(";");
+for (const name of ["mot", "hai", "ba"]) {
+  check(`tệp "${name}" có trong chuỗi lọc`, graph.includes(`/tu-lieu/${name}.mp4`));
+}
+check(
+  "mỗi tệp một lớp phủ riêng, bật ở đúng màn của nó",
+  rotated.overlays.filter((o) => o.enable.split("+").length === 1).length >= 3,
+  rotated.overlays.map((o) => o.enable).join(" | ").slice(0, 140),
+);
+/*
+ * Thử phá: chỉ có MỘT tệp thì ba màn phải cùng dùng nó — chia dư quay vòng về
+ * 0. Không có phép này thì một lỗi chỉ số ngoài mảng sẽ ra ô trống lặng lẽ.
+ */
+const lonely = layoutPlan(
+  PACK,
+  brollScenes, ["[a]"], "/png", W, H, ["/tu-lieu/mot.mp4"], 11, DOC, 0,
+);
+check(
+  "một tệp thì cả ba màn vẫn có ô phụ",
+  lonely.chains.join(";").split("/tu-lieu/mot.mp4").length - 1 === 3,
+  `${lonely.chains.join(";").split("/tu-lieu/mot.mp4").length - 1} lớp`,
+);
+
+/*
+ * ══ MÁY QUAY DỒN VÀO ══
+ *
+ * Đo kho mẫu: core 10 %/giây · focus 10 · pulse 6 · ember 4 · volt 2 · rocket 0.
+ * Nhưng chỉ 1–3 trên 15–59 cặp khung có phóng — nên nó phải bật ở MỘT SỐ màn,
+ * không phải mọi màn. Dồn khắp nơi thì nó thôi là chuyển động và thành nền.
+ */
+console.log("\nMáy quay dồn vào: có, nhưng không ở mọi màn");
+const pushScenes: ScheduledScene[] = [
+  { start: 0, end: 4.0, layout: "toan-khung", hero: "a", heroSeconds: 2.5 },
+  { start: 4.0, end: 8.0, layout: "toan-khung", hero: null, push: true },
+  { start: 8.0, end: 12.0, layout: "toan-khung", hero: "b", heroSeconds: 2.5 },
+];
+const pushed = layoutPlan(
+  { ...PACK, scenePush: { ratePerSecond: 0.06, share: 0.3 } },
+  pushScenes, ["[a]"], "/png", W, H, [], 12, DOC, 0,
+);
+const pchain = pushed.chains.join(";");
+check("có số hạng dồn khi bộ dáng khai", pchain.includes("min(0.12"), pchain.slice(-120));
+check(
+  "chỉ màn CÓ cờ mới dồn",
+  (pchain.match(/min\(0\.12/g) ?? []).length === 2, // một cho khổ, một cho chiều cao
+  `${(pchain.match(/min\(0\.12/g) ?? []).length} số hạng`,
+);
+const noPush = layoutPlan(
+  { ...PACK, scenePush: null }, pushScenes, ["[a]"], "/png", W, H, [], 12, DOC, 0,
+);
+check(
+  "bộ dáng không khai thì KHÔNG có số hạng dồn",
+  !noPush.chains.join(";").includes("min(0.12"),
+);
+/*
+ * Trần 12%: dồn 6%/giây suốt một màn 15 giây là 90%, tức mất gần nửa khung —
+ * không mẫu nào làm thế. Chặn ở tầng biểu thức chứ không ở tầng xếp lịch, vì
+ * độ dài màn do luật thời gian quyết chứ không do trục này.
+ */
+const longPush = layoutPlan(
+  { ...PACK, scenePush: { ratePerSecond: 0.06, share: 1 } },
+  [{ start: 0, end: 15.0, layout: "toan-khung", hero: null, push: true }],
+  ["[a]"], "/png", W, H, [], 15, DOC, 0,
+);
+check("màn dài vẫn bị chặn ở trần", longPush.chains.join(";").includes("min(0.12"));
 
 console.log("\nPhép kiểm BẮT được lỗi (thử phá)");
 const broken: Array<[string, Slot, boolean]> = [

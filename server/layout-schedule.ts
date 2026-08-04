@@ -39,6 +39,8 @@ export type SceneWish = {
   layouts: LayoutKindId[];
   /** Thiết bị nổi bộ dáng có, xoay vòng qua các màn nổi. */
   heroes: string[];
+  /** Bao nhiêu phần các màn có máy quay dồn vào. `0` là bộ không có trục này. */
+  pushShare?: number;
 };
 
 /**
@@ -133,8 +135,18 @@ export function scheduleScenes(
     /** Mốc các cụm CÓ từ nhấn — dùng để đo đoạn nào mang tin. */
     keywords?: readonly number[];
   },
-  hasInserts: boolean,
+  /**
+   * Có bao nhiêu tư liệu chèn. `0` là chưa có — họ bố cục hai ô biến mất.
+   *
+   * SỐ LƯỢNG chứ không phải cờ đúng/sai: mỗi lần chèn phải lấy một tư liệu
+   * khác. Bản trước chỉ đọc tệp đầu (`LIMIT 1`) nên cả ba bố cục b-roll khác
+   * hình dạng đều đựng chung một ảnh — vừa làm ba khung khác nhau xong thì nội
+   * dung trong khung vẫn y hệt.
+   */
+  insertCount: number | boolean,
 ): ScheduledScene[] {
+  const inserts = typeof insertCount === "number" ? insertCount : insertCount ? 1 : 0;
+  const hasInserts = inserts > 0;
   const allowed = usableLayouts(hasInserts).map((spec) => spec.id);
   const layouts = wish.layouts.filter((id) => allowed.includes(id));
   if (layouts.length === 0 || total < SCENE_MIN) return [];
@@ -150,8 +162,18 @@ export function scheduleScenes(
    * của cùng một phim.
    */
   let cursor = 0;
+  /*
+   * `share` đổi thành "cứ mấy màn một lần" — 0,3 ra một trong ba.
+   *
+   * Chia đều theo chu kỳ chứ không rút thăm: hai lượt dựng cùng dữ liệu phải ra
+   * cùng một video, cùng lý lẽ với chỗ không gọi mô hình để xếp lịch.
+   */
+  const pushEvery = wish.pushShare && wish.pushShare > 0
+    ? Math.max(2, Math.round(1 / wish.pushShare))
+    : 0;
   const turns: Turns = { insert: 0, plain: 0 };
   let heroAt = 0;
+  let insertAt = 0;
   let sceneAt = 0;
 
   while (cursor < total - SCENE_MIN) {
@@ -188,6 +210,22 @@ export function scheduleScenes(
       hero: wantsHero ? wish.heroes[heroAt++ % wish.heroes.length] : null,
       // Thiết bị sống 2–3,5 giây rồi tắt, kể cả khi màn dài 15 giây.
       heroSeconds: wantsHero ? Math.min(HERO_MAX, end - cursor) : undefined,
+      /*
+       * Mỗi lần chèn một tư liệu khác, xoay vòng theo THỨ TỰ MÀN CÓ CHÈN.
+       *
+       * Bộ đếm riêng, cùng lý lẽ với vòng xoay bố cục: đếm theo mọi màn thì nhịp
+       * lấy mẫu của họ này cắt vào vòng xoay của họ kia và có tư liệu không bao
+       * giờ được dùng.
+       */
+      insert: findLayout(layout).needsInsert ? insertAt++ % inserts : undefined,
+      /*
+       * Máy quay dồn vào ở màn NGHỈ, không ở màn nổi.
+       *
+       * Màn nổi đã có một thiết bị đang nói; chồng thêm chuyển động thì hai thứ
+       * tranh nhau và không cái nào đọc ra. Màn nghỉ thì ngược lại — nó đang
+       * đứng yên hoàn toàn, và một cú dồn chậm là thứ duy nhất xảy ra ở đó.
+       */
+      push: !wantsHero && pushEvery > 0 && sceneAt % pushEvery === 1,
     });
 
     cursor = end;

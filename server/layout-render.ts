@@ -169,6 +169,30 @@ function entryOf(
   return { scene, k0, cx0: old.x + old.w / 2, cy0: old.y + old.h / 2 };
 }
 
+/**
+ * MÁY QUAY DỒN VÀO — hệ số nhân thêm, lớn dần suốt màn.
+ *
+ * Nhân vào chính phép phóng đang có chứ không thêm một bộ lọc nữa: `scale` với
+ * `eval=frame` đã dựng lại bộ phóng ở từng khung rồi, thêm cái thứ hai là trả
+ * giá ấy hai lần cho một kết quả nhân được bằng tay.
+ *
+ * Chặn trần: dồn 6%/giây suốt một màn 15 giây là 90%, tức mất gần nửa khung.
+ * Kho mẫu không có cú dồn nào quá 12% cho cả một màn.
+ */
+const PUSH_MAX = 0.12;
+
+function pushFactor(entries: readonly SceneEntry[], rate: number): string {
+  if (rate <= 0) return "";
+  const terms = entries
+    .filter((e) => e.scene.push)
+    .map((e) => {
+      const win = `between(t\\,${e.scene.start.toFixed(3)}\\,${e.scene.end.toFixed(3)})`;
+      const grown = `min(${PUSH_MAX}\\,${rate}*(t-${e.scene.start.toFixed(3)}))`;
+      return `${win}*${grown}`;
+    });
+  return terms.length === 0 ? "" : `*(1+${terms.join("+")})`;
+}
+
 function glide(entries: readonly SceneEntry[], target: number, from: (e: SceneEntry) => number): string {
   const terms = entries
     .map((e) => {
@@ -184,7 +208,7 @@ function glide(entries: readonly SceneEntry[], target: number, from: (e: SceneEn
 }
 
 export function layoutPlan(
-  pack: Pick<StylePack, "page" | "layouts">,
+  pack: Pick<StylePack, "page" | "layouts" | "scenePush">,
   schedule: readonly ScheduledScene[],
   /** Nhãn luồng hình nguồn — nơi gọi đã `split` sẵn cho đủ số bản. */
   sources: readonly string[],
@@ -193,14 +217,17 @@ export function layoutPlan(
   frameWidth: number,
   frameHeight: number,
   /**
-   * ĐƯỜNG DẪN tệp tư liệu cho ô `phu`. `null` là dự án chưa có tư liệu.
+   * ĐƯỜNG DẪN các tệp tư liệu cho ô `phu`. Rỗng là dự án chưa có tư liệu.
    *
    * Đường dẫn chứ không phải nhãn luồng: nạp bằng `movie=` thì không thêm một
    * `-i` nào, mà mọi nhãn `[N:v]` trong đồ thị này đánh theo SỐ TƯ LIỆU CHÈN —
    * thêm một đầu vào là dịch hết chúng đi một bậc, và lỗi ấy chỉ lộ ra ở dự án
    * CÓ tư liệu chèn.
+   *
+   * DANH SÁCH chứ không phải một tệp: bản trước chỉ lấy tệp đầu, nên cả ba bố
+   * cục b-roll khác hình dạng đều đựng chung một ảnh suốt phim.
    */
-  insertPath: string | null = null,
+  insertPaths: readonly string[] = [],
   /**
    * Độ dài phim, giây. BẮT BUỘC khi có nền trang.
    *
@@ -268,7 +295,36 @@ export function layoutPlan(
     }
 
     spec.slots.forEach((slot, at) => {
-      const tagBase = `ly${index}s${at}`;
+      /*
+       * Ô `phu` dựng MỘT LỚP CHO MỖI TƯ LIỆU, không một lớp cho cả bố cục.
+       *
+       * `movie=` nạp một tệp cố định, còn tệp thì đổi theo màn — nên muốn mỗi
+       * lần chèn một tư liệu khác thì phải có bấy nhiêu lớp, mỗi lớp bật ở đúng
+       * những màn dùng tệp ấy. Đây cũng là lối đã dùng cho bố cục: bật/tắt bằng
+       * `enable` rẻ hơn mọi cách chuyển nguồn giữa chừng.
+       */
+      const groups: Array<{ scenes: ScheduledScene[]; path: string | null; suffix: string }> =
+        slot.role === "phu"
+          ? [...new Set(scenes.map((s) => s.insert ?? 0))]
+              .sort((a, b) => a - b)
+              .map((which) => ({
+                scenes: scenes.filter((s) => (s.insert ?? 0) === which),
+                path: insertPaths[which % Math.max(1, insertPaths.length)] ?? null,
+                suffix: `i${which}`,
+              }))
+          : [{ scenes, path: null, suffix: "" }];
+
+      groups.forEach((group) => buildSlot(slot, at, group.scenes, group.path, group.suffix));
+    });
+
+    function buildSlot(
+      slot: (typeof spec.slots)[number],
+      at: number,
+      scenes: readonly ScheduledScene[],
+      insertPath: string | null,
+      suffix: string,
+    ) {
+      const tagBase = `ly${index}s${at}${suffix}`;
       /*
        * Ô `phu` lặp tệp tư liệu cho đủ độ dài phim.
        *
@@ -311,8 +367,10 @@ export function layoutPlan(
         const entries = scenes.map((scene) => entryOf(scene, schedule, box, frameWidth, frameHeight, sourceAspect));
         const w = glide(entries, box.w, (e) => box.w * e.k0);
         const h = glide(entries, box.h, (e) => box.h * e.k0);
+        const push = pushFactor(entries, pack.scenePush?.ratePerSecond ?? 0);
         chains.push(
-          `${masked};[${tag}c]scale=w='2*floor((${w})/2)':h='2*floor((${h})/2)':eval=frame[${tag}]`,
+          `${masked};[${tag}c]scale=w='2*floor((${w})${push}/2)':` +
+            `h='2*floor((${h})${push}/2)':eval=frame[${tag}]`,
         );
         overlays.push({
           label: `[${tag}]`,
@@ -326,7 +384,7 @@ export function layoutPlan(
         chains.push(`${masked};[${tag}c]null[${tag}]`);
         overlays.push({ label: `[${tag}]`, x: box.x, y: box.y, enable: windows(scenes) });
       }
-    });
+    }
   });
 
   return { chains, overlays, page };

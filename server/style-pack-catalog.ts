@@ -164,6 +164,7 @@ const BASE = {
   plate: null,
   page: null,
   layouts: [],
+  scenePush: null,
   subjectEdge: null,
   behindText: null,
   doodles: null,
@@ -840,6 +841,14 @@ export const NHIP_DEN: StylePack = {
   },
   // Sáu bố cục xoay vòng. Ba cái cần tư liệu tự biến mất khi dự án chưa có.
   layouts: ["o-don", "toan-khung", "hai-o", "vuong-ngang", "ngang-vuong", "o-lech"],
+  /*
+   * Dồn 6 %/giây trên 30% số màn — giữa dải đo được (2–10) và đúng cái tần suất
+   * đo được (1–3 chỗ trong 30 giây, mà 30 giây có chừng bảy màn).
+   *
+   * Bộ MẠNH thì hợp: một cú dồn chậm là câu nói to, và bộ êm không có gì để nói
+   * to. Cùng lý lẽ với vệt quét.
+   */
+  scenePush: { ratePerSecond: 0.06, share: 0.3 },
   // Không viền chữ: chữ đứng trên nền đen, không cần bao ngoài để tách khỏi nền.
   edge: null,
   density: { ...BASE.density, maxScale: 0.115, lineHeight: 1.2, wordGap: 0.14 },

@@ -1058,8 +1058,8 @@ export async function burnElements(
    * cần đọc mép cụm chữ và luật thời gian.
    */
   schedule: readonly ScheduledScene[] = [],
-  /** Tệp tư liệu cho ô phụ của bố cục `hai-o`. `null` là chưa có. */
-  layoutInsert: string | null = null,
+  /** Các tệp tư liệu cho ô phụ, xoay vòng theo màn. Rỗng là chưa có. */
+  layoutInserts: readonly string[] = [],
   /** Tỉ lệ video nguồn — ô bám theo để phép cắt không bỏ gì. */
   sourceAspect: number | undefined = undefined,
   /** Dịch khung cắt theo chỗ người đứng. Âm là dịch lên. */
@@ -1244,7 +1244,7 @@ export async function burnElements(
     const labels = Array.from({ length: copies }, (_, i) => `[lysrc${i}]`);
     const plan = layoutPlan(
       pack, schedule, labels, GRAPHICS_DIR, OUT_WIDTH, OUT_HEIGHT,
-      layoutInsert, cutSeconds, sourceAspect, subjectShift,
+      layoutInserts, cutSeconds, sourceAspect, subjectShift,
     );
     if (plan.page) {
       filters.push(`${stream}split=${copies}${labels.join("")}`);

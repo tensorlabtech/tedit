@@ -187,6 +187,20 @@ export type ScheduledScene = {
    * ấy đứng yên — và chính khoảng đứng yên đó là "khoảng thở" của R4.
    */
   heroSeconds?: number;
+  /**
+   * Màn này có MÁY QUAY DỒN VÀO không.
+   *
+   * Không phải màn nào cũng có: đo kho mẫu thì chỉ 1–3 trên 15–59 cặp khung có
+   * phóng. Dồn ở mọi màn thì nó thôi là chuyển động và thành nền.
+   */
+  push?: boolean;
+  /**
+   * Màn này dùng TƯ LIỆU CHÈN thứ mấy, đếm từ 0. Bỏ trống là màn không có ô phụ.
+   *
+   * Chỉ số chứ không phải đường dẫn: bộ xếp lịch chạy được cả trên trình duyệt
+   * lẫn máy chủ, mà đường dẫn tệp chỉ có nghĩa ở máy chủ.
+   */
+  insert?: number;
 };
 
 export type Violation = { rule: string; detail: string };
