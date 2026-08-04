@@ -13,6 +13,7 @@ import { TimelineRuler } from "./timeline-ruler";
 import { TimelinePlayheadButtons } from "./timeline-playhead-buttons";
 import { SeamMarks } from "./timeline-seam-marks";
 import { TimelineSideRail } from "./timeline-side-rail";
+import { ZOOM_STEP } from "./timeline-zoom";
 import { MusicLane } from "./timeline-music-lane";
 import { TrimHandles } from "./timeline-trim-handle";
 import { useTimelineDrag } from "./use-timeline-drag";
@@ -403,7 +404,16 @@ export function Timeline({
               </div>
             </div>
           </div>
-          <TimelineSideRail editor={editor} />
+          <TimelineSideRail
+            pxPerSecond={pxPerSecond}
+            canZoomIn={editor.canZoomIn}
+            canZoomOut={editor.canZoomOut}
+            onZoom={(direction) =>
+              editor.zoomBy(direction > 0 ? ZOOM_STEP : 1 / ZOOM_STEP)
+            }
+            undoLabel={editor.undoLabel}
+            onUndo={() => void editor.undo()}
+          />
         </CardContent>
       </Card>
     </TimelineContextMenu>

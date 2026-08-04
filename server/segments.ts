@@ -115,11 +115,20 @@ function insert(
   return id;
 }
 
+/**
+ * Mẩu nhỏ nhất khi người dùng CHỈ ĐÍCH DANH một mốc.
+ *
+ * `MIN_LENGTH` (0,3 giây) là để dải không đẻ ra những khối vụn không bấm nổi —
+ * đúng cho việc chia đoạn. Nhưng khi người dùng kéo mép một khoảng cắt tới đúng
+ * chỗ họ nghe thấy, mẩu còn lại nhỏ bao nhiêu không quan trọng: nó chỉ là phần
+ * phim còn giữ, không phải một khối để bấm. Nửa khung hình ở 30 hình/giây.
+ */
+const EXACT_MIN = 0.02;
+
 /** Tách đoạn đang chứa mốc `at` thành hai. Trả `null` nếu không tách được. */
-export function splitAt(projectId: string, at: number) {
+export function splitAt(projectId: string, at: number, least = MIN_LENGTH) {
   const target = listSegments(projectId).find(
-    (item) =>
-      at > item.start_sec + MIN_LENGTH && at < item.end_sec - MIN_LENGTH,
+    (item) => at > item.start_sec + least && at < item.end_sec - least,
   );
   if (!target) return null;
 
@@ -169,6 +178,23 @@ export function mergeIntoPrevious(id: string) {
     .get(prev.id) as { project_id: string } | undefined;
   if (projectId) renumber(projectId.project_id);
   return true;
+}
+
+/**
+ * Đếm số đoạn ĐANG bị bỏ.
+ *
+ * Để nơi gọi `removeRange` báo con số THẬT SỰ bỏ được, không báo con số định bỏ.
+ * Hai con số ấy từng lệch nhau mà không ai biết: `silence` báo "rút 12 chỗ ·
+ * 57.4s" trong khi bảng này có đúng 0 dòng bị bỏ, vì lúc đó chưa gieo đoạn nào.
+ */
+export function removedCount(projectId: string): number {
+  return (
+    db
+      .prepare(
+        "SELECT COUNT(*) AS n FROM segments WHERE project_id=? AND removed=1",
+      )
+      .get(projectId) as { n: number }
+  ).n;
 }
 
 export function setSegmentRemoved(id: string, removed: boolean) {
@@ -302,7 +328,77 @@ export function removeRange(projectId: string, start: number, end: number) {
     return overlap(segment.start_sec, segment.end_sec) >= length * 0.6;
   });
   for (const segment of inside) setSegmentRemoved(segment.id, true);
+  coalesceRemoved(projectId);
   return listSegments(projectId);
+}
+
+/**
+ * BỎ ĐÚNG KHOẢNG NGƯỜI DÙNG VẼ RA — không nới, không co.
+ *
+ * `removeRange` nhận đoạn nào phủ ĐỦ 60%, và luật ấy đúng cho đề xuất của máy:
+ * mốc mô hình đưa ra bám mép TỪ, còn mép đoạn đã nới tới chỗ tiếng thật tắt, nên
+ * đòi nằm trọn thì gần như không bao giờ khớp.
+ *
+ * Với thao tác tay thì luật ấy sai hẳn. Đo thật: bấm thêm một khoảng ở giây 9,58
+ * xin bỏ 1 giây, mà đoạn [9,28 → 10,50] phủ 75% nên bị bỏ TRỌN — chỗ cắt hoá ra
+ * bắt đầu sớm hơn chỗ bấm 0,3 giây và dài gấp rưỡi. Người dùng kéo mép để nghe
+ * cho vừa tai, rồi máy tự nới ra chỗ khác; không có gì báo.
+ *
+ * Nên đường của người đi lối riêng: chẻ đúng hai mốc (với mẩu nhỏ nhất là nửa
+ * khung hình thay vì 0,3 giây), rồi bỏ đúng những đoạn nằm TRỌN trong khoảng.
+ */
+export function cutExactly(projectId: string, start: number, end: number) {
+  if (!(end - start > 0.05)) return listSegments(projectId);
+  splitAt(projectId, start, EXACT_MIN);
+  splitAt(projectId, end, EXACT_MIN);
+  for (const segment of listSegments(projectId)) {
+    if (
+      segment.start_sec >= start - 0.001 &&
+      segment.end_sec <= end + 0.001 &&
+      segment.end_sec > segment.start_sec
+    ) {
+      setSegmentRemoved(segment.id, true);
+    }
+  }
+  coalesceRemoved(projectId);
+  return listSegments(projectId);
+}
+
+/**
+ * Gộp những đoạn ĐÃ BỎ nằm liền nhau thành một.
+ *
+ * `removeRange` chẻ ở hai mốc rồi đánh dấu mọi đoạn phủ đủ 60%. Nếu trong khoảng
+ * ấy đã sẵn có một lằn chia — hay gặp, vì mỗi lần bỏ trước đó đều để lại hai lằn
+ * — thì cả hai mẩu đều bị đánh dấu, và một chỗ cắt duy nhất thành HAI dòng.
+ *
+ * Đo thật: bấm thêm một khoảng ở giây 13,3 làm số khoảng nhảy từ 12 lên 14.
+ * Trên dải trông vẫn là một mảng liền, nên không ai thấy; nhưng hàng soát mọc
+ * thêm một dòng, và xoá dòng ấy chỉ trả lại được nửa chỗ phim.
+ *
+ * "Một chỗ cắt là một đoạn" là bất biến của cả màn cắt. Giữ nó ở đây, chỗ duy
+ * nhất sinh ra đoạn bị bỏ, chứ không bắt mỗi nơi đọc phải tự gộp lại.
+ */
+export function coalesceRemoved(projectId: string) {
+  let merged = true;
+  while (merged) {
+    merged = false;
+    const rows = listSegments(projectId);
+    for (let at = 1; at < rows.length; at += 1) {
+      const previous = rows[at - 1];
+      const current = rows[at];
+      if (!previous.removed || !current.removed) continue;
+      // Dính nhau tới từng mili giây — hở thật thì là hai chỗ cắt khác nhau.
+      if (Math.abs(current.start_sec - previous.end_sec) > 0.001) continue;
+      db.prepare("UPDATE segments SET end_sec=? WHERE id=?").run(
+        current.end_sec,
+        previous.id,
+      );
+      db.prepare("DELETE FROM segments WHERE id=?").run(current.id);
+      merged = true;
+      break;
+    }
+    if (merged) renumber(projectId);
+  }
 }
 
 /**

@@ -1,6 +1,6 @@
 import { db } from "./db";
 import { ask, object } from "./llm";
-import { removeRange } from "./segments";
+import { listSegments, removeRange, removedCount } from "./segments";
 
 /**
  * Tìm chỗ nên bỏ: ề à, vấp, lặp lại, câu bỏ dở.
@@ -74,6 +74,12 @@ export async function proposeCuts(projectId: string): Promise<{
   applied: number;
   rejected: number;
 }> {
+  // Cùng lẽ với `autoTrimSilence`: không có đoạn thì mọi đề xuất rơi vào im
+  // lặng, và chặng vẫn xanh. Thà hỏng có tiếng.
+  if (listSegments(projectId).length === 0) {
+    throw new Error("Chưa gieo đoạn nào — không có gì để cắt");
+  }
+
   const words = db
     .prepare(
       "SELECT id, text, start_sec, end_sec FROM words WHERE project_id=? ORDER BY start_sec",
@@ -140,7 +146,13 @@ export async function proposeCuts(projectId: string): Promise<{
       rejected += 1;
       continue;
     }
+    const was = removedCount(projectId);
     removeRange(projectId, span.start, span.end);
+    // Bỏ không ăn thì tính là bị GẠT, đừng tính là đã bỏ.
+    if (removedCount(projectId) === was) {
+      rejected += 1;
+      continue;
+    }
     taken.push(span);
     budget -= length;
     applied += 1;

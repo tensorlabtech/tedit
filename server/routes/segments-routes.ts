@@ -3,6 +3,7 @@ import { db } from "../db";
 import {
   listSegments,
   mergeIntoPrevious,
+  cutExactly,
   removeRange,
   skippedSpans,
   renameSegment,
@@ -62,11 +63,15 @@ app.patch("/api/segments/:segmentId", async (request, reply) => {
 
 app.post("/api/projects/:id/segments/remove-range", async (request, reply) => {
   const { id } = request.params as { id: string };
-  const body = request.body as { start?: number; end?: number };
+  const body = request.body as { start?: number; end?: number; exact?: boolean };
   if (typeof body.start !== "number" || typeof body.end !== "number") {
     return reply.code(400).send({ error: "Thiếu mốc đầu hoặc mốc cuối" });
   }
-  return removeRange(id, body.start, body.end);
+  // `exact` là thao tác TAY: bỏ đúng khoảng đã vẽ. Không có nó thì dùng luật
+  // 60% vốn hợp với đề xuất của máy — xem `cutExactly`.
+  return body.exact
+    ? cutExactly(id, body.start, body.end)
+    : removeRange(id, body.start, body.end);
 });
 
 app.get("/api/projects/:id/skipped", async (request) => {

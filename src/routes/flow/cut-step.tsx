@@ -1,131 +1,281 @@
-import { PlayIcon, RotateCcwIcon, ScissorsIcon } from "lucide-react";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { PauseIcon, PlayIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { toast } from "@/components/ui/toast";
+import { Card, CardContent } from "@/components/ui/card";
 import { formatDuration } from "@/lib/format-duration";
 
+import { TimelineSideRail } from "../editor/timeline-side-rail";
+import {
+  DEFAULT_PX_PER_SECOND,
+  ZOOM_STEP,
+  useTimelineZoom,
+} from "../editor/timeline-zoom";
+import { CutLane } from "./cut-lane";
+import { CutSpanList, type SpanRow } from "./cut-span-list";
+import { useCutEdit } from "./use-cut-edit";
+
 /**
- * BƯỚC CẮT ĐOẠN LỖI — bản chép là mặt chính, không phải dòng thời gian.
+ * BƯỚC CẮT ĐOẠN LỖI — máy đề xuất trước, người sửa trên dải.
  *
- * ══ VÌ SAO ĐỌC CHỮ CHỨ KHÔNG KÉO THANH ══
+ * ══ VÌ SAO KHÔNG PHẢI MỘT DANH SÁCH CÂU ══
  *
- * Với video một người nói, bản chép CHÍNH LÀ dòng thời gian. Bỏ một câu là bỏ
- * đoạn video của câu ấy. Đó là cách duy nhất tôi biết để người không chuyên cắt
- * được mà không phải hiểu timeline — không thanh kéo, không vệt sóng, không lằn
- * cắt. Ba thứ ấy đúng là những gì làm bàn dựng cũ không dùng nổi.
+ * Đời đầu của màn này là danh sách câu, bỏ hoặc giữ từng câu. Nó hỏng ở đúng chỗ
+ * bước này sinh ra để chữa: **không bỏ được nửa câu**. Mà vấp, hắng giọng, lặp
+ * một từ — gần như toàn bộ thứ đáng cắt — đều nằm TRONG lòng một câu.
  *
- * ══ VÌ SAO ĐƠN VỊ LÀ CÂU, KHÔNG PHẢI TỪ ══
+ * Tôi từng bênh danh sách ấy bằng một phép đo: 91,5% cặp từ liền nhau hở ≤ 0
+ * giây, nên mép TỪ không có thật. Phép đo đúng, kết luận sai chỗ — nó chỉ bác
+ * việc hít mốc theo từ, không bác việc kéo tay. Kéo tay thì mép do TAI người
+ * đặt, không do Whisper đặt.
  *
- * Đo 472 cặp từ liền nhau trong một bản thật: **432 cặp (91,5%) hở ≤ 0 giây** —
- * dính hẳn hoặc chồng lên nhau. Whisper nội suy bên trong một hơi nói liền; nó
- * chia chữ cho mình đọc, chứ trong tiếng thì không có chỗ nào để cắt.
+ * ══ MÁY CHẠY TRƯỚC, NGƯỜI SỬA SAU ══
  *
- * Chỉ 32 cặp (6,8%) hở từ 200ms trở lên — đó mới là chỗ nghỉ thật. Nên cắt ở
- * mép từ ra tiếng cụt, còn cắt ở mép CÂU thì rơi đúng vào chỗ nghỉ.
+ * `ai-cuts.ts` đã chạy ở bước Chuẩn bị và ÁP luôn đề xuất. Mở màn này ra là đã
+ * thấy chỗ máy định bỏ; việc còn lại là soát, không phải bắt đầu từ dải trắng.
+ * Đó là chênh lệch giữa "sửa bản nháp" và "tự cắt".
  *
- * ══ NGHE THỬ MỐI NỐI ══
+ * ══ MỘT TRỤC THỜI GIAN DUY NHẤT ══
  *
- * Đọc bản chép KHÔNG cho biết cắt có gợn không, mà đó lại là thứ người ta sợ
- * nhất. Nút nghe phát 1,5 giây trước và 1,5 giây sau chỗ nối — ba giây, một cái
- * bấm, trả lời xong câu hỏi duy nhất đang treo. Không phải xem lại cả video.
+ * Bàn dựng phải quy đổi qua lại giữa mốc gốc và mốc xuất ra ở 29 chỗ, và đó là
+ * nguồn của những lỗi trôi khó tìm nhất. Ở đây không có chuyện đó: bản cắt chưa
+ * nướng vào phim, nên `base.mp4`, dải, và lát đều chung mốc gốc. Việc gộp về một
+ * trục để dành cho `commit-cut` chạy SAU bước này.
+ *
+ * ══ XẾP THEO BÀN DỰNG ══
+ *
+ * Hàng soát trái, xem trước phải, dải chạy suốt bề ngang phía dưới — cùng hình
+ * với `/editor` để người dùng không phải học lại. Chép phần cần sang chứ không
+ * dùng chung: bàn dựng có sáu lớp trên dải và một mê cung điều kiện quanh chúng.
  */
 
-const SEAM = 1.5;
+/** Bao quanh chỗ nghe thử: đủ nghe câu vào và câu ra. */
+const SEAM = 1;
 
-export type CutSentence = {
-  id: string;
-  text: string;
-  start: number;
-  end: number;
-  removed: boolean;
-};
+/**
+ * Cận dưới của thang phóng ở bước này: 4px/giây.
+ *
+ * Đủ để một video mười phút vẫn nằm gọn trong một khung 1100px, tức người dùng
+ * luôn có một mức nhìn thấy TOÀN BẢN. Bàn dựng chặn ở 60 vì nó để sửa chi tiết;
+ * đây để soát.
+ */
+const FIT_FLOOR = 4;
+
+export type CutWord = { text: string; start: number; end: number };
 
 export function CutStep({
-  sentences,
+  projectId,
   previewUrl,
-  onToggle,
+  words,
 }: {
-  sentences: CutSentence[];
-  /** Bản xem trước để nghe thử mối nối. `null` là chưa dựng xong. */
+  projectId: string | undefined;
+  /** `base.mp4` — bản gốc chưa cắt, nên mốc của nó chính là mốc của dải. */
   previewUrl: string | null;
-  onToggle: (id: string, removed: boolean) => void;
+  words: CutWord[];
 }) {
-  const bo = sentences.filter((item) => item.removed);
-  const giay = bo.reduce((sum, item) => sum + (item.end - item.start), 0);
+  const cut = useCutEdit(projectId);
+  const { spans, total, loading } = cut;
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [time, setTime] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  /*
+   * Cùng thang phóng với bàn dựng, nhưng CẬN DƯỚI thấp hơn và mở màn ở mức VỪA
+   * KHÍT — xem `timeline-zoom.ts`. Ở mức mặc định của bàn dựng, một video 118
+   * giây chỉ hiện ra 5,8 giây; bước này để soát cả bản.
+   */
+  const zoom = useTimelineZoom(DEFAULT_PX_PER_SECOND, FIT_FLOOR);
+  const fitted = useRef(false);
+  const fitToWidth = useCallback(
+    (width: number) => {
+      if (fitted.current || width < 50 || total <= 0) return;
+      fitted.current = true;
+      zoom.setPxPerSecond(Math.max(FIT_FLOOR, (width - 4) / total));
+    },
+    [total, zoom],
+  );
+  /**
+   * Khoảng người dùng cố ý nghe dù nó đã bị bỏ.
+   *
+   * Phát bình thường thì NHẢY QUA chỗ bỏ — đó là điểm của xem trước, nghe ra
+   * ngay bản dựng sẽ thế nào. Nhưng để quyết "có nên bỏ chỗ này không" thì phải
+   * nghe được chính chỗ ấy. Hai việc trái nhau, nên tách bằng chủ ý.
+   */
+  const auditing = useRef<string | null>(null);
 
-  const ngheMoiNoi = (at: number) => {
-    if (!previewUrl) return;
-    const audio = new Audio(previewUrl);
-    audio.currentTime = Math.max(0, at - SEAM);
-    void audio.play();
-    // Dừng đúng sau mối nối. Không dừng thì nó chạy tiếp hết video, và người
-    // dùng phải tự tìm nút tắt — trong khi câu hỏi đã trả lời xong từ lâu.
-    window.setTimeout(() => audio.pause(), SEAM * 2 * 1000);
+  const rows: SpanRow[] = useMemo(
+    () =>
+      spans.map((span) => ({
+        ...span,
+        // Từ tính theo ĐIỂM GIỮA: từ vắt qua mép chỉ được đếm cho một bên, nếu
+        // không nó hiện ở cả hai chỗ và đọc ra như bị lặp.
+        text: words
+          .filter((word) => {
+            const mid = (word.start + word.end) / 2;
+            return mid >= span.start && mid < span.end;
+          })
+          .map((word) => word.text)
+          .join(" "),
+      })),
+    [spans, words],
+  );
+
+  const cutSeconds = spans.reduce((sum, span) => sum + (span.end - span.start), 0);
+
+  const seek = (at: number) => {
+    const video = videoRef.current;
+    if (video) video.currentTime = at;
+    setTime(at);
+  };
+
+  /** Nhảy qua chỗ đã bỏ trong lúc phát — trừ khoảng đang cố ý nghe. */
+  const onTimeUpdate = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    const at = video.currentTime;
+    setTime(at);
+    const here = spans.find((span) => at >= span.start && at < span.end);
+    if (auditing.current && here?.id !== auditing.current) auditing.current = null;
+    if (here && auditing.current !== here.id) video.currentTime = here.end;
+  };
+
+  const togglePlay = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.paused) void video.play();
+    else video.pause();
+  };
+
+  const audit = (span: SpanRow) => {
+    const video = videoRef.current;
+    if (!video) return;
+    setSelectedId(span.id);
+    auditing.current = span.id;
+    video.currentTime = Math.max(0, span.start - SEAM);
+    void video.play();
+    // Dừng ngay sau khi qua hết khoảng: không dừng thì nó chạy tiếp hết video
+    // trong khi câu hỏi đã trả lời xong từ lâu.
+    window.setTimeout(
+      () => video.pause(),
+      (span.end - span.start + SEAM * 2) * 1000,
+    );
   };
 
   return (
-    <Card className="lg:h-full lg:min-h-0">
-      <CardHeader>
-        <CardTitle>
-          Máy định bỏ {bo.length} đoạn · {formatDuration(giay)}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="grid min-h-0 flex-1 content-start gap-1 overflow-y-auto">
-        {sentences.length === 0 ? (
-          <p className="text-muted-foreground">
-            Chưa có lời nào để soát. Máy chưa nghe xong, hoặc video này không có
-            tiếng nói.
-          </p>
-        ) : null}
-        {sentences.map((item) => (
-          <div
-            key={item.id}
-            data-state={item.removed ? "cut" : "keep"}
-            className="group flex items-baseline gap-3 rounded-lg border border-border px-3 py-2 data-[state=cut]:opacity-50"
-          >
-            <span className="text-muted-foreground shrink-0 tabular-nums text-xs">
-              {formatDuration(item.start)}
+    <div className="grid gap-2 lg:h-full lg:min-h-0 lg:grid-rows-[minmax(0,1fr)_auto]">
+      <div className="grid gap-2 lg:min-h-0 lg:grid-cols-[20rem_1fr]">
+        <CutSpanList
+          heading={
+            loading
+              ? "Đang mở bản cắt"
+              : `Máy định bỏ ${spans.length} chỗ · ${formatDuration(cutSeconds)}`
+          }
+          rows={rows}
+          selectedId={selectedId}
+          onSelect={(id) => {
+            setSelectedId(id);
+            const row = rows.find((item) => item.id === id);
+            if (row) seek(row.start);
+          }}
+          onAudit={audit}
+          onDelete={(id) => {
+            void cut.deleteSpan(id);
+            setSelectedId(null);
+          }}
+        />
+
+        {/* Khung xem KHÔNG có tiêu đề.
+            Bản trước để "Bỏ 12 chỗ · 0:59" làm tiêu đề cho khung xem — một con
+            số về việc cắt đứng trên một khung chiếu phim, và nó lặp lại đúng
+            thứ thẻ bên trái đang nói. Con số ấy về chỗ của nó; khung xem chỉ
+            cần chiếu. */}
+        <Card className="lg:min-h-0">
+          <CardContent className="grid min-h-0 flex-1 place-items-center overflow-hidden">
+            {previewUrl ? (
+              <video
+                ref={videoRef}
+                src={previewUrl}
+                className="max-h-full max-w-full rounded-lg"
+                onTimeUpdate={onTimeUpdate}
+                onPlay={() => setPlaying(true)}
+                onPause={() => setPlaying(false)}
+                onClick={togglePlay}
+              />
+            ) : (
+              <p className="text-muted-foreground text-center">
+                Chưa có bản xem trước. Máy đang ghép mạch chính.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Dải chạy suốt bề ngang dưới cùng, hai nút phóng đứng ở cột bên phải —
+          cùng chỗ và cùng hình với bàn dựng. */}
+      <Card>
+        <CardContent className="grid min-w-0 gap-2">
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" size="sm" onClick={togglePlay}>
+              {playing ? <PauseIcon /> : <PlayIcon />}
+              {playing ? "Dừng" : "Phát bản đã cắt"}
+            </Button>
+            <span className="text-muted-foreground tabular-nums text-xs">
+              {formatDuration(time)} / {formatDuration(total)}
             </span>
-            {/* Đoạn bị bỏ gạch NGANG chứ không ẩn đi: ẩn thì người dùng không
-                soát được thứ họ được mời soát, và không có đường lấy lại. */}
-            <span
-              className={
-                "flex-1 " + (item.removed ? "line-through" : "")
-              }
-            >
-              {item.text}
-            </span>
-            <span className="flex shrink-0 items-center gap-1">
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                aria-label="Nghe thử chỗ nối"
-                disabled={!previewUrl}
-                onClick={() => ngheMoiNoi(item.removed ? item.start : item.end)}
-              >
-                <PlayIcon />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => onToggle(item.id, !item.removed)}
-              >
-                {item.removed ? (
-                  <>
-                    <RotateCcwIcon />
-                    Giữ lại
-                  </>
-                ) : (
-                  <>
-                    <ScissorsIcon />
-                    Bỏ
-                  </>
-                )}
-              </Button>
+            <span className="flex-1" />
+            <span className="text-muted-foreground text-xs">
+              Bấm dấu cộng trên vạch để thêm một khoảng · chuột phải một khoảng để
+              xoá
             </span>
           </div>
-        ))}
-      </CardContent>
-    </Card>
+
+          <div className="flex min-w-0 gap-1">
+            <CutLane
+              clips={cut.clips}
+              strip={cut.strip}
+              envelope={cut.envelope}
+              spans={spans}
+              total={total}
+              time={time}
+              pxPerSecond={zoom.pxPerSecond}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              onSeek={seek}
+              onResize={(id, start, end) => void cut.resizeSpan(id, start, end)}
+              onAdd={async (at) => {
+                // Không thêm được thì NÓI. Im lặng ở đây đọc ra thành "nút hỏng".
+                if (!(await cut.addSpan(at))) {
+                  toast.add({
+                    title: "Chỗ này không thêm được",
+                    description:
+                      "Vạch đang nằm sát một khoảng đã cắt. Dời vạch vào giữa chỗ còn giữ rồi bấm lại.",
+                    type: "error",
+                  });
+                }
+              }}
+              onDelete={(id) => {
+                void cut.deleteSpan(id);
+                setSelectedId(null);
+              }}
+              onMeasure={fitToWidth}
+            />
+            <TimelineSideRail
+              pxPerSecond={zoom.pxPerSecond}
+              canZoomIn={zoom.canZoomIn}
+              canZoomOut={zoom.canZoomOut}
+              onZoom={(direction) =>
+                zoom.zoomBy(direction > 0 ? ZOOM_STEP : 1 / ZOOM_STEP)
+              }
+              undoLabel={cut.canUndo ? "lần cắt vừa rồi" : null}
+              onUndo={() => {
+                void cut.undo();
+                setSelectedId(null);
+              }}
+            />
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }

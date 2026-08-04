@@ -1018,11 +1018,21 @@ export const api = {
       body: JSON.stringify({ punch }),
     }),
 
-  /** Bỏ một quãng theo giây — máy chủ tách đoạn ở hai đầu rồi bỏ đoạn giữa. */
-  removeRange: (projectId: string, start: number, end: number) =>
+  /**
+   * Bỏ một quãng theo giây — máy chủ tách đoạn ở hai đầu rồi bỏ đoạn giữa.
+   *
+   * `exact` cho thao tác TAY: bỏ ĐÚNG khoảng đã vẽ. Bỏ trống thì dùng luật phủ
+   * 60% vốn hợp với đề xuất của máy, nhưng luật ấy nới mép ra chỗ khác chỗ bấm.
+   */
+  removeRange: (
+    projectId: string,
+    start: number,
+    end: number,
+    exact = false,
+  ) =>
     request<ApiSegment[]>(`/api/projects/${projectId}/segments/remove-range`, {
       method: "POST",
-      body: JSON.stringify({ start, end }),
+      body: JSON.stringify({ start, end, exact }),
     }),
 
   /** Những quãng sẽ không vào video: đoạn đã bỏ, và hở do gọt mép đoạn. */

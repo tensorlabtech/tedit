@@ -327,6 +327,32 @@ export async function runTranscribe(projectId: string) {
     result: `${wordCount.n} từ · ${segments.length} câu`,
   });
 
+  /*
+   * GIEO ĐOẠN TRƯỚC KHI CẮT — không phải ở chặng `captions` nữa.
+   *
+   * "Chỗ này không vào video" chỉ diễn đạt được bằng ĐOẠN: `removeRange` chẻ đoạn
+   * ở hai mốc rồi đánh dấu khúc giữa. Bảng `segments` rỗng thì `splitAt` không
+   * tìm ra đoạn nào để chẻ, phép lọc chạy trên danh sách rỗng, và mọi đề xuất
+   * rơi vào im lặng.
+   *
+   * Đúng chuyện ấy đã xảy ra khi `silence` và `cuts` chuyển lên trước `captions`
+   * mà hạt giống thì ở lại: đo trên `prj_mse91wr6voihwy` — `silence` báo "rút 12
+   * chỗ · 57.4s", `cuts` báo đã chạy, mà `segments` có ĐÚNG 0 dòng bị bỏ. Không
+   * chặng nào báo lỗi; cả hai vẫn "done" kèm con số. Nhìn dữ liệu sau đó lại
+   * càng không thấy, vì `GET /api/projects/:id` tự gieo bù lúc mở dự án.
+   *
+   * Chặng `captions` vẫn gieo lại một lượt nữa, và vẫn đúng: sau `commit-cut`
+   * thì bản chép và trục thời gian đều là bản mới, đoạn cũ không còn nghĩa.
+   */
+  const mainSeconds = (
+    db
+      .prepare(
+        "SELECT COALESCE(SUM(duration),0) AS total FROM media_files WHERE project_id=? AND role='main'",
+      )
+      .get(projectId) as { total: number }
+  ).total;
+  db.prepare("DELETE FROM segments WHERE project_id=?").run(projectId);
+  await seedSegmentsByCaption(projectId, mainSeconds, readStylePack(projectId));
 
   /*
    * ── CỔNG MỘT: SOÁT CẮT ──

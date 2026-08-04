@@ -1,6 +1,6 @@
 import { type AudioEnvelope } from "./audio-envelope";
 import { db } from "./db";
-import { removeRange } from "./segments";
+import { listSegments, removeRange, removedCount } from "./segments";
 
 /**
  * Rút ngắn các quãng KHÔNG AI NÓI GÌ.
@@ -182,6 +182,17 @@ export function trimSilence(
     return peak / speechLevel;
   };
 
+  /*
+   * KHÔNG CÓ ĐOẠN THÌ KÊU, ĐỪNG LÀM THINH.
+   *
+   * `removeRange` chẻ đoạn rồi đánh dấu khúc giữa; bảng đoạn rỗng thì nó chạy
+   * trọn vẹn mà không đổi gì. Trước đây hàm này vẫn đếm và vẫn báo "rút 12 chỗ ·
+   * 57.4s" trong tình huống ấy — một chặng xanh cho một việc không xảy ra.
+   */
+  if (listSegments(projectId).length === 0) {
+    throw new Error("Chưa gieo đoạn nào — không có gì để cắt lặng");
+  }
+
   let trimmed = 0;
   let saved = 0;
   for (const gap of targets) {
@@ -202,8 +213,12 @@ export function trimSilence(
     const cutLength = length - keep;
     if (cutLength < 0.12) continue;
     // Giữ đầu trước thì bỏ phần sau, giữ đầu sau thì bỏ phần trước.
+    // Đếm theo HIỆU QUẢ THẬT: `removeRange` bỏ qua trong im lặng khi quãng quá
+    // ngắn hoặc không đoạn nào phủ đủ 60%, nên đếm số lần GỌI là báo vống lên.
+    const was = removedCount(projectId);
     if (atHead) removeRange(projectId, gap.start + keep, gap.end);
     else removeRange(projectId, gap.start, gap.end - keep);
+    if (removedCount(projectId) === was) continue;
     trimmed += 1;
     saved += cutLength;
   }

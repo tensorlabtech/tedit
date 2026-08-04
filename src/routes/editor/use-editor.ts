@@ -8,6 +8,7 @@ import { useTrimDrag } from "./use-trim-drag";
 import { useUndoStack } from "./use-undo-stack";
 import { boQuaLoi } from "./ignore-error";
 import { MIN_EFFECT_LENGTH, MIN_TEXT_LENGTH } from "./editor-limits";
+import { DEFAULT_PX_PER_SECOND, useTimelineZoom } from "./timeline-zoom";
 import {
   ApiError,
   api,
@@ -52,18 +53,15 @@ export type Selection =
   | { kind: "junction"; id: string }
   | null;
 
-/** Thang phóng: desktop mặc định 200px/giây (xem docs/editor-interaction-spec.md §3) */
-export const DEFAULT_PX_PER_SECOND = 200;
-const MIN_PX_PER_SECOND = 60;
-const MAX_PX_PER_SECOND = 600;
-
-/**
- * Bước phóng của NÚT và PHÍM.
- *
- * Cả thang chỉ rộng 10 lần (60→600), nên bước 1,4 chia ra chưa tới bảy nấc —
- * bấm một cái là nhảy qua đúng mức mình cần. 1,25 cho mười nấc, canh được.
+/*
+ * Thang phóng ở `timeline-zoom.ts` — bước Cắt đoạn lỗi cũng có một dải và phải
+ * dùng đúng thang ấy. Tái xuất để mọi nơi đang nhập từ đây không phải đổi.
  */
-export const ZOOM_STEP = 1.25;
+export {
+  DEFAULT_PX_PER_SECOND,
+  ZOOM_STEP,
+  zoomFactorFromWheel,
+} from "./timeline-zoom";
 
 /**
  * Mỗi nửa của một đoạn phải còn ít nhất chừng này thì mới tách được.
@@ -73,17 +71,6 @@ export const ZOOM_STEP = 1.25;
  */
 export { MIN_SEGMENT } from "./editor-limits";
 
-/**
- * Đổi độ lăn thành hệ số phóng — theo ĐỘ LỚN cú lăn, không phải mỗi cú một nấc.
- *
- * Chụm hai ngón bắn ra hàng chục sự kiện nhỏ trong một cử chỉ; nhân 1,15 mỗi sự
- * kiện thì mới nhích ngón đã phóng gấp mấy lần, đó là chỗ "zoom nhạy quá". Hàm
- * mũ làm cú lăn nhỏ ra hệ số nhỏ, và vẫn cho con lăn chuột (mỗi nấc ~100) một
- * bước rõ ràng. Chặn hai đầu để một cú lăn dữ dội không nhảy hết cả thang.
- */
-export function zoomFactorFromWheel(deltaY: number) {
-  return Math.min(1.5, Math.max(1 / 1.5, Math.exp(-deltaY * 0.0035)));
-}
 
 
 
@@ -160,7 +147,8 @@ export function useEditor(projectId: string | undefined) {
     toOutput: (at: number) => at,
     toSource: (at: number) => at,
   });
-  const [pxPerSecond, setPxPerSecond] = useState(DEFAULT_PX_PER_SECOND);
+  const { pxPerSecond, zoomBy, resetZoom, canZoomIn, canZoomOut } =
+    useTimelineZoom();
   const [selection, setSelection] = useState<Selection>(null);
   const [exportJob, setExportJob] = useState<{
     status: string;
@@ -329,21 +317,6 @@ export function useEditor(projectId: string | undefined) {
       }),
     [pxPerSecond],
   );
-
-  /** Về thang gốc — lối thoát khi phóng quá đà, thay cho Cmd+0 của trình duyệt. */
-  const resetZoom = useCallback(
-    () => setPxPerSecond(DEFAULT_PX_PER_SECOND),
-    [],
-  );
-
-  const zoomBy = useCallback((factor: number) => {
-    setPxPerSecond((current) =>
-      Math.min(
-        Math.max(current * factor, MIN_PX_PER_SECOND),
-        MAX_PX_PER_SECOND,
-      ),
-    );
-  }, []);
 
   const applySegmentsRef = useRef<(rows: ApiSegment[]) => void>(() => {});
   const { undoLabel, pushUndo, undo } = useUndoStack({
@@ -2060,8 +2033,8 @@ export function useEditor(projectId: string | undefined) {
     pxPerSecond,
     selection,
     exportJob,
-    canZoomIn: pxPerSecond < MAX_PX_PER_SECOND - 1,
-    canZoomOut: pxPerSecond > MIN_PX_PER_SECOND + 1,
+    canZoomIn,
+    canZoomOut,
     projectId,
     videoRef,
     seek,

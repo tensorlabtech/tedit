@@ -26,7 +26,7 @@ import { FlowSidebar } from "./flow-sidebar";
 import { MediaPickerDialog } from "@/components/media-picker-dialog";
 import { BigDropZone } from "./big-drop-zone";
 import { BriefStep } from "./brief-step";
-import { CutStep, type CutSentence } from "./cut-step";
+import { CutStep, type CutWord } from "./cut-step";
 import { StepRow } from "../pipeline/pipeline-page";
 import type { ApiStep } from "@/lib/api";
 import { BRollList } from "./broll-list";
@@ -69,8 +69,13 @@ type Snapshot = {
   started: boolean;
   /** Mười bốn chặng máy — chỉ bày ở BÊN PHẢI lúc bước máy đang chạy. */
   steps: ApiStep[];
-  /** Câu đã chép, cho bước soát cắt. */
-  sentences: CutSentence[];
+  /**
+   * TỪNG TỪ đã chép, cho bước cắt.
+   *
+   * Từ chứ không phải câu: một khoảng cắt hay nằm gọn trong lòng một câu, nên
+   * lấy câu thì hàng soát hiện cả câu cho một chỗ chỉ bỏ hai chữ.
+   */
+  words: CutWord[];
 };
 
 const TRONG: Snapshot = {
@@ -80,7 +85,7 @@ const TRONG: Snapshot = {
   settled: false,
   started: false,
   steps: [],
-  sentences: [],
+  words: [],
 };
 
 export function FlowPage() {
@@ -113,12 +118,10 @@ export function FlowPage() {
           settled: data.pipeline?.settled ?? false,
           started: (data.pipeline?.steps.length ?? 0) > 0,
           steps: data.pipeline?.steps ?? [],
-          sentences: (data.sentences ?? []).map((row) => ({
-            id: row.id,
+          words: (data.words ?? []).map((row) => ({
             text: row.text,
             start: row.start_sec,
             end: row.end_sec,
-            removed: row.removed === 1,
           })),
         });
       } finally {
@@ -303,19 +306,9 @@ export function FlowPage() {
             />
           ) : at === "cut" ? (
             <CutStep
-              sentences={snap.sentences}
+              projectId={projectId}
+              words={snap.words}
               previewUrl={projectId ? api.baseVideoUrl(projectId) : null}
-              onToggle={(id, removed) => {
-                // Ghi ngay, không đợi nút Lưu: mỗi dòng là một quyết định độc
-                // lập, gom lại rồi lưu một lượt chỉ tạo thêm một chỗ để mất.
-                void api.setSentenceRemoved(id, removed);
-                setSnap((cur) => ({
-                  ...cur,
-                  sentences: cur.sentences.map((item) =>
-                    item.id === id ? { ...item, removed } : item,
-                  ),
-                }));
-              }}
             />
           ) : step.actor === "machine" ? (
             /*
