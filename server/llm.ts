@@ -23,9 +23,37 @@ const ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
  *
  * Không phải chặng nào cũng cần mô hình đắt nhất: mô tả một tấm ảnh hay chọn
  * một trong năm bài nhạc thì bậc rẻ làm được, còn sửa lời và đặt tư liệu mới
- * cần suy luận thật. Chênh lệch giá giữa hai bậc là bốn tới năm lần.
+ * cần suy luận thật.
+ *
+ * ══ VÌ SAO HIỆN GIỜ CẢ HAI BẬC ĐỀU LÀ V4-PRO ══
+ *
+ * Đo trên một dự án thật, chặng chọn từ nhấn, đếm ĐỀ XUẤT BỊ GẠT (mô hình đưa
+ * ra rồi bị loại vì bịa mã hoặc đề xuất thừa):
+ *
+ *   gpt-5      107 · 41 · 32 · 28   ← bốn lượt, dao động rất rộng
+ *   v4-flash    46                  ← nằm gọn trong dải trên, không nói lên gì
+ *   v4-pro       4                  ← thấp hơn cả sàn của gpt-5 bảy lần
+ *
+ * Bốn lượt gpt-5 cho biết dải nhiễu là 28–107. Chỉ `v4-pro` ra ngoài hẳn dải
+ * ấy, nên nó là dấu hiệu chứ không phải xúc xắc — và nhìn trên khung hình cũng
+ * khớp: nó nhấn danh từ mang nghĩa ở những chỗ gpt-5 bỏ trống.
+ *
+ * `v4-flash` bị loại vì không có bằng chứng nào nó khá hơn, mà lại CHẬM hơn cả
+ * gpt-5 (34,7 giây một lượt gọi so với 12,8–18). Lợi thế duy nhất là giá, mà
+ * `v4-pro` cũng đã rẻ hơn gpt-5 11,5 lần rồi.
+ *
+ * Giá phải trả là 78 giây một lượt gọi. Chịu được vì `llm-cache.ts` khiến giá
+ * ấy chỉ trả MỘT LẦN cho mỗi bản chép — chỉnh đồ hoạ hay xuất lại sau đó không
+ * gọi mô hình lần nào (đo: hai lượt dựng liên tiếp ra hai tệp giống nhau từng
+ * byte, lượt sau 0 giây mô hình).
+ *
+ * ══ CHỖ CHƯA BIẾT ══
+ *
+ * Mới đo hai trên bảy chặng. Bốn chặng nặng suy luận chưa thử, và đáng lo nhất
+ * là `ai-fix-transcript` — lỗi chính tả là thứ người xem thấy ngay. Giữ hai bậc
+ * riêng chính là để hạ riêng một chặng về gpt-5 nếu cần, không phải đổi cả bộ.
  */
-const MODEL = process.env.OPENROUTER_MODEL ?? "openai/gpt-5";
+const MODEL = process.env.OPENROUTER_MODEL ?? "deepseek/deepseek-v4-pro";
 const MODEL_CHEAP =
   process.env.OPENROUTER_MODEL_CHEAP ?? process.env.OPENROUTER_MODEL ?? MODEL;
 
