@@ -24,7 +24,6 @@ import {
 import { FlowSidebar } from "./flow-sidebar";
 import { MediaPickerDialog } from "@/components/media-picker-dialog";
 import { BRollList } from "./broll-list";
-import { SetupNotes } from "../upload/setup-notes";
 import { SceneStrip } from "./scene-strip";
 import { SequencePreviewCard } from "../upload/sequence-preview-card";
 import { useUpload } from "../upload/use-upload";
@@ -163,6 +162,19 @@ export function FlowPage() {
     upload.mainFiles[0] ??
     null;
 
+  /*
+   * Mạch LỆCH thì CHẶN, không nhắc.
+   *
+   * `transcriptStale` bật khi thêm hoặc bớt cảnh sau lúc chép lời xong — phần
+   * mới không có chữ nào. Trang cũ chỉ hiện một dòng nhắc, mà nút đi tiếp vẫn
+   * sáng: người dùng bấm qua và mọi thứ sau đó dựng trên bản chép của một mạch
+   * khác. Cắt sai chỗ vì lịch cắt bám mốc từ, soát lời trên bản chép cũ, đặt tư
+   * liệu vào chỗ không còn tồn tại.
+   *
+   * Nhắc một dòng cho một hậu quả cỡ ấy là không cân. Chặn.
+   */
+  const stale = upload.transcriptStale || upload.briefStale;
+
   const machineAt = currentStep(snap);
   const at = viewing ?? machineAt;
   const step = FLOW_STEPS[stepIndex(at)];
@@ -196,7 +208,12 @@ export function FlowPage() {
             </Button>
             {/* Việc chính của bước là một NÚT, không phải chữ gạch chân trôi
                 giữa khung. Bước của máy thì không có nút — chờ là chờ. */}
-            {step.actor === "user" ? (
+            {stale ? (
+              <Button onClick={() => void upload.startTranscribe()}>
+                Chép lại lời
+                <ArrowRightIcon data-icon="inline-end" />
+              </Button>
+            ) : step.actor === "user" ? (
               <Button onClick={() => navigate(`/editor/${projectId}`)}>
                 Mở bàn dựng
                 <ArrowRightIcon data-icon="inline-end" />
@@ -209,7 +226,9 @@ export function FlowPage() {
       <div className="grid gap-2 lg:min-h-0 lg:grid-cols-[15rem_1fr]">
         <FlowSidebar
           current={at}
-          reached={machineAt}
+          // Mạch lệch thì mốc 'đã tới' tụt về bước nạp cuối: mọi bước sau
+          // khoá lại cho tới khi chép lại xong.
+          reached={stale ? "brief" : machineAt}
           onPick={(id) => setViewing(id)}
         />
 
@@ -226,22 +245,6 @@ export function FlowPage() {
           không thêm gì.
         */}
         <div className="grid min-h-0 gap-2 lg:grid-rows-[auto_minmax(0,1fr)]">
-          {/*
-            Dải cảnh báo của `/upload`, bê nguyên sang.
-
-            So hai trang cạnh nhau mới thấy tôi bỏ sót nó: trang cũ có một thẻ
-            "Tiếp theo" báo "Mạch đổi sau khi chép lời, lời không còn khớp" kèm
-            nút "Chép lại". Đúng cái vừa xảy ra ở bước 1 — đổi thứ tự cảnh sau
-            khi đã chép lời thì bản chép lệch hẳn, mà trang mới im lặng.
-
-            Đây là lỗ hổng CHỨC NĂNG, không phải thẩm mỹ: người dùng kéo một
-            cảnh rồi đi tiếp, và mọi thứ sau đó dựng trên một bản chép sai.
-          */}
-          <SetupNotes
-            upload={upload}
-            onOpen={setPreviewId}
-            onPick={() => openPicker("main")}
-          />
           <input
             ref={pickRef}
             type="file"
@@ -305,9 +308,6 @@ export function FlowPage() {
                 onPick={() => openPicker("insert")}
                 onPickFromLibrary={() => setLibraryOpen(true)}
                 onRemove={handleRemove}
-                onDescribe={(id, description) =>
-                  void upload.saveDescription(id, description)
-                }
               />
             </div>
           ) : (

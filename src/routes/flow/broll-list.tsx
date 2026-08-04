@@ -1,4 +1,4 @@
-import { PlusIcon, XIcon } from "lucide-react";
+import { LibraryIcon, PlusIcon, XIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -8,7 +8,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Textarea } from "@/components/ui/textarea";
 import { formatDuration, type MediaFile } from "../upload/upload-data";
 
 /**
@@ -36,7 +35,6 @@ export function BRollList({
   onPick,
   onPickFromLibrary,
   onRemove,
-  onDescribe,
 }: {
   files: MediaFile[];
   selectedId: string | null;
@@ -44,18 +42,20 @@ export function BRollList({
   onPick: () => void;
   onPickFromLibrary: () => void;
   onRemove: (id: string) => void;
-  onDescribe: (id: string, description: string) => void;
 }) {
   return (
     <Card className="lg:min-h-0">
       <CardHeader>
         <CardTitle>Tư liệu chèn</CardTitle>
-        <CardAction>
-          <Button variant="ghost" size="sm" onClick={onPickFromLibrary}>
+        {/* Cùng kiểu nút với `InsertMediaCard` ở /upload: `outline`, có icon.
+            `ghost` làm chúng trông như chữ thường, không ra nút. */}
+        <CardAction className="flex items-center gap-2">
+          <Button variant="outline" onClick={onPickFromLibrary}>
+            <LibraryIcon />
             Từ kho
           </Button>
-          <Button variant="ghost" size="sm" onClick={onPick}>
-            <PlusIcon data-icon="inline-start" />
+          <Button variant="outline" onClick={onPick}>
+            <PlusIcon />
             Thêm
           </Button>
         </CardAction>
@@ -110,16 +110,22 @@ export function BRollList({
               </span>
             </div>
             {/*
-              Mô tả nằm NGAY DƯỚI ảnh, không giấu sau một lượt bấm.
-              Nó là thứ `ai-broll-place` đọc để biết đặt tư liệu nào vào đâu —
-              tức là thứ quyết định chất lượng của cả bước chèn.
+              KHÔNG có ô nhập mô tả ở đây.
+
+              `SequencePreviewCard` bên trái đã có một ô rồi, và hai ô cho cùng
+              một dữ liệu thì chúng lệch nhau ngay — chụp màn thấy ô bên trái
+              trống trong khi ô bên phải đã có chữ.
+
+              Ô bên trái đúng chỗ hơn: người ta nhìn thấy video trong lúc gõ.
+              Ở đây chỉ HIỆN LẠI để biết tư liệu nào đã tả, tư liệu nào chưa.
             */}
-            <Textarea
-              defaultValue={file.description ?? ""}
-              placeholder="Tư liệu này quay gì? Máy dùng câu này để chọn chỗ đặt."
-              rows={2}
-              onBlur={(event) => onDescribe(file.id, event.target.value)}
-            />
+            {file.description?.trim() ? (
+              <p className="text-muted-foreground text-sm">{file.description}</p>
+            ) : (
+              <p className="text-muted-foreground text-sm italic">
+                Chưa tả — bấm để mở rồi gõ ở khung xem trước
+              </p>
+            )}
           </div>
         ))}
       </CardContent>
