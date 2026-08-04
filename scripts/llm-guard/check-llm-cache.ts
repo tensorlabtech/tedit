@@ -11,7 +11,7 @@
  * vào câu hỏi thì hai câu hỏi khác nhau trúng cùng một ô nhớ, và sai kiểu ấy im
  * lặng tuyệt đối — video vẫn xuất, chỉ là nhấn sai từ.
  */
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -122,6 +122,57 @@ const fresh = await import(`../../server/llm-cache?tat=${Date.now()}`);
 const k2 = fresh.cacheKey(BASE);
 fresh.writeCache(k2, { x: 1 }, BASE.model);
 check("TEDDIT_LLM_CACHE=0 thì không ghi và không đọc", fresh.readCache(k2) === null);
+
+/*
+ * ══ LỜI NHẮC KHÔNG ĐƯỢC DÁN MÃ HAY SINH LẠI ══
+ *
+ * Bộ nhớ chỉ trúng khi câu hỏi giống hệt. Mà `newId` dựng mã từ `Date.now()`
+ * cộng số ngẫu nhiên, còn mỗi lượt gieo lại thì XOÁ SẠCH phần tử chữ rồi tạo
+ * mới — nên chặng nào dán mã phần tử vào lời nhắc là tự làm câu hỏi khác đi ở
+ * mọi lượt chạy, dù bản chép không đổi một chữ.
+ *
+ * Đo được trước khi sửa: bộ nhớ trúng 1/4, và cái trúng duy nhất là chặng
+ * KHÔNG dán mã. Ba lượt hỏi từ nhấn trượt sạch.
+ *
+ * Không phải mã nào cũng hỏng: mã TỪ đến từ bản chép và mã TỆP đến từ lượt tải
+ * lên — cả hai đều sống qua một lượt gieo lại. Chỉ mã PHẦN TỬ mới bị tạo lại.
+ * Nên phép quét này chỉ soi những tệp có đọc bảng `elements`.
+ *
+ * Quét mã nguồn chứ không chạy thử: chạy thử cần cả một dự án thật và một lượt
+ * gọi mô hình, mà thứ cần canh chỉ là một dòng người ta dễ viết lại cho tiện.
+ */
+console.log("\nLời nhắc không dán mã phần tử (mã bị sinh lại mỗi lượt)");
+const { readdirSync } = await import("node:fs");
+const AI_DIR = join(import.meta.dirname, "..", "..", "server");
+for (const name of readdirSync(AI_DIR).filter((f) => /^ai-.*\.ts$/.test(f))) {
+  const src = readFileSync(join(AI_DIR, name), "utf8");
+  // Biểu thức `input:` trải tới trường kế tiếp của cùng lời gọi `ask`.
+  const block = /input:\s*([\s\S]*?)\n\s{4}\w+:/.exec(src)?.[1] ?? "";
+  if (!/\.id\b/.test(block)) {
+    check(`${name} dùng tay nắm ỔN ĐỊNH trong lời nhắc`, true);
+    continue;
+  }
+  /*
+   * Có `.id` thì truy xem mã ấy TỪ BẢNG NÀO ra.
+   *
+   * Không phải mã nào cũng hỏng. Mã TỪ đến từ bản chép, mã TỆP đến từ lượt tải
+   * lên — cả hai sống qua một lượt gieo lại nên dán vào lời nhắc là an toàn.
+   * Chỉ mã PHẦN TỬ mới bị xoá rồi tạo mới, và chỉ nó mới phá bộ nhớ.
+   *
+   * Nên bắt cái nhận của `.map` trong biểu thức, rồi tra xem biến ấy được gán
+   * từ câu truy vấn nào.
+   */
+  const receivers = [...block.matchAll(/(\w+)\s*\.map\(/g)].map((m) => m[1]);
+  const fromElements = receivers.filter((name) => {
+    const bind = new RegExp(`(const|let)\\s+${name}\\s*=([\\s\\S]{0,600}?);`).exec(src)?.[2] ?? "";
+    return /FROM elements/i.test(bind);
+  });
+  check(
+    `${name} dùng tay nắm ỔN ĐỊNH trong lời nhắc`,
+    fromElements.length === 0,
+    `dán mã phần tử từ ${fromElements.join(", ")}`,
+  );
+}
 
 console.log(`\n${passed} đạt, ${failed} trượt`);
 process.exit(failed === 0 ? 0 : 1);

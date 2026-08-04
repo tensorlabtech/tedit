@@ -155,14 +155,28 @@ async function pickOnce(
 
   const proposal = await ask<Proposal>({
     instructions: voiBoiCanh(INSTRUCTIONS + nhamTiLe(share), projectId),
-    input: rows.map((row) => `${row.id}|${row.content}`).join("\n"),
+    /*
+     * SỐ THỨ TỰ làm tay nắm, KHÔNG phải mã CSDL.
+     *
+     * Mã phần tử sinh từ `Date.now()` cộng số ngẫu nhiên, và mỗi lượt gieo lại
+     * là xoá sạch phần tử chữ rồi tạo mới — nên dán mã vào lời nhắc là làm câu
+     * hỏi khác đi ở mọi lượt chạy, dù bản chép không đổi một chữ.
+     *
+     * Đo được: bộ nhớ câu trả lời trúng 1/4, và cái trúng duy nhất là chặng
+     * KHÔNG dán mã. Ba lượt hỏi từ nhấn trượt sạch.
+     *
+     * Mô hình không cần mã thật — nó chỉ cần một cái tay nắm để trỏ lại dòng
+     * nào. Số thứ tự làm được đúng việc ấy và ổn định theo bản chép.
+     */
+    input: rows.map((row, at) => `${at}|${row.content}`).join("\n"),
     schemaName: "keywords",
     // Việc này không cần suy luận sâu — dùng bậc mô hình rẻ.
     cheap: true,
     schema: SCHEMA,
   });
 
-  const byId = new Map(rows.map((row) => [row.id, row.content ?? ""]));
+  // Ánh xạ ngược theo SỐ THỨ TỰ — cùng thứ tự `ORDER BY rowid` đã gửi đi.
+  const byHandle = new Map(rows.map((row, at) => [String(at), row]));
   const update = db.prepare("UPDATE elements SET keywords=? WHERE id=?");
   let budget = Math.max(1, Math.min(room, rows.length));
   let applied = 0;
@@ -170,8 +184,9 @@ async function pickOnce(
 
   db.transaction(() => {
     for (const pick of proposal.picks) {
-      const content = byId.get(pick.id);
-      if (content === undefined) {
+      const row = byHandle.get(pick.id);
+      const content = row?.content ?? undefined;
+      if (row === undefined || content === undefined) {
         rejected += 1;
         continue;
       }
@@ -220,7 +235,8 @@ async function pickOnce(
         rejected += 1;
         continue;
       }
-      update.run(valid.join("|"), pick.id);
+      // Ghi theo mã THẬT của hàng, không theo tay nắm gửi cho mô hình.
+      update.run(valid.join("|"), row.id);
       budget -= 1;
       applied += 1;
     }
