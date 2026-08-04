@@ -23,6 +23,7 @@ import {
   LAYOUT_SPECS,
   findLayout,
   freeBand,
+  settleAspect,
   slotPixels,
   type LayoutKindId,
   type Slot,
@@ -147,9 +148,9 @@ const withPage = layoutPlan(
   W,
   H,
   [],
+  [],
   7,
   DOC,
-  0,
 );
 const all = withPage.chains.join(";");
 check("có phép phóng theo từng khung", all.includes("eval=frame"), all.slice(0, 120));
@@ -191,7 +192,7 @@ check(
  */
 const lone = layoutPlan(
   PACK,
-  [scenes[0]], ["[a]"], "/png", W, H, [], 4, DOC, 0,
+  [scenes[0]], ["[a]"], "/png", W, H, [], [], 4, DOC,
 );
 check(
   "màn đầu phim nở tại chỗ, không lướt từ đâu cả",
@@ -206,7 +207,7 @@ check(
  * cảnh.
  */
 const noPage = layoutPlan(
-  { ...PACK, page: null }, scenes, ["[a]", "[b]"], "/png", W, H, [], 7, DOC, 0,
+  { ...PACK, page: null }, scenes, ["[a]", "[b]"], "/png", W, H, [], [], 7, DOC,
 );
 check(
   "không nền trang thì KHÔNG nở",
@@ -231,7 +232,8 @@ const rotated = layoutPlan(
   PACK,
   brollScenes, ["[a]"], "/png", W, H,
   ["/tu-lieu/mot.mp4", "/tu-lieu/hai.mp4", "/tu-lieu/ba.mp4"],
-  11, DOC, 0,
+  [DOC, DOC, DOC],
+  11, DOC,
 );
 const graph = rotated.chains.join(";");
 for (const name of ["mot", "hai", "ba"]) {
@@ -248,7 +250,7 @@ check(
  */
 const lonely = layoutPlan(
   PACK,
-  brollScenes, ["[a]"], "/png", W, H, ["/tu-lieu/mot.mp4"], 11, DOC, 0,
+  brollScenes, ["[a]"], "/png", W, H, ["/tu-lieu/mot.mp4"], [DOC], 11, DOC,
 );
 check(
   "một tệp thì cả ba màn vẫn có ô phụ",
@@ -271,7 +273,7 @@ const pushScenes: ScheduledScene[] = [
 ];
 const pushed = layoutPlan(
   { ...PACK, scenePush: { ratePerSecond: 0.06, share: 0.3 } },
-  pushScenes, ["[a]"], "/png", W, H, [], 12, DOC, 0,
+  pushScenes, ["[a]"], "/png", W, H, [], [], 12, DOC,
 );
 const pchain = pushed.chains.join(";");
 check("có số hạng dồn khi bộ dáng khai", pchain.includes("min(0.12"), pchain.slice(-120));
@@ -281,7 +283,7 @@ check(
   `${(pchain.match(/min\(0\.12/g) ?? []).length} số hạng`,
 );
 const noPush = layoutPlan(
-  { ...PACK, scenePush: null }, pushScenes, ["[a]"], "/png", W, H, [], 12, DOC, 0,
+  { ...PACK, scenePush: null }, pushScenes, ["[a]"], "/png", W, H, [], [], 12, DOC,
 );
 check(
   "bộ dáng không khai thì KHÔNG có số hạng dồn",
@@ -295,9 +297,83 @@ check(
 const longPush = layoutPlan(
   { ...PACK, scenePush: { ratePerSecond: 0.06, share: 1 } },
   [{ start: 0, end: 15.0, layout: "toan-khung", hero: null, push: true }],
-  ["[a]"], "/png", W, H, [], 15, DOC, 0,
+  ["[a]"], "/png", W, H, [], [], 15, DOC,
 );
 check("màn dài vẫn bị chặn ở trần", longPush.chains.join(";").includes("min(0.12"));
+
+/*
+ * ══ Ô PHỤ BÁM TỈ LỆ TƯ LIỆU, KHÔNG BÁM TỈ LỆ KHAI ══
+ *
+ * Ô phụ khai `ngang` (16:9), còn cả bốn tệp tư liệu của dự án thử nghiệm là
+ * 720×1280 (dọc 9:16) — nhét dọc vào ngang bỏ mất **68%** khung hình. Cùng loại
+ * lỗi đã mắc với ô chính, chỉ tệ hơn: lần trước bỏ 52%.
+ *
+ * Tỉ lệ khai của bố cục là MONG MUỐN. Tư liệu quyết định danh sách hình dạng
+ * dựng được, và mong muốn nằm ngoài danh sách thì phải nhường.
+ */
+console.log("\nÔ phụ bám tỉ lệ TƯ LIỆU");
+const DOC_MEDIA = 9 / 16;
+const NGANG_MEDIA = 16 / 9;
+for (const spec of LAYOUT_SPECS) {
+  const phu = spec.slots.find((s) => s.role === "phu");
+  const chinh = spec.slots.find((s) => s.role === "chinh");
+  if (!phu || !chinh) continue;
+  const mateRatio = (() => {
+    const b = slotPixels(chinh, W, H, DOC);
+    return b.w / b.h;
+  })();
+  for (const [name, media] of [["dọc 9:16", DOC_MEDIA], ["ngang 16:9", NGANG_MEDIA], ["vuông", 1]] as const) {
+    const settled = settleAspect(phu.aspect, media, mateRatio);
+    const box = slotPixels({ ...phu, aspect: settled }, W, H, media);
+    const kept = Math.min(box.w / box.h, media) / Math.max(box.w / box.h, media);
+    check(
+      `"${spec.label}" ô phụ với tư liệu ${name} → ${settled}, giữ ${(kept * 100).toFixed(0)}%`,
+      kept >= 0.55,
+      `bỏ ${((1 - kept) * 100).toFixed(0)}% khung tư liệu`,
+    );
+  }
+}
+/*
+ * Hai ô vẫn phải KHÁC hình dạng sau khi nhường.
+ *
+ * Rơi cả hai về vuông là xoá mất chính điều hai bố cục ấy sinh ra để làm — nên
+ * khi mong muốn không dựng được, chọn hình XA NHẤT so với ô anh em.
+ */
+for (const id of ["vuong-ngang", "ngang-vuong"] as const) {
+  const spec = findLayout(id);
+  const chinh = spec.slots.find((s) => s.role === "chinh")!;
+  const phu = spec.slots.find((s) => s.role === "phu")!;
+  const a = slotPixels(chinh, W, H, DOC);
+  const settled = settleAspect(phu.aspect, DOC_MEDIA, a.w / a.h);
+  const b = slotPixels({ ...phu, aspect: settled }, W, H, DOC_MEDIA);
+  check(
+    `"${spec.label}" hai ô vẫn khác hình dạng với tư liệu dọc`,
+    Math.abs(a.w / a.h - b.w / b.h) > 0.2,
+    `${(a.w / a.h).toFixed(2)} vs ${(b.w / b.h).toFixed(2)}`,
+  );
+}
+
+/*
+ * ══ CẮT GIỮA, KHÔNG DỊCH ══
+ *
+ * Phép dịch cũ chạy VỀ PHÍA dải rỗng người nhất thay vì tránh xa, và `max(0,…)`
+ * khiến nó chỉ lên được chứ không bao giờ xuống. Đo mặt nạ một bản thật ở giây
+ * 60, mười dải từ trên xuống: 0 · 0 · 8 · 34 · 101 · 105 · 87 · 197 · 252 · 255
+ * — dải rỗng nhất là dải 0, và công thức đẩy khung cắt lên đúng chỗ ấy.
+ */
+console.log("\nPhép cắt lấy GIỮA");
+const centred = layoutPlan(
+  PACK,
+  [{ start: 0, end: 4, layout: "vuong-ngang", hero: "a", heroSeconds: 2.5, insert: 0 }],
+  ["[a]"], "/png", W, H, ["/tu-lieu/mot.mp4"], [DOC_MEDIA], 4, DOC,
+);
+const crops = centred.chains.join(";").match(/crop=[^,\]]*/g) ?? [];
+check(`có phép cắt (${crops.length} chỗ)`, crops.length > 0);
+check(
+  "không chỗ cắt nào mang số dịch",
+  crops.every((c) => /^crop=\d+:\d+$/.test(c)),
+  crops.filter((c) => !/^crop=\d+:\d+$/.test(c)).join(" · "),
+);
 
 console.log("\nPhép kiểm BẮT được lỗi (thử phá)");
 const broken: Array<[string, Slot, boolean]> = [

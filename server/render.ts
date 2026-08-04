@@ -1060,10 +1060,10 @@ export async function burnElements(
   schedule: readonly ScheduledScene[] = [],
   /** Các tệp tư liệu cho ô phụ, xoay vòng theo màn. Rỗng là chưa có. */
   layoutInserts: readonly string[] = [],
+  /** Tỉ lệ (rộng/cao) của từng tệp trên, cùng thứ tự. Ô phụ đo theo số này. */
+  layoutInsertAspects: readonly number[] = [],
   /** Tỉ lệ video nguồn — ô bám theo để phép cắt không bỏ gì. */
   sourceAspect: number | undefined = undefined,
-  /** Dịch khung cắt theo chỗ người đứng. Âm là dịch lên. */
-  subjectShift = 0,
 ) {
   const target = join(outDir(projectId), "final.mp4");
   const inserts = elements.filter(
@@ -1244,7 +1244,7 @@ export async function burnElements(
     const labels = Array.from({ length: copies }, (_, i) => `[lysrc${i}]`);
     const plan = layoutPlan(
       pack, schedule, labels, GRAPHICS_DIR, OUT_WIDTH, OUT_HEIGHT,
-      layoutInserts, cutSeconds, sourceAspect, subjectShift,
+      layoutInserts, layoutInsertAspects, cutSeconds, sourceAspect,
     );
     if (plan.page) {
       filters.push(`${stream}split=${copies}${labels.join("")}`);

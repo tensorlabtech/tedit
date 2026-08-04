@@ -60,6 +60,61 @@ const ASPECT_RATIO: Record<Exclude<SlotAspect, "nguon">, number> = {
   doc: 3 / 4,
 };
 
+/**
+ * Ô khai tỉ lệ là khai một MONG MUỐN, không phải một mệnh lệnh.
+ *
+ * ══ VÌ SAO ══
+ *
+ * Ô phụ khai `ngang` (16:9). Cả bốn tệp tư liệu của dự án thử nghiệm là
+ * 720×1280, tức 9:16 — nhét dọc vào ngang thì phép thu-rồi-cắt **bỏ 68%** khung
+ * hình. Đúng cái lỗi đã mắc một lần với ô chính, chỉ là lần này tệ hơn: lần
+ * trước bỏ 52%.
+ *
+ * Bố cục không biết trước người dùng nạp gì lên, nên nó không được quyền chốt
+ * cứng tỉ lệ của ô đựng thứ ấy.
+ *
+ * ══ LUẬT ══
+ *
+ * Tư liệu cho phép những hình dạng nào:
+ *
+ *   tư liệu DỌC   → ô được dọc hoặc vuông
+ *   tư liệu NGANG → ô được ngang hoặc vuông
+ *   tư liệu VUÔNG → ô được cả ba
+ *
+ * Vuông luôn nằm trong danh sách vì nó là hình ở giữa: mọi tỉ lệ vào ô vuông
+ * đều mất phần bằng nhau ở hai đầu, không có đầu nào mất hẳn.
+ *
+ * Mong muốn của bố cục mà nằm trong danh sách thì dùng luôn. Không thì chọn
+ * hình XA NHẤT so với ô anh em — vì hai bố cục hai-ô mới sinh ra để hai ô khác
+ * hình dạng, và rơi cả hai về vuông là xoá mất chính điều đó.
+ */
+export function allowedAspects(mediaAspect: number): SlotAspect[] {
+  if (mediaAspect < 0.9) return ["doc", "vuong"];
+  if (mediaAspect > 1.15) return ["ngang", "vuong"];
+  return ["doc", "vuong", "ngang"];
+}
+
+/** Chốt tỉ lệ thật của một ô, biết tư liệu nó đựng và ô anh em bên cạnh. */
+export function settleAspect(
+  want: SlotAspect | undefined,
+  mediaAspect: number,
+  siblingRatio: number | null,
+): SlotAspect {
+  const allowed = allowedAspects(mediaAspect);
+  if (!want || want === "nguon") return "nguon";
+  if (allowed.includes(want)) return want;
+  if (siblingRatio === null) return allowed[0];
+  // Xa nhất theo thang nhân, không theo hiệu — 0,75 với 1,0 cách 1,0 với 1,78
+  // đúng bằng nhau khi nhìn bằng tỉ lệ, mà hiệu thì nói khác hẳn.
+  let best = allowed[0];
+  let far = -1;
+  for (const id of allowed) {
+    const d = Math.abs(Math.log(ASPECT_RATIO[id as Exclude<SlotAspect, "nguon">] / siblingRatio));
+    if (d > far) { far = d; best = id; }
+  }
+  return best;
+}
+
 export type Slot = {
   role: SlotRole;
   /** Tỉ lệ ô. Thiếu thì bám nguồn. */

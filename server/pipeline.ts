@@ -1023,15 +1023,23 @@ export async function runExport(projectId: string) {
   /*
    * Tỉ lệ nguồn và chỗ người đứng — hai số làm ô ôm đúng người.
    *
-   * Đo một lần ở giữa phim: người ngồi yên gần như suốt, và một phép đo đủ để
-   * chọn khổ ô. `subjectShift` là phần phải dịch khung cắt LÊN — đo được đỉnh
-   * đầu ở 0,35 còn cắt giữa thì ô ôm đầy trần nhà.
+   * Đo một lần: tỉ lệ nguồn quyết khổ ô, mà tỉ lệ thì không đổi giữa chừng.
    */
   const sourceAspect =
     baseInfo.width && baseInfo.height ? baseInfo.width / baseInfo.height : undefined;
-  const subjectShift = hasSubject(projectId)
-    ? -Math.max(0, 0.5 - ((await emptiestBand(projectId, baseInfo.duration / 2, 10))?.index ?? 5) / 10) * 0.6
-    : 0;
+  /*
+   * Tỉ lệ TỪNG tệp tư liệu — ô phụ đo theo số này, không theo video chính.
+   *
+   * Cả bốn tệp của dự án thử nghiệm là 720×1280 (dọc 9:16) trong khi ô phụ khai
+   * `ngang` (16:9): nhét dọc vào ngang bỏ mất 68% khung hình. Bố cục không biết
+   * trước người dùng nạp gì, nên nó không được chốt cứng tỉ lệ của ô đựng thứ ấy.
+   */
+  const insertAspects = await Promise.all(
+    insertPaths.map(async (path) => {
+      const info = await probe(path).catch(() => null);
+      return info?.width && info?.height ? info.width / info.height : 1;
+    }),
+  );
 
   const finalPath = await burnElements(
     projectId,
@@ -1063,8 +1071,8 @@ export async function runExport(projectId: string) {
     behindBand,
     schedule,
     insertPaths,
+    insertAspects,
     sourceAspect,
-    subjectShift,
   );
 
   // Nhạc đặt theo thời gian NGUỒN trên dải, nên phải quy sang dải ĐÃ CẮT: bỏ

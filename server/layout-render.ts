@@ -1,4 +1,4 @@
-import { findLayout, slotPixels, type LayoutKindId } from "./layout-kinds";
+import { findLayout, settleAspect, slotPixels, type LayoutKindId } from "./layout-kinds";
 import { ffmpegColor, type StylePack } from "./style-pack";
 import type { ScheduledScene } from "./timing";
 
@@ -43,21 +43,33 @@ export type LayoutPlan = {
 };
 
 /**
- * Phép cắt, dịch lên/xuống theo chỗ NGƯỜI đứng.
+ * Phép cắt — GIỮA cả hai chiều.
  *
- * Mặc định `crop` lấy giữa. Với nguồn dọc thu vào một ô thấp hơn thì "giữa" rơi
- * vào ngực, còn đầu bị xén — nên dịch khung cắt lên bằng đúng phần người lệch.
- * `clip` chặn dịch quá mép: dịch hết cỡ vẫn phải nằm trong khung đã thu.
+ * ── VÌ SAO BỎ PHÉP DỊCH ──
+ *
+ * Bản trước dịch khung cắt theo `subjectShift`, tính từ dải NGANG rỗng người
+ * nhất:
+ *
+ *   subjectShift = -max(0, 0,5 - dảiRỗngNhất/10) * 0,6
+ *
+ * Hai chỗ sai, và chúng cộng dồn:
+ *
+ * · **Sai chiều.** Đo mặt nạ người của một bản thật ở giây 60, mười dải từ trên
+ *   xuống: 0 · 0 · 8 · 34 · 101 · 105 · 87 · 197 · 252 · 255. Dải rỗng nhất là
+ *   dải 0, nên công thức ra −0,3 — đẩy khung cắt LÊN 30%, tức về đúng hai dải
+ *   KHÔNG CÓ NGƯỜI NÀO. Nó chạy về phía chỗ trống thay vì tránh xa.
+ * · **Một chiều.** `max(0, …)` khiến nó chỉ lên được, không bao giờ xuống. Dải
+ *   rỗng nhất nằm dưới thì phép dịch im lặng thành 0.
+ *
+ * Mà cắt GIỮA lại đúng với chính số đo ấy: mặt nằm quanh dải 4–6, còn dải 7–9
+ * bão hoà là thân người. Lấy trọng tâm khối người sẽ kéo xuống thân — tệ hơn cả
+ * hai lối trên.
+ *
+ * Giờ ô đã bám tỉ lệ tư liệu nên phần bị cắt vốn đã nhỏ; giữa là chỗ an toàn
+ * nhất, và là chỗ người xem đọc ra là "không lệch".
  */
-function cropExpr(box: { w: number; h: number }, shift: number): string {
-  if (Math.abs(shift) < 0.005) return `crop=${box.w}:${box.h}`;
-  const dy = Math.round(box.h * shift);
-  // `\\,` chứ không phải `\,`: trong chuỗi mẫu của TS thì `\,` chỉ ra một dấu
-  // phẩy trần, mà ffmpeg đọc dấu phẩy trần là hết bộ lọc — và lỗi hiện ra là
-  // "No such filter: '0'", không hề nhắc tới phép cắt.
-  const sign = dy < 0 ? "-" : "+";
-  return `crop=${box.w}:${box.h}:(in_w-out_w)/2:` +
-    `clip((in_h-out_h)/2${sign}${Math.abs(dy)}\\,0\\,in_h-out_h)`;
+function cropExpr(box: { w: number; h: number }): string {
+  return `crop=${box.w}:${box.h}`;
 }
 
 /** `between(...)+between(...)` — các khoảng không chồng nhau nên cộng là HOẶC. */
@@ -229,6 +241,13 @@ export function layoutPlan(
    */
   insertPaths: readonly string[] = [],
   /**
+   * Tỉ lệ (rộng/cao) của từng tệp tư liệu, cùng thứ tự với `insertPaths`.
+   *
+   * Ô phụ đo theo số này chứ không theo tỉ lệ video CHÍNH: hai thứ khác nhau,
+   * và dùng nhầm thì tư liệu dọc bị nhét vào ô ngang.
+   */
+  insertAspects: readonly number[] = [],
+  /**
    * Độ dài phim, giây. BẮT BUỘC khi có nền trang.
    *
    * Nguồn `color` không khai độ dài là một luồng VÔ HẠN. Mọi chỗ khác trong hệ
@@ -244,14 +263,6 @@ export function layoutPlan(
    * nguồn dọc bỏ 52% chiều cao.
    */
   sourceAspect?: number,
-  /**
-   * Người đứng lệch bao nhiêu theo CHIỀU DỌC, tỉ lệ khung nguồn.
-   *
-   * Đo được trên một bản: đỉnh đầu ở 0,35 còn trọng tâm người ở 0,755 — cắt
-   * giữa thì ô ôm đầy trần nhà và cắt ngang ngực. Dịch phép cắt lên theo số này
-   * thì ô ôm mặt.
-   */
-  subjectShift = 0,
 ): LayoutPlan {
   const chains: string[] = [];
   const overlays: LayoutPlan["overlays"] = [];
@@ -303,7 +314,7 @@ export function layoutPlan(
        * những màn dùng tệp ấy. Đây cũng là lối đã dùng cho bố cục: bật/tắt bằng
        * `enable` rẻ hơn mọi cách chuyển nguồn giữa chừng.
        */
-      const groups: Array<{ scenes: ScheduledScene[]; path: string | null; suffix: string }> =
+      const groups: Array<{ scenes: ScheduledScene[]; path: string | null; suffix: string; which: number }> =
         slot.role === "phu"
           ? [...new Set(scenes.map((s) => s.insert ?? 0))]
               .sort((a, b) => a - b)
@@ -311,10 +322,11 @@ export function layoutPlan(
                 scenes: scenes.filter((s) => (s.insert ?? 0) === which),
                 path: insertPaths[which % Math.max(1, insertPaths.length)] ?? null,
                 suffix: `i${which}`,
+                which,
               }))
-          : [{ scenes, path: null, suffix: "" }];
+          : [{ scenes, path: null, suffix: "", which: 0 }];
 
-      groups.forEach((group) => buildSlot(slot, at, group.scenes, group.path, group.suffix));
+      groups.forEach((group) => buildSlot(slot, at, group.scenes, group.path, group.suffix, group.which));
     });
 
     function buildSlot(
@@ -323,6 +335,7 @@ export function layoutPlan(
       scenes: readonly ScheduledScene[],
       insertPath: string | null,
       suffix: string,
+      which: number,
     ) {
       const tagBase = `ly${index}s${at}${suffix}`;
       /*
@@ -339,9 +352,27 @@ export function layoutPlan(
       // Ô `phu` mà chưa có tư liệu thì BỎ, không dựng một ô đen: một khoảng
       // trống có viền đọc ra là lỗi vẽ, còn thiếu hẳn thì chỉ là bố cục gọn hơn.
       if (!from) return;
-      const box = slotPixels(slot, frameWidth, frameHeight, sourceAspect);
+      /*
+       * Ô phụ đo theo TƯ LIỆU, ô chính đo theo VIDEO CHÍNH.
+       *
+       * Và tỉ lệ khai của ô phụ chỉ là mong muốn: tư liệu dọc thì ô ngang không
+       * dựng được mà không bỏ mất 68% khung hình, nên `settleAspect` chốt lại
+       * theo thứ tư liệu thật sự có.
+       */
+      const media = slot.role === "phu"
+        ? (insertAspects[which] ?? sourceAspect ?? frameWidth / frameHeight)
+        : (sourceAspect ?? frameWidth / frameHeight);
+      let use = slot;
+      if (slot.role === "phu") {
+        const mate = spec.slots.find((o) => o !== slot);
+        const mateBox = mate
+          ? slotPixels(mate, frameWidth, frameHeight, sourceAspect)
+          : null;
+        use = { ...slot, aspect: settleAspect(slot.aspect, media, mateBox ? mateBox.w / mateBox.h : null) };
+      }
+      const box = slotPixels(use, frameWidth, frameHeight, media);
       const tag = tagBase;
-      const crop = cropExpr(box, slot.role === "chinh" ? subjectShift : 0);
+      const crop = cropExpr(box);
       const fit = `scale=${box.w}:${box.h}:force_original_aspect_ratio=increase,${crop}`;
       const masked = slot.mask
         ? `movie=${pngDir}/${slot.mask}.png,alphaextract,scale=${box.w}:${box.h}[${tag}m];` +
