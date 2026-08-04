@@ -10,7 +10,7 @@
  * dùng cần biết "đang ở đâu, còn mấy chặng", không cần biết máy vừa xong lượt
  * chọn từ khoá hay lượt đặt tư liệu.
  *
- * Mười bốn chặng máy gộp vào đúng hai bước ở đây (`chuan-bi` và `dung-not`).
+ * Mười bốn chặng máy gộp vào đúng hai bước ở đây (`preparing` và `building`).
  * Chi tiết vẫn hiện, nhưng ở BÊN PHẢI lúc bước ấy đang chạy — không lên sidebar.
  *
  * ══ VÌ SAO SUY RA CHỨ KHÔNG LƯU ══
@@ -24,7 +24,7 @@
  *
  * ══ CHỈ MỘT CỬA MỘT CHIỀU ══
  *
- * Giữa `cat-doan` và `soat-loi`. Qua đó là chép lời lại, bản chép cũ mất hẳn.
+ * Giữa `cut` và `proofread`. Qua đó là chép lời lại, bản chép cũ mất hẳn.
  *
  * Bảy chỗ còn lại quay về được mà chẳng hỏng gì. Khoá hết là chặt hơn dữ liệu
  * đòi hỏi, và người dùng va vào cái khoá vô cớ đầu tiên là mất tin vào cả cái
@@ -33,23 +33,23 @@
  */
 
 export type FlowStepId =
-  | "canh-chinh"
-  | "canh-phu"
-  | "de-bai"
-  | "chuan-bi"
-  | "cat-doan"
-  | "soat-loi"
-  | "dung-not"
-  | "ban-dung";
+  | "main-footage"
+  | "b-roll"
+  | "brief"
+  | "preparing"
+  | "cut"
+  | "proofread"
+  | "building"
+  | "studio";
 
 /** Bước này ai làm — quyết định bên phải bày gì, và sidebar tô màu ra sao. */
-export type FlowActor = "nguoi" | "may";
+export type FlowActor = "user" | "machine";
 
 export type FlowStep = {
   id: FlowStepId;
   label: string;
   /** Cụm thị giác. Tám dòng gom thành bốn cụm thì đọc ra bốn chặng. */
-  group: "nap-vao" | "soat" | "chinh";
+  group: "intake" | "review" | "polish";
   actor: FlowActor;
   /**
    * Bước này có CHẶN không.
@@ -64,8 +64,8 @@ export type FlowStep = {
 export const FLOW_STEPS: FlowStep[] = [
   // Ba bước nạp KHÔNG chặn: tệp tải nền, còn người thì đi tiếp. Bước "chuẩn bị"
   // mới là chỗ đợi, và lúc ấy nó đợi thật chứ không phải một thanh giả.
-  { id: "canh-chinh", label: "Cảnh chính", group: "nap-vao", actor: "nguoi", blocks: false },
-  { id: "canh-phu", label: "Cảnh phụ", group: "nap-vao", actor: "nguoi", blocks: false },
+  { id: "main-footage", label: "Cảnh chính", group: "intake", actor: "user", blocks: false },
+  { id: "b-roll", label: "Cảnh phụ", group: "intake", actor: "user", blocks: false },
   /*
    * Đề bài đứng TRƯỚC chặng nghe, và đó là chỗ đắt nhất của cả luồng.
    *
@@ -77,16 +77,16 @@ export const FLOW_STEPS: FlowStep[] = [
    * chênh 2,4 lần, và đó chính là ngưỡng quyết quãng lặng nào bị cắt. Chọn sau
    * khi đã soát cắt là làm phần vừa soát thành vô nghĩa.
    */
-  { id: "de-bai", label: "Đề bài & phong cách", group: "nap-vao", actor: "nguoi", blocks: false },
-  { id: "chuan-bi", label: "Chuẩn bị", group: "nap-vao", actor: "may", blocks: true },
-  { id: "cat-doan", label: "Cắt đoạn lỗi", group: "soat", actor: "nguoi", blocks: true },
-  { id: "soat-loi", label: "Soát lời", group: "soat", actor: "nguoi", blocks: true },
-  { id: "dung-not", label: "Máy dựng nốt", group: "soat", actor: "may", blocks: true },
-  { id: "ban-dung", label: "Bàn dựng", group: "chinh", actor: "nguoi", blocks: false },
+  { id: "brief", label: "Đề bài & phong cách", group: "intake", actor: "user", blocks: false },
+  { id: "preparing", label: "Chuẩn bị", group: "intake", actor: "machine", blocks: true },
+  { id: "cut", label: "Cắt đoạn lỗi", group: "review", actor: "user", blocks: true },
+  { id: "proofread", label: "Soát lời", group: "review", actor: "user", blocks: true },
+  { id: "building", label: "Máy dựng nốt", group: "review", actor: "machine", blocks: true },
+  { id: "studio", label: "Bàn dựng", group: "polish", actor: "user", blocks: false },
 ];
 
 /** Bước duy nhất qua rồi không về được, và bước ngay sau nó. */
-export const ONE_WAY_AFTER: FlowStepId = "cat-doan";
+export const ONE_WAY_AFTER: FlowStepId = "cut";
 
 /** Trạng thái thật cần để suy ra bước. Gọn nhất có thể — thêm trường là thêm chỗ lệch. */
 export type FlowState = {
@@ -107,15 +107,15 @@ export type FlowState = {
  * loại trừ mọi nhánh sau nó, và cái đó hỏng ngay khi thêm bước thứ chín.
  */
 export function currentStep(state: FlowState): FlowStepId {
-  if (state.settled) return "ban-dung";
-  if (state.awaiting === "soat-chu") return "soat-loi";
-  if (state.awaiting === "soat-cat") return "cat-doan";
+  if (state.settled) return "studio";
+  if (state.awaiting === "review-text") return "proofread";
+  if (state.awaiting === "review-cut") return "cut";
   // Mạch chạy mà không cổng nào mở: máy đang làm việc của nó. Chưa qua cổng cắt
   // thì là chặng chuẩn bị, qua rồi thì là chặng dựng nốt.
-  if (state.started) return "chuan-bi";
-  if (!state.hasMain) return "canh-chinh";
-  if (!state.hasBrief) return "de-bai";
-  return "canh-phu";
+  if (state.started) return "preparing";
+  if (!state.hasMain) return "main-footage";
+  if (!state.hasBrief) return "brief";
+  return "b-roll";
 }
 
 /** Bước `id` đứng thứ mấy. `-1` với tên lạ. */
@@ -127,7 +127,7 @@ export function stepIndex(id: FlowStepId): number {
  * Bước `to` có quay về được từ `from` không.
  *
  * Đi tới luôn được. Quay lui chỉ bị chặn khi phải bước qua cửa một chiều —
- * `cat-doan` là bước cuối còn về được, mọi bước sau nó không về trước nó.
+ * `cut` là bước cuối còn về được, mọi bước sau nó không về trước nó.
  */
 export function canGoBack(from: FlowStepId, to: FlowStepId): boolean {
   const a = stepIndex(from);

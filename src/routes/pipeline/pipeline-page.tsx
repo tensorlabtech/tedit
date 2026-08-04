@@ -63,9 +63,9 @@ const STEP_LABELS: Record<string, string> = {
   cuts: "Tìm chỗ nên bỏ",
   // Hai cổng chờ người và chặng chốt nằm giữa mạch. Tên nói rõ AI ĐANG LÀM GÌ:
   // hai cái đầu là việc của người ("Bạn soát…"), cái giữa là việc của máy.
-  "soat-cat": "Bạn soát chỗ cắt",
-  chot: "Chốt lát cắt, chép lời lại",
-  "soat-chu": "Bạn soát chính tả",
+  "review-cut": "Bạn soát chỗ cắt",
+  "commit-cut": "Chốt lát cắt, chép lời lại",
+  "review-text": "Bạn soát chính tả",
   keywords: "Chọn từ khoá",
   describe: "Đọc tư liệu chèn",
   place: "Ghép tư liệu chèn",
@@ -235,7 +235,7 @@ export function PipelinePage() {
                 không bao giờ nổ — đo được là rê chuột vào chẳng ra gì. */}
             {awaiting ? (
               <Button onClick={() => navigate(`/editor/${projectId}`)}>
-                {awaiting === "soat-cat" ? "Soát chỗ cắt" : "Soát chính tả"}
+                {awaiting === "review-cut" ? "Soát chỗ cắt" : "Soát chính tả"}
                 <ArrowRightIcon data-icon="inline-end" />
               </Button>
             ) : (

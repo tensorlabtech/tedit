@@ -22,7 +22,7 @@ import {
  *
  * ══ MỘT VẠCH, KHÔNG PHẢI TÁM CÁI KHOÁ ══
  *
- * Chỉ một chỗ thật sự không quay lại được: qua `cat-doan` là chép lời lại, bản
+ * Chỉ một chỗ thật sự không quay lại được: qua `cut` là chép lời lại, bản
  * chép cũ mất hẳn. Vẽ đúng một vạch ở đó, kèm lý do đọc được.
  *
  * Khoá cả tám bước là chặt hơn dữ liệu đòi hỏi, và người dùng va vào cái khoá
@@ -31,9 +31,9 @@ import {
  */
 
 const GROUP_LABELS: Record<string, string> = {
-  "nap-vao": "Nạp vào",
-  soat: "Soát",
-  chinh: "Chỉnh",
+  "intake": "Nạp vào",
+  review: "Soát",
+  polish: "Chỉnh",
 };
 
 export function FlowSidebar({
@@ -91,7 +91,7 @@ export function FlowSidebar({
                 <span className="flex-1">{step.label}</span>
                 {/* Ai đang làm — người xem biết ngay là đợi hay tới lượt mình. */}
                 {done ? <CheckIcon data-icon="inline-end" /> : null}
-                {here && step.actor === "may" ? (
+                {here && step.actor === "machine" ? (
                   <span className="text-muted-foreground text-xs">máy</span>
                 ) : null}
               </button>

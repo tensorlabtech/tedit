@@ -123,7 +123,7 @@ export function FlowPage() {
           */}
           <div className="grid gap-2">
             <p className="text-muted-foreground">
-              {step.actor === "may"
+              {step.actor === "machine"
                 ? "Máy đang làm, chưa tới lượt bạn."
                 : "Tới lượt bạn."}
             </p>
@@ -132,13 +132,13 @@ export function FlowPage() {
               className="cursor-pointer underline"
               onClick={() =>
                 navigate(
-                  step.actor === "may"
+                  step.actor === "machine"
                     ? `/pipeline/${projectId}`
                     : `/editor/${projectId}`,
                 )
               }
             >
-              {step.actor === "may" ? "Xem tiến độ chi tiết" : "Mở bàn dựng"}
+              {step.actor === "machine" ? "Xem tiến độ chi tiết" : "Mở bàn dựng"}
             </button>
           </div>
         </CardContent>

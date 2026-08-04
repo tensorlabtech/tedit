@@ -283,7 +283,7 @@ export function EditorPage() {
             */}
             {gate ? (
               <Button disabled={passing} onClick={passGate}>
-                {gate === "soat-cat"
+                {gate === "review-cut"
                   ? "Xong — chốt chỗ cắt"
                   : "Xong — chốt chính tả"}
               </Button>

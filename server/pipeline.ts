@@ -347,7 +347,7 @@ export async function runTranscribe(projectId: string) {
    * lúc ấy, và `commitCut` ở pha hai cần nó.
    */
   db.prepare("UPDATE projects SET status='ready' WHERE id=?").run(projectId);
-  setStep(projectId, "soat-cat", "cho-nguoi", {
+  setStep(projectId, "review-cut", "awaiting-user", {
     result: "đang chờ bạn soát chỗ cắt",
   });
   setJob(
@@ -363,7 +363,7 @@ export async function runTranscribe(projectId: string) {
 /**
  * ── PHA HAI ── chốt lát cắt, chép lời lại, sửa chỗ nghe nhầm.
  *
- * Gọi khi người dùng đã soát xong chỗ cắt. Từ sau `chot` thì phim chỉ còn MỘT
+ * Gọi khi người dùng đã soát xong chỗ cắt. Từ sau `commit-cut` thì phim chỉ còn MỘT
  * trục thời gian — không còn gì phải quy đổi.
  */
 export async function resumeAfterCutReview(projectId: string) {
@@ -373,10 +373,10 @@ export async function resumeAfterCutReview(projectId: string) {
    * Không đóng thì `awaiting` vẫn trả về nó mãi — mà `awaiting` là thứ giao
    * diện dùng để biết đang ở bước nào, nên người dùng bấm xong vẫn thấy y
    * nguyên nút cũ và mạch trông như không nhúc nhích. Đo thật: chạy hết ba pha
-   * mà cổng vẫn báo `soat-cat`, và bảng dừng ở 12/14.
+   * mà cổng vẫn báo `review-cut`, và bảng dừng ở 12/14.
    */
-  setStep(projectId, "soat-cat", "done", { result: "đã soát" });
-  markStepRunning(projectId, "chot");
+  setStep(projectId, "review-cut", "done", { result: "đã soát" });
+  markStepRunning(projectId, "commit-cut");
   /*
    * Bảo đảm `base.mp4` có TRƯỚC khi cắt.
    *
@@ -393,7 +393,7 @@ export async function resumeAfterCutReview(projectId: string) {
   await ensureMaster(projectId);
   const baseInfo = await probe(join(workDir(projectId), "base.mp4"));
   const cut = await commitCut(projectId, baseInfo.duration);
-  setStep(projectId, "chot", "done", {
+  setStep(projectId, "commit-cut", "done", {
     result: cut.skipped
       ? "không có gì để cắt"
       : `bỏ ${cut.removedSeconds.toFixed(1)}s · chép lại ${cut.wordsAfter} từ`,
@@ -450,7 +450,7 @@ export async function resumeAfterCutReview(projectId: string) {
   }
 
 
-  setStep(projectId, "soat-chu", "cho-nguoi", {
+  setStep(projectId, "review-text", "awaiting-user", {
     result: "đang chờ bạn soát chính tả",
   });
 }
@@ -462,7 +462,7 @@ export async function resumeAfterCutReview(projectId: string) {
  * mọi thứ dựng trên nó đều an toàn.
  */
 export async function resumeAfterTextReview(projectId: string) {
-  setStep(projectId, "soat-chu", "done", { result: "đã soát" });
+  setStep(projectId, "review-text", "done", { result: "đã soát" });
   const preview = join(workDir(projectId), "preview.mp4");
   /*
    * `anchors` RỖNG ở luồng mới.

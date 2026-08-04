@@ -10,7 +10,7 @@
  * · **`base.mp4` chưa có lúc chốt.** Bản chất lượng dựng bằng một việc NỀN xếp
  *   hàng riêng, mà người dùng bấm qua cổng nhanh hơn lượt mã hoá là chuyện
  *   thường với video ngắn. Pha hai ném lỗi ffprobe không tìm thấy tệp.
- * · **Cổng không đóng khi bước qua.** `awaiting` trả về `soat-cat` mãi, nên
+ * · **Cổng không đóng khi bước qua.** `awaiting` trả về `review-cut` mãi, nên
  *   giao diện vẫn bày nút cũ và bảng dừng ở 12/14 — mạch trông như chết.
  *
  * Cả hai đều là lỗi người dùng gặp ngay lần đầu, và cả hai đều lọt qua mọi

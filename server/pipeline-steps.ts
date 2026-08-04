@@ -9,14 +9,14 @@ import { db } from "./db";
  */
 
 /**
- * `cho-nguoi` — máy dừng lại, đến lượt người.
+ * `awaiting-user` — máy dừng lại, đến lượt người.
  *
  * Khác `waiting` ở chỗ: `waiting` là "chưa tới lượt, máy sẽ chạy", còn
- * `cho-nguoi` là "máy xong phần nó, không ai đánh thức nữa cho tới khi người
+ * `awaiting-user` là "máy xong phần nó, không ai đánh thức nữa cho tới khi người
  * dùng bấm tiếp". Hai thứ nhìn giống nhau trên bảng mà xử lý ngược nhau —
  * `failStrandedSteps` phải đánh hỏng cái đầu và chừa cái sau.
  */
-export type StepStatus = "waiting" | "running" | "done" | "failed" | "cho-nguoi";
+export type StepStatus = "waiting" | "running" | "done" | "failed" | "awaiting-user";
 
 export type Step = {
   key: string;
@@ -66,7 +66,7 @@ export const STEP_PLAN: Array<{ key: string; required: boolean }> = [
    * lệch nặng nhất đều từ chúng.
    *
    * Hai chặng này KHÔNG đụng bảng `elements` (soát: 0 chỗ), nên chuyển lên
-   * trước được, và chuyển lên rồi thì `chot` xoá sạch được hai trục.
+   * trước được, và chuyển lên rồi thì `commit-cut` xoá sạch được hai trục.
    */
   { key: "silence", required: false },
   { key: "cuts", required: false },
@@ -78,10 +78,10 @@ export const STEP_PLAN: Array<{ key: string; required: boolean }> = [
    * là thứ nằm THƯỢNG NGUỒN của mọi quyết định sau — một vết cắt sai làm lệch
    * cả lịch màn, chỗ đặt tư liệu, lẫn từ nhấn.
    */
-  { key: "soat-cat", required: true },
+  { key: "review-cut", required: true },
   // Nướng lát cắt vào tệp rồi chép lời LẠI trên tệp mới. Từ đây chỉ còn MỘT
   // trục thời gian.
-  { key: "chot", required: true },
+  { key: "commit-cut", required: true },
   // Sửa chỗ nghe nhầm chạy SAU khi chốt: chép lại là ghi đè sạch bảng từ, nên
   // sửa trước là ném đi công sửa.
   { key: "fix", required: false },
@@ -91,7 +91,7 @@ export const STEP_PLAN: Array<{ key: string; required: boolean }> = [
    * Trên bản chép LẦN HAI — bản duy nhất sống tiếp. `words.confidence` chỉ ra
    * chỗ máy không chắc, nên chỉ cần hỏi mấy chỗ ấy chứ không bắt soát cả bài.
    */
-  { key: "soat-chu", required: true },
+  { key: "review-text", required: true },
   { key: "captions", required: true },
   // Từ đây là các lượt làm đẹp. Tất cả `required: false` — hỏng thì bỏ qua rồi
   // đi tiếp, vì giam người dùng lại vì một lượt chọn từ khoá gãy là đổi một
@@ -169,7 +169,7 @@ export function failRunningStep(projectId: string, message: string) {
 export function failStrandedSteps(projectId: string, message: string) {
   db.prepare(
     `UPDATE steps SET status='failed', error=?, updated_at=?
-     -- 'cho-nguoi' KHÔNG nằm trong danh sách này, và đó là cả cơ chế chừa
+     -- 'awaiting-user' KHÔNG nằm trong danh sách này, và đó là cả cơ chế chừa
      -- cổng ra: cổng là chặng không ai đánh thức được trừ người dùng, quét
      -- nó thành 'failed' là giết mạch ngay tại chỗ.
      WHERE project_id=? AND status IN ('waiting','running')`,
@@ -222,8 +222,8 @@ export function pipelineState(projectId: string): {
     settled,
     blocked,
     // Cổng mở thì `settled` tự sai — nó đòi mọi chặng `done` hoặc `failed`, mà
-    // `cho-nguoi` không phải cái nào. Nên bàn dựng vẫn đóng, đúng ý.
-    awaiting: steps.find((step) => step.status === "cho-nguoi")?.key ?? null,
+    // `awaiting-user` không phải cái nào. Nên bàn dựng vẫn đóng, đúng ý.
+    awaiting: steps.find((step) => step.status === "awaiting-user")?.key ?? null,
     skipped: steps.filter((step) => step.status === "failed" && !step.required)
       .length,
   };

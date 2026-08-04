@@ -156,7 +156,7 @@ createRoot(document.getElementById("root")!).render(
                 {/* Màn chờ: máy dựng xong hết rồi mới tới lượt người dùng. */}
                 {/* Luồng tám bước — một màn, sidebar trái. Hai tuyến cũ giữ
                     nguyên trong lúc nội dung từng bước dựng dần. */}
-                <Route path="/lam/:projectId" element={<FlowPage />} />
+                <Route path="/flow/:projectId" element={<FlowPage />} />
                 <Route path="/pipeline/:projectId" element={<PipelinePage />} />
                 <Route path="/editor/:projectId" element={<EditorPage />} />
               </Route>

@@ -154,7 +154,7 @@ export type ApiPipeline = {
   /**
    * Cổng nào đang mở chờ người, `null` là không cổng nào.
    *
-   * Mạch dựng dừng hai lần: `soat-cat` sau khi đề xuất chỗ cắt, `soat-chu` sau
+   * Mạch dựng dừng hai lần: `review-cut` sau khi đề xuất chỗ cắt, `review-text` sau
    * khi sửa chỗ nghe nhầm. Cổng mở thì `settled` luôn sai, nên bàn dựng vẫn
    * đóng — người dùng phải đi qua cổng chứ không lách được.
    */

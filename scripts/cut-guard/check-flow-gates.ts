@@ -49,12 +49,12 @@ console.log("\nMọi chặng trong bảng đều có người chạy");
  *
  * · `markStepRunning(projectId, "<khoá>")` — chặng viết tay trong một pha
  * · `runAiWaves(..., [... "<khoá>" ...])` — chặng làm đẹp
- * · `setStep(..., "<khoá>", "cho-nguoi")` — cổng chờ người, không ai "chạy" nó
+ * · `setStep(..., "<khoá>", "awaiting-user")` — cổng chờ người, không ai "chạy" nó
  */
 for (const step of STEP_PLAN) {
   const written = SRC.includes(`markStepRunning(projectId, "${step.key}")`);
   const wave = new RegExp(`runAiWaves\\([^)]*"${step.key}"`, "s").test(SRC);
-  const gate = SRC.includes(`setStep(projectId, "${step.key}", "cho-nguoi"`);
+  const gate = SRC.includes(`setStep(projectId, "${step.key}", "awaiting-user"`);
   check(
     `"${step.key}" có người chạy`,
     written || wave || gate,
@@ -67,7 +67,7 @@ for (const step of STEP_PLAN) {
  *
  * `STEP_LABELS` nằm ở client còn `STEP_PLAN` ở máy chủ — hai danh sách, và
  * thêm một chặng chỉ sửa một bên là chuyện xảy ra ngay lần đầu: ba chặng mới
- * hiện lên màn chờ dưới dạng "soat-cat", "chot", "soat-chu".
+ * hiện lên màn chờ dưới dạng "review-cut", "commit-cut", "review-text".
  *
  * Không hỏng gì cả, nên không phép kiểm nào thấy — chỉ người dùng thấy.
  */
@@ -87,13 +87,13 @@ for (const step of STEP_PLAN) {
 
 console.log("\nHai cổng chờ người mở đúng chỗ");
 const gates = STEP_PLAN.filter((s) =>
-  SRC.includes(`setStep(projectId, "${s.key}", "cho-nguoi"`),
+  SRC.includes(`setStep(projectId, "${s.key}", "awaiting-user"`),
 ).map((s) => s.key);
 check("có đúng hai cổng", gates.length === 2, gates.join(", "));
 check(
   "cổng soát cắt đứng TRƯỚC chặng chốt",
-  STEP_PLAN.findIndex((s) => s.key === "soat-cat") <
-    STEP_PLAN.findIndex((s) => s.key === "chot"),
+  STEP_PLAN.findIndex((s) => s.key === "review-cut") <
+    STEP_PLAN.findIndex((s) => s.key === "commit-cut"),
 );
 /*
  * Sửa chính tả phải nằm SAU khi chốt.
@@ -104,11 +104,11 @@ check(
 check(
   "sửa chỗ nghe nhầm đứng SAU chặng chốt",
   STEP_PLAN.findIndex((s) => s.key === "fix") >
-    STEP_PLAN.findIndex((s) => s.key === "chot"),
+    STEP_PLAN.findIndex((s) => s.key === "commit-cut"),
 );
 check(
   "cổng soát chính tả đứng TRƯỚC chặng dựng chữ",
-  STEP_PLAN.findIndex((s) => s.key === "soat-chu") <
+  STEP_PLAN.findIndex((s) => s.key === "review-text") <
     STEP_PLAN.findIndex((s) => s.key === "captions"),
 );
 /*
@@ -138,10 +138,10 @@ for (const step of STEP_PLAN) setStep(projectId, step.key, "done");
 const all = pipelineState(projectId);
 check("mọi chặng xong → mở được bàn dựng", all.settled && all.awaiting === null);
 
-setStep(projectId, "soat-cat", "cho-nguoi");
+setStep(projectId, "review-cut", "awaiting-user");
 const gated = pipelineState(projectId);
 check("cổng mở → bàn dựng đóng", !gated.settled, `settled=${gated.settled}`);
-check("báo đúng cổng nào đang mở", gated.awaiting === "soat-cat", String(gated.awaiting));
+check("báo đúng cổng nào đang mở", gated.awaiting === "review-cut", String(gated.awaiting));
 
 /*
  * `failStrandedSteps` phải CHỪA cổng ra.
@@ -155,8 +155,8 @@ failStrandedSteps(projectId, "thử");
 const afterSweep = pipelineState(projectId);
 check(
   "quét chặng mắc kẹt KHÔNG đánh hỏng cổng",
-  afterSweep.awaiting === "soat-cat",
-  `cổng thành ${afterSweep.steps.find((s) => s.key === "soat-cat")?.status}`,
+  afterSweep.awaiting === "review-cut",
+  `cổng thành ${afterSweep.steps.find((s) => s.key === "review-cut")?.status}`,
 );
 
 db.prepare("DELETE FROM projects WHERE id=?").run(projectId);
