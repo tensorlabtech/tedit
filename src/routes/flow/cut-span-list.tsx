@@ -8,27 +8,24 @@ import { formatDuration } from "@/lib/format-duration";
 import type { Span } from "./cut-lane";
 
 /**
- * HÀNG SOÁT — từng chỗ máy định bỏ, kèm LỜI nằm trong đó.
+ * HÀNG SOÁT — MỌI chỗ máy định bỏ, xếp theo thời gian, bình đẳng.
  *
  * ══ VÌ SAO CÓ CẢ DẢI RỒI VẪN CẦN HÀNG NÀY ══
  *
  * Dải trả lời "cắt ở đâu, mép rơi vào chỗ nghỉ hay giữa tiếng". Nó KHÔNG trả lời
- * "cắt mất câu gì" — trên dải thì mọi lớp che giống nhau, và chữ nhét vào một
- * khối rộng 20px thì không đọc được.
+ * "cắt mất câu gì, bỏ chỗ nào" gọn trong một cột đọc dọc — trên dải thì mọi lớp
+ * che giống nhau. Danh sách này là cái đọc được: từng chỗ một, theo thứ tự.
  *
- * Mà "cắt mất câu gì" mới là câu hỏi của bước này.
+ * ══ CHỖ LẶNG CŨNG LIỆT KÊ TỪNG CÁI ══
  *
- * ══ CHỖ LẶNG TÁCH RA, KHÔNG XẾP LẪN ══
+ * Bản trước gộp chỗ lặng thành một dòng tổng ("Và N chỗ lặng"), nghĩ rằng chỉ chỗ
+ * CÓ LỜI mới đáng soát. Sai: người dùng muốn soát cả chỗ lặng — có quãng lặng là
+ * nhịp thở CỐ Ý, bỏ đi thì video dồn dập. Gộp lại thì không giữ lại được từng
+ * cái.
  *
- * Bản đầu bày cả mười hai chỗ thành một danh sách phẳng. Chụp màn ra thì tám
- * trong mười hai dòng ghi "— không có tiếng nói —": đó là các chỗ `auto-trim`
- * rút bớt im lặng, và chúng chôn mất đúng ba dòng CÓ LỜI — thứ duy nhất đáng
- * soát.
- *
- * Hai loại ấy hỏi hai câu khác nhau. Bỏ một chỗ lặng thì cùng lắm nhịp hơi gấp;
- * bỏ nhầm một câu thì mất hẳn một ý. Nên chỗ có lời bày ra từng dòng, còn chỗ
- * lặng gộp thành MỘT dòng tổng — vẫn đọc được máy rút bao nhiêu, mà không chiếm
- * chỗ của thứ cần nhìn.
+ * Nên mọi chỗ xếp CHUNG một danh sách theo thời gian, mỗi chỗ một dòng, đều có
+ * nút nghe và nút giữ lại. Chỗ có lời hiện lời (gạch ngang — sẽ mất); chỗ lặng
+ * ghi "Khoảng lặng" cho biết đây là nhịp, không phải câu.
  */
 
 export type SpanRow = Span & { text: string };
@@ -49,12 +46,8 @@ export function CutSpanList({
   onAudit: (span: SpanRow) => void;
   onDelete: (id: string) => void;
 }) {
-  const spoken = rows.filter((row) => row.text.trim().length > 0);
-  const silent = rows.filter((row) => row.text.trim().length === 0);
-  const silentSeconds = silent.reduce(
-    (sum, row) => sum + (row.end - row.start),
-    0,
-  );
+  // MỌI chỗ, xếp theo mốc bắt đầu — để soát theo đúng dòng chảy của video.
+  const ordered = [...rows].sort((a, b) => a.start - b.start);
 
   return (
     <Card className="lg:min-h-0">
@@ -62,84 +55,77 @@ export function CutSpanList({
         <CardTitle>{heading}</CardTitle>
       </CardHeader>
       {/* Cuộn KHÔNG thanh cuộn, mép dưới mờ dần báo "còn nữa" — cùng lối panel
-          bản chép của bàn dựng. `CLAUDE.md` dặn tránh scrollbar; một danh sách hay
-          dài hơn khung mà đeo vạch xám suốt buổi là đúng thứ quy tắc ấy cấm. */}
+          bản chép của bàn dựng. */}
       <CardContent className="min-h-0 flex-1 p-0">
         <ScrollArea
           className="h-full"
           scrollbar={false}
           viewportClassName="scroll-fade-b"
         >
-          <div className="grid content-start gap-1 px-4">
-            {rows.length === 0 ? (
+          {/* `pb` chừa chỗ để viền dòng CUỐI không bị mép dưới viewport xén. */}
+          <div className="grid content-start gap-1 px-4 pb-4">
+            {ordered.length === 0 ? (
               <p className="text-muted-foreground">
-                Máy không tìm thấy chỗ nào đáng bỏ. Thấy chỗ nào lỗi thì đưa
-                vạch tới đó rồi bấm dấu cộng trên dải.
+                Máy không tìm thấy chỗ nào đáng bỏ. Thấy chỗ nào lỗi thì đưa vạch
+                tới đó rồi bấm dấu cộng trên dải.
               </p>
             ) : null}
 
-            {spoken.map((row) => (
-              <div
-                key={row.id}
-                data-state={row.id === selectedId ? "here" : "off"}
-                className="grid cursor-pointer gap-1 rounded-lg border border-border px-3 py-2 data-[state=here]:ring-2 data-[state=here]:ring-primary data-[state=here]:ring-inset"
-                onClick={() => onSelect(row.id)}
-              >
-                <div className="flex items-center gap-2">
-                  <span className="text-muted-foreground shrink-0 tabular-nums text-xs">
-                    {formatDuration(row.start)} ·{" "}
-                    {(row.end - row.start).toFixed(1)}s
-                  </span>
-                  <span className="flex-1" />
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    aria-label="Nghe chỗ này"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onAudit(row);
-                    }}
-                  >
-                    <PlayIcon />
-                  </Button>
-                  {/* Icon HOÀN TÁC, không phải thùng rác: bỏ một khoảng cắt là
-                      GIỮ LẠI đoạn phim ấy — một việc an toàn, ngược hẳn "xoá". Thùng
-                      rác đọc ra như đang huỷ phim, trái ý. */}
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    aria-label="Giữ lại đoạn này — không cắt nữa"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onDelete(row.id);
-                    }}
-                  >
-                    <RotateCcwIcon />
-                  </Button>
+            {ordered.map((row) => {
+              const silent = row.text.trim().length === 0;
+              return (
+                <div
+                  key={row.id}
+                  data-state={row.id === selectedId ? "here" : "off"}
+                  className="grid cursor-pointer gap-1 rounded-lg border border-border px-3 py-2 data-[state=here]:ring-2 data-[state=here]:ring-primary data-[state=here]:ring-inset"
+                  onClick={() => onSelect(row.id)}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground shrink-0 tabular-nums text-xs">
+                      {formatDuration(row.start)} ·{" "}
+                      {(row.end - row.start).toFixed(1)}s
+                    </span>
+                    <span className="flex-1" />
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label="Nghe chỗ này"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onAudit(row);
+                      }}
+                    >
+                      <PlayIcon />
+                    </Button>
+                    {/* Icon HOÀN TÁC, không phải thùng rác: bỏ một khoảng cắt là
+                        GIỮ LẠI đoạn phim ấy — việc an toàn, ngược hẳn "xoá". */}
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label="Giữ lại đoạn này — không cắt nữa"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onDelete(row.id);
+                      }}
+                    >
+                      <RotateCcwIcon />
+                    </Button>
+                  </div>
+                  {silent ? (
+                    // Chỗ lặng: KHÔNG gạch ngang (không có lời để mất), chỉ nói
+                    // đây là nhịp — để người dùng cân nhắc giữ lại làm nhịp thở.
+                    <span className="text-muted-foreground text-sm italic">
+                      Khoảng lặng — máy rút cho nhịp gọn
+                    </span>
+                  ) : (
+                    // Lời bị bỏ GẠCH NGANG: đây là thứ sẽ biến mất.
+                    <span className="text-muted-foreground line-clamp-3 text-sm leading-tight line-through">
+                      {row.text}
+                    </span>
+                  )}
                 </div>
-                {/* Lời bị bỏ GẠCH NGANG: đây là thứ sẽ biến mất, và gạch ngang nói
-                điều ấy mà không cần một dòng chú thích nào. */}
-                <span className="text-muted-foreground line-clamp-3 text-sm leading-tight line-through">
-                  {row.text}
-                </span>
-              </div>
-            ))}
-
-            {spoken.length === 0 && rows.length > 0 ? (
-              <p className="text-muted-foreground text-sm">
-                Máy không bỏ câu nào — chỉ rút bớt chỗ lặng.
-              </p>
-            ) : null}
-
-            {silent.length > 0 ? (
-              /* Một dòng tổng, KHÔNG bấm được: không có gì để soát ở đây, và làm nó
-             trông bấm được là mời người dùng đi vào một chỗ không có việc gì. */
-              <p className="text-muted-foreground mt-1 rounded-lg border border-border px-3 py-2 text-xs">
-                Và {silent.length} chỗ lặng · {formatDuration(silentSeconds)} —
-                máy rút cho nhịp gọn, không mất lời nào. Sửa được trên dải bên
-                dưới.
-              </p>
-            ) : null}
+              );
+            })}
           </div>
         </ScrollArea>
       </CardContent>
