@@ -206,18 +206,41 @@ export function useCutEdit(projectId: string | undefined) {
   );
 
   /**
-   * Thêm một khoảng tại mốc `at`. Trả `false` nếu chỗ ấy không còn chỗ trống.
+   * ĐO KHOẢNG LẶNG QUANH MỐC `at` để định bề rộng đoạn cắt mới.
    *
-   * PHẢI chặn không cho chạm vào khoảng bên cạnh. Không chặn thì khoảng mới dính
-   * vào khoảng cũ, `coalesceRemoved` gộp cả hai làm một, và số khoảng KHÔNG ĐỔI
-   * — bấm nút xong nhìn dải thấy y như cũ. Đo được đúng vậy: bấm ở giây 8,7 mà
-   * số khoảng đứng nguyên 11.
-   *
-   * Chạm mép thì co ngắn lại cho vừa chỗ trống, chứ không bỏ cuộc: người dùng
-   * bấm ở đó là muốn cắt ở đó. Chỉ khi chỗ trống hẹp quá mới chịu thua, và lúc
-   * ấy phải NÓI, không im.
+   * Người dùng bấm thêm ở đâu thì thường ở đó có tiếng cần bỏ — một quãng ề à,
+   * một chỗ nghỉ dài. Nong ra hai phía CHỪNG NÀO CÒN DƯỚI mức tiếng nói thì bắt
+   * trọn đúng khoảng lặng ấy, khỏi phải kéo tay. Không có sóng, hoặc chỗ ấy
+   * đang có tiếng, thì trả `null` để nơi gọi dùng bề rộng mặc định.
    */
-  const addSpan = useCallback(
+  const silenceAround = useCallback(
+    (at: number): { start: number; end: number } | null => {
+      if (!envelope) return null;
+      const { hop, values, speechLevel } = envelope;
+      const here = Math.floor(at / hop);
+      if ((values[here] ?? 1) >= speechLevel) return null; // đang có tiếng
+      let lo = here;
+      let hi = here;
+      while (lo > 0 && (values[lo - 1] ?? 1) < speechLevel) lo -= 1;
+      while (hi < values.length - 1 && (values[hi + 1] ?? 1) < speechLevel) hi += 1;
+      const start = lo * hop;
+      const end = (hi + 1) * hop;
+      return end - start >= MIN_NEW_SPAN ? { start, end } : null;
+    },
+    [envelope],
+  );
+
+  /**
+   * Thêm một khoảng quanh mốc `at`. Trả `false` nếu chỗ ấy không còn chỗ trống.
+   *
+   * Bề rộng lấy theo ĐỘ LẶNG đo được quanh mốc; không có khoảng lặng rõ thì một
+   * khoảng mặc định để người dùng kéo lại.
+   *
+   * PHẢI chặn không cho chạm khoảng bên cạnh: dính vào là `coalesceRemoved` gộp
+   * làm một, số khoảng không đổi, và nút bấm trông như hỏng. Chạm mép thì co lại
+   * cho vừa; hẹp quá mới chịu thua, và lúc ấy phải NÓI, không im.
+   */
+  const addSpanAt = useCallback(
     async (at: number): Promise<boolean> => {
       if (!projectId || total <= 0) return false;
       const before = spans.filter((span) => span.end <= at).at(-1);
@@ -226,15 +249,23 @@ export function useCutEdit(projectId: string | undefined) {
       const ceiling = after?.start ?? total;
       if (at < floor || at >= ceiling) return false;
 
-      const start = Math.max(floor, Math.min(at, ceiling - MIN_NEW_SPAN));
-      const end = Math.min(start + NEW_SPAN, ceiling);
+      const quiet = silenceAround(at);
+      let start: number;
+      let end: number;
+      if (quiet) {
+        start = Math.max(floor, quiet.start);
+        end = Math.min(ceiling, quiet.end);
+      } else {
+        start = Math.max(floor, Math.min(at - NEW_SPAN / 2, ceiling - MIN_NEW_SPAN));
+        end = Math.min(start + NEW_SPAN, ceiling);
+      }
       if (end - start < MIN_NEW_SPAN) return false;
 
       remember();
       setSegments(await api.removeRange(projectId, start, end, true));
       return true;
     },
-    [projectId, total, spans, remember],
+    [projectId, total, spans, remember, silenceAround],
   );
 
   return {
@@ -248,6 +279,6 @@ export function useCutEdit(projectId: string | undefined) {
     undo,
     resizeSpan,
     deleteSpan,
-    addSpan,
+    addSpanAt,
   };
 }

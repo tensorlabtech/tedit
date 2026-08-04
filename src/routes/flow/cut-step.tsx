@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { PauseIcon, PlayIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -7,11 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { formatDuration } from "@/lib/format-duration";
 
 import { TimelineSideRail } from "../editor/timeline-side-rail";
-import {
-  DEFAULT_PX_PER_SECOND,
-  ZOOM_STEP,
-  useTimelineZoom,
-} from "../editor/timeline-zoom";
+import { ZOOM_STEP, useTimelineZoom } from "../editor/timeline-zoom";
 import { CutLane } from "./cut-lane";
 import { CutSpanList, type SpanRow } from "./cut-span-list";
 import { useCutEdit } from "./use-cut-edit";
@@ -53,18 +49,6 @@ import { useCutEdit } from "./use-cut-edit";
 /** Bao quanh chỗ nghe thử: đủ nghe câu vào và câu ra. */
 const SEAM = 1;
 
-/**
- * Cận dưới của thang phóng ở bước này: 4px/giây.
- *
- * Đủ để một video mười phút vẫn nằm gọn trong một khung 1100px, tức người dùng
- * luôn có một mức nhìn thấy TOÀN BẢN. Bàn dựng chặn ở 60 vì nó để sửa chi tiết;
- * đây để soát.
- */
-const FIT_FLOOR = 4;
-
-/** Đệm mỗi bên trong dải (`p-2`) — phải khớp `LANE_PAD` của `cut-lane.tsx`. */
-const LANE_PADDING = 8;
-
 export type CutWord = { text: string; start: number; end: number };
 
 export function CutStep({
@@ -83,24 +67,10 @@ export function CutStep({
   const [time, setTime] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  /*
-   * Cùng thang phóng với bàn dựng, nhưng CẬN DƯỚI thấp hơn và mở màn ở mức VỪA
-   * KHÍT — xem `timeline-zoom.ts`. Ở mức mặc định của bàn dựng, một video 118
-   * giây chỉ hiện ra 5,8 giây; bước này để soát cả bản.
-   */
-  const zoom = useTimelineZoom(DEFAULT_PX_PER_SECOND, FIT_FLOOR);
-  const fitted = useRef(false);
-  const fitToWidth = useCallback(
-    (width: number) => {
-      if (fitted.current || width < 50 || total <= 0) return;
-      fitted.current = true;
-      // Trừ CẢ đệm hai bên (`p-2` mỗi bên) rồi mới chia: quên nó thì dải dài hơn
-      // khung đúng 16px, và ở mức vừa khít 16px là gần hai giây cuối bị xén khỏi
-      // màn — đúng đoạn chào kết mà người dùng hay muốn soát.
-      zoom.setPxPerSecond(Math.max(FIT_FLOOR, (width - LANE_PADDING * 2) / total));
-    },
-    [total, zoom],
-  );
+  // Cùng thang phóng, cùng mức mặc định với bàn dựng: vạch ghim GIỮA và người
+  // dùng KÉO/LĂN để soát cả bản, thay vì thu hết cỡ cho vừa khung. Đó là mô hình
+  // của bàn dựng, và giữ đúng nó thì hai màn dùng một phản xạ.
+  const zoom = useTimelineZoom();
   /**
    * Khoảng người dùng cố ý nghe dù nó đã bị bỏ.
    *
@@ -221,6 +191,9 @@ export function CutStep({
           cùng chỗ và cùng hình với bàn dựng. */}
       <Card>
         <CardContent className="grid min-w-0 gap-2">
+          {/* Chỉ CÒN nút phát và đồng hồ. Dòng nhắc "bấm dấu cộng… chuột phải…"
+              đã bỏ: nó dạy thao tác trước khi ai cần, mà bản thân nút `+` và menu
+              chuột phải đã tự nói việc của chúng. */}
           <div className="flex items-center gap-2">
             <Button variant="secondary" size="sm" onClick={togglePlay}>
               {playing ? <PauseIcon /> : <PlayIcon />}
@@ -228,11 +201,6 @@ export function CutStep({
             </Button>
             <span className="text-muted-foreground tabular-nums text-xs">
               {formatDuration(time)} / {formatDuration(total)}
-            </span>
-            <span className="flex-1" />
-            <span className="text-muted-foreground text-xs">
-              Bấm dấu cộng trên vạch để thêm một khoảng · chuột phải một khoảng để
-              xoá
             </span>
           </div>
 
@@ -248,10 +216,11 @@ export function CutStep({
               selectedId={selectedId}
               onSelect={setSelectedId}
               onSeek={seek}
+              onZoom={zoom.zoomBy}
               onResize={(id, start, end) => void cut.resizeSpan(id, start, end)}
-              onAdd={async (at) => {
+              onAddAt={async (at) => {
                 // Không thêm được thì NÓI. Im lặng ở đây đọc ra thành "nút hỏng".
-                if (!(await cut.addSpan(at))) {
+                if (!(await cut.addSpanAt(at))) {
                   toast.add({
                     title: "Chỗ này không thêm được",
                     description:
@@ -264,7 +233,6 @@ export function CutStep({
                 void cut.deleteSpan(id);
                 setSelectedId(null);
               }}
-              onMeasure={fitToWidth}
             />
             <TimelineSideRail
               pxPerSecond={zoom.pxPerSecond}

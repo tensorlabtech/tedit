@@ -1,10 +1,37 @@
 import { useEffect, useRef, useState } from "react";
 
-import { zoomFactorFromWheel, type EditorState } from "./use-editor";
+import { zoomFactorFromWheel } from "./timeline-zoom";
 import { setPageDragging } from "./use-editor-guards";
 
 /** Kéo bao nhiêu px mới tính là KÉO chứ không phải bấm. */
 const DRAG_THRESHOLD = 3;
+
+/** Loại khối gọt mép được — bàn dựng có năm, màn cắt chỉ dùng "clip". */
+export type TrimKind = "clip" | "music" | "insert" | "text" | "effect";
+
+/**
+ * Bộ ĐIỀU KHIỂN một dải — đúng phần `useTimelineDrag` cần, không hơn.
+ *
+ * Trước đây hook này nhận nguyên `EditorState`, nên chỉ bàn dựng dùng được. Màn
+ * Cắt đoạn lỗi cũng cần Y HỆT cách kéo, lăn, phóng và ghim vạch giữa — mà nó
+ * không có `useEditor` và không nên có. Tách ra một interface nhỏ thì HAI dải
+ * chạy cùng một mã: giống nhau vì là một, không phải vì bắt chước.
+ *
+ * `toOutput`/`toSource` ở màn cắt là hàm đồng nhất — bản cắt chưa nướng vào phim
+ * nên chỉ có một trục thời gian. Ở bàn dựng chúng quy đổi giữa mốc gốc và mốc
+ * xuất ra.
+ */
+export interface TimelineController {
+  time: number;
+  pxPerSecond: number;
+  seek: (at: number) => void;
+  scrubByPixels: (deltaX: number) => void;
+  zoomBy: (factor: number) => void;
+  toOutput: (at: number) => number;
+  toSource: (at: number) => number;
+  trim: (kind: TrimKind, id: string, edge: "start" | "end", at: number) => void;
+  commitTrim: () => void;
+}
 
 /**
  * Mọi thao tác kéo trên dải: chạy dải, lăn để tua, phóng, và gọt mép khối.
@@ -13,16 +40,16 @@ const DRAG_THRESHOLD = 3;
  * ở mức thấp — gắn listener tay, tự quản cờ kéo — còn phần kia chỉ là dựng hình.
  */
 export function useTimelineDrag({
-  editor,
+  ctrl,
   viewportRef,
   timeAtClientX,
 }: {
-  editor: EditorState;
+  ctrl: TimelineController;
   viewportRef: React.RefObject<HTMLDivElement | null>;
   timeAtClientX: (clientX: number) => number;
 }) {
-  const { time, pxPerSecond, seek, scrubByPixels, zoomBy } = editor;
-  const { toOutput, toSource } = editor;
+  const { time, pxPerSecond, seek, scrubByPixels, zoomBy } = ctrl;
+  const { toOutput, toSource } = ctrl;
   const drag = useRef({ active: false, moved: false, x: 0, time: 0 });
   const [dragging, setDragging] = useState(false);
   const [trimming, setTrimming] = useState<{
@@ -63,14 +90,14 @@ export function useTimelineDrag({
     if (!trimming) return;
     setPageDragging(true);
     const onMove = (event: PointerEvent) =>
-      editor.trim(
+      ctrl.trim(
         trimming.kind,
         trimming.id,
         trimming.edge,
         timeAtClientX(event.clientX),
       );
     const onUp = () => {
-      void editor.commitTrim();
+      void ctrl.commitTrim();
       setTrimming(null);
       // Nhả cờ sau một nhịp để cú click sinh ra lúc thả tay bị bỏ qua.
       window.setTimeout(() => (drag.current.moved = false), 0);
@@ -82,7 +109,7 @@ export function useTimelineDrag({
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
-  }, [trimming, editor, timeAtClientX]);
+  }, [trimming, ctrl, timeAtClientX]);
 
   // Kéo bất kỳ đâu trên dải để chạy dải. Gắn listener ngay tại pointerdown —
   // KHÔNG qua useEffect, vì cờ kéo nằm trong ref nên không có lượt render nào

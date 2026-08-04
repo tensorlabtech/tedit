@@ -77,7 +77,8 @@ export function Timeline({
   );
 
   const { drag, dragging, setTrimming, startScrub } = useTimelineDrag({
-    editor,
+    // `EditorState` đã đủ mười thành viên của `TimelineController`.
+    ctrl: editor,
     viewportRef,
     timeAtClientX,
   });
