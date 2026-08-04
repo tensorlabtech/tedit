@@ -52,11 +52,18 @@ export function ClipWave({
   const bars = useMemo(() => {
     const from = Math.floor(clip.srcStart / envelope.hop);
     const to = Math.ceil((clip.srcStart + length) / envelope.hop);
+    const samples = Math.max(1, to - from);
     // Một cột chiếm 3px: 2px thì các cột dính thành một mảng đặc, không đọc ra
     // được nhịp nói. Số cột đi theo BỀ RỘNG THẬT của khối nên phóng to dải là
     // sóng mịn ra theo, không đứng yên ở một độ chi tiết cố định.
-    const count = Math.max(1, Math.min(MAX_BARS, Math.round(width / 3)));
-    const per = Math.max(1, Math.floor((to - from) / count));
+    //
+    // KHÔNG cho số cột vượt số ô 20ms đang có: khi một giây rộng hơn ~150px thì
+    // `width/3` đòi nhiều cột hơn số ô, `per` kẹp về 1, và vòng lấy đỉnh đọc lố
+    // sang ô của GIÂY SAU. Cột thì trải theo `bars.length` nên cả dải sóng bị
+    // nén và trượt — chỗ có tiếng vẽ trật khỏi giây thật, nhìn như "sóng lệch
+    // lời". Kẹp theo `samples` thì một ô = một cột, mỗi cột bám đúng mốc của nó.
+    const count = Math.max(1, Math.min(MAX_BARS, Math.round(width / 3), samples));
+    const per = Math.max(1, Math.floor(samples / count));
     const out: number[] = [];
     for (let i = 0; i < count; i += 1) {
       let peak = 0;
