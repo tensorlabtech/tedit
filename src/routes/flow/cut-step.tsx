@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { PauseIcon, PlayIcon } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { PauseIcon, PlayIcon, ScissorsIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
@@ -8,8 +8,7 @@ import { formatDuration } from "@/lib/format-duration";
 
 import { TimelineSideRail } from "../editor/timeline-side-rail";
 import { ZOOM_STEP, useTimelineZoom } from "../editor/timeline-zoom";
-import { CutLane } from "./cut-lane";
-import { CutSpanList, type SpanRow } from "./cut-span-list";
+import { CutLane, type Span } from "./cut-lane";
 import { useCutEdit } from "./use-cut-edit";
 
 /**
@@ -54,7 +53,6 @@ export type CutWord = { text: string; start: number; end: number };
 export function CutStep({
   projectId,
   previewUrl,
-  words,
 }: {
   projectId: string | undefined;
   /** `base.mp4` — bản gốc chưa cắt, nên mốc của nó chính là mốc của dải. */
@@ -62,7 +60,13 @@ export function CutStep({
   words: CutWord[];
 }) {
   const cut = useCutEdit(projectId);
-  const { spans, total, loading } = cut;
+  const { spans, total } = cut;
+  // Bản dựng sẽ còn dài bao nhiêu sau khi bỏ các khoảng cắt — để chỉ ra cho
+  // người dùng, thay cho đồng hồ chỉ biết độ dài GỐC.
+  const kept = Math.max(
+    0,
+    total - spans.reduce((sum, span) => sum + (span.end - span.start), 0),
+  );
   const videoRef = useRef<HTMLVideoElement>(null);
   const [time, setTime] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -79,25 +83,6 @@ export function CutStep({
    * nghe được chính chỗ ấy. Hai việc trái nhau, nên tách bằng chủ ý.
    */
   const auditing = useRef<string | null>(null);
-
-  const rows: SpanRow[] = useMemo(
-    () =>
-      spans.map((span) => ({
-        ...span,
-        // Từ tính theo ĐIỂM GIỮA: từ vắt qua mép chỉ được đếm cho một bên, nếu
-        // không nó hiện ở cả hai chỗ và đọc ra như bị lặp.
-        text: words
-          .filter((word) => {
-            const mid = (word.start + word.end) / 2;
-            return mid >= span.start && mid < span.end;
-          })
-          .map((word) => word.text)
-          .join(" "),
-      })),
-    [spans, words],
-  );
-
-  const cutSeconds = spans.reduce((sum, span) => sum + (span.end - span.start), 0);
 
   const seek = (at: number) => {
     // KẸP [0, total]. Không kẹp thì kéo dải sang phải đẩy `time` xuống ÂM, và vì
@@ -127,8 +112,14 @@ export function CutStep({
       if (video) {
         let at = video.currentTime;
         const here = spans.find((span) => at >= span.start && at < span.end);
-        if (auditing.current && here?.id !== auditing.current)
-          auditing.current = null;
+        // Bỏ chủ ý nghe khi ĐÃ QUA hết khoảng ấy — từ đó các khoảng bỏ khác lại
+        // nhảy qua như thường. KHÔNG bỏ chỉ vì `here` rỗng: quãng đệm dẫn vào
+        // (ngay TRƯỚC khoảng) vốn là chỗ còn giữ nên `here` rỗng ở đó; bỏ cờ tại
+        // đấy thì tới khoảng cần nghe lại bị nhảy mất — hụt đúng thứ muốn nghe.
+        const active = auditing.current
+          ? spans.find((span) => span.id === auditing.current)
+          : null;
+        if (active && at >= active.end) auditing.current = null;
         if (here && auditing.current !== here.id) {
           video.currentTime = here.end;
           at = here.end;
@@ -189,7 +180,8 @@ export function CutStep({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId, total, cut]);
 
-  const audit = (span: SpanRow) => {
+  /** Nghe thử một khoảng — phát chính nó dù bản đã-cắt vốn nhảy qua. */
+  const audit = (span: Span) => {
     const video = videoRef.current;
     if (!video) return;
     setSelectedId(span.id);
@@ -206,30 +198,14 @@ export function CutStep({
 
   return (
     <div className="grid gap-2 lg:h-full lg:min-h-0 lg:grid-rows-[minmax(0,1fr)_auto]">
-      <div className="grid gap-2 lg:min-h-0 lg:grid-cols-[20rem_1fr]">
-        <CutSpanList
-          heading={
-            loading
-              ? "Đang mở bản cắt"
-              : `Máy định bỏ ${spans.length} chỗ · ${formatDuration(cutSeconds)}`
-          }
-          rows={rows}
-          selectedId={selectedId}
-          onSelect={(id) => {
-            setSelectedId(id);
-            const row = rows.find((item) => item.id === id);
-            if (row) seek(row.start);
-          }}
-          onAudit={audit}
-          onDelete={(id) => {
-            void cut.deleteSpan(id);
-            setSelectedId(null);
-          }}
-        />
-
+      {/* KHÔNG còn cột "Máy định bỏ".
+          Cut ở đây là FREE theo thời gian, nên bản chép lời chỉ là phụ trợ —
+          không đáng chiếm một cột. Preview + dải là toàn bộ màn: xem, rồi soát
+          và sửa các khoảng cắt NGAY trên dải. Chỗ máy định bỏ hiện thành lớp che
+          trên dải, bấm để chọn, chuột phải để nghe/giữ lại. */}
+      <div className="grid gap-2 lg:min-h-0">
         {/* Khung xem: nút phát và đồng hồ nằm CHỒNG lên video, không thành một
-            hàng công cụ riêng — đúng preview của bàn dựng. Một hàng nút riêng ở
-            dưới dải là hai chỗ điều khiển phát cho một video. */}
+            hàng công cụ riêng — đúng preview của bàn dựng. */}
         <Card className="lg:min-h-0">
           <CardContent className="grid min-h-0 flex-1 place-items-center overflow-hidden">
             {previewUrl ? (
@@ -260,6 +236,16 @@ export function CutStep({
                   <span className="text-xs text-white tabular-nums">
                     {formatDuration(time)} / {formatDuration(total)}
                   </span>
+                  {/* Tóm tắt CẮT — thứ hữu ích nhất của cột "Máy định bỏ" cũ, giữ
+                      lại mà không cần cả cột: bỏ mấy chỗ và bản dựng sẽ còn dài
+                      bao nhiêu. Chép lời KHÔNG hiện ở đây — phần lớn nhát cắt là
+                      khoảng lặng vốn không có chữ, mà chữ thì đã có màn Soát lời. */}
+                  {spans.length > 0 ? (
+                    <span className="ml-auto flex items-center gap-1 text-xs text-white/90 tabular-nums">
+                      <ScissorsIcon className="size-3" />
+                      bỏ {spans.length} chỗ · còn {formatDuration(kept)}
+                    </span>
+                  ) : null}
                 </div>
               </div>
             ) : (
@@ -310,6 +296,7 @@ export function CutStep({
                 void cut.deleteSpan(id);
                 setSelectedId(null);
               }}
+              onAudit={audit}
             />
             <TimelineSideRail
               pxPerSecond={zoom.pxPerSecond}

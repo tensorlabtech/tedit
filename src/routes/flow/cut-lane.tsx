@@ -1,5 +1,5 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { PlusIcon, ScissorsIcon, Trash2Icon } from "lucide-react";
+import { PlayIcon, PlusIcon, RotateCcwIcon, ScissorsIcon } from "lucide-react";
 
 import {
   ContextMenu,
@@ -72,6 +72,7 @@ export function CutLane({
   onResize,
   onAddAt,
   onDelete,
+  onAudit,
 }: {
   clips: CutClip[];
   strip: { url: string; seconds: number; nativeSecondWidth: number };
@@ -88,6 +89,8 @@ export function CutLane({
   /** Thêm một khoảng cắt quanh mốc `at` — hook tự đo độ lặng để định bề rộng. */
   onAddAt: (at: number) => void;
   onDelete: (id: string) => void;
+  /** Nghe thử một khoảng — vì bản đã-cắt vốn nhảy qua nó. */
+  onAudit: (span: Span) => void;
 }) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
@@ -233,7 +236,13 @@ export function CutLane({
               // Cao bằng cột ba nút bên phải (hoàn tác, +/−) cho cân — dải thấp
               // hơn thì cột nút thừa ra một khoảng trống khó hiểu.
               className="relative h-32 cursor-grab touch-none overflow-hidden rounded-lg bg-muted/40 select-none active:cursor-grabbing"
-              onPointerDown={startScrub}
+              // Bấm ra CHỖ TRỐNG (không trúng khoảng cắt nào) thì bỏ chọn: khoảng
+              // cắt và tay nắm đều chặn nổi bọt, nên pointerdown chỉ tới đây khi
+              // bấm vào nền/thước/dải phim — đúng nghĩa "click ra ngoài".
+              onPointerDown={(event) => {
+                onSelect(null);
+                startScrub(event);
+              }}
               // Ghi mốc chuột phải TRƯỚC khi menu mở, để "Thêm tại đây" đúng chỗ.
               onContextMenu={(event) =>
                 (rmbTime.current = timeAtClientX(event.clientX))
@@ -310,14 +319,15 @@ export function CutLane({
                   }
                 />
                 <ContextMenuContent>
-                  {/* Xoá là việc HUỶ — màu danger để nó không lẫn với các mục
-                      thường. */}
-                  <ContextMenuItem
-                    variant="destructive"
-                    onClick={() => onDelete(span.id)}
-                  >
-                    <Trash2Icon />
-                    Xoá khoảng cắt
+                  <ContextMenuItem onClick={() => onAudit(span)}>
+                    <PlayIcon />
+                    Nghe khoảng này
+                  </ContextMenuItem>
+                  {/* "Giữ lại" bỏ khoảng cắt = trả đoạn phim về. Icon hoàn tác,
+                      KHÔNG phải thùng rác: đây là việc an toàn, ngược với huỷ. */}
+                  <ContextMenuItem onClick={() => onDelete(span.id)}>
+                    <RotateCcwIcon />
+                    Giữ lại đoạn này
                   </ContextMenuItem>
                 </ContextMenuContent>
               </ContextMenu>

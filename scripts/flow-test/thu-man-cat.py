@@ -102,20 +102,34 @@ def zoom_out_fully(page):
         page.wait_for_timeout(120)
 
 
-def scrub_to(page, cx, cy, second):
-    """Đưa vạch (ghim giữa) tới mốc `second` bằng con LĂN.
+def px_per_second(page):
+    """Đo thang hiện tại (px/giây) từ bề rộng một khoảng đã vẽ — để lăn đúng liều."""
+    rows = spans(page)
+    if not rows:
+        return None
+    el = page.locator(f"[data-cut-span='{rows[0]['id']}']")
+    bb = el.first.bounding_box() if el.count() else None
+    dur = rows[0]["e"] - rows[0]["s"]
+    return bb["width"] / dur if bb and dur > 0 else None
 
-    Không kéo chuột: Playwright kẹp con trỏ trong khung, nên một cú kéo dài để
-    nhảy vài chục giây bị cắt cụt và không tới đích. Lăn thì không bị kẹp và tới
-    đúng nơi — kéo có phép thử riêng bên dưới.
+
+def scrub_to(page, cx, cy, second):
+    """Đưa vạch (ghim giữa) tới mốc `second` bằng con LĂN, LIỀU THEO THANG.
+
+    Lăn deltaY=D thì vạch đi D/pps giây, nên muốn tới `second` phải lăn đúng
+    (second-cur)*pps — kẹp mỗi nhịp để không vọt. Lăn một liều cứng 200px thì ở
+    mức thu nhỏ (pps bé) mỗi nhịp nhảy chục giây, không bao giờ lọt cửa 0,4s.
     """
-    for _ in range(80):
+    for _ in range(120):
         cur = now(page)
-        if abs(cur - second) < 0.4:
+        if abs(cur - second) < 0.25:
             break
+        pps = px_per_second(page) or 200
+        delta = (second - cur) * pps
+        delta = max(-300, min(300, delta))
         page.mouse.move(cx, cy)
-        page.mouse.wheel(0, 200 if second > cur else -200)
-        page.wait_for_timeout(50)
+        page.mouse.wheel(0, delta)
+        page.wait_for_timeout(45)
     page.wait_for_timeout(300)
 
 
@@ -207,8 +221,15 @@ def main() -> int:
         if item.count():
             item.click()
             page.wait_for_timeout(1500)
-            check("nút + thêm được một khoảng ở vạch",
-                  len(spans(page)) == len(before) + 1, f"{len(before)}→{len(spans(page))}")
+            after = spans(page)
+            new = [s for s in after if not any(abs(s["s"] - o["s"]) < 0.05 for o in before)]
+            # Thêm ĐÚNG ở vạch: khoảng mới phải phủ mốc vạch lúc bấm — hợp đồng của
+            # nút + là "cắt ở vạch". So với `t_at` THẬT, không so mốc tính trước.
+            check("nút + thêm một khoảng ngay ở vạch",
+                  len(after) == len(before) + 1 and new
+                  and new[0]["s"] - 0.05 <= t_at <= new[0]["e"] + 0.05,
+                  f'vạch {t_at:.1f} · khoảng {new[0]["s"]:.1f}→{new[0]["e"]:.1f}' if new
+                  else f"{len(before)}→{len(after)}")
         settle(page)
         restore(page, base)
         page.wait_for_timeout(500)
@@ -224,6 +245,7 @@ def main() -> int:
         if gap:
             scrub_to(page, cx, cy, gap)
             before = spans(page)
+            t_click = now(page)  # vạch THẬT lúc bấm — chuột phải thêm ngay tại đây
             settle(page)
             page.mouse.click(cx, cy, button="right")
             page.wait_for_timeout(500)
@@ -234,9 +256,10 @@ def main() -> int:
                 page.wait_for_timeout(1500)
                 after = spans(page)
                 new = [s for s in after if not any(abs(s["s"] - o["s"]) < 0.05 for o in before)]
-                check("thêm đúng chỗ bấm (không phải chỗ khác)",
-                      len(after) == len(before) + 1 and new and abs((new[0]["s"] + new[0]["e"]) / 2 - gap) < 1.5,
-                      f'khe {gap:.1f}s · khoảng {new[0]["s"]:.1f}→{new[0]["e"]:.1f}' if new else "không thêm")
+                check("thêm đúng chỗ bấm (phủ mốc vạch lúc bấm)",
+                      len(after) == len(before) + 1 and new
+                      and new[0]["s"] - 0.3 <= t_click <= new[0]["e"] + 0.3,
+                      f'vạch {t_click:.1f}s · khoảng {new[0]["s"]:.1f}→{new[0]["e"]:.1f}' if new else "không thêm")
             settle(page)
             restore(page, base)
             page.wait_for_timeout(500)
@@ -273,12 +296,12 @@ def main() -> int:
         before = len(spans(page))
         page.locator("[data-cut-span]").first.click(button="right")
         page.wait_for_timeout(400)
-        rm = page.get_by_role("menuitem", name="Xoá khoảng cắt")
-        check("chuột phải khoảng cắt ra menu Xoá", rm.count() > 0)
+        rm = page.get_by_role("menuitem", name="Giữ lại đoạn này")
+        check("chuột phải khoảng cắt ra menu Giữ lại", rm.count() > 0)
         if rm.count():
             rm.click()
             page.wait_for_timeout(1500)
-            check("xoá thì bớt một khoảng", len(spans(page)) == before - 1)
+            check("giữ lại thì bớt một khoảng cắt", len(spans(page)) == before - 1)
         restore(page, base)
         page.wait_for_timeout(500)
 
@@ -295,13 +318,47 @@ def main() -> int:
                   f'dừng {now(page):.1f} · bỏ {head["s"]:.1f}→{head["e"]:.1f}')
             page.locator("body").press(" ")  # dừng
             page.wait_for_timeout(300)
-        listen = page.get_by_label("Nghe chỗ này").first
-        if listen.count():
-            listen.click()
-            page.wait_for_timeout(1200)
-            st = page.evaluate("() => { const v = document.querySelector('video'); return { t: v.currentTime, p: v.paused }; }")
-            check("nghe thử thì phát thật, không nhảy qua", not st["p"])
+        # NGHE THỬ giờ nằm ở CHUỘT PHẢI trên khoảng cắt (cột list đã bỏ).
+        # Chọn khoảng có ĐOẠN ĐỆM dẫn vào (bắt đầu > 1,5s): khoảng sát đầu video
+        # không có quãng đệm nên không lộ được lỗi "nghe thử vẫn nhảy qua".
+        zoom_out_fully(page)
+        rows = spans(page)
+        pick = next((s for s in rows if s["s"] > 1.5 and s["e"] - s["s"] > 0.4), rows[0])
+        scrub_to(page, cx, cy, (pick["s"] + pick["e"]) / 2)
+        page.locator(f"[data-cut-span='{pick['id']}']").click(button="right")
+        page.wait_for_timeout(400)
+        hear = page.get_by_role("menuitem", name="Nghe khoảng này")
+        check("chuột phải có 'Nghe khoảng này'", hear.count() > 0)
+        if hear.count():
+            hear.click()
+            # Lấy mẫu currentTime suốt (độ dài khoảng + đệm): nghe thử phải PHÁT
+            # XUYÊN chính khoảng ấy, nên phải có mẫu rơi TRONG nó — chỉ kiểm
+            # "đang phát" thì bản nhảy-qua vẫn lọt (nó phát tiếp ở quãng đệm sau).
+            inside = 0
+            for _ in range(int((pick["e"] - pick["s"] + 1.5) / 0.1)):
+                st = page.evaluate("() => ({ t: document.querySelector('video').currentTime, p: document.querySelector('video').paused })")
+                if pick["s"] + 0.05 <= st["t"] <= pick["e"] - 0.05:
+                    inside += 1
+                page.wait_for_timeout(100)
+            check("nghe thử thì PHÁT XUYÊN khoảng, không nhảy qua", inside >= 2,
+                  f"{inside} mẫu trong khoảng {pick['s']:.1f}→{pick['e']:.1f}")
             page.evaluate("() => document.querySelector('video').pause()")
+
+        # ── Click RA NGOÀI khoảng cắt thì BỎ CHỌN ─────────────────────────
+        zoom_out_fully(page)
+        first = spans(page)[0]
+        scrub_to(page, cx, cy, (first["s"] + first["e"]) / 2)
+        page.locator("[data-cut-span]").first.click()
+        page.wait_for_timeout(300)
+        check("bấm khoảng cắt thì nó được chọn",
+              page.locator("[data-cut-span][data-state='here']").count() == 1)
+        # Bấm chỗ trống LỆCH HẲN TÂM: nút + nằm ở giữa-trên, bấm ngay đó là mở
+        # menu chứ không phải bấm nền. Lùi sang trái 120px, giữa chiều cao.
+        lb = page.locator("[data-cut-lane]").bounding_box()
+        page.mouse.click(lb["x"] + 120, lb["y"] + lb["height"] / 2)
+        page.wait_for_timeout(300)
+        check("bấm ra ngoài thì bỏ chọn",
+              page.locator("[data-cut-span][data-state='here']").count() == 0)
 
         # ── Nút phát NẰM TRÊN preview, và phím CÁCH phát/dừng ─────────────
         ov = page.get_by_label("Phát bản đã cắt")
