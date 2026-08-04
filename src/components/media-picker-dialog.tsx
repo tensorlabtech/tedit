@@ -130,7 +130,17 @@ export function MediaPickerDialog({
      * vừa là chỗ sửa: bỏ tích là gỡ, tích thêm là lấy.
      */
     setChonKho(alreadyIn);
-  }, [open, defaultTab, alreadyIn]);
+    /*
+     * KHÔNG phụ thuộc `alreadyIn` theo tham chiếu.
+     *
+     * Nơi gọi dựng mảng ấy mới ở mỗi lượt render (`.map().filter()`), mà trang
+     * hỏi lại máy chủ mỗi 1,5 giây — nên effect chạy lại đều đặn và xoá sạch
+     * lựa chọn người dùng vừa bấm. Đo được: chọn xong khoảng một giây là mất.
+     *
+     * Chỉ dựng lại khi hộp MỞ, đúng như câu chú thích ở trên nói.
+     */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, defaultTab]);
 
   // Kho chỉ nạp khi NGƯỜI DÙNG sang tab ấy: kho có thể hàng trăm tệp, mà phần
   // lớn lượt chèn là lấy tệp đã có sẵn trong dự án.
