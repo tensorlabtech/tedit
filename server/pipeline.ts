@@ -367,7 +367,30 @@ export async function runTranscribe(projectId: string) {
  * trục thời gian — không còn gì phải quy đổi.
  */
 export async function resumeAfterCutReview(projectId: string) {
+  /*
+   * ĐÓNG cổng ngay khi bước qua.
+   *
+   * Không đóng thì `awaiting` vẫn trả về nó mãi — mà `awaiting` là thứ giao
+   * diện dùng để biết đang ở bước nào, nên người dùng bấm xong vẫn thấy y
+   * nguyên nút cũ và mạch trông như không nhúc nhích. Đo thật: chạy hết ba pha
+   * mà cổng vẫn báo `soat-cat`, và bảng dừng ở 12/14.
+   */
+  setStep(projectId, "soat-cat", "done", { result: "đã soát" });
   markStepRunning(projectId, "chot");
+  /*
+   * Bảo đảm `base.mp4` có TRƯỚC khi cắt.
+   *
+   * Bản chất lượng dựng bằng một việc NỀN xếp hàng riêng ở `jobs-routes.ts`, mà
+   * người dùng có thể bấm qua cổng trước khi việc ấy xong — nhất là với video
+   * ngắn, lúc đọc mấy dòng đề xuất cắt nhanh hơn lượt mã hoá.
+   *
+   * Đo thật: chạy thẳng ba pha không qua tuyến đường thì pha hai ném lỗi
+   * ffprobe "không tìm thấy tệp". Người dùng bấm nhanh cũng ra đúng lỗi ấy.
+   *
+   * `ensureMaster` chỉ dựng khi thật sự thiếu, nên gọi ở đây không tốn gì trong
+   * ca thường.
+   */
+  await ensureMaster(projectId);
   const baseInfo = await probe(join(workDir(projectId), "base.mp4"));
   const cut = await commitCut(projectId, baseInfo.duration);
   setStep(projectId, "chot", "done", {
@@ -439,6 +462,7 @@ export async function resumeAfterCutReview(projectId: string) {
  * mọi thứ dựng trên nó đều an toàn.
  */
 export async function resumeAfterTextReview(projectId: string) {
+  setStep(projectId, "soat-chu", "done", { result: "đã soát" });
   const preview = join(workDir(projectId), "preview.mp4");
   /*
    * `anchors` RỖNG ở luồng mới.

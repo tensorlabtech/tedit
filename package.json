@@ -24,7 +24,8 @@
     "check:llm-cache": "tsx scripts/llm-guard/check-llm-cache.ts",
     "check:commit-cut": "tsx scripts/cut-guard/check-commit-cut.ts",
     "check:flow": "tsx scripts/cut-guard/check-flow-gates.ts",
-    "check:all": "npm run typecheck && npm run lint && npm run check:fonts && npm run check:graphics && npm run check:ownership && npm run check:style-pack && npm run check:layout && npm run check:timing && npm run check:slots && npm run check:llm-cache && npm run check:commit-cut && npm run check:flow && npm run check:upload && npm run check:render",
+    "check:flow-e2e": "tsx scripts/flow-test/thu-luong-ba-pha.ts",
+    "check:all": "npm run typecheck && npm run lint && npm run check:fonts && npm run check:graphics && npm run check:ownership && npm run check:style-pack && npm run check:layout && npm run check:timing && npm run check:slots && npm run check:llm-cache && npm run check:commit-cut && npm run check:flow && npm run check:flow-e2e && npm run check:upload && npm run check:render",
     "dev:all": "concurrently -n web,api -c cyan,magenta \"vite\" \"tsx watch server/main.ts\""
   },
   "dependencies": {
