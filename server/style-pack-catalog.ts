@@ -415,6 +415,27 @@ export const NET_THUA: StylePack = {
  */
 export const DUNG_YEN: StylePack = {
   ...BASE,
+  /*
+   * KHÔNG nền trang, KHÔNG dồn — và đó là một lựa chọn, không phải thiếu sót.
+   *
+   * `rocket` trong kho mẫu đo ra 0%/giây và vẫn là một bộ hoàn chỉnh. Một bộ
+   * tên "Lặng" mà có máy quay bò tới thì nó thôi lặng.
+   *
+   * Vẫn khai `layouts` để ô đổi khổ giữa các màn: đổi khổ là dựng, còn máy quay
+   * chuyển động là quay. Hai thứ khác nhau, và bộ này chỉ nhận thứ đầu.
+   */
+  layouts: ["toan-khung", "o-don"],
+  /*
+   * Nền trang TRƠN, không lưới.
+   *
+   * Bắt buộc phải có: `render.ts` chỉ dựng bố cục khi bộ dáng khai `page`, nên
+   * khai `layouts` mà bỏ trống chỗ này là khai một thứ không bao giờ chạy —
+   * loại lỗi im lặng nhất trong hệ này. `check:style-pack` canh đúng chỗ ấy.
+   *
+   * Trơn chứ không lưới vì lưới là một dấu trang trí, mà bộ này không trang trí.
+   */
+  page: { tone: { color: "#101012", alpha: 1 }, grid: null },
+  scenePush: null,
   id: "dung-yen",
   label: "Lặng",
   theme: "gon",
@@ -780,6 +801,29 @@ export const PHAN: StylePack = {
   },
   // Nét viền chữ dày hơn mặc định: chữ viết tay mảnh hơn hẳn chữ in ở cùng cỡ,
   // nên nó cần nhiều đường bao hơn để nổi khỏi nền video.
+  /*
+   * Trang SÁNG — ngược hẳn "Nhịp đen".
+   *
+   * Hai bộ dùng chung hệ bố cục mà đọc ra khác hẳn nhau, và khác nhau ở NỀN
+   * chứ không ở font: nền phấn trắng ngà với bốn dấu góc kiểu khung ngắm, so
+   * với nền đen tuyền có lưới một phần ba. Đây đúng là điều "phong cách là sự
+   * kết hợp của nhiều thứ nhỏ" nói tới — cùng vốn từ, khác lựa chọn.
+   */
+  page: {
+    tone: { color: "#F4F1E8", alpha: 1 },
+    grid: { id: "dau-goc", tone: { color: "#2A2622", alpha: 0.35 } },
+  },
+  /*
+   * Ba bố cục, KHÔNG có `toan-khung`.
+   *
+   * Bộ này kể chuyện chậm, và ô luôn có mép là dấu "đang xem một trang" chứ
+   * không phải "đang xem một video". Bỏ toàn khung là bỏ đúng cái phá cảm giác
+   * ấy — nhưng cũng nghĩa là chữ luôn có dải riêng, nên chữ phải nhỏ hơn.
+   */
+  layouts: ["o-don", "o-lech", "vuong-ngang"],
+  // Dồn 4%/giây trên một phần tư số màn — mức của `ember`, bộ chậm nhất trong
+  // kho mẫu mà vẫn có chuyển động.
+  scenePush: { ratePerSecond: 0.04, share: 0.25 },
   edge: { share: 0.03, tone: { color: "#1A1A1A", alpha: 0.92 } },
   subjectEdge: { tone: { color: "#F2FF3D", alpha: 0.95 }, steps: 6, share: 0.3 },
   behindText: {

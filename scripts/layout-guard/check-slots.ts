@@ -375,6 +375,27 @@ check(
   crops.filter((c) => !/^crop=\d+:\d+$/.test(c)).join(" · "),
 );
 
+/*
+ * ══ KHAI BỐ CỤC THÌ PHẢI KHAI NỀN TRANG ══
+ *
+ * `render.ts` chỉ dựng lịch màn khi `pack.page` có — không có nền thì cả khối
+ * bố cục bị bỏ qua. Nên một bộ khai `layouts` mà bỏ trống `page` là khai một
+ * thứ KHÔNG BAO GIỜ CHẠY: catalog trông đầy đủ, video ra vẫn phủ kín khung, và
+ * không ai báo gì.
+ *
+ * Đã suýt mắc: bộ "Lặng" thêm `layouts` trước, `page` sau.
+ */
+console.log("\nBộ dáng khai bố cục thì phải khai nền trang");
+const { STYLE_PACKS } = await import("../../server/style-pack-catalog");
+for (const pack of STYLE_PACKS) {
+  if (pack.layouts.length === 0) continue;
+  check(
+    `"${pack.label}" khai ${pack.layouts.length} bố cục và có nền trang`,
+    pack.page !== null,
+    "khai bố cục mà không có nền — cả khối sẽ bị bỏ qua khi dựng",
+  );
+}
+
 console.log("\nPhép kiểm BẮT được lỗi (thử phá)");
 const broken: Array<[string, Slot, boolean]> = [
   // Khai tỉ lệ ngang mà ra tỉ lệ nguồn dọc → phép so tỉ lệ phải đỏ.
