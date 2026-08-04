@@ -27,7 +27,9 @@ import { MediaPickerDialog } from "@/components/media-picker-dialog";
 import { BigDropZone } from "./big-drop-zone";
 import { BriefStep } from "./brief-step";
 import { FinishCutButton } from "./finish-cut-button";
+import { FinishTextButton } from "./finish-text-button";
 import { CutStep, type CutWord } from "./cut-step";
+import { SoatLoiStep } from "./soat-loi-step";
 import { StepRow } from "../pipeline/pipeline-page";
 import type { ApiStep } from "@/lib/api";
 import { BRollList } from "./broll-list";
@@ -298,7 +300,11 @@ export function FlowPage() {
                 seconds={snap.cut.seconds}
                 kept={snap.cut.kept}
               />
-            ) : machineBusy ? null : step.actor === "user" ? (
+            ) : machineBusy ? null : at === "proofread" && projectId ? (
+              // Cổng thứ hai — soát chính tả xong thì máy dựng nốt. Không phải
+              // cửa một chiều (khác `cut`), nên một nút thẳng là đủ, không hỏi.
+              <FinishTextButton projectId={projectId} />
+            ) : step.actor === "user" ? (
               <Button onClick={() => navigate(`/editor/${projectId}`)}>
                 Mở bàn dựng
                 <ArrowRightIcon data-icon="inline-end" />
@@ -401,6 +407,13 @@ export function FlowPage() {
                 ))}
               </CardContent>
             </Card>
+          ) : at === "proofread" ? (
+            /* Cổng soát chính tả đã mở (hai chặng máy `commit-cut`/`fix` chạy
+               xong thì nhánh máy ở trên không còn bắt). Bày bản chép để soát. */
+            <SoatLoiStep
+              projectId={projectId}
+              previewUrl={projectId ? api.baseVideoUrl(projectId) : null}
+            />
           ) : at === "brief" ? (
             <BriefStep
               title={upload.title}
