@@ -7,6 +7,7 @@
  * Dùng `fetch` thẳng chứ không kéo SDK: chỗ này chỉ cần một lời gọi có kiểu trả
  * về chặt, mà SDK thì thêm một tầng phải theo phiên bản.
  */
+import { cacheKey, readCache, writeCache } from "./llm-cache";
 
 // Nạp `.env`. Việc này nằm ở `env.ts` chứ không làm tại đây: bản trước gọi
 // `process.loadEnvFile(".env")`, tức là giải theo THƯ MỤC ĐANG ĐỨNG — chạy bằng
@@ -27,6 +28,18 @@ const ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
 const MODEL = process.env.OPENROUTER_MODEL ?? "openai/gpt-5";
 const MODEL_CHEAP =
   process.env.OPENROUTER_MODEL_CHEAP ?? process.env.OPENROUTER_MODEL ?? MODEL;
+
+/** Hạt giống gửi kèm mọi lời gọi — xem chú thích ở chỗ dựng thân yêu cầu. */
+const SEED = Number(process.env.OPENROUTER_SEED ?? 7);
+
+/**
+ * Tổng thời gian NẰM CHỜ mô hình trong một lượt dựng, và gọi bao nhiêu lần.
+ *
+ * Cần vì không ai biết mô hình chiếm bao nhiêu trong hai mươi phút dựng — mà
+ * không biết thì mọi câu "đổi mô hình cho nhanh hơn" đều là đoán.
+ */
+export const modelSpend = { calls: 0, ms: 0 };
+export { cacheSpend } from "./llm-cache";
 
 /** Chờ tối đa cho một lời gọi. Treo vô hạn thì cả lượt dựng đứng im không lý do. */
 const TIMEOUT_MS = 120_000;
@@ -160,15 +173,55 @@ export async function ask<T>(options: {
     // này thì OpenRouter có thể chọn một endpoint bỏ qua schema, và lỗi hiện ra
     // ở tận chỗ `JSON.parse` chứ không nói gì về nguyên nhân.
     provider: { require_parameters: true },
+    /*
+     * HẠT GIỐNG — gửi kèm, nhưng ĐỪNG tin nó cho tính lặp lại.
+     *
+     * Thêm vào để hai lượt dựng cùng dữ liệu ra cùng một video. Đo thì KHÔNG:
+     * hai lượt gpt-5 cùng seed 7 ra "3 lượt · gạt 107" và "2 lượt · gạt 41",
+     * tệp lệch nhau 10 MB. Thử thẳng vào API cũng thế — cùng seed, cùng nhà
+     * cung cấp (OpenAI), hai danh sách từ khác nhau.
+     *
+     * Mô hình suy luận sinh phần suy luận không nằm dưới quyền hạt giống, và
+     * suy luận mới là thứ lái kết quả. Giữ lại vì không tốn gì và có nhà cung
+     * cấp khác tôn trọng nó — nhưng thứ thật sự cho lặp lại được là LƯU LẠI câu
+     * trả lời theo (mô hình, chặng, vân tay đầu vào), không phải hạt giống.
+     */
+    seed: SEED,
     // Chỉ gửi khi chỗ gọi có ý kiến. Gửi kèm một mức mặc định do mình chọn là
     // âm thầm đổi hành vi của cả bảy chặng còn lại.
     ...(options.effort ? { reasoning: { effort: options.effort } } : {}),
   };
 
+  /*
+   * Hỏi bộ nhớ đệm TRƯỚC khi hỏi mô hình.
+   *
+   * Đây mới là thứ cho lặp lại được — `seed` đo ra không cho (xem chú thích ở
+   * chỗ dựng thân yêu cầu). Khoá phủ mọi thứ đi vào câu trả lời, nên trúng
+   * nghĩa là đúng câu hỏi ấy đã hỏi rồi.
+   */
+  const key = cacheKey({
+    model: body.model,
+    schemaName: options.schemaName,
+    instructions: options.instructions,
+    input: options.input,
+    images: options.images ?? [],
+    effort: options.effort,
+  });
+  const saved = readCache(key);
+  if (saved !== null) return saved as T;
+
   let lastError: Error | null = null;
   for (let attempt = 0; attempt < MAX_TRIES; attempt += 1) {
     try {
-      return extractJson(await call(body)) as T;
+      const began = Date.now();
+      try {
+        const value = extractJson(await call(body));
+        writeCache(key, value, body.model);
+        return value as T;
+      } finally {
+        modelSpend.calls += 1;
+        modelSpend.ms += Date.now() - began;
+      }
     } catch (error) {
       lastError = error as Error;
       // Hết quota hay sai khoá thì thử lại cũng vô ích — hỏng luôn cho nhanh.

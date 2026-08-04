@@ -27,6 +27,7 @@ import { probe } from "../../server/media-tools";
 import { workDir } from "../../server/paths";
 import { keptRanges, runExport } from "../../server/pipeline";
 import { OUT_HEIGHT, OUT_WIDTH } from "../../server/render";
+import { cacheSpend, modelSpend } from "../../server/llm";
 import { findStylePack } from "../../server/style-pack-catalog";
 import { join } from "node:path";
 
@@ -79,6 +80,15 @@ db.prepare("DELETE FROM effects WHERE project_id=?").run(projectId);
 const effects = await pickEffects(projectId, keptRanges(projectId, info.duration));
 console.log(`chỗ nối → ${effects.applied} đặt · ${effects.rejected} gạt`);
 
+const beganRender = Date.now();
 await runExport(projectId);
 await copyFile(join(workDir(projectId), "..", "out", "final.mp4"), outPath);
+const render = (Date.now() - beganRender) / 1000;
+// Mô hình chiếm bao nhiêu trong cả lượt — không đo thì mọi câu "đổi mô hình cho
+// nhanh" đều là đoán.
+console.log(
+  `mô hình → ${modelSpend.calls} lượt gọi · ${(modelSpend.ms / 1000).toFixed(0)}s` +
+    ` · nhớ sẵn ${cacheSpend.hits}/${cacheSpend.hits + cacheSpend.misses}` +
+    ` · dựng ${render.toFixed(0)}s`,
+);
 console.log(`✓ ${outPath}`);
