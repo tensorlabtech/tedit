@@ -35,23 +35,36 @@ import {
 
 export function FlowSidebar({
   current,
+  reached,
   onPick,
 }: {
+  /** Bước đang XEM — cái được tô. */
   current: FlowStepId;
+  /**
+   * Bước MÁY đã tới — mốc quyết định bấm được hay không.
+   *
+   * Tách khỏi `current` vì hai thứ khác nhau: bản đầu lấy `current` làm mốc,
+   * nên vừa bấm về bước 1 là bước 2 thành "chưa tới" và không bấm lại được.
+   * Ảnh chụp mới thấy — người dùng lùi một bước rồi kẹt luôn ở đó.
+   */
+  reached: FlowStepId;
   /** Bấm một bước đã qua. Bước chưa tới hoặc đã khoá thì không gọi. */
   onPick: (id: FlowStepId) => void;
 }) {
   const at = stepIndex(current);
+  const far = stepIndex(reached);
   const door = stepIndex(ONE_WAY_AFTER);
 
   return (
     <div className="grid content-start gap-2 lg:min-h-0 lg:overflow-y-auto">
       {FLOW_STEPS.map((step, index) => {
-        const done = index < at;
+        // Xong = máy đã đi qua. Đang đứng = cái đang xem.
+        const done = index < far;
         const here = index === at;
         // Bước sau cửa thì không về được bước trước cửa — xem `canGoBack`.
-        const locked = at > door && index <= door;
-        const openable = done && !locked;
+        const locked = far > door && index <= door;
+        // Bấm được mọi bước máy ĐÃ TỚI, kể cả đi tới lại sau khi lùi.
+        const openable = index <= far && !locked && index !== at;
 
         return (
           <Card

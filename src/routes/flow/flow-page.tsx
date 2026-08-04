@@ -207,7 +207,11 @@ export function FlowPage() {
       </Card>
 
       <div className="grid gap-2 lg:min-h-0 lg:grid-cols-[15rem_1fr]">
-        <FlowSidebar current={at} onPick={(id) => setViewing(id)} />
+        <FlowSidebar
+          current={at}
+          reached={machineAt}
+          onPick={(id) => setViewing(id)}
+        />
 
         {/*
           Ô phải KHÔNG bọc thêm một Card nữa.
@@ -235,10 +239,18 @@ export function FlowPage() {
             }}
           />
           {at === "main-footage" ? (
-            /* Xem trước TRÊN, danh sách DƯỚI — mắt đi từ thứ đang xem xuống thứ
-               để chọn. Hàng dưới `auto` để nó lấy đúng chiều cao nó cần, hàng
-               trên `minmax(0,1fr)` để nó nhường. */
-            <div className="grid min-h-0 gap-2 lg:grid-rows-[minmax(0,1fr)_auto]">
+            /*
+             * Hai hàng đều có SÀN, và khung cha CUỘN được.
+             *
+             * Bản trước dùng `minmax(0,1fr)_auto`: hàng dưới chỉ nhận phần
+             * thừa, mà ô xem trước có `min-h-60` nên chẳng còn thừa gì — danh
+             * sách rơi khỏi khung và bị cắt cụt. Chụp màn ba lần mới thấy tôi
+             * đang chữa sai chỗ.
+             *
+             * `upload-page` vốn đã đúng: mỗi hàng một sàn `minmax(...)`, kèm
+             * `overflow-y-auto` để phần vượt thì cuộn chứ không biến mất.
+             */
+            <div className="grid gap-2 lg:min-h-0 lg:grid-rows-[minmax(18rem,1.15fr)_minmax(12rem,auto)] lg:overflow-y-auto">
               <SequencePreviewCard
                 pack={findStylePack(upload.stylePack)}
                 scenes={upload.mainFiles.filter((i) => i.status !== "error")}
