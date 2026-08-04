@@ -7,7 +7,6 @@ import {
   PlayIcon,
 } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -170,39 +169,38 @@ export function SoatLoiStep({
     <div className="grid gap-2 lg:h-full lg:min-h-0 lg:grid-cols-[1fr_22rem]">
       {/* Bản chép — chỗ soát. */}
       <Card className="lg:min-h-0">
+        {/* Tiêu đề là THÔNG TIN (đếm chỗ ngờ), không nhắc lại tên bước — tên bước
+            đã ở sidebar. Cùng lối bước máy bày "Máy đang làm · N/M". */}
         <CardHeader>
-          <CardTitle>Soát chính tả</CardTitle>
-          <CardAction>
-            {done ? (
-              <Badge>Đã soát xong</Badge>
-            ) : (
-              <div className="flex items-center gap-1.5">
-                <Badge variant="secondary" className="tabular-nums">
-                  {hereIndex >= 0
-                    ? `Chỗ ${hereIndex + 1}/${review.unsure.length}`
-                    : `${review.unsure.length} chỗ chưa chắc`}
-                </Badge>
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  tooltip="Chỗ ngờ trước"
-                  aria-label="Chỗ ngờ trước"
-                  onClick={() => jumpUnsure(-1)}
-                >
-                  <ChevronLeftIcon />
-                </Button>
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  tooltip="Chỗ ngờ kế"
-                  aria-label="Chỗ ngờ kế"
-                  onClick={() => jumpUnsure(1)}
-                >
-                  <ChevronRightIcon />
-                </Button>
-              </div>
-            )}
-          </CardAction>
+          <CardTitle className="tabular-nums">
+            {done
+              ? "Đã soát xong"
+              : hereIndex >= 0
+                ? `Chỗ ${hereIndex + 1} / ${review.unsure.length} máy chưa chắc`
+                : `${review.unsure.length} chỗ máy nghe không chắc`}
+          </CardTitle>
+          {done ? null : (
+            <CardAction>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                tooltip="Chỗ ngờ trước"
+                aria-label="Chỗ ngờ trước"
+                onClick={() => jumpUnsure(-1)}
+              >
+                <ChevronLeftIcon />
+              </Button>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                tooltip="Chỗ ngờ kế"
+                aria-label="Chỗ ngờ kế"
+                onClick={() => jumpUnsure(1)}
+              >
+                <ChevronRightIcon />
+              </Button>
+            </CardAction>
+          )}
         </CardHeader>
         <CardContent className="min-h-0 overflow-y-auto">
           <p className="text-muted-foreground mb-3 text-sm">
@@ -237,32 +235,39 @@ export function SoatLoiStep({
         </CardContent>
       </Card>
 
-      {/* Nghe & soát. */}
+      {/* Khung xem: nút nghe nằm CHỒNG lên video, không thành hàng công cụ riêng
+          — cùng lối preview của bước Cắt và bàn dựng. */}
       <Card className="lg:min-h-0">
-        <CardContent className="grid min-h-0 content-start gap-3 overflow-hidden">
+        <CardContent className="grid min-h-0 flex-1 place-items-center overflow-hidden">
           {previewUrl ? (
-            <>
-              <div className="relative mx-auto aspect-[9/16] max-h-full overflow-hidden rounded-lg">
-                <video
-                  ref={videoRef}
-                  src={previewUrl}
-                  className="h-full w-full object-cover"
-                  onPlay={() => setPlaying(true)}
-                  onPause={() => {
-                    setPlaying(false);
-                    setPlayingId(null);
-                  }}
+            <div className="relative mx-auto aspect-[9/16] w-full max-h-full overflow-hidden rounded-lg">
+              <video
+                ref={videoRef}
+                src={previewUrl}
+                className="h-full w-full object-cover"
+                onPlay={() => setPlaying(true)}
+                onPause={() => {
+                  setPlaying(false);
+                  setPlayingId(null);
+                }}
+                onClick={toggleKaraoke}
+              />
+              <div className="absolute inset-x-0 bottom-0 z-20 flex items-center gap-2 bg-gradient-to-t from-black/70 to-transparent p-2 pt-8">
+                <Button
+                  variant="secondary"
+                  size="icon-sm"
+                  aria-label={playing ? "Tạm dừng" : "Nghe & soát"}
                   onClick={toggleKaraoke}
-                />
+                >
+                  {playing ? <PauseIcon /> : <PlayIcon />}
+                </Button>
+                <span className="text-xs text-white">
+                  {playing
+                    ? "Đang tô từng chữ — bấm một chữ để dừng và sửa"
+                    : "Nghe & soát — tô từng chữ như bản xuất"}
+                </span>
               </div>
-              <Button className="w-full" onClick={toggleKaraoke}>
-                {playing ? <PauseIcon /> : <PlayIcon />}
-                {playing ? "Tạm dừng" : "Nghe & soát"}
-              </Button>
-              <p className="text-muted-foreground text-center text-xs">
-                Phát và tô từng chữ như bản xuất — bấm một chữ để dừng và sửa.
-              </p>
-            </>
+            </div>
           ) : (
             <p className="text-muted-foreground text-center">
               Chưa có bản xem trước. Máy đang ghép mạch chính.
