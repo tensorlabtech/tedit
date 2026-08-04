@@ -155,6 +155,11 @@ export async function runTranscribe(projectId: string) {
   // cao 44px nên 540×960 vẫn thừa nét.
   setJob(projectId, "transcribe", "running", 20, "Đang dựng dải ảnh");
   const baseInfo = await probe(preview);
+  // Độ dài video hiện tại — đọc từ tệp, để nơi khác khỏi cộng nhầm các tệp cảnh.
+  db.prepare("UPDATE projects SET video_seconds=? WHERE id=?").run(
+    baseInfo.duration,
+    projectId,
+  );
   // Ghi lỗi ra thông báo việc thay vì nuốt im: lần trước lệnh ffmpeg vượt giới
   // hạn bề rộng JPEG, `catch` rỗng nuốt mất, dải vẫn dùng tệp cũ suốt hai lượt.
   const strip = await makeFilmstrip(
@@ -526,7 +531,13 @@ export async function resumeAfterTextReview(projectId: string) {
   const info = await probe(preview);
   db.prepare("DELETE FROM segments WHERE project_id=?").run(projectId);
   await seedSegmentsByCaption(projectId, info.duration, readStylePack(projectId));
-  db.prepare("UPDATE projects SET segments_by_caption=3 WHERE id=?").run(
+  // Đánh dấu ĐÚNG bản đã gieo (4 — bản mới nhất, chính hàm ở trên) chứ không phải
+  // 3. Ghi 3 thì `GET /api/projects/:id` tưởng còn bản cũ nên gieo LẠI đoạn, mà
+  // nó lấy tổng độ dài = SUM(media_files) — tức TRỤC GỐC 118s, không phải trục
+  // đã cắt 52s mà `info.duration` vừa gieo đúng. Segments nhảy về 118s, và bàn
+  // dựng đọc ra một timeline dài gấp đôi video thật. `splitVerbatimCaptions` mà
+  // bước gieo-lại làm thêm là phép rỗng ở đây (chữ vừa gieo là chữ máy, đều ngắn).
+  db.prepare("UPDATE projects SET segments_by_caption=4 WHERE id=?").run(
     projectId,
   );
 

@@ -33,12 +33,20 @@ export function listMusic(projectId: string) {
 
 /** Tổng thời lượng video chính — mốc kết thúc mặc định của một bài mới. */
 export function mainDuration(projectId: string) {
+  // Độ dài VIDEO HIỆN TẠI, không phải tổng các tệp cảnh gốc. Sau `commit-cut`
+  // video ngắn lại (118s → 52s) mà tệp cảnh vẫn giữ độ dài gốc, nên cộng chúng
+  // lại thì nhạc phủ dài gấp đôi video — dải nhạc thò ra tận trục cũ. Đọc
+  // `video_seconds` (đo từ tệp); dự án cũ chưa có thì rơi về tổng tệp — đúng vì
+  // chúng chưa cắt.
   const row = db
     .prepare(
-      "SELECT COALESCE(SUM(duration),0) AS total FROM media_files WHERE project_id=? AND role='main'",
+      `SELECT video_seconds AS video,
+              (SELECT COALESCE(SUM(duration),0) FROM media_files
+               WHERE project_id=p.id AND role='main') AS files
+       FROM projects p WHERE p.id=?`,
     )
-    .get(projectId) as { total: number };
-  return row.total;
+    .get(projectId) as { video: number | null; files: number };
+  return row.video ?? row.files;
 }
 
 /**

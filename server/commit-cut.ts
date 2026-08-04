@@ -101,6 +101,12 @@ export async function commitCut(
   const segments = await transcribeAudio(audio, "vi", buildAsrPrompt(projectId));
 
   const previewInfo = await probe(preview);
+  // Video vừa NGẮN lại — ghi độ dài mới để nối-đoạn-đuôi và gieo-lại-đoạn không
+  // còn kéo dải về trục gốc (tổng các tệp cảnh) nữa.
+  db.prepare("UPDATE projects SET video_seconds=? WHERE id=?").run(
+    previewInfo.duration,
+    projectId,
+  );
   const strip = await makeFilmstrip(
     preview,
     join(thumbDir(projectId), "strip.jpg"),

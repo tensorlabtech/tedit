@@ -398,6 +398,12 @@ for (const [table, column, type] of [
   // Số giây dải ảnh biểu diễn — bàn dựng cần để tính thang vẽ. `NULL` nghĩa là
   // dải dựng bằng bản cũ, bàn dựng tự suy ra từ thời lượng.
   ["projects", "strip_seconds", "REAL"],
+  // Độ dài THẬT của `base.mp4` đang có — tính từ tệp, không phải cộng các tệp
+  // cảnh gốc. Sau `commit-cut` video ngắn lại (118s → 52s) mà các tệp cảnh vẫn
+  // giữ độ dài gốc, nên tổng chúng KHÔNG còn là độ dài video. Chỗ nào cần "video
+  // dài bao nhiêu" (nối đoạn đuôi, gieo lại đoạn, độ dài dải) phải đọc con số
+  // này. `NULL` ở dự án cũ thì rơi về tổng tệp cảnh — đúng vì chúng chưa cắt.
+  ["projects", "video_seconds", "REAL"],
   // Thang gốc của dải ảnh: một giây rộng bao nhiêu px khi ảnh vẽ đúng chiều cao
   // dải. `NULL` thì bàn dựng lấy mặc định 200 — đúng với mọi dải dựng trước đó.
   ["projects", "strip_native_second_width", "REAL"],

@@ -224,6 +224,17 @@ export function shape(data: ApiProject) {
 
   const music: MusicTrack[] = (data.music ?? []).map(toMusicTrack);
 
+  /**
+   * Độ dài dải = MÉP CUỐI của đoạn, không phải tổng các TỆP CẢNH gốc.
+   *
+   * `cursor` (tổng `media_files`) chỉ đúng khi `base.mp4` chưa cắt — lúc đó tệp
+   * gốc cộng lại đúng bằng video. Nhưng sau khi `commit-cut` nướng lát cắt, video
+   * ngắn lại (đo thật: 118s → 52s) mà các tệp cảnh vẫn giữ độ dài gốc, nên tổng
+   * chúng KHÔNG còn là độ dài video. Đoạn thì luôn được gieo theo đúng video hiện
+   * tại (dài bằng nó), nên mép cuối đoạn là thước đúng ở cả hai trục.
+   */
+  const segmentsEnd = segments.reduce((max, seg) => Math.max(max, seg.end), 0);
+
   return {
     segments,
     sentences,
@@ -258,7 +269,7 @@ export function shape(data: ApiProject) {
       return first?.thumb_path ? api.fileUrl(first.thumb_path) : null;
     })(),
     clips,
-    duration: cursor || (sentences.at(-1)?.end ?? 0),
+    duration: segmentsEnd || cursor || (sentences.at(-1)?.end ?? 0),
     title: data.project.title,
     /** Mã những lời nhắc đã bỏ qua — hàng soát lọc theo danh sách này */
     dismissed: data.dismissed ?? [],

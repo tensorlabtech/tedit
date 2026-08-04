@@ -286,6 +286,20 @@ app.get("/api/projects/:id", async (request, reply) => {
   const project = db.prepare("SELECT * FROM projects WHERE id=?").get(id);
   if (!project) return reply.code(404).send({ error: "Không có dự án này" });
 
+  // Độ dài video HIỆN TẠI. Đọc `video_seconds` (đo từ tệp, đúng cả sau khi cắt);
+  // dự án cũ chưa có cột này thì rơi về tổng các tệp cảnh — đúng, vì chúng chưa
+  // cắt nên cộng lại đúng bằng video. Sau `commit-cut` thì hai con số lệch hẳn
+  // (52s vs 118s), và mọi chỗ "video dài bao nhiêu" phải theo con số đo từ tệp.
+  const videoSeconds =
+    (project as { video_seconds: number | null }).video_seconds ??
+    (
+      db
+        .prepare(
+          "SELECT COALESCE(SUM(duration),0) AS total FROM media_files WHERE project_id=? AND role='main'",
+        )
+        .get(id) as { total: number }
+    ).total;
+
   // Đổi "cắt tay" kiểu cũ thành đoạn đã bỏ, một lần cho mỗi dự án. Đặt ở đây vì
   // đây là cửa duy nhất mọi màn đều đi qua trước khi sửa gì.
   absorbManualCuts(id);
@@ -306,16 +320,7 @@ app.get("/api/projects/:id", async (request, reply) => {
   seedDefaultCaptionStyle(id);
   // Thêm video chính sau khi đã chia đoạn thì phần thêm chưa thuộc đoạn nào —
   // nối thêm một đoạn ở đuôi, không thì nó lặng lẽ mất khỏi bản xuất.
-  extendToDuration(
-    id,
-    (
-      db
-        .prepare(
-          "SELECT COALESCE(SUM(duration),0) AS total FROM media_files WHERE project_id=? AND role='main'",
-        )
-        .get(id) as { total: number }
-    ).total,
-  );
+  extendToDuration(id, videoSeconds);
   // Nhạc kiểu cũ (hai cột trên `projects`) đổi thành một hàng ở bảng nhạc, cũng
   // một lần cho mỗi dự án — cùng lý do và cùng chỗ.
   absorbLegacyMusic(id);
@@ -376,14 +381,7 @@ app.get("/api/projects/:id", async (request, reply) => {
   //   4 → phần nới mép theo tiếng thật không ăn sang cụm bên cạnh nữa
   if (idle && (seedState?.segments_by_caption ?? 0) < 4 && wordCount.n > 0) {
     await splitVerbatimCaptions(id, readStylePack(id));
-    const total = (
-      db
-        .prepare(
-          "SELECT COALESCE(SUM(duration),0) AS total FROM media_files WHERE project_id=? AND role='main'",
-        )
-        .get(id) as { total: number }
-    ).total;
-    await seedSegmentsByCaption(id, total, readStylePack(id));
+    await seedSegmentsByCaption(id, videoSeconds, readStylePack(id));
     db.prepare("UPDATE projects SET segments_by_caption=4 WHERE id=?").run(id);
   }
 
