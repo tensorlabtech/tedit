@@ -128,7 +128,22 @@ function buildIssues(
   // Bấm "Xem" mở thẳng CỤM CHỮ chứa từ đó — nơi duy nhất sửa chữ. Trước đây nó
   // chọn riêng một "từ" và mở một khung sửa thứ hai chỉ để sửa đúng một chữ:
   // hai đường sửa cho cùng một việc, và người dùng phải nhớ đường nào ở đâu.
-  for (const word of editor.words.filter((item) => item.unsure)) {
+  /*
+   * Xếp theo ĐỘ TIN, thấp nhất lên đầu.
+   *
+   * Đo một dự án thật: 62 trên 473 từ nằm dưới ngưỡng 0,6 — quá dài để soát hết
+   * theo thứ tự thời gian. Mà máy biết nó không chắc ở đâu nhất, và ba từ tệ
+   * nhất trong bản ấy là "layoff" 0,02 · "FE" 0,03 · "frontend" 0,12 — đúng ba
+   * chỗ người dùng phàn nàn.
+   *
+   * Xếp theo thời gian thì ba từ ấy nằm lẫn giữa sáu mươi dòng và không ai đọc
+   * tới. Xếp theo độ tin thì chúng nằm ngay trên cùng.
+   */
+  const unsureWords = editor.words
+    .filter((item) => item.unsure)
+    .slice()
+    .sort((a, b) => (a.confidence ?? 1) - (b.confidence ?? 1));
+  for (const word of unsureWords) {
     const sentence = editor.sentences.find(
       (item) => item.id === word.sentenceId,
     );

@@ -14,6 +14,11 @@ export type Word = {
   sentenceId: string;
   /** Máy nghe không chắc — gạch chấm dưới, và vào danh sách soát */
   unsure?: boolean;
+  /**
+   * Xác suất Whisper trả về, 0–1. Giữ nguyên con số chứ không chỉ giữ cờ:
+   * `unsure` nói CÓ đáng soát không, còn con số nói soát cái nào TRƯỚC.
+   */
+  confidence?: number;
 };
 
 export type Sentence = {

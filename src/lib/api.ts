@@ -151,6 +151,14 @@ export type ApiPipeline = {
   /** Có chặng BẮT BUỘC hỏng: chưa có sản phẩm để mà sửa */
   blocked: boolean;
   skipped: number;
+  /**
+   * Cổng nào đang mở chờ người, `null` là không cổng nào.
+   *
+   * Mạch dựng dừng hai lần: `soat-cat` sau khi đề xuất chỗ cắt, `soat-chu` sau
+   * khi sửa chỗ nghe nhầm. Cổng mở thì `settled` luôn sai, nên bàn dựng vẫn
+   * đóng — người dùng phải đi qua cổng chứ không lách được.
+   */
+  awaiting: string | null;
 };
 
 export type ProjectSummary = {

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import {
   AlertTriangleIcon,
@@ -176,6 +176,28 @@ export function PipelinePage() {
   // một con số không đúng.
   const doneCount = steps.filter((step) => step.status === "done").length;
   const canOpen = settled && !blocked;
+  /*
+   * Cổng chờ người — máy xong phần nó, tới lượt mình.
+   *
+   * Hai cổng, hai việc khác hẳn nhau nhưng cùng một hình dạng: xem máy đề xuất
+   * gì, sửa nếu sai, bấm tiếp. Nút "Mở trình sửa" nhường chỗ cho nút của cổng
+   * vì lúc này bàn dựng CHƯA mở được — `settled` còn sai — và bày một nút tắt
+   * bên cạnh một nút bật chỉ làm người ta phân vân bấm cái nào.
+   */
+  const awaiting = view.pipeline?.awaiting ?? null;
+  const [passing, setPassing] = useState(false);
+  const passGate = async () => {
+    if (!awaiting || !projectId) return;
+    setPassing(true);
+    try {
+      await fetch(`/api/projects/${projectId}/${awaiting}/xong`, {
+        method: "POST",
+        credentials: "include",
+      });
+    } finally {
+      setPassing(false);
+    }
+  };
 
   // Dự án CŨ không có bảng chặng nào — chúng dựng xong từ trước khi có màn này.
   // Giữ chúng lại đây là nhốt người dùng trước một danh sách rỗng vĩnh viễn.
@@ -217,13 +239,20 @@ export function PipelinePage() {
             {/* MỘT cửa ra. Lý do nó tắt nằm ở chân màn chứ không giấu sau
                 tooltip: nút `disabled` có `pointer-events: none` nên tooltip
                 không bao giờ nổ — đo được là rê chuột vào chẳng ra gì. */}
-            <Button
-              disabled={!canOpen}
-              onClick={() => navigate(`/editor/${projectId}`)}
-            >
-              Mở trình sửa
-              <ArrowRightIcon data-icon="inline-end" />
-            </Button>
+            {awaiting ? (
+              <Button disabled={passing} onClick={passGate}>
+                {awaiting === "soat-cat" ? "Chốt chỗ cắt" : "Chốt chính tả"}
+                <ArrowRightIcon data-icon="inline-end" />
+              </Button>
+            ) : (
+              <Button
+                disabled={!canOpen}
+                onClick={() => navigate(`/editor/${projectId}`)}
+              >
+                Mở trình sửa
+                <ArrowRightIcon data-icon="inline-end" />
+              </Button>
+            )}
           </CardAction>
         </CardHeader>
       </Card>

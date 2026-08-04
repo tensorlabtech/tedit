@@ -100,6 +100,7 @@ export function shape(data: ApiProject) {
     sentenceId: row.sentence_id,
     // Whisper trả xác suất từng từ; dưới 0,6 là chỗ đáng soát lại.
     unsure: (row.confidence ?? 1) < 0.6 || undefined,
+    confidence: row.confidence ?? undefined,
   }));
 
   const wordsById = new Map(words.map((word) => [word.id, word]));
