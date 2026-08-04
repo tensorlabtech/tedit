@@ -3,11 +3,12 @@ import { rename } from "node:fs/promises";
 import { join } from "node:path";
 
 import { buildAsrPrompt } from "./asr-bias";
+import { buildEnvelope } from "./audio-envelope";
 import { db, newId } from "./db";
-import { extractAudio } from "./media-tools";
-import { workDir } from "./paths";
+import { makeFilmstrip, probe } from "./media-tools";
+import { thumbDir, workDir } from "./paths";
 import { keptRanges } from "./pipeline";
-import { cutRanges } from "./render";
+import { buildPreview, cutRanges } from "./render";
 import { transcribeAudio } from "./transcribe";
 
 /**
@@ -90,11 +91,27 @@ export async function commitCut(
   const staged = await cutRanges(projectId, base, kept, [], "base-chot.mp4");
   await rename(staged, base);
 
-  // Tiếng phải rút lại từ tệp MỚI, không dùng `audio.wav` cũ — nó còn theo trục
-  // cũ, và đó chính là loại lệch cả hàm này sinh ra để dẹp.
-  const audio = join(work, "audio.wav");
-  await extractAudio(base, audio);
+  // Dựng lại MỌI tệp DẪN XUẤT trên trục MỚI — hệt chặng chuẩn bị. `base.mp4` giờ
+  // là một tệp khác (đã cắt, ngắn hơn), nên bản xem trước, dải ảnh và đường bao
+  // cũ còn theo trục cũ (118s) sẽ trật hẳn với timeline mới (52s): sóng lệch
+  // lời, dải ảnh lệch khung, khung xem phát nhầm bản chưa cắt. `buildPreview` cho
+  // ra bản xem trước nhẹ VÀ `audio.wav` mới trong cùng một lượt giải mã, nên máy
+  // nghe chép từ đúng tệp mà khung xem sẽ phát.
+  const { preview, audio } = await buildPreview(projectId, [base]);
   const segments = await transcribeAudio(audio, "vi", buildAsrPrompt(projectId));
+
+  const previewInfo = await probe(preview);
+  const strip = await makeFilmstrip(
+    preview,
+    join(thumbDir(projectId), "strip.jpg"),
+    previewInfo.duration,
+  ).catch(() => null);
+  if (strip) {
+    db.prepare(
+      "UPDATE projects SET strip_second_width=?, strip_seconds=?, strip_native_second_width=? WHERE id=?",
+    ).run(strip.secondWidth, strip.totalSeconds, strip.nativeSecondWidth, projectId);
+  }
+  await buildEnvelope(projectId, audio).catch(() => null);
 
   const rewrite = db.transaction(() => {
     /*
