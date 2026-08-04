@@ -1,4 +1,4 @@
-import { PlayIcon, Trash2Icon } from "lucide-react";
+import { PlayIcon, RotateCcwIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -102,18 +102,19 @@ export function CutSpanList({
                   >
                     <PlayIcon />
                   </Button>
+                  {/* Icon HOÀN TÁC, không phải thùng rác: bỏ một khoảng cắt là
+                      GIỮ LẠI đoạn phim ấy — một việc an toàn, ngược hẳn "xoá". Thùng
+                      rác đọc ra như đang huỷ phim, trái ý. */}
                   <Button
                     variant="ghost"
                     size="icon-xs"
-                    aria-label="Xoá khoảng cắt — giữ lại phần phim này"
-                    // Việc HUỶ tô danger để phân biệt với nút nghe bên cạnh.
-                    className="text-muted-foreground hover:text-destructive"
+                    aria-label="Giữ lại đoạn này — không cắt nữa"
                     onClick={(event) => {
                       event.stopPropagation();
                       onDelete(row.id);
                     }}
                   >
-                    <Trash2Icon />
+                    <RotateCcwIcon />
                   </Button>
                 </div>
                 {/* Lời bị bỏ GẠCH NGANG: đây là thứ sẽ biến mất, và gạch ngang nói

@@ -100,9 +100,13 @@ export function CutStep({
   const cutSeconds = spans.reduce((sum, span) => sum + (span.end - span.start), 0);
 
   const seek = (at: number) => {
+    // KẸP [0, total]. Không kẹp thì kéo dải sang phải đẩy `time` xuống ÂM, và vì
+    // vạch ghim giữa nên cả dải trôi tuột sang phải, rời hẳn khỏi vạch — không
+    // có mép nào chặn lại. Đúng lỗi "kéo được clip xa khỏi Stick".
+    const bounded = Math.max(0, Math.min(total, at));
     const video = videoRef.current;
-    if (video) video.currentTime = at;
-    setTime(at);
+    if (video) video.currentTime = bounded;
+    setTime(bounded);
   };
 
   /*

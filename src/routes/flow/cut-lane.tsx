@@ -292,7 +292,11 @@ export function CutLane({
                         // Nền che NHẠT hơn (55%) để còn thấy khung hình bên dưới
                         // — biết đang bỏ đúng cái gì. Sọc chéo vẫn đủ để đọc ra
                         // "chỗ này sẽ mất" mà không cần nền đặc.
-                        "absolute inset-y-0 z-10 grid cursor-pointer place-items-center overflow-hidden rounded-lane border border-border bg-background/55 bg-[repeating-linear-gradient(45deg,color-mix(in_oklab,var(--color-foreground)_22%,transparent)_0_1px,transparent_1px_14px)] text-foreground",
+                        "absolute inset-y-0 z-10 grid cursor-pointer place-items-center overflow-hidden rounded-lane bg-background/55 bg-[repeating-linear-gradient(45deg,color-mix(in_oklab,var(--color-foreground)_22%,transparent)_0_1px,transparent_1px_14px)] text-foreground",
+                        // Viền vẽ VÀO TRONG (`inset-ring`) để khung nhìn không xén
+                        // mất nó, và rê chuột thì viền sáng lên — cùng lối khối
+                        // bàn dựng, để đọc ra "chỗ này bấm được".
+                        "inset-ring inset-ring-border hover:inset-ring-2 hover:inset-ring-primary/50",
                         "data-[state=here]:ring-2 data-[state=here]:ring-primary data-[state=here]:ring-inset",
                       )}
                     >
