@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { PauseIcon, PlayIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -105,16 +105,37 @@ export function CutStep({
     setTime(at);
   };
 
-  /** Nhảy qua chỗ đã bỏ trong lúc phát — trừ khoảng đang cố ý nghe. */
-  const onTimeUpdate = () => {
-    const video = videoRef.current;
-    if (!video) return;
-    const at = video.currentTime;
-    setTime(at);
-    const here = spans.find((span) => at >= span.start && at < span.end);
-    if (auditing.current && here?.id !== auditing.current) auditing.current = null;
-    if (here && auditing.current !== here.id) video.currentTime = here.end;
-  };
+  /*
+   * VÒNG PHÁT MƯỢT bằng requestAnimationFrame — không theo `timeupdate`.
+   *
+   * `video.timeupdate` chỉ bắn ~4 lần/giây, nên nếu vạch (và cả dải cuộn theo)
+   * đọc từ đó thì lúc phát nó nhảy giật từng nấc ~250ms. Bàn dựng chạy vòng rAF
+   * 60fps cho mượt; màn cắt phải theo, nếu không hai màn phát khác cảm giác hẳn.
+   *
+   * Trong mỗi khung: nếu vạch rơi vào chỗ đã bỏ (mà không phải chỗ đang cố ý
+   * nghe) thì NHẢY tới cuối khoảng — đó là điểm của "phát bản đã cắt".
+   */
+  useEffect(() => {
+    if (!playing) return;
+    let frame = 0;
+    const tick = () => {
+      const video = videoRef.current;
+      if (video) {
+        let at = video.currentTime;
+        const here = spans.find((span) => at >= span.start && at < span.end);
+        if (auditing.current && here?.id !== auditing.current)
+          auditing.current = null;
+        if (here && auditing.current !== here.id) {
+          video.currentTime = here.end;
+          at = here.end;
+        }
+        setTime(at);
+      }
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [playing, spans]);
 
   const togglePlay = () => {
     const video = videoRef.current;
@@ -122,6 +143,47 @@ export function CutStep({
     if (video.paused) void video.play();
     else video.pause();
   };
+
+  /*
+   * PHÍM TẮT như bàn dựng: Space phát/dừng, Delete xoá khoảng đang chọn, Esc bỏ
+   * chọn, ←/→ bước một nhịp. Người dùng đi từ bước này sang bàn dựng dùng đúng
+   * một bộ phản xạ, không phải học lại.
+   *
+   * Bỏ qua khi đang gõ trong ô nhập — nếu không, bấm cách trong một ô chữ lại
+   * thành phát video.
+   */
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement;
+      if (target.closest("input, textarea, [contenteditable]")) return;
+      const video = videoRef.current;
+      if (event.key === " ") {
+        event.preventDefault();
+        togglePlay();
+      } else if (event.key === "Escape") {
+        setSelectedId(null);
+      } else if (
+        (event.key === "Delete" || event.key === "Backspace") &&
+        selectedId
+      ) {
+        event.preventDefault();
+        void cut.deleteSpan(selectedId);
+        setSelectedId(null);
+      } else if (video && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
+        event.preventDefault();
+        seek(
+          Math.max(
+            0,
+            Math.min(total, video.currentTime + (event.key === "ArrowLeft" ? -1 : 1)),
+          ),
+        );
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, total, cut]);
 
   const audit = (span: SpanRow) => {
     const video = videoRef.current;
@@ -161,23 +223,41 @@ export function CutStep({
           }}
         />
 
-        {/* Khung xem KHÔNG có tiêu đề.
-            Bản trước để "Bỏ 12 chỗ · 0:59" làm tiêu đề cho khung xem — một con
-            số về việc cắt đứng trên một khung chiếu phim, và nó lặp lại đúng
-            thứ thẻ bên trái đang nói. Con số ấy về chỗ của nó; khung xem chỉ
-            cần chiếu. */}
+        {/* Khung xem: nút phát và đồng hồ nằm CHỒNG lên video, không thành một
+            hàng công cụ riêng — đúng preview của bàn dựng. Một hàng nút riêng ở
+            dưới dải là hai chỗ điều khiển phát cho một video. */}
         <Card className="lg:min-h-0">
           <CardContent className="grid min-h-0 flex-1 place-items-center overflow-hidden">
             {previewUrl ? (
-              <video
-                ref={videoRef}
-                src={previewUrl}
-                className="max-h-full max-w-full rounded-lg"
-                onTimeUpdate={onTimeUpdate}
-                onPlay={() => setPlaying(true)}
-                onPause={() => setPlaying(false)}
-                onClick={togglePlay}
-              />
+              // Khung khít video, khống chế theo CHIỀU CAO: `h-full aspect-[9/16]`
+              // → cao bằng ô, rộng theo tỉ lệ, căn giữa. Không dùng `AspectRatio`
+              // (nó tính theo bề ngang) vì ô preview ở đây RỘNG nên khung 9:16
+              // theo bề ngang sẽ cao quá và dải điều khiển tràn xuống dưới khung.
+              <div className="relative mx-auto aspect-[9/16] h-full overflow-hidden rounded-lg">
+                <video
+                  ref={videoRef}
+                  src={previewUrl}
+                  className="h-full w-full object-cover"
+                  onPlay={() => setPlaying(true)}
+                  onPause={() => setPlaying(false)}
+                  onClick={togglePlay}
+                />
+                {/* Dải điều khiển chồng đáy khung, nền chuyển mờ để chữ trắng đọc
+                    được trên khung hình sáng — cùng lối `PreviewPanel`. */}
+                <div className="absolute inset-x-0 bottom-0 z-20 flex items-center gap-2 bg-gradient-to-t from-black/70 to-transparent p-2 pt-8">
+                  <Button
+                    variant="secondary"
+                    size="icon-sm"
+                    aria-label={playing ? "Tạm dừng" : "Phát bản đã cắt"}
+                    onClick={togglePlay}
+                  >
+                    {playing ? <PauseIcon /> : <PlayIcon />}
+                  </Button>
+                  <span className="text-xs text-white tabular-nums">
+                    {formatDuration(time)} / {formatDuration(total)}
+                  </span>
+                </div>
+              </div>
             ) : (
               <p className="text-muted-foreground text-center">
                 Chưa có bản xem trước. Máy đang ghép mạch chính.
@@ -187,23 +267,11 @@ export function CutStep({
         </Card>
       </div>
 
-      {/* Dải chạy suốt bề ngang dưới cùng, hai nút phóng đứng ở cột bên phải —
-          cùng chỗ và cùng hình với bàn dựng. */}
+      {/* Dải chạy suốt bề ngang dưới cùng, ba nút (hoàn tác, +/−) đứng cột bên
+          phải — cùng chỗ và cùng hình với bàn dựng. KHÔNG còn hàng công cụ phát:
+          nó đã lên khung xem. */}
       <Card>
-        <CardContent className="grid min-w-0 gap-2">
-          {/* Chỉ CÒN nút phát và đồng hồ. Dòng nhắc "bấm dấu cộng… chuột phải…"
-              đã bỏ: nó dạy thao tác trước khi ai cần, mà bản thân nút `+` và menu
-              chuột phải đã tự nói việc của chúng. */}
-          <div className="flex items-center gap-2">
-            <Button variant="secondary" size="sm" onClick={togglePlay}>
-              {playing ? <PauseIcon /> : <PlayIcon />}
-              {playing ? "Dừng" : "Phát bản đã cắt"}
-            </Button>
-            <span className="text-muted-foreground tabular-nums text-xs">
-              {formatDuration(time)} / {formatDuration(total)}
-            </span>
-          </div>
-
+        <CardContent className="min-w-0">
           <div className="flex min-w-0 gap-1">
             <CutLane
               clips={cut.clips}

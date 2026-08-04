@@ -2,6 +2,7 @@ import { PlayIcon, Trash2Icon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatDuration } from "@/lib/format-duration";
 
 import type { Span } from "./cut-lane";
@@ -60,71 +61,84 @@ export function CutSpanList({
       <CardHeader>
         <CardTitle>{heading}</CardTitle>
       </CardHeader>
-      <CardContent className="grid min-h-0 flex-1 content-start gap-1 overflow-y-auto">
-        {rows.length === 0 ? (
-          <p className="text-muted-foreground">
-            Máy không tìm thấy chỗ nào đáng bỏ. Thấy chỗ nào lỗi thì đưa vạch tới
-            đó rồi bấm dấu cộng trên dải.
-          </p>
-        ) : null}
+      {/* Cuộn KHÔNG thanh cuộn, mép dưới mờ dần báo "còn nữa" — cùng lối panel
+          bản chép của bàn dựng. `CLAUDE.md` dặn tránh scrollbar; một danh sách hay
+          dài hơn khung mà đeo vạch xám suốt buổi là đúng thứ quy tắc ấy cấm. */}
+      <CardContent className="min-h-0 flex-1 p-0">
+        <ScrollArea
+          className="h-full"
+          scrollbar={false}
+          viewportClassName="scroll-fade-b"
+        >
+          <div className="grid content-start gap-1 px-4">
+            {rows.length === 0 ? (
+              <p className="text-muted-foreground">
+                Máy không tìm thấy chỗ nào đáng bỏ. Thấy chỗ nào lỗi thì đưa
+                vạch tới đó rồi bấm dấu cộng trên dải.
+              </p>
+            ) : null}
 
-        {spoken.map((row) => (
-          <div
-            key={row.id}
-            data-state={row.id === selectedId ? "here" : "off"}
-            className="grid cursor-pointer gap-1 rounded-lg border border-border px-3 py-2 data-[state=here]:ring-2 data-[state=here]:ring-primary data-[state=here]:ring-inset"
-            onClick={() => onSelect(row.id)}
-          >
-            <div className="flex items-center gap-2">
-              <span className="text-muted-foreground shrink-0 tabular-nums text-xs">
-                {formatDuration(row.start)} · {(row.end - row.start).toFixed(1)}s
-              </span>
-              <span className="flex-1" />
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                aria-label="Nghe chỗ này"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onAudit(row);
-                }}
+            {spoken.map((row) => (
+              <div
+                key={row.id}
+                data-state={row.id === selectedId ? "here" : "off"}
+                className="grid cursor-pointer gap-1 rounded-lg border border-border px-3 py-2 data-[state=here]:ring-2 data-[state=here]:ring-primary data-[state=here]:ring-inset"
+                onClick={() => onSelect(row.id)}
               >
-                <PlayIcon />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                aria-label="Xoá khoảng cắt — giữ lại phần phim này"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onDelete(row.id);
-                }}
-              >
-                <Trash2Icon />
-              </Button>
-            </div>
-            {/* Lời bị bỏ GẠCH NGANG: đây là thứ sẽ biến mất, và gạch ngang nói
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground shrink-0 tabular-nums text-xs">
+                    {formatDuration(row.start)} ·{" "}
+                    {(row.end - row.start).toFixed(1)}s
+                  </span>
+                  <span className="flex-1" />
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    aria-label="Nghe chỗ này"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onAudit(row);
+                    }}
+                  >
+                    <PlayIcon />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    aria-label="Xoá khoảng cắt — giữ lại phần phim này"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onDelete(row.id);
+                    }}
+                  >
+                    <Trash2Icon />
+                  </Button>
+                </div>
+                {/* Lời bị bỏ GẠCH NGANG: đây là thứ sẽ biến mất, và gạch ngang nói
                 điều ấy mà không cần một dòng chú thích nào. */}
-            <span className="text-muted-foreground line-clamp-3 text-sm leading-tight line-through">
-              {row.text}
-            </span>
-          </div>
-        ))}
+                <span className="text-muted-foreground line-clamp-3 text-sm leading-tight line-through">
+                  {row.text}
+                </span>
+              </div>
+            ))}
 
-        {spoken.length === 0 && rows.length > 0 ? (
-          <p className="text-muted-foreground text-sm">
-            Máy không bỏ câu nào — chỉ rút bớt chỗ lặng.
-          </p>
-        ) : null}
+            {spoken.length === 0 && rows.length > 0 ? (
+              <p className="text-muted-foreground text-sm">
+                Máy không bỏ câu nào — chỉ rút bớt chỗ lặng.
+              </p>
+            ) : null}
 
-        {silent.length > 0 ? (
-          /* Một dòng tổng, KHÔNG bấm được: không có gì để soát ở đây, và làm nó
+            {silent.length > 0 ? (
+              /* Một dòng tổng, KHÔNG bấm được: không có gì để soát ở đây, và làm nó
              trông bấm được là mời người dùng đi vào một chỗ không có việc gì. */
-          <p className="text-muted-foreground mt-1 rounded-lg border border-border px-3 py-2 text-xs">
-            Và {silent.length} chỗ lặng · {formatDuration(silentSeconds)} — máy
-            rút cho nhịp gọn, không mất lời nào. Sửa được trên dải bên dưới.
-          </p>
-        ) : null}
+              <p className="text-muted-foreground mt-1 rounded-lg border border-border px-3 py-2 text-xs">
+                Và {silent.length} chỗ lặng · {formatDuration(silentSeconds)} —
+                máy rút cho nhịp gọn, không mất lời nào. Sửa được trên dải bên
+                dưới.
+              </p>
+            ) : null}
+          </div>
+        </ScrollArea>
       </CardContent>
     </Card>
   );

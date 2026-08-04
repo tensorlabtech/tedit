@@ -216,7 +216,9 @@ export function CutLane({
               // `select-none` + `touch-none`: thiếu cái đầu, kéo dải thành bôi
               // đen chữ; thiếu cái sau, vuốt trên cảm ứng thành cuộn trang. Đúng
               // như `data-timeline` của bàn dựng.
-              className="relative h-24 cursor-grab touch-none overflow-hidden rounded-lg bg-muted/40 select-none active:cursor-grabbing"
+              // Cao bằng cột ba nút bên phải (hoàn tác, +/−) cho cân — dải thấp
+              // hơn thì cột nút thừa ra một khoảng trống khó hiểu.
+              className="relative h-32 cursor-grab touch-none overflow-hidden rounded-lg bg-muted/40 select-none active:cursor-grabbing"
               onPointerDown={startScrub}
               // Ghi mốc chuột phải TRƯỚC khi menu mở, để "Thêm tại đây" đúng chỗ.
               onContextMenu={(event) =>
@@ -226,7 +228,9 @@ export function CutLane({
           }
         >
           <div
-            className="relative grid gap-1.5 p-2"
+            // `gap-3`: chừa khoảng thở giữa thước và dải phim — sát nhau thì hai
+            // hàng đọc ra như một mảng.
+            className="relative grid gap-3 p-2"
             style={{
               transform: `translateX(${offset}px)`,
               width: laneWidth || "100%",

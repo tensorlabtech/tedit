@@ -273,7 +273,7 @@ def main() -> int:
             page.wait_for_timeout(1200)
             check("phát thì nhảy qua chỗ bỏ", now(page) >= head["e"] - 0.05,
                   f'dừng {now(page):.1f} · bỏ {head["s"]:.1f}→{head["e"]:.1f}')
-            page.get_by_role("button", name="Dừng").click()
+            page.get_by_role("button", name="Tạm dừng").click()
             page.wait_for_timeout(300)
         listen = page.get_by_label("Nghe chỗ này").first
         if listen.count():
@@ -282,6 +282,20 @@ def main() -> int:
             st = page.evaluate("() => { const v = document.querySelector('video'); return { t: v.currentTime, p: v.paused }; }")
             check("nghe thử thì phát thật, không nhảy qua", not st["p"])
             page.evaluate("() => document.querySelector('video').pause()")
+
+        # ── Nút phát NẰM TRÊN preview, và phím CÁCH phát/dừng ─────────────
+        ov = page.get_by_label("Phát bản đã cắt")
+        vid = page.locator("video").bounding_box()
+        ovb = ov.bounding_box() if ov.count() else None
+        check("nút phát nằm chồng trên video",
+              ovb is not None and ovb["y"] < vid["y"] + vid["height"],
+              "trên video" if ovb and vid else "không thấy")
+        t_before = now(page)
+        page.locator("body").press(" ")
+        page.wait_for_timeout(1000)
+        check("phím Cách phát", now(page) > t_before + 0.5, f"{t_before:.1f}→{now(page):.1f}s")
+        page.locator("body").press(" ")  # dừng
+        page.wait_for_timeout(300)
 
         # ── Sống qua tải lại ──────────────────────────────────────────────
         keep = len(spans(page))
