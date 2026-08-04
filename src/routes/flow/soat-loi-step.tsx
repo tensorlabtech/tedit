@@ -166,7 +166,7 @@ export function SoatLoiStep({
   const hereIndex = openId ? review.unsure.findIndex((w) => w.id === openId) : -1;
 
   return (
-    <div className="grid gap-2 lg:h-full lg:min-h-0 lg:grid-cols-[1fr_22rem]">
+    <div className="grid gap-2 lg:h-full lg:min-h-0 lg:grid-cols-[1fr_26rem]">
       {/* Bản chép — chỗ soát. */}
       <Card className="lg:min-h-0">
         {/* Tiêu đề là THÔNG TIN (đếm chỗ ngờ), không nhắc lại tên bước — tên bước
@@ -203,14 +203,14 @@ export function SoatLoiStep({
           )}
         </CardHeader>
         <CardContent className="min-h-0 overflow-y-auto">
-          <p className="text-muted-foreground mb-3 text-sm">
-            Bấm chữ bất kỳ để nghe lại và sửa · chữ gạch chân là chỗ máy chưa
-            chắc · phím <kbd className="bg-muted rounded px-1 text-xs">Cách</kbd>{" "}
-            nghe chạy.
-          </p>
-          <div className="space-y-3 text-lg leading-relaxed">
+          <div className="mx-auto grid max-w-[40rem] gap-5 py-2">
+            <p className="text-muted-foreground text-sm">
+              Bấm chữ bất kỳ để nghe lại và sửa · chữ gạch chân là chỗ máy chưa
+              chắc · phím{" "}
+              <kbd className="bg-muted rounded px-1 text-xs">Cách</kbd> nghe chạy.
+            </p>
             {review.sentences.map((sentence) => (
-              <p key={sentence.id}>
+              <p key={sentence.id} className="text-2xl leading-relaxed">
                 {sentence.words.map((word, index) => (
                   <Fragment key={word.id}>
                     {index > 0 ? " " : null}
