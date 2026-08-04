@@ -232,9 +232,10 @@ export function FlowPage() {
       <div className="grid gap-2 lg:min-h-0 lg:grid-cols-[15rem_1fr]">
         <FlowSidebar
           current={at}
-          // Mạch lệch thì mốc 'đã tới' tụt về bước nạp cuối: mọi bước sau
-          // khoá lại cho tới khi chép lại xong.
-          reached={stale ? "brief" : machineAt}
+          reached={machineAt}
+          // Mạch lệch thì khoá từ sau bước đề bài — nhưng KHÔNG kéo `reached`
+          // lùi, để sidebar vẫn nói đúng máy đã chạy tới đâu.
+          blockAfter={stale ? "brief" : null}
           onPick={(id) => setViewing(id)}
         />
 
@@ -299,7 +300,19 @@ export function FlowPage() {
             <div className="grid gap-2 lg:min-h-0 lg:grid-cols-[1fr_22rem]">
               <SequencePreviewCard
                 pack={findStylePack(upload.stylePack)}
-                scenes={upload.insertFiles.filter((i) => i.status !== "error")}
+                /*
+                 * `scenes` là MẠCH CHÍNH, kể cả ở bước tư liệu.
+                 *
+                 * `SequencePreviewCard` chỉ hiện ô nhập mô tả khi tệp đang xem
+                 * KHÔNG nằm trong mạch (`file && !inSequence`) — vì mô tả chỉ
+                 * có nghĩa với tư liệu chèn. Truyền `insertFiles` vào đây làm
+                 * tư liệu thành "trong mạch", ô mô tả biến mất, và sau khi tôi
+                 * bỏ ô trùng bên danh sách thì KHÔNG còn đường nào sửa mô tả.
+                 *
+                 * Đây là cái giá của việc bỏ một ô mà không chạy lại đường còn
+                 * lại — ảnh chụp mới thấy.
+                 */
+                scenes={upload.mainFiles.filter((i) => i.status !== "error")}
                 file={previewing}
                 source={previewing ? upload.sourceOf(previewing.id) : undefined}
                 onSelect={setPreviewId}

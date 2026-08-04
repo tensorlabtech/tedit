@@ -35,6 +35,7 @@ import {
 export function FlowSidebar({
   current,
   reached,
+  blockAfter = null,
   onPick,
 }: {
   /** Bước đang XEM — cái được tô. */
@@ -46,11 +47,20 @@ export function FlowSidebar({
    * nên vừa bấm về bước 1 là bước 2 thành "chưa tới" và không bấm lại được.
    */
   reached: FlowStepId;
+  /**
+   * Khoá mọi bước SAU mốc này — dùng khi mạch lệch, phải chép lại lời.
+   *
+   * Tầng riêng, KHÔNG kéo `reached` lùi. Kéo lùi thì sidebar nói dối: bước 3–8
+   * hiện ra như "chưa tới" trong khi máy đã chạy tới bước 5, và người dùng mất
+   * hẳn thông tin mình đang ở đâu.
+   */
+  blockAfter?: FlowStepId | null;
   onPick: (id: FlowStepId) => void;
 }) {
   const at = stepIndex(current);
   const far = stepIndex(reached);
   const door = stepIndex(ONE_WAY_AFTER);
+  const wall = blockAfter ? stepIndex(blockAfter) : Infinity;
 
   return (
     /*
@@ -63,11 +73,13 @@ export function FlowSidebar({
     <Card className="lg:min-h-0">
       <CardContent className="grid content-start gap-1 overflow-y-auto">
         {FLOW_STEPS.map((step, index) => {
-          const done = index < far;
+          // Đang đứng thì KHÔNG phải "xong" — một bước vừa `here` vừa có dấu
+          // tích là hai câu trái nhau trên cùng một dòng.
           const here = index === at;
-          const locked = far > door && index <= door;
+          const done = index < far && !here;
+          const locked = (far > door && index <= door) || index > wall;
           // Bấm được mọi bước máy ĐÃ TỚI, kể cả đi tới lại sau khi lùi.
-          const openable = index <= far && !locked && index !== at;
+          const openable = index <= far && !locked && !here;
 
           return (
             <div
