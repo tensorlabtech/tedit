@@ -130,8 +130,25 @@ def main() -> int:
         )
         check(
             "mở màn thấy trọn bản, không phải một mẩu",
-            seen <= 1.05,
-            f"dải rộng gấp {seen:.2f} lần khung",
+            seen <= 1.001,
+            f"dải rộng gấp {seen:.3f} lần khung",
+        )
+        # Giây CUỐI phải nằm trong khung. "Gần vừa khít" vẫn có thể xén mất đoạn
+        # chào kết, mà đó đúng là chỗ người ta hay soát.
+        tail = page.evaluate(
+            """() => {
+                const lane = document.querySelector('[data-cut-lane]');
+                const clips = [...lane.querySelectorAll("[data-kind='clip']")];
+                if (!clips.length) return null;
+                const last = clips[clips.length - 1].getBoundingClientRect();
+                const box = lane.getBoundingClientRect();
+                return last.right - box.right;
+            }"""
+        )
+        check(
+            "khung phim cuối cùng không bị xén khỏi khung",
+            tail is not None and tail <= 1,
+            f"tràn {tail:.1f}px" if tail is not None else "không thấy clip",
         )
         # Nhãn trên lớp che hẹp phải TẮT, không bị xén ngang chữ.
         cramped = page.evaluate(
@@ -291,23 +308,80 @@ def main() -> int:
             )
         page.screenshot(path=str(SHOTS / "cat-06-phong-to.png"))
 
+        # ── 8b. Kéo mép TRÁI, và kéo THU HẸP ────────────────────────────────
+        #
+        # Trước đây chỉ thử mép phải và chỉ thử nới rộng. Hai chiều còn lại đi qua
+        # nhánh mã khác (`clamp` cận trên thay cận dưới), và cú kéo ở mức phóng
+        # KHÁC lại đi qua đúng phép đổi toạ độ từng lệch 8px.
+        rows = spans(page)
+        wide = max(rows, key=lambda r: r["end"] - r["start"])
+        page.locator(f"[data-cut-span='{wide['id']}']").click()
+        page.wait_for_timeout(400)
+        left = page.get_by_label("Gọt mép trái").first
+        if left.count():
+            box = left.bounding_box()
+            page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+            page.mouse.down()
+            page.mouse.move(box["x"] + 25, box["y"] + box["height"] / 2, steps=10)
+            page.mouse.up()
+            page.wait_for_timeout(1500)
+            after = spans(page)
+            shrunk = next((s for s in after if abs(s["end"] - wide["end"]) < 0.3), None)
+            check(
+                "kéo mép trái vào trong thì khoảng ngắn lại",
+                shrunk is not None
+                and shrunk["start"] > wide["start"] + 0.1
+                and shrunk["end"] - shrunk["start"] < wide["end"] - wide["start"],
+                f'{wide["end"] - wide["start"]:.2f}s → '
+                + (f'{shrunk["end"] - shrunk["start"]:.2f}s' if shrunk else "mất"),
+            )
+        page.screenshot(path=str(SHOTS / "cat-09-mep-trai.png"))
+
+        # ── 8c. Xoá bằng nút thùng rác ở hàng soát ─────────────────────────
+        count_before = len(spans(page))
+        bin_button = page.get_by_label("Xoá khoảng cắt", exact=False).first
+        check("hàng soát có nút xoá", bin_button.count() > 0)
+        if bin_button.count():
+            bin_button.click()
+            page.wait_for_timeout(1500)
+            check(
+                "nút thùng rác xoá được khoảng",
+                len(spans(page)) == count_before - 1,
+                f"{count_before} → {len(spans(page))}",
+            )
+
+        # ── 8d. Bấm một dòng ở hàng soát thì dải chọn theo ─────────────────
+        rows = spans(page)
+        page.get_by_label("Nghe chỗ này").first.wait_for(state="visible")
+        first_row = page.locator("[data-state]").filter(has=page.get_by_label("Nghe chỗ này")).first
+        first_row.click()
+        page.wait_for_timeout(500)
+        lit = page.locator("[data-cut-span][data-state='here']")
+        check("bấm dòng bên trái thì dải sáng theo", lit.count() == 1, f"{lit.count()} khoảng sáng")
+
         # ── 9. Phát bản đã cắt: phải NHẢY QUA chỗ bỏ ───────────────────────
         #
         # Đây là lời hứa lõi của bước: nghe ra ngay bản dựng sẽ thế nào. Nếu nó
         # phát cả chỗ sắp bỏ thì người dùng soát trên một thứ không phải kết quả.
+        # Chọn khoảng bỏ nào cũng được, miễn đủ dài để phân biệt "nhảy qua" với
+        # "phát bình thường" — buộc nó phải nằm ở đầu bản là ràng buộc của phép
+        # thử, không phải của sản phẩm, và có lần dựng không có khoảng nào ở đó.
         now = spans(page)
-        head = next((s for s in now if s["start"] < 1 and s["end"] > 1.5), None)
-        check("có một khoảng bỏ ngay đầu bản để thử", head is not None)
+        head = next((s for s in now if s["start"] > 1 and s["end"] - s["start"] > 1.2), None)
+        check("có một khoảng bỏ đủ dài để thử", head is not None)
         if head:
-            page.evaluate("() => { const v = document.querySelector('video'); v.currentTime = 0.1; }")
-            page.wait_for_timeout(300)
+            page.evaluate(
+                "(at) => { document.querySelector('video').currentTime = at; }",
+                max(0, head["start"] - 0.4),
+            )
+            page.wait_for_timeout(400)
             page.get_by_role("button", name="Phát bản đã cắt").click()
-            page.wait_for_timeout(1500)
+            page.wait_for_timeout(1200)
             at = page.evaluate("() => document.querySelector('video').currentTime")
             check(
-                "phát thì nhảy qua chỗ bỏ đầu bản",
+                "phát thì nhảy qua chỗ bỏ",
                 at >= head["end"] - 0.05,
-                f'dừng ở {at:.2f}s · chỗ bỏ tới {head["end"]:.2f}s',
+                f'dừng ở {at:.2f}s · chỗ bỏ {head["start"]:.2f}→{head["end"]:.2f}',
             )
             page.get_by_role("button", name="Dừng").click()
             page.wait_for_timeout(300)

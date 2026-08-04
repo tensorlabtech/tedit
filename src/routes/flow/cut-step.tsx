@@ -62,6 +62,9 @@ const SEAM = 1;
  */
 const FIT_FLOOR = 4;
 
+/** Đệm mỗi bên trong dải (`p-2`) — phải khớp `LANE_PAD` của `cut-lane.tsx`. */
+const LANE_PADDING = 8;
+
 export type CutWord = { text: string; start: number; end: number };
 
 export function CutStep({
@@ -91,7 +94,10 @@ export function CutStep({
     (width: number) => {
       if (fitted.current || width < 50 || total <= 0) return;
       fitted.current = true;
-      zoom.setPxPerSecond(Math.max(FIT_FLOOR, (width - 4) / total));
+      // Trừ CẢ đệm hai bên (`p-2` mỗi bên) rồi mới chia: quên nó thì dải dài hơn
+      // khung đúng 16px, và ở mức vừa khít 16px là gần hai giây cuối bị xén khỏi
+      // màn — đúng đoạn chào kết mà người dùng hay muốn soát.
+      zoom.setPxPerSecond(Math.max(FIT_FLOOR, (width - LANE_PADDING * 2) / total));
     },
     [total, zoom],
   );
