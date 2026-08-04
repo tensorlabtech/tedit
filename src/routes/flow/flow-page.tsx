@@ -149,7 +149,7 @@ export function FlowPage() {
         </CardHeader>
       </Card>
 
-      <div className="grid gap-2 lg:min-h-0 lg:grid-cols-[17rem_1fr]">
+      <div className="grid gap-2 lg:min-h-0 lg:grid-cols-[15rem_1fr]">
         <FlowSidebar current={at} onPick={(id) => setViewing(id)} />
 
         <Card className="lg:min-h-0">

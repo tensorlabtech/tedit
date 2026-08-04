@@ -20,83 +20,70 @@ import {
  * Mười bốn chặng ấy gộp vào đúng hai dòng ở đây. Chi tiết vẫn hiện — nhưng ở
  * BÊN PHẢI, lúc bước ấy đang chạy, tức đúng lúc người ta muốn nhìn.
  *
- * ══ MỘT VẠCH, KHÔNG PHẢI TÁM CÁI KHOÁ ══
+ * ══ BỎ NHÃN NHÓM VÀ VẠCH KHOÁ ══
  *
- * Chỉ một chỗ thật sự không quay lại được: qua `cut` là chép lời lại, bản
- * chép cũ mất hẳn. Vẽ đúng một vạch ở đó, kèm lý do đọc được.
+ * Bản đầu có ba nhãn nhóm ("NẠP VÀO", "SOÁT", "CHỈNH") và một vạch kèm chữ
+ * "qua đây là chép lời lại". Chụp màn ra thì cả bốn thứ ấy là nhiễu: tám dòng
+ * đánh số 1–8 đã đọc được thứ tự rồi, còn nhãn nhóm chỉ chen vào giữa và đẩy
+ * các bước xa nhau.
  *
- * Khoá cả tám bước là chặt hơn dữ liệu đòi hỏi, và người dùng va vào cái khoá
- * vô cớ đầu tiên là mất tin vào cả cái sidebar. Một cái khoá có lý do thì họ
- * chấp nhận.
+ * Cửa một chiều vẫn còn — nó nằm trong `canGoBack`, và người dùng thấy nó qua
+ * việc bước cũ KHÔNG bấm được nữa. Một dòng chữ giải thích trước khi ai đó cần
+ * là dạy bài trước khi có câu hỏi.
  */
 
-const GROUP_LABELS: Record<string, string> = {
-  "intake": "Nạp vào",
-  review: "Soát",
-  polish: "Chỉnh",
-};
 
 export function FlowSidebar({
   current,
   onPick,
 }: {
   current: FlowStepId;
-  /** Bấm một bước đã qua. Bước chưa tới thì không gọi. */
+  /** Bấm một bước đã qua. Bước chưa tới hoặc đã khoá thì không gọi. */
   onPick: (id: FlowStepId) => void;
 }) {
   const at = stepIndex(current);
   const door = stepIndex(ONE_WAY_AFTER);
 
   return (
-    <Card className="lg:min-h-0">
-      <CardContent className="grid gap-1 overflow-y-auto">
-        {FLOW_STEPS.map((step, index) => {
-          const done = index < at;
-          const here = index === at;
-          // Bước sau cửa thì không về được bước trước cửa — xem `canGoBack`.
-          const locked = at > door && index <= door;
-          const openable = done && !locked;
-          const startsGroup =
-            index === 0 || FLOW_STEPS[index - 1].group !== step.group;
+    <div className="grid content-start gap-2 lg:min-h-0 lg:overflow-y-auto">
+      {FLOW_STEPS.map((step, index) => {
+        const done = index < at;
+        const here = index === at;
+        // Bước sau cửa thì không về được bước trước cửa — xem `canGoBack`.
+        const locked = at > door && index <= door;
+        const openable = done && !locked;
 
-          return (
-            <div key={step.id} className="grid gap-1">
-              {startsGroup ? (
-                <p className="text-muted-foreground mt-4 text-xs uppercase first:mt-0">
-                  {GROUP_LABELS[step.group]}
-                </p>
+        return (
+          <Card
+            key={step.id}
+            data-state={here ? "here" : done ? "done" : "todo"}
+            onClick={() => openable && onPick(step.id)}
+            /*
+             * Dùng `ring` chứ không `border`: thẻ Card đã có `border` riêng và
+             * nó thắng, nên bước đang đứng không được tô gì cả — chụp màn mới
+             * thấy. `ring-inset` để vòng sáng không bị lưới ngoài cắt mất,
+             * đúng điều `CLAUDE.md` dặn về viền và ring.
+             */
+            className={
+              "data-[state=here]:ring-2 data-[state=here]:ring-primary data-[state=here]:ring-inset data-[state=todo]:opacity-45" +
+              (openable ? " cursor-pointer" : "")
+            }
+          >
+            <CardContent className="flex items-center gap-3">
+              <span className="text-muted-foreground tabular-nums">
+                {index + 1}
+              </span>
+              <span className="flex-1">{step.label}</span>
+              {/* Ai đang làm — nhìn một cái là biết đợi hay tới lượt mình. */}
+              {done ? <CheckIcon /> : null}
+              {locked ? <LockIcon /> : null}
+              {here && step.actor === "machine" ? (
+                <span className="text-muted-foreground text-xs">máy</span>
               ) : null}
-
-              {/* Vạch cửa một chiều, kèm LÝ DO. Một vạch không nói gì thì đọc
-                  ra là phần mềm cứng nhắc; nói ra thì đọc ra là cảnh báo. */}
-              {index === door + 1 ? (
-                <div className="text-muted-foreground my-2 flex items-center gap-2">
-                  <LockIcon data-icon="inline-start" />
-                  <span className="flex-1">Qua đây là chép lời lại</span>
-                </div>
-              ) : null}
-
-              <button
-                type="button"
-                disabled={!openable}
-                onClick={() => openable && onPick(step.id)}
-                data-state={here ? "here" : done ? "done" : "todo"}
-                className="flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 text-left disabled:cursor-default data-[state=here]:border-ring data-[state=todo]:opacity-50"
-              >
-                <span className="text-muted-foreground tabular-nums text-xs">
-                  {index + 1}
-                </span>
-                <span className="flex-1">{step.label}</span>
-                {/* Ai đang làm — người xem biết ngay là đợi hay tới lượt mình. */}
-                {done ? <CheckIcon data-icon="inline-end" /> : null}
-                {here && step.actor === "machine" ? (
-                  <span className="text-muted-foreground text-xs">máy</span>
-                ) : null}
-              </button>
-            </div>
-          );
-        })}
-      </CardContent>
-    </Card>
+            </CardContent>
+          </Card>
+        );
+      })}
+    </div>
   );
 }
