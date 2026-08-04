@@ -1,7 +1,17 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ArrowRightIcon } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Empty, EmptyDescription, EmptyTitle } from "@/components/ui/empty";
 import { Spinner } from "@/components/ui/spinner";
 import { api } from "@/lib/api";
 
@@ -58,6 +68,7 @@ export function FlowPage() {
   const navigate = useNavigate();
   const [snap, setSnap] = useState<Snapshot>(TRONG);
   const [loading, setLoading] = useState(true);
+  const [title, setTitle] = useState("");
   /**
    * Bước người dùng ĐANG XEM — khác bước máy đang ở.
    *
@@ -74,6 +85,7 @@ export function FlowPage() {
       try {
         const data = await api.getProject(projectId);
         if (!alive) return;
+        setTitle(data.project.title);
         setSnap({
           hasMain: data.files.some((file) => file.role === "main"),
           hasBrief: Boolean(data.project.profile?.trim()),
@@ -107,42 +119,65 @@ export function FlowPage() {
   }
 
   return (
-    <div className="grid min-h-0 flex-1 gap-2 lg:grid-cols-[16rem_1fr]">
-      <FlowSidebar current={at} onPick={(id) => setViewing(id)} />
-
-      <Card className="lg:min-h-0">
+    /*
+     * Phủ KÍN màn, cùng lối `pipeline-page`.
+     *
+     * Bản đầu để `flex-1` trong một khung không có chiều cao, nên cả trang co
+     * lại còn một phần ba màn và hai phần ba dưới là nền đen trơn. `CLAUDE.md`
+     * ghi rõ mọi trang đều dạng bento phủ kín — tôi phạm chính quy tắc của dự
+     * án, và ảnh chụp lộ ra ngay.
+     */
+    <div className="grid min-h-svh gap-2 bg-background p-2 text-foreground lg:h-svh lg:grid-rows-[auto_1fr] lg:overflow-hidden">
+      {/* Hàng tiêu đề: tên dự án và ĐƯỜNG RA. Thiếu nó thì trang là ngõ cụt —
+          lối về duy nhất là nút lùi trình duyệt. */}
+      <Card>
         <CardHeader>
-          <CardTitle>{step.label}</CardTitle>
+          <CardTitle>{title}</CardTitle>
+          <CardAction>
+            <Button variant="ghost" onClick={() => navigate("/")}>
+              Trở về
+            </Button>
+            {/* Việc chính của bước là một NÚT, không phải chữ gạch chân trôi
+                giữa khung. Bước của máy thì không có nút — chờ là chờ. */}
+            {step.actor === "user" ? (
+              <Button onClick={() => navigate(`/editor/${projectId}`)}>
+                Mở bàn dựng
+                <ArrowRightIcon data-icon="inline-end" />
+              </Button>
+            ) : null}
+          </CardAction>
         </CardHeader>
-        <CardContent className="min-h-0 flex-1 overflow-y-auto">
-          {/*
-            Bên phải CHƯA có nội dung riêng cho từng bước — đang dựng dần. Trong
-            lúc đó dẫn sang hai trang cũ chứ không bày một ô trống: một khung
-            rỗng nói với người dùng rằng sản phẩm hỏng, còn một đường dẫn thì
-            nói rằng chỗ này chưa xong.
-          */}
-          <div className="grid gap-2">
-            <p className="text-muted-foreground">
-              {step.actor === "machine"
-                ? "Máy đang làm, chưa tới lượt bạn."
-                : "Tới lượt bạn."}
-            </p>
-            <button
-              type="button"
-              className="cursor-pointer underline"
-              onClick={() =>
-                navigate(
-                  step.actor === "machine"
-                    ? `/pipeline/${projectId}`
-                    : `/editor/${projectId}`,
-                )
-              }
-            >
-              {step.actor === "machine" ? "Xem tiến độ chi tiết" : "Mở bàn dựng"}
-            </button>
-          </div>
-        </CardContent>
       </Card>
+
+      <div className="grid gap-2 lg:min-h-0 lg:grid-cols-[17rem_1fr]">
+        <FlowSidebar current={at} onPick={(id) => setViewing(id)} />
+
+        <Card className="lg:min-h-0">
+          <CardHeader>
+            <CardTitle>{step.label}</CardTitle>
+          </CardHeader>
+          <CardContent className="grid min-h-0 flex-1 place-items-center">
+            {/*
+              Nội dung riêng từng bước CHƯA dựng. Nói thẳng ra thế, ở giữa
+              khung — một ô trống với chữ trôi ở góc thì người dùng đọc ra là
+              sản phẩm hỏng, còn một dòng ở giữa nói "chưa xong" thì đọc ra
+              đúng như nó là.
+            */}
+            <Empty>
+              <EmptyTitle>
+                {step.actor === "machine"
+                  ? "Máy đang làm"
+                  : "Màn của bước này chưa dựng"}
+              </EmptyTitle>
+              <EmptyDescription>
+                {step.actor === "machine"
+                  ? "Chưa tới lượt bạn — cứ đóng trang cũng được."
+                  : "Tạm thời làm việc này ở bàn dựng."}
+              </EmptyDescription>
+            </Empty>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

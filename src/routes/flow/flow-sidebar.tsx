@@ -62,7 +62,7 @@ export function FlowSidebar({
           return (
             <div key={step.id} className="grid gap-1">
               {startsGroup ? (
-                <p className="text-muted-foreground mt-2 text-xs uppercase first:mt-0">
+                <p className="text-muted-foreground mt-4 text-xs uppercase first:mt-0">
                   {GROUP_LABELS[step.group]}
                 </p>
               ) : null}
@@ -70,11 +70,9 @@ export function FlowSidebar({
               {/* Vạch cửa một chiều, kèm LÝ DO. Một vạch không nói gì thì đọc
                   ra là phần mềm cứng nhắc; nói ra thì đọc ra là cảnh báo. */}
               {index === door + 1 ? (
-                <div className="text-muted-foreground flex items-center gap-2 py-1 text-xs">
-                  <span className="bg-border h-px flex-1" />
+                <div className="text-muted-foreground my-2 flex items-center gap-2">
                   <LockIcon data-icon="inline-start" />
-                  qua đây là chép lời lại
-                  <span className="bg-border h-px flex-1" />
+                  <span className="flex-1">Qua đây là chép lời lại</span>
                 </div>
               ) : null}
 
@@ -83,7 +81,7 @@ export function FlowSidebar({
                 disabled={!openable}
                 onClick={() => openable && onPick(step.id)}
                 data-state={here ? "here" : done ? "done" : "todo"}
-                className="flex cursor-pointer items-center gap-2 rounded-md border border-border px-2 py-1.5 text-left disabled:cursor-default data-[state=here]:border-ring data-[state=todo]:opacity-50"
+                className="flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 text-left disabled:cursor-default data-[state=here]:border-ring data-[state=todo]:opacity-50"
               >
                 <span className="text-muted-foreground tabular-nums text-xs">
                   {index + 1}
