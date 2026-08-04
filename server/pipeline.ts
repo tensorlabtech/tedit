@@ -353,6 +353,21 @@ export async function runTranscribe(projectId: string) {
   ).total;
   db.prepare("DELETE FROM segments WHERE project_id=?").run(projectId);
   await seedSegmentsByCaption(projectId, mainSeconds, readStylePack(projectId));
+  /*
+   * Đánh dấu đã gieo theo LUẬT MỚI NHẤT ngay tại đây — TRƯỚC khi áp lặng/cắt.
+   *
+   * Nếu không, `GET /api/projects/:id` thấy phiên bản cũ hơn sẽ tự gieo lại lúc
+   * người dùng mở màn Soát cắt: nó DELETE hết đoạn rồi dựng lại, chỉ giữ `removed`
+   * bằng cách xét điểm giữa đoạn MỚI có rơi vào khoảng bỏ CŨ không. Nhát cắt lặng
+   * là khe hẹp giữa hai từ, nên điểm giữa của một đoạn-cụm-chữ rơi vào TIẾNG NÓI,
+   * không vào khe — cả loạt trim lặng (đo thật: 58s) biến mất, chỉ vài cắt lời to
+   * sống sót. Người dùng mở ra thấy còn 1:50 thay vì 1:05, tưởng máy cắt sai.
+   *
+   * Gieo ở đây DÙNG chính `seedSegmentsByCaption` bản mới nhất, và việc duy nhất
+   * migration làm thêm — `splitVerbatimCaptions` — là phép rỗng khi chưa có chữ
+   * (chữ chỉ sinh sau `commit-cut`). Nên đây đúng là bản mới, không đánh dấu khống.
+   */
+  db.prepare("UPDATE projects SET segments_by_caption=4 WHERE id=?").run(projectId);
 
   /*
    * ── CỔNG MỘT: SOÁT CẮT ──
