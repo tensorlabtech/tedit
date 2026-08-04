@@ -35,6 +35,9 @@ const SkinLabPage = lazy(() =>
 const StylePage = lazy(() =>
   import("@/dev/overlays/style-page").then((m) => ({ default: m.StylePage })),
 );
+const FlowPage = lazy(() =>
+  import("./routes/flow/flow-page").then((m) => ({ default: m.FlowPage })),
+);
 const PipelinePage = lazy(() =>
   import("./routes/pipeline/pipeline-page").then((m) => ({
     default: m.PipelinePage,
@@ -151,6 +154,9 @@ createRoot(document.getElementById("root")!).render(
                     đang làm dở — xem `use-upload.ts`. */}
                 <Route path="/upload/:projectId?" element={<UploadPage />} />
                 {/* Màn chờ: máy dựng xong hết rồi mới tới lượt người dùng. */}
+                {/* Luồng tám bước — một màn, sidebar trái. Hai tuyến cũ giữ
+                    nguyên trong lúc nội dung từng bước dựng dần. */}
+                <Route path="/lam/:projectId" element={<FlowPage />} />
                 <Route path="/pipeline/:projectId" element={<PipelinePage />} />
                 <Route path="/editor/:projectId" element={<EditorPage />} />
               </Route>
