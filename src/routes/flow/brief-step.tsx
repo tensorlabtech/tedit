@@ -57,7 +57,7 @@ export function BriefStep({
         <CardTitle>Đề bài</CardTitle>
       </CardHeader>
       <CardContent className="grid min-h-0 flex-1 content-start gap-4 overflow-y-auto">
-        <label className="grid max-w-xl gap-1.5">
+        <label className="grid gap-1.5">
           <span className="text-muted-foreground text-xs uppercase">Tên</span>
           <Input
             defaultValue={title}

@@ -226,11 +226,23 @@ app.patch("/api/projects/:id", async (request, reply) => {
     values.push(body.headline.trim().slice(0, 200));
   }
   if (body.stylePack !== undefined) {
-    if (!STYLE_PACKS.some((pack) => pack.id === body.stylePack)) {
+    const pack = STYLE_PACKS.find((item) => item.id === body.stylePack);
+    if (!pack) {
       return reply.code(400).send({ error: "Không có bộ dáng này" });
     }
     sets.push("style_pack=?");
     values.push(body.stylePack);
+    // NGƯỠNG LẶNG ĐI THEO PHONG CÁCH.
+    //
+    // Mỗi bộ khai `intensity.minSilence` (bộ mạnh 0,5s — cắt sát; bộ êm 1,2s —
+    // giữ nhịp thở), nhưng `auto-trim-silence` vốn đọc `projects.min_silence` mà
+    // không ai ghi từ bộ vào — nên trục ấy CHẾT, mọi phong cách cắt lặng như
+    // nhau. Chọn bộ là ghi ngưỡng của nó, đúng ý "cắt đi theo phong cách".
+    //
+    // Không đụng khi người dùng đã tự chỉnh tay: ở luồng này chưa có ô chỉnh
+    // `min_silence` riêng, nên chọn bộ là nguồn DUY NHẤT của ngưỡng — an toàn.
+    sets.push("min_silence=?");
+    values.push(pack.intensity.minSilence);
   }
   if (sets.length === 0) {
     return reply.code(400).send({ error: "Không có gì để đổi" });

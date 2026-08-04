@@ -20,7 +20,6 @@ import { ClipLane } from "../editor/timeline-clip-lane";
 import type { AudioEnvelope } from "../editor/timeline-audio-lane";
 import { TimelineRuler } from "../editor/timeline-ruler";
 import { TrimHandles } from "../editor/timeline-trim-handle";
-import { formatTime } from "../editor/editor-data";
 import {
   useTimelineDrag,
   type TimelineController,
@@ -177,7 +176,7 @@ export function CutLane({
     [time, pxPerSecond, total, spans, onSeek, onZoom, onResize],
   );
 
-  const { drag, dragging, setTrimming, startScrub } = useTimelineDrag({
+  const { drag, setTrimming, startScrub } = useTimelineDrag({
     ctrl,
     viewportRef,
     timeAtClientX,
@@ -307,7 +306,12 @@ export function CutLane({
                   }
                 />
                 <ContextMenuContent>
-                  <ContextMenuItem onClick={() => onDelete(span.id)}>
+                  {/* Xoá là việc HUỶ — màu danger để nó không lẫn với các mục
+                      thường. */}
+                  <ContextMenuItem
+                    variant="destructive"
+                    onClick={() => onDelete(span.id)}
+                  >
                     <Trash2Icon />
                     Xoá khoảng cắt
                   </ContextMenuItem>
@@ -345,13 +349,9 @@ export function CutLane({
         aria-hidden
         className="pointer-events-none absolute inset-y-0 left-1/2 z-20 -translate-x-1/2"
       >
-        <div className="relative h-full w-0.5 bg-foreground shadow-[0_0_0_1px_var(--color-background)]">
-          {dragging ? (
-            <div className="absolute top-6 left-1/2 -translate-x-1/2 rounded-md bg-foreground px-1.5 py-0.5 text-[10px] leading-none font-medium text-background tabular-nums">
-              {formatTime(time)}
-            </div>
-          ) : null}
-        </div>
+        {/* KHÔNG còn nhãn giây khi kéo: nó nhấp nháy dưới nút `+` và che mất
+            chính chỗ đang nhìn. Đồng hồ đã có sẵn trên khung xem. */}
+        <div className="h-full w-0.5 bg-foreground shadow-[0_0_0_1px_var(--color-background)]" />
       </div>
     </div>
   );

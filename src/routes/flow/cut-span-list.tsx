@@ -106,6 +106,8 @@ export function CutSpanList({
                     variant="ghost"
                     size="icon-xs"
                     aria-label="Xoá khoảng cắt — giữ lại phần phim này"
+                    // Việc HUỶ tô danger để phân biệt với nút nghe bên cạnh.
+                    className="text-muted-foreground hover:text-destructive"
                     onClick={(event) => {
                       event.stopPropagation();
                       onDelete(row.id);
