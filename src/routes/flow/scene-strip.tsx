@@ -82,8 +82,9 @@ export function SceneStrip({
       <CardHeader>
         <CardTitle>Mạch chính</CardTitle>
         <CardAction>
-          <Button variant="ghost" size="sm" onClick={onPick}>
-            <PlusIcon data-icon="inline-start" />
+          {/* Nút CÓ NỀN: `ghost` trên nền thẻ trông như chữ, không ra nút. */}
+          <Button variant="secondary" size="sm" onClick={onPick}>
+            <PlusIcon />
             Thêm
           </Button>
         </CardAction>

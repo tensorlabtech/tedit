@@ -50,11 +50,11 @@ export function BRollList({
         {/* Cùng kiểu nút với `InsertMediaCard` ở /upload: `outline`, có icon.
             `ghost` làm chúng trông như chữ thường, không ra nút. */}
         <CardAction className="flex items-center gap-2">
-          <Button variant="outline" onClick={onPickFromLibrary}>
+          <Button variant="secondary" size="sm" onClick={onPickFromLibrary}>
             <LibraryIcon />
             Từ kho
           </Button>
-          <Button variant="outline" onClick={onPick}>
+          <Button variant="secondary" size="sm" onClick={onPick}>
             <PlusIcon />
             Thêm
           </Button>
@@ -71,7 +71,7 @@ export function BRollList({
           <div
             key={file.id}
             data-state={file.id === selectedId ? "here" : "off"}
-            className="group grid gap-2 rounded-lg border border-border p-2 data-[state=here]:ring-2 data-[state=here]:ring-primary data-[state=here]:ring-inset"
+            className="group grid gap-2 rounded-lg border border-border p-3 data-[state=here]:ring-2 data-[state=here]:ring-primary data-[state=here]:ring-inset"
           >
             <div className="flex items-center gap-2">
               <button
@@ -110,22 +110,13 @@ export function BRollList({
               </span>
             </div>
             {/*
-              KHÔNG có ô nhập mô tả ở đây.
+              KHÔNG hiện mô tả ở đây nữa.
 
-              `SequencePreviewCard` bên trái đã có một ô rồi, và hai ô cho cùng
-              một dữ liệu thì chúng lệch nhau ngay — chụp màn thấy ô bên trái
-              trống trong khi ô bên phải đã có chữ.
-
-              Ô bên trái đúng chỗ hơn: người ta nhìn thấy video trong lúc gõ.
-              Ở đây chỉ HIỆN LẠI để biết tư liệu nào đã tả, tư liệu nào chưa.
+              Ô nhập nằm bên khung xem trước rồi. Chép lại nội dung sang đây là
+              hai chỗ nói cùng một điều, mà dòng "Chưa tả — bấm để mở…" còn tệ
+              hơn: nó bảo người ta bấm trong khi chính nó không bấm được, và đậm
+              hơn cả tên tệp.
             */}
-            {file.description?.trim() ? (
-              <p className="text-muted-foreground text-sm">{file.description}</p>
-            ) : (
-              <p className="text-muted-foreground text-sm italic">
-                Chưa tả — bấm để mở rồi gõ ở khung xem trước
-              </p>
-            )}
           </div>
         ))}
       </CardContent>

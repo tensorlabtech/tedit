@@ -47,6 +47,7 @@ export function SequencePreviewCard({
   source,
   onSelect,
   onDescribe,
+  hideBackToSequence = false,
   pack,
   className,
 }: {
@@ -58,6 +59,14 @@ export function SequencePreviewCard({
   onSelect: (id: string) => void;
   /** Ghi mô tả một tư liệu chèn. Chuỗi rỗng nghĩa là trả lại cho máy đọc. */
   onDescribe: (id: string, description: string) => void;
+  /**
+   * Tắt nút "Về mạch".
+   *
+   * Nút ấy chỉ có nghĩa khi `scenes` ĐÚNG là mạch người dùng đang sắp. Ở bước
+   * tư liệu chèn, `scenes` là mạch chính còn tệp đang xem là tư liệu — bấm vào
+   * là nhảy sang một cảnh chính, tức rời hẳn việc đang làm.
+   */
+  hideBackToSequence?: boolean;
   /**
    * Bộ dáng ĐANG CHỌN — khung xem này nắn màu theo nó.
    *
@@ -401,10 +410,14 @@ export function SequencePreviewCard({
           </span>
           {/* Xem tư liệu chèn là đi ra khỏi mạch — phải có đường quay lại, không
               thì lối duy nhất về là bấm bừa một ô trên dải. */}
-          {file && !inSequence && scenes[0] && (
+          {file && !inSequence && scenes[0] && !hideBackToSequence && (
             <Button
               variant="ghost"
               size="xs"
+              /* Chỉ có nghĩa khi `scenes` ĐÚNG là mạch người dùng đang sắp.
+                 Ở bước tư liệu chèn, `scenes` là mạch chính còn tệp đang xem là
+                 tư liệu — bấm "Về mạch" thì nhảy sang một cảnh chính, tức rời
+                 hẳn việc đang làm. */
               onClick={() => onSelect(scenes[0].id)}
             >
               Về mạch

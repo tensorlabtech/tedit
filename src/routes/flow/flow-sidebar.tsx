@@ -97,7 +97,11 @@ export function FlowSidebar({
               <span className="flex-1 text-sm">{step.label}</span>
               {/* Dấu tích màu NHẤN: nó là tin vui duy nhất trên cột này, và
                   màu xám thì nó chìm nghỉm giữa bảy dòng xám khác. */}
-              {done ? <CheckIcon className="text-primary size-4" /> : null}
+              {/* Khoá thì THAY dấu tích, không đứng cạnh — "đã xong" và "đang
+                  khoá" cạnh nhau là hai câu trái nhau trên một dòng. */}
+              {done && !locked ? (
+                <CheckIcon className="text-primary size-4" />
+              ) : null}
               {locked ? (
                 <LockIcon className="text-muted-foreground size-4" />
               ) : null}

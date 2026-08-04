@@ -253,7 +253,7 @@ export function FlowPage() {
           Tên bước đã nằm ở sidebar và ở hàng tiêu đề trên cùng. Nhắc lần thứ ba
           không thêm gì.
         */}
-        <div className="grid min-h-0 gap-2 lg:grid-rows-[auto_minmax(0,1fr)]">
+        <div className="grid min-h-0 gap-2 lg:h-full lg:grid-rows-[minmax(0,1fr)]">
           <input
             ref={pickRef}
             type="file"
@@ -276,7 +276,7 @@ export function FlowPage() {
              *
              * Xếp hai cột thì cả hai chỗ phí ấy biến mất cùng lúc.
              */
-            <div className="grid gap-2 lg:min-h-0 lg:grid-cols-[1fr_22rem]">
+            <div className="grid gap-2 lg:h-full lg:min-h-0 lg:grid-cols-[1fr_22rem]">
               <SequencePreviewCard
                 pack={findStylePack(upload.stylePack)}
                 scenes={upload.mainFiles.filter((i) => i.status !== "error")}
@@ -299,7 +299,7 @@ export function FlowPage() {
           ) : at === "b-roll" ? (
             /* Cùng hình dạng hai cột với bước cảnh chính — người dùng học một
                bố cục, dùng cho cả hai bước. */
-            <div className="grid gap-2 lg:min-h-0 lg:grid-cols-[1fr_22rem]">
+            <div className="grid gap-2 lg:h-full lg:min-h-0 lg:grid-cols-[1fr_22rem]">
               <SequencePreviewCard
                 pack={findStylePack(upload.stylePack)}
                 /*
@@ -321,6 +321,7 @@ export function FlowPage() {
                 onDescribe={(id, description) =>
                   void upload.saveDescription(id, description)
                 }
+                hideBackToSequence
               />
               <BRollList
                 files={upload.insertFiles}
