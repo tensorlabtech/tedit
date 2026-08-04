@@ -181,9 +181,31 @@ await app.register(mediaRoutes);
   //
   // Quét cả bảng là đúng: vừa vào tiến trình mới thì không việc nào còn sống, nên
   // mọi hàng `waiting` đều là xác của lượt trước.
+  /*
+   * CHỪA những dự án đang đứng ở CỔNG CHỜ NGƯỜI.
+   *
+   * Quét này đúng với chặng máy: tiến trình mới lên thì không việc nào còn
+   * sống. Nhưng cổng `awaiting-user` không chờ máy — nó chờ NGƯỜI DÙNG, và
+   * người dùng vẫn còn đó sau khi máy chủ khởi động lại.
+   *
+   * Không chừa thì mọi chặng SAU cổng (đang `waiting`) bị đánh hỏng, `blocked`
+   * bật lên, và bàn dựng khoá vĩnh viễn. Đo thật trên một dự án đang chạy: qua
+   * cổng `review-cut` xong thì `commit-cut` trở đi hỏng sạch.
+   *
+   * Mà `tsx watch` dựng lại máy chủ mỗi lần lưu một tệp, nên lúc phát triển
+   * chuyện này xảy ra vài chục lần một buổi.
+   */
+  const atGate = db
+    .prepare(
+      "SELECT DISTINCT project_id FROM steps WHERE status='awaiting-user'",
+    )
+    .all() as Array<{ project_id: string }>;
+  const spare = atGate.map((row) => row.project_id);
   db.prepare(
-    "UPDATE steps SET status='failed', error=?, updated_at=? WHERE status IN ('running','waiting')",
-  ).run("Bị ngắt giữa chừng", Date.now());
+    `UPDATE steps SET status='failed', error=?, updated_at=?
+     WHERE status IN ('running','waiting')
+       AND project_id NOT IN (${spare.map(() => "?").join(",") || "''"})`,
+  ).run("Bị ngắt giữa chừng", Date.now(), ...spare);
   if (cleaned.changes > 0) {
     app.log.info(`dọn ${cleaned.changes} việc dở dang từ lần chạy trước`);
   }

@@ -160,5 +160,28 @@ check(
 );
 
 db.prepare("DELETE FROM projects WHERE id=?").run(projectId);
+/*
+ * ══ KHỞI ĐỘNG LẠI KHÔNG ĐƯỢC GIẾT DỰ ÁN ĐANG Ở CỔNG ══
+ *
+ * `main.ts` quét mọi hàng `running`/`waiting` thành `failed` mỗi lần máy chủ
+ * lên — đúng với chặng máy, vì tiến trình mới thì không việc nào còn sống.
+ *
+ * Sai với cổng chờ NGƯỜI: người dùng vẫn còn đó. Không chừa thì mọi chặng sau
+ * cổng bị đánh hỏng, `blocked` bật lên, bàn dựng khoá vĩnh viễn. Đo thật trên
+ * một dự án đang chạy — và `tsx watch` dựng lại máy chủ mỗi lần lưu tệp, nên
+ * lúc phát triển nó xảy ra vài chục lần một buổi.
+ */
+console.log("\nKhởi động lại chừa dự án đang ở cổng");
+const MAIN = readFileSync(
+  join(import.meta.dirname, "..", "..", "server", "main.ts"),
+  "utf8",
+);
+const sweep = MAIN.slice(MAIN.indexOf("UPDATE steps SET status='failed'"));
+check(
+  "phép quét lúc khởi động có chừa dự án ở cổng",
+  /NOT IN/.test(sweep.slice(0, 300)) && MAIN.includes("status='awaiting-user'"),
+  sweep.slice(0, 120).replace(/\s+/g, " "),
+);
+
 console.log(`\n${passed} đạt, ${failed} trượt`);
 process.exit(failed === 0 ? 0 : 1);
