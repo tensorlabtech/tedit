@@ -18,8 +18,37 @@ import { useEditorGuards } from "./use-editor-guards";
 
 export function EditorPage() {
   const { projectId } = useParams<{ projectId: string }>();
+  /*
+   * Cổng nào đang mở — `null` là mạch đã chạy hết và đây là bàn dựng thường.
+   *
+   * Bấm xong thì QUAY VỀ màn chờ: pha sau mất vài phút (chốt lát cắt phải cắt
+   * lại tệp và chép lời một lượt nữa), mà ngồi trong bàn dựng nhìn dữ liệu cũ
+   * biến đổi dưới chân là cách chắc chắn để tưởng nó hỏng.
+   */
   const navigate = useNavigate();
   const editor = useEditor(projectId);
+  /*
+   * Cổng nào đang mở — `null` là mạch đã chạy hết và đây là bàn dựng thường.
+   *
+   * Bấm xong thì QUAY VỀ màn chờ: pha sau mất vài phút (chốt lát cắt phải cắt
+   * lại tệp rồi chép lời một lượt nữa), mà ngồi trong bàn dựng nhìn dữ liệu cũ
+   * biến đổi dưới chân là cách chắc chắn để tưởng nó hỏng.
+   */
+  const gate = editor.pipeline?.awaiting ?? null;
+  const [passing, setPassing] = useState(false);
+  const passGate = async () => {
+    if (!gate || !projectId) return;
+    setPassing(true);
+    try {
+      await fetch(`/api/projects/${projectId}/${gate}/xong`, {
+        method: "POST",
+        credentials: "include",
+      });
+      navigate(`/pipeline/${projectId}`);
+    } finally {
+      setPassing(false);
+    }
+  };
   const [playing, setPlaying] = useState(false);
   const { seek, duration } = editor;
   const timeRef = useRef(editor.time);
@@ -239,7 +268,26 @@ export function EditorPage() {
             <Button variant="ghost" onClick={() => navigate("/")}>
               Trở về
             </Button>
-            {editor.exportJob?.status === "done" ? (
+            {/*
+              ── CỔNG CHỜ NGƯỜI ──
+
+              Mạch dựng dừng hai lần trước khi tới phần làm đẹp: soát chỗ cắt,
+              rồi soát chính tả. Lúc ấy bàn dựng mở ra để SỬA, nên nút ở đây
+              không phải "Xuất video" — chưa tới lúc — mà là "xong việc này,
+              chạy tiếp".
+
+              Đặt nút TẠI ĐÂY chứ không trên màn chờ: bản đầu bày một bảng
+              chỉ-đọc ngoài kia, và một danh sách không sửa được thì người dùng
+              chỉ có hai lựa chọn là tin hoặc không tin. Soát là việc phải nhìn
+              video, nghe tiếng, đọc lời trong ngữ cảnh — tức là ở đây.
+            */}
+            {gate ? (
+              <Button disabled={passing} onClick={passGate}>
+                {gate === "soat-cat"
+                  ? "Xong — chốt chỗ cắt"
+                  : "Xong — chốt chính tả"}
+              </Button>
+            ) : editor.exportJob?.status === "done" ? (
               <Button
                 render={<a href={api.exportUrl(editor.projectId!)} download />}
               >
