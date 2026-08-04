@@ -92,13 +92,29 @@ export const ONE_WAY_AFTER: FlowStepId = "cut";
 export type FlowState = {
   hasMain: boolean;
   hasBrief: boolean;
-  /** Cổng máy chủ đang mở, `null` là không cổng nào. */
-  awaiting: string | null;
+  /**
+   * Chặng máy ĐANG dừng ở — đang chạy, hoặc đang mở cổng chờ người.
+   *
+   * Một trường thay cho hai (`awaiting` + `started`) vì cả hai đều là câu trả lời
+   * mờ cho cùng câu hỏi "máy đang ở đâu", và mờ thì phải đoán nốt phần còn lại.
+   * Đúng chỗ ấy đã sai: có `started` mà không có cổng nào mở thì bản cũ luôn trả
+   * "Chuẩn bị", nên chốt bản cắt xong sidebar NHẢY LÙI từ bước 5 về bước 4 trong
+   * khi máy đang chạy `commit-cut` — chặng của bước 6.
+   */
+  stage: string | null;
   /** Mạch đã chạy hết chưa. */
   settled: boolean;
   /** Mạch đã khởi động chưa — chưa thì người dùng còn ở phần nạp. */
   started: boolean;
 };
+
+/** Bước nào nhận chặng máy này. `null` với chặng lạ. */
+export function stepOfStage(stage: string): FlowStepId | null {
+  const owner = (Object.keys(STAGES_OF) as FlowStepId[]).find((id) =>
+    STAGES_OF[id].includes(stage),
+  );
+  return owner ?? null;
+}
 
 /**
  * Đang ở bước nào.
@@ -108,10 +124,18 @@ export type FlowState = {
  */
 export function currentStep(state: FlowState): FlowStepId {
   if (state.settled) return "studio";
-  if (state.awaiting === "review-text") return "proofread";
-  if (state.awaiting === "review-cut") return "cut";
-  // Mạch chạy mà không cổng nào mở: máy đang làm việc của nó. Chưa qua cổng cắt
-  // thì là chặng chuẩn bị, qua rồi thì là chặng dựng nốt.
+  /*
+   * Máy đang ở chặng nào thì người đang ở bước SỞ HỮU chặng ấy.
+   *
+   * Tra bảng chứ không xét từng cổng một: `STAGES_OF` đã khai mười bốn chặng
+   * thuộc bước nào rồi, nên thêm một chặng vào mạch là bảng ấy tự trả lời. Bản
+   * cũ liệt kê tay hai cổng rồi rơi về "Chuẩn bị" cho mọi trường hợp khác —
+   * đúng với năm chặng đầu, sai với chín chặng sau.
+   */
+  if (state.stage) {
+    const owner = stepOfStage(state.stage);
+    if (owner) return owner;
+  }
   if (state.started) return "preparing";
   /*
    * Đi theo ĐÚNG thứ tự sidebar: cảnh chính → cảnh phụ → đề bài.

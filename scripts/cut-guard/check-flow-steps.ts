@@ -35,7 +35,7 @@ function check(label: string, ok: boolean, detail = "") {
 const TRONG: FlowState = {
   hasMain: false,
   hasBrief: false,
-  awaiting: null,
+  stage: null,
   settled: false,
   started: false,
 };
@@ -71,8 +71,17 @@ const cases: Array<[string, Partial<FlowState>, FlowStepId]> = [
   ["có cảnh chính, chưa có đề bài", { hasMain: true }, "b-roll"],
   ["có đề bài rồi", { hasMain: true, hasBrief: true }, "brief"],
   ["mạch đang chạy", { hasMain: true, hasBrief: true, started: true }, "preparing"],
-  ["cổng cắt mở", { started: true, awaiting: "review-cut" }, "cut"],
-  ["cổng chữ mở", { started: true, awaiting: "review-text" }, "proofread"],
+  ["cổng cắt mở", { started: true, stage: "review-cut" }, "cut"],
+  ["cổng chữ mở", { started: true, stage: "review-text" }, "proofread"],
+  // Chặng SAU cổng cắt phải ra bước 6, không rơi về "Chuẩn bị".
+  //
+  // Đúng chỗ này từng sai và chỉ lộ ra khi bấm thật: chốt bản cắt xong, máy chạy
+  // `commit-cut`, mà sidebar nhảy LÙI từ bước 5 về bước 4.
+  ["đang nướng lát cắt", { started: true, stage: "commit-cut" }, "proofread"],
+  ["đang sửa chữ nghe nhầm", { started: true, stage: "fix" }, "proofread"],
+  ["đang dựng chữ", { started: true, stage: "captions" }, "building"],
+  ["đang chọn nhạc", { started: true, stage: "music" }, "building"],
+  ["đang nghe chép lời", { started: true, stage: "transcribe" }, "preparing"],
   ["chạy xong", { started: true, settled: true }, "studio"],
 ];
 for (const [name, patch, want] of cases) {
@@ -165,7 +174,7 @@ console.log("\nPhép kiểm BẮT được lỗi (thử phá)");
 // vì `pipelineState` không bao giờ trả cả hai — cổng làm `settled` sai.
 check(
   "trạng thái mâu thuẫn không làm sập phép suy",
-  currentStep({ ...TRONG, settled: true, awaiting: "review-cut" }) === "studio",
+  currentStep({ ...TRONG, settled: true, stage: "review-cut" }) === "studio",
 );
 check(
   "mã bước lạ trả -1 chứ không ném",

@@ -134,7 +134,14 @@ export const queueLabel = (job: Pick<ApiJob, "queuePosition">) =>
 export type ApiStep = {
   key: string;
   position: number;
-  status: "waiting" | "running" | "done" | "failed";
+  /**
+   * Khớp `StepStatus` của `server/pipeline-steps.ts`.
+   *
+   * `awaiting-user` từng thiếu ở đây sau khi hai cổng soát ra đời: máy chủ gửi
+   * giá trị ấy, còn client khai là không có, nên mọi phép so với nó bị TypeScript
+   * gạt đi như "không bao giờ xảy ra" — kiểu nói dối im lặng nhất.
+   */
+  status: "waiting" | "running" | "done" | "failed" | "awaiting-user";
   /** Thứ chặng này đẻ ra, vd "219 đoạn · 189 chữ" */
   result: string | null;
   error: string | null;
@@ -975,6 +982,25 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ content, band, projectId, keywords }),
     }),
+
+  /**
+   * Chốt bản cắt rồi đi tiếp — mở cổng một chiều.
+   *
+   * Sau lệnh này `commit-cut` nướng lát cắt vào tệp và CHÉP LỜI LẠI, nên mọi
+   * mốc từ cũ biến mất. Không quay lại sửa cắt được nữa; nơi gọi phải hỏi trước.
+   */
+  finishCutReview: (projectId: string) =>
+    request<{ ok: boolean; queued: boolean }>(
+      `/api/projects/${projectId}/review-cut/done`,
+      { method: "POST" },
+    ),
+
+  /** Chốt bản soát chính tả rồi đi tiếp — cổng thứ hai. */
+  finishTextReview: (projectId: string) =>
+    request<{ ok: boolean; queued: boolean }>(
+      `/api/projects/${projectId}/review-text/done`,
+      { method: "POST" },
+    ),
 
   listSegments: (projectId: string) =>
     request<ApiSegment[]>(`/api/projects/${projectId}/segments`),

@@ -28,7 +28,7 @@ export default async function jobsRoutes(app: FastifyInstance) {
  * Qua hàng đợi như mọi việc nặng khác: `commit-cut` phải cắt lại tệp và chép lời một
  * lượt nữa, không nhẹ hơn lượt dựng đầu là bao.
  */
-app.post("/api/projects/:id/review-cut/xong", async (request, reply) => {
+app.post("/api/projects/:id/review-cut/done", async (request, reply) => {
   const { id } = request.params as { id: string };
   const outcome = enqueue(id, "transcribe", () => resumeAfterCutReview(id));
   if (outcome === "duplicate") {
@@ -37,7 +37,7 @@ app.post("/api/projects/:id/review-cut/xong", async (request, reply) => {
   return reply.send({ ok: true, queued: outcome === "queued" });
 });
 
-app.post("/api/projects/:id/review-text/xong", async (request, reply) => {
+app.post("/api/projects/:id/review-text/done", async (request, reply) => {
   const { id } = request.params as { id: string };
   const outcome = enqueue(id, "transcribe", () => resumeAfterTextReview(id));
   if (outcome === "duplicate") {

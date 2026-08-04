@@ -26,6 +26,7 @@ import { FlowSidebar } from "./flow-sidebar";
 import { MediaPickerDialog } from "@/components/media-picker-dialog";
 import { BigDropZone } from "./big-drop-zone";
 import { BriefStep } from "./brief-step";
+import { FinishCutButton } from "./finish-cut-button";
 import { CutStep, type CutWord } from "./cut-step";
 import { StepRow } from "../pipeline/pipeline-page";
 import type { ApiStep } from "@/lib/api";
@@ -60,11 +61,25 @@ import type { MediaRole } from "./../upload/upload-data";
  * chế độ tốn một mê cung điều kiện mà rồi không ai dám sửa.
  */
 
+/**
+ * Gộp bảng đoạn thành ba con số cho nút chốt.
+ *
+ * Đọc từ chính `getProject` mà trang vốn đã hỏi mỗi giây rưỡi, không mở thêm một
+ * lượt gọi nữa: hai nguồn cho cùng một con số là hai chỗ để lệch nhau, và ở đây
+ * con số ấy đứng trong một câu hỏi không quay lại được.
+ */
+function summariseCut(rows: Array<{ start_sec: number; end_sec: number; removed: number }>) {
+  const cuts = rows.filter((row) => row.removed === 1);
+  const seconds = cuts.reduce((sum, row) => sum + (row.end_sec - row.start_sec), 0);
+  const total = rows.at(-1)?.end_sec ?? 0;
+  return { count: cuts.length, seconds, kept: Math.max(0, total - seconds) };
+}
+
 /** Trạng thái tối thiểu để suy ra bước — xem `currentStep`. */
 type Snapshot = {
   hasMain: boolean;
   hasBrief: boolean;
-  awaiting: string | null;
+  stage: string | null;
   settled: boolean;
   started: boolean;
   /** Mười bốn chặng máy — chỉ bày ở BÊN PHẢI lúc bước máy đang chạy. */
@@ -76,16 +91,19 @@ type Snapshot = {
    * lấy câu thì hàng soát hiện cả câu cho một chỗ chỉ bỏ hai chữ.
    */
   words: CutWord[];
+  /** Thống kê bản cắt cho nút chốt trên đầu trang. */
+  cut: { count: number; seconds: number; kept: number };
 };
 
 const TRONG: Snapshot = {
   hasMain: false,
   hasBrief: false,
-  awaiting: null,
+  stage: null,
   settled: false,
   started: false,
   steps: [],
   words: [],
+  cut: { count: 0, seconds: 0, kept: 0 },
 };
 
 export function FlowPage() {
@@ -114,10 +132,16 @@ export function FlowPage() {
         setSnap({
           hasMain: data.files.some((file) => file.role === "main"),
           hasBrief: Boolean(data.project.profile?.trim()),
-          awaiting: data.pipeline?.awaiting ?? null,
+          // Chặng máy đang dừng ở: đang chạy, hoặc đang mở cổng chờ người.
+          stage:
+            data.pipeline?.steps.find(
+              (item) =>
+                item.status === "running" || item.status === "awaiting-user",
+            )?.key ?? null,
           settled: data.pipeline?.settled ?? false,
           started: (data.pipeline?.steps.length ?? 0) > 0,
           steps: data.pipeline?.steps ?? [],
+          cut: summariseCut(data.segments ?? []),
           words: (data.words ?? []).map((row) => ({
             text: row.text,
             start: row.start_sec,
@@ -204,6 +228,21 @@ export function FlowPage() {
    * CHÍNH, và ô mô tả bên dưới hỏi "Tư liệu này là gì?" cho một cảnh chính.
    * Chụp một dự án mới mới thấy — dự án cũ có sẵn cả hai loại nên không lộ.
    */
+  /*
+   * Máy có đang bận Ở CHÍNH BƯỚC NÀY không — hỏi trạng thái thật, không hỏi nhãn.
+   *
+   * `FLOW_STEPS` khai bước 6 là của NGƯỜI, mà hai chặng đầu của nó (`commit-cut`,
+   * `fix`) lại là máy chạy. Xét theo nhãn thì suốt lúc ấy ô phải bày "màn chưa
+   * dựng" và nút đầu trang mời "Mở bàn dựng" — mà bàn dựng thấy dự án đang kẹt
+   * nên đá về màn chờ. Một ngõ cụt, đúng kiểu vừa sửa ở bước 5.
+   */
+  const machineBusy = snap.steps.some(
+    (item) =>
+      item.key === snap.stage &&
+      item.status === "running" &&
+      STAGES_OF[at].includes(item.key),
+  );
+
   const pool = at === "b-roll" ? upload.insertFiles : upload.mainFiles;
   const previewing =
     pool.find((item) => item.id === previewId) ?? pool[0] ?? null;
@@ -244,7 +283,22 @@ export function FlowPage() {
                 Chép lại lời
                 <ArrowRightIcon data-icon="inline-end" />
               </Button>
-            ) : step.actor === "user" ? (
+            ) : at === "cut" && projectId ? (
+              /*
+               * Việc chính của bước CẮT là chốt bản cắt, không phải mở bàn dựng.
+               *
+               * Trước đây mọi bước của người đều ra cùng một nút "Mở bàn dựng",
+               * nên ở bước này người dùng soát xong không có đường nào đi tiếp:
+               * bấm nút thì sang `/editor`, mà `/editor` thấy dự án đang kẹt ở
+               * cổng nên đá về màn chờ. Một vòng tròn không lối ra.
+               */
+              <FinishCutButton
+                projectId={projectId}
+                cuts={snap.cut.count}
+                seconds={snap.cut.seconds}
+                kept={snap.cut.kept}
+              />
+            ) : machineBusy ? null : step.actor === "user" ? (
               <Button onClick={() => navigate(`/editor/${projectId}`)}>
                 Mở bàn dựng
                 <ArrowRightIcon data-icon="inline-end" />
@@ -310,7 +364,7 @@ export function FlowPage() {
               words={snap.words}
               previewUrl={projectId ? api.baseVideoUrl(projectId) : null}
             />
-          ) : step.actor === "machine" ? (
+          ) : step.actor === "machine" || machineBusy ? (
             /*
              * Bước MÁY: bày mười bốn chặng ở BÊN PHẢI.
              *
