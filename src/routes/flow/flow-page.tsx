@@ -381,6 +381,14 @@ export function FlowPage() {
         projectItems={upload.insertItems}
         alreadyIn={upload.libraryFilesInProject}
         onTake={upload.addFromLibrary}
+        /* Bỏ tích một tệp đang có = gỡ nó khỏi dự án. Tìm ngược từ mã kho sang
+           tệp trong dự án — `libraryFile` là mối nối duy nhất giữa hai bên. */
+        onDropFromProject={(keys) => {
+          for (const key of keys) {
+            const mine = upload.files.find((item) => item.libraryFile === key);
+            if (mine) upload.removeFile(mine.id);
+          }
+        }}
         onUpload={(files) => handleFiles(files, "insert")}
         defaultTab="library"
         tabs={false}

@@ -44,6 +44,7 @@ export function MediaPickerDialog({
   onUse,
   useLabel,
   onTake,
+  onDropFromProject,
   takeLabel = "Thêm vào dự án",
   onUpload,
   uploading = false,
@@ -74,6 +75,13 @@ export function MediaPickerDialog({
    * Lấy tệp từ KHO về dự án. Trả về mã các tệp mới để hộp chọn sẵn cái cuối.
    */
   onTake: (files: string[]) => Promise<string[] | void>;
+  /**
+   * Bỏ tích một tệp ĐANG CÓ — gỡ nó khỏi dự án.
+   *
+   * Thiếu callback này thì bỏ tích chẳng làm gì, và hộp nói dối: người dùng
+   * thấy ô hết sáng rồi đóng hộp, mà tệp vẫn nằm nguyên trong dự án.
+   */
+  onDropFromProject?: (libraryKeys: string[]) => Promise<void> | void;
   takeLabel?: string;
   /** Lấy tệp từ MÁY — có nó thì lưới tab dự án mọc thêm ô tải lên và nhận thả tệp */
   onUpload?: (files: File[]) => void;
@@ -114,8 +122,15 @@ export function MediaPickerDialog({
     setTab(defaultTab);
     setTim("");
     setLoc("all");
-    setChonKho([]);
-  }, [open, defaultTab]);
+    /*
+     * CHỌN SẴN những tệp đã nằm trong dự án.
+     *
+     * Khoá chúng lại thì người dùng thấy được "đang có gì" nhưng không bỏ ra
+     * được — mất hẳn một thao tác. Chọn sẵn thì hộp vừa là danh sách đang có,
+     * vừa là chỗ sửa: bỏ tích là gỡ, tích thêm là lấy.
+     */
+    setChonKho(alreadyIn);
+  }, [open, defaultTab, alreadyIn]);
 
   // Kho chỉ nạp khi NGƯỜI DÙNG sang tab ấy: kho có thể hàng trăm tệp, mà phần
   // lớn lượt chèn là lấy tệp đã có sẵn trong dự án.
@@ -179,10 +194,17 @@ export function MediaPickerDialog({
   };
 
   const layTuKho = async () => {
-    if (chonKho.length === 0) return;
+    // Không đổi gì thì thôi — kể cả khi đang tích sẵn vài cái.
+    const khac =
+      chonKho.some((k) => !daCo.has(k)) || alreadyIn.some((k) => !chonKho.includes(k));
+    if (!khac) return;
     setDangLam(true);
     try {
-      const ids = await onTake(chonKho);
+      const them = chonKho.filter((key) => !daCo.has(key));
+      const go = alreadyIn.filter((key) => !chonKho.includes(key));
+      // Gỡ trước rồi thêm: ngược lại thì có lúc dự án mang cả bản cũ lẫn mới.
+      if (go.length > 0) await onDropFromProject?.(go);
+      const ids = them.length > 0 ? await onTake(them) : undefined;
       /*
        * Hộp KHÔNG có tab thì lấy xong là ĐÓNG.
        *
@@ -301,7 +323,6 @@ export function MediaPickerDialog({
                     /* Đã nằm trong dự án thì không bấm được nữa: lấy lần hai
                        chỉ đẻ ra một bản sao, mà dấu "đã có" ngay trên ô đã nói
                        rõ vì sao nó không bấm được. */
-                    disabled={tab !== "project" && daCo.has(item.key)}
                     onSelect={() => {
                       if (tab === "project") setChonDuAn(item.key);
                       else
