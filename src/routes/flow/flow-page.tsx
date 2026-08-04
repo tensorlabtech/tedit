@@ -209,73 +209,78 @@ export function FlowPage() {
       <div className="grid gap-2 lg:min-h-0 lg:grid-cols-[15rem_1fr]">
         <FlowSidebar current={at} onPick={(id) => setViewing(id)} />
 
-        <Card className="lg:min-h-0">
-          <CardHeader>
-            <CardTitle>{step.label}</CardTitle>
-          </CardHeader>
-          <CardContent className="grid min-h-0 flex-1 overflow-hidden">
-            {/* Ô chọn tệp ẩn — cả hai thẻ đều gọi qua `openPicker`. */}
-            <input
-              ref={pickRef}
-              type="file"
-              accept="video/*"
-              multiple
-              hidden
-              onChange={(event) => {
-                const picked = Array.from(event.target.files ?? []);
-                if (picked.length > 0) handleFiles(picked, pickRole.current);
-                event.target.value = "";
-              }}
-            />
-            {at === "main-footage" ? (
-              /* Xem trước TRÊN, danh sách ngang DƯỚI — mắt đi từ thứ đang xem
-                 xuống thứ để chọn, không phải ngược lại. */
-              /* `minmax(0,1fr)` chứ không `1fr`: với `1fr` thì ô xem trước lấy chiều
-                 cao theo NỘI DUNG và đẩy danh sách dưới ra khỏi khung — chụp màn
-                 thấy "Mạch chính" bị cắt cụt ở đáy. `minmax(0,…)` cho hàng trên
-                 co lại được. */
-              <div className="grid min-h-0 gap-2 lg:grid-rows-[minmax(0,1fr)_auto]">
-                <SequencePreviewCard
-                  pack={findStylePack(upload.stylePack)}
-                  scenes={upload.mainFiles.filter((i) => i.status !== "error")}
-                  file={previewing}
-                  source={previewing ? upload.sourceOf(previewing.id) : undefined}
-                  onSelect={setPreviewId}
-                  onDescribe={(id, description) =>
-                    void upload.saveDescription(id, description)
-                  }
-                />
-                <MainTimelineCard
-                  files={upload.mainFiles}
-                  sourceOf={upload.sourceOf}
-                  onOpen={setPreviewId}
-                  onPick={() => openPicker("main")}
-                  onDropFiles={(files) => handleFiles(files, "main")}
-                  onRemove={handleRemove}
-                  onMove={(id) => handleMove(id, "insert")}
-                  onCancel={upload.cancelUpload}
-                  onRetry={upload.retryUpload}
-                  selectedId={previewing?.id ?? null}
-                  onReorder={upload.moveFile}
-                  onReorderTo={upload.moveFileTo}
-                />
-              </div>
-            ) : at === "b-roll" ? (
-              <InsertMediaCard
-                files={upload.insertFiles}
+        {/*
+          Ô phải KHÔNG bọc thêm một Card nữa.
+
+          `SequencePreviewCard` tự mang tiêu đề "Xem trước", `MainTimelineCard`
+          tự mang "Mạch chính" — chúng vốn là thẻ CẤP TRANG, đứng cạnh nhau ở
+          `/upload`. Bọc chúng trong một Card có tiêu đề "Cảnh chính" nữa là ba
+          tầng khung chồng nhau: tiêu đề lặp, và tầng ngoài ăn hết chiều cao nên
+          danh sách dưới bị cắt cụt.
+
+          Tên bước đã nằm ở sidebar và ở hàng tiêu đề trên cùng. Nhắc lần thứ ba
+          không thêm gì.
+        */}
+        <div className="grid min-h-0 gap-2">
+          <input
+            ref={pickRef}
+            type="file"
+            accept="video/*"
+            multiple
+            hidden
+            onChange={(event) => {
+              const picked = Array.from(event.target.files ?? []);
+              if (picked.length > 0) handleFiles(picked, pickRole.current);
+              event.target.value = "";
+            }}
+          />
+          {at === "main-footage" ? (
+            /* Xem trước TRÊN, danh sách DƯỚI — mắt đi từ thứ đang xem xuống thứ
+               để chọn. Hàng dưới `auto` để nó lấy đúng chiều cao nó cần, hàng
+               trên `minmax(0,1fr)` để nó nhường. */
+            <div className="grid min-h-0 gap-2 lg:grid-rows-[minmax(0,1fr)_auto]">
+              <SequencePreviewCard
+                pack={findStylePack(upload.stylePack)}
+                scenes={upload.mainFiles.filter((i) => i.status !== "error")}
+                file={previewing}
+                source={previewing ? upload.sourceOf(previewing.id) : undefined}
+                onSelect={setPreviewId}
+                onDescribe={(id, description) =>
+                  void upload.saveDescription(id, description)
+                }
+              />
+              <MainTimelineCard
+                files={upload.mainFiles}
                 sourceOf={upload.sourceOf}
                 onOpen={setPreviewId}
-                onPick={() => openPicker("insert")}
-                onPickFromLibrary={() => openPicker("insert")}
-                onDropFiles={(files) => handleFiles(files, "insert")}
+                onPick={() => openPicker("main")}
+                onDropFiles={(files) => handleFiles(files, "main")}
                 onRemove={handleRemove}
-                onMove={(id) => handleMove(id, "main")}
+                onMove={(id) => handleMove(id, "insert")}
                 onCancel={upload.cancelUpload}
                 onRetry={upload.retryUpload}
                 selectedId={previewing?.id ?? null}
+                onReorder={upload.moveFile}
+                onReorderTo={upload.moveFileTo}
               />
-            ) : (
-              <div className="grid place-items-center">
+            </div>
+          ) : at === "b-roll" ? (
+            <InsertMediaCard
+              files={upload.insertFiles}
+              sourceOf={upload.sourceOf}
+              onOpen={setPreviewId}
+              onPick={() => openPicker("insert")}
+              onPickFromLibrary={() => openPicker("insert")}
+              onDropFiles={(files) => handleFiles(files, "insert")}
+              onRemove={handleRemove}
+              onMove={(id) => handleMove(id, "main")}
+              onCancel={upload.cancelUpload}
+              onRetry={upload.retryUpload}
+              selectedId={previewing?.id ?? null}
+            />
+          ) : (
+            <Card className="lg:min-h-0">
+              <CardContent className="grid min-h-0 flex-1 place-items-center">
                 <Empty>
                   <EmptyTitle>
                     {step.actor === "machine"
@@ -288,10 +293,10 @@ export function FlowPage() {
                       : "Tạm thời làm việc này ở bàn dựng."}
                   </EmptyDescription>
                 </Empty>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+              </CardContent>
+            </Card>
+          )}
+        </div>
       </div>
     </div>
   );
