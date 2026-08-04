@@ -54,7 +54,7 @@ import { usePipeline } from "./use-pipeline";
  */
 
 /** Tên hiện ra của từng chặng. Khoá phải khớp `STEP_PLAN` của máy chủ. */
-const STEP_LABELS: Record<string, string> = {
+export const STEP_LABELS: Record<string, string> = {
   prepare: "Chuẩn bị video",
   transcribe: "Nghe và chép lời",
   fix: "Sửa chỗ nghe nhầm",
@@ -85,7 +85,7 @@ function elapsed(updatedAt: number) {
   return `đang chạy ${Math.floor(seconds / 60)}p${seconds % 60}s`;
 }
 
-function StepRow({ step, onRetry }: { step: ApiStep; onRetry: () => void }) {
+export function StepRow({ step, onRetry }: { step: ApiStep; onRetry: () => void }) {
   // Chặng KHÔNG bắt buộc mà hỏng thì là BỎ QUA, không phải báo động: người dùng
   // vẫn có video đầy đủ. Để tam giác đỏ ở đây làm người ta tưởng hỏng cả mẻ.
   const blocking = step.status === "failed" && step.required;

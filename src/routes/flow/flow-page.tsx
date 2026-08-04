@@ -25,6 +25,8 @@ import { FlowSidebar } from "./flow-sidebar";
 import { MediaPickerDialog } from "@/components/media-picker-dialog";
 import { BigDropZone } from "./big-drop-zone";
 import { BriefStep } from "./brief-step";
+import { StepRow } from "../pipeline/pipeline-page";
+import type { ApiStep } from "@/lib/api";
 import { BRollList } from "./broll-list";
 import { SceneStrip } from "./scene-strip";
 import { SequencePreviewCard } from "../upload/sequence-preview-card";
@@ -63,6 +65,8 @@ type Snapshot = {
   awaiting: string | null;
   settled: boolean;
   started: boolean;
+  /** Mười bốn chặng máy — chỉ bày ở BÊN PHẢI lúc bước máy đang chạy. */
+  steps: ApiStep[];
 };
 
 const TRONG: Snapshot = {
@@ -71,6 +75,7 @@ const TRONG: Snapshot = {
   awaiting: null,
   settled: false,
   started: false,
+  steps: [],
 };
 
 export function FlowPage() {
@@ -102,6 +107,7 @@ export function FlowPage() {
           awaiting: data.pipeline?.awaiting ?? null,
           settled: data.pipeline?.settled ?? false,
           started: (data.pipeline?.steps.length ?? 0) > 0,
+          steps: data.pipeline?.steps ?? [],
         });
       } finally {
         if (alive) setLoading(false);
@@ -283,6 +289,36 @@ export function FlowPage() {
               onPick={() => openPicker("insert")}
               onPickFromLibrary={() => setLibraryOpen(true)}
             />
+          ) : step.actor === "machine" ? (
+            /*
+             * Bước MÁY: bày mười bốn chặng ở BÊN PHẢI.
+             *
+             * Sidebar cố tình gộp chúng vào một dòng — nó là bản đồ, không phải
+             * nhật ký. Nhưng lúc máy đang chạy thì người dùng muốn biết nó đang
+             * làm gì, và đây đúng là chỗ để nhìn.
+             *
+             * Dùng lại `StepRow` của màn chờ cũ: cùng một danh sách chặng thì
+             * hai chỗ vẽ khác nhau là hai chỗ phải sửa mỗi lần thêm chặng.
+             */
+            <Card className="lg:h-full lg:min-h-0">
+              <CardHeader>
+                <CardTitle>
+                  Máy đang làm · {snap.steps.filter((s) => s.status === "done").length}
+                  /{snap.steps.length}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="grid min-h-0 flex-1 content-start gap-1 overflow-y-auto">
+                {snap.steps.map((item) => (
+                  <StepRow
+                    key={item.key}
+                    step={item}
+                    // Dùng lại đường có sẵn ở `api` chứ không gọi fetch trần:
+                    // một chỗ đổi đường dẫn thì mọi nơi theo.
+                    onRetry={() => void api.retryStep(projectId!, item.key)}
+                  />
+                ))}
+              </CardContent>
+            </Card>
           ) : at === "brief" ? (
             <BriefStep
               title={upload.title}
@@ -365,15 +401,9 @@ export function FlowPage() {
             <Card className="lg:min-h-0 lg:h-full">
               <CardContent className="grid min-h-0 flex-1 place-items-center">
                 <Empty>
-                  <EmptyTitle>
-                    {step.actor === "machine"
-                      ? "Máy đang làm"
-                      : "Màn của bước này chưa dựng"}
-                  </EmptyTitle>
+                  <EmptyTitle>Màn của bước này chưa dựng</EmptyTitle>
                   <EmptyDescription>
-                    {step.actor === "machine"
-                      ? "Chưa tới lượt bạn — cứ đóng trang cũng được."
-                      : "Tạm thời làm việc này ở bàn dựng."}
+                    Tạm thời làm việc này ở bàn dựng.
                   </EmptyDescription>
                 </Empty>
               </CardContent>

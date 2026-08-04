@@ -77,7 +77,10 @@ export function FlowSidebar({
           // tích là hai câu trái nhau trên cùng một dòng.
           const here = index === at;
           const done = index < far && !here;
-          const locked = (far > door && index <= door) || index > wall;
+          // Đang ĐỨNG thì không vẽ khoá: người dùng đang nhìn chính nó, bảo
+          // nó khoá là vô nghĩa. Cùng lẽ với chuyện không vẽ dấu tích ở đây.
+          const locked =
+            !here && ((far > door && index <= door) || index > wall);
           // Bấm được mọi bước máy ĐÃ TỚI, kể cả đi tới lại sau khi lùi.
           const openable = index <= far && !locked && !here;
 
