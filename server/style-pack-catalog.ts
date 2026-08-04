@@ -162,6 +162,8 @@ const BASE = {
   // Mảng màu: mười bộ đều chưa dùng. Nó là trục của ba bộ dựng ở chặng cuối, và
   // bảy bộ còn lại là nhóm đối chứng nên phải giữ nguyên `null`.
   plate: null,
+  page: null,
+  layouts: [],
   subjectEdge: null,
   behindText: null,
   doodles: null,
@@ -785,7 +787,9 @@ export const PHAN: StylePack = {
     sizeShare: 0.2,
     tone: { color: "#FFFFFF", alpha: 0.92 },
     repeats: 3,
-    seconds: 4.5,
+    // 2,4 giây — con số chụm nhất trong cả bộ số đo: sáu bộ mẫu ra 2,1 · 2,5 ·
+    // 2,65 · 2,4 · 2,4 · 2,1–3,5. Bản đầu tôi đặt 4,5 theo cảm giác, gần gấp đôi.
+    seconds: 2.4,
   },
   doodles: {
     ids: ["net-ngoan-ngoeo", "net-mat-cuoi", "net-may"],
@@ -801,6 +805,52 @@ export const PHAN: StylePack = {
   defaults: { ...BASE.defaults, align: "left", emphasis: "even" },
 };
 
+/**
+ * NHỊP ĐEN — bộ đầu tiên dựng theo lối BỐ CỤC.
+ *
+ * Mọi bộ trước đều để video phủ kín khung rồi dán chữ lên. Bộ này để video vào
+ * một Ô trên nền đen, và Ô ấy ĐỔI theo màn — ô đơn, toàn khung, ô lệch, hai ô.
+ * Đó là trục không bộ nào khác có, và cũng là trục đổi diện mạo mạnh nhất: nó
+ * đổi cả khung hình chứ không đổi mấy chữ trong khung.
+ *
+ * Lấy ý từ `pulse.mp4` trong kho mẫu, nhưng KHÔNG chép mốc thời gian của nó —
+ * mốc là của một video cụ thể, còn `layout-schedule.ts` xếp màn theo luật đo
+ * được và theo mép cụm chữ của CHÍNH video đang dựng.
+ *
+ * Chữ nằm NGOÀI ô, trên nền đen tuyền. Đó là điểm mạnh chứ không phải hạn chế:
+ * chữ trên nền đen luôn đọc được, không phải lo tương phản với một khung hình
+ * không đoán trước được — cũng là lý do bộ này không cần viền chữ dày.
+ */
+export const NHIP_DEN: StylePack = {
+  ...BASE,
+  id: "nhip-den",
+  label: "Nhịp đen",
+  theme: "manh",
+  fonts: { voice: FONT.beVietnamProBlack, accent: FONT.beVietnamProBlack },
+  letterCase: "upper",
+  color: {
+    ...BASE.color,
+    key: { color: "#2FA8FF", alpha: 1 },
+  },
+  // Nền đen tuyền + lưới mờ: dấu "có thiết kế" rẻ nhất trong kho — một tệp PNG
+  // sẵn có, một lớp phủ, mà nhìn phát biết không phải nền đen trơn.
+  page: {
+    tone: { color: "#08090C", alpha: 1 },
+    grid: { id: "luoi-ba", tone: { color: "#2A3340", alpha: 0.4 } },
+  },
+  // Sáu bố cục xoay vòng. Ba cái cần tư liệu tự biến mất khi dự án chưa có.
+  layouts: ["o-don", "toan-khung", "hai-o", "vuong-ngang", "ngang-vuong", "o-lech"],
+  // Không viền chữ: chữ đứng trên nền đen, không cần bao ngoài để tách khỏi nền.
+  edge: null,
+  density: { ...BASE.density, maxScale: 0.115, lineHeight: 1.2, wordGap: 0.14 },
+  effectBias: { junction: ["cross-fade", "zoom-in"], insertReveal: ["slide"] },
+  rhythm: { junctionShare: 0.55, brollEverySec: 9, brollHoldSec: 3 },
+  musicBias: { energy: ["vua", "manh"], density: [], vocal: ["khong-loi"] },
+  intensity: { ...BASE.intensity, keywordShare: 0.5, minSilence: 0.7 },
+  grouping: { ...BASE.grouping, maxWords: 4, maxChars: 22 },
+  defaults: { ...BASE.defaults, align: "left", emphasis: "even" },
+};
+
 export const STYLE_PACKS: StylePack[] = [
   BASE_PACK,
   CHU_HOA_VANG,
@@ -813,6 +863,7 @@ export const STYLE_PACKS: StylePack[] = [
   TUNG_CHU,
   SANG_THEO_LOI,
   PHAN,
+  NHIP_DEN,
 ];
 
 export const DEFAULT_STYLE_PACK_ID: StylePackId = "goc";

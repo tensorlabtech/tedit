@@ -22,6 +22,7 @@
  */
 
 import type { MusicBias } from "./music-tags";
+import type { LayoutKindId } from "./layout-kinds";
 
 /*
  * Cách đánh dấu CHỖ NỐI — lấy thẳng từ `junction-kinds.ts`, không chép lại.
@@ -69,7 +70,8 @@ export type StylePackId =
   | "dung-dung"
   | "tung-chu"
   | "sang-theo-loi"
-  | "phan";
+  | "phan"
+  | "nhip-den";
 
 /**
  * NHÓM Ý ĐỒ — người dùng chọn theo "video của tôi thuộc loại gì".
@@ -333,6 +335,28 @@ export type StylePack = {
     heightShare: number;
     tone: Tone;
   } | null;
+  /**
+   * NỀN TRANG — màu phía sau khi video KHÔNG phủ kín khung. `null` là không có.
+   *
+   * Chỉ có nghĩa với bố cục nào để lại chỗ trống (`o-don`, `hai-o`, `o-lech`,
+   * `trang-chu`). Bố cục `toan-khung` thì video che hết, nền không lộ ra.
+   *
+   * `grid` là hình trong kho phủ mờ lên nền — dấu "có thiết kế" rẻ nhất: một tệp
+   * PNG có sẵn, một lớp phủ, mà nhìn phát biết ngay không phải nền đen trơn.
+   */
+  page: {
+    tone: Tone;
+    /** Tên hình trong manifest, phủ mờ lên nền. `null` là nền trơn. */
+    grid: { id: string; tone: Tone } | null;
+  } | null;
+  /**
+   * BỐ CỤC bộ dáng dùng, theo thứ tự xoay vòng. Rỗng là chỉ `toan-khung`.
+   *
+   * Chỉ khai DÙNG CÁI NÀO. Đổi lúc nào là việc của `layout-schedule.ts`, theo
+   * luật thời gian — bộ dáng không được khai mốc giây, vì mốc giây là của một
+   * video cụ thể chứ không phải của một phong cách.
+   */
+  layouts: LayoutKindId[];
   /**
    * VỆT QUÉT — một dải màu chạy ngang khung ở mỗi chỗ nối. `null` là không có.
    *
@@ -933,8 +957,13 @@ const HEADLINE_CPS = 10;
 /** Ngắn hơn thì chưa kịp nhận ra là có chữ; dài hơn thì thành ra đứng mãi. */
 const HEADLINE_MIN_HOLD = 2.5;
 const HEADLINE_MAX_HOLD = 5;
-/** Tắt phụt là một cú giật. Mờ dần thì mắt không bị gọi về chỗ nó vừa biến mất. */
-export const HEADLINE_FADE = 0.5;
+/**
+ * Tắt phụt là một cú giật. Mờ dần thì mắt không bị gọi về chỗ nó vừa biến mất.
+ *
+ * 0,35 chứ không phải 0,5: đo sáu bộ mẫu thì cú RA luôn nhanh hơn cú vào, và
+ * không bộ nào ra quá 0,4 giây. `check:timing` canh dải ấy.
+ */
+export const HEADLINE_FADE = 0.35;
 
 /**
  * LỐI VÀO CỦA ĐỒ HOẠ — mấy phần mười giây đầu, rồi thôi.

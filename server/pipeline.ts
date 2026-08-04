@@ -18,6 +18,8 @@ import { seedSegmentsByCaption } from "./segment-seed";
 import { buildAsrPrompt } from "./asr-bias";
 import { pickCaptionBand } from "./caption-band";
 import { buildSubjectMask, emptiestBand, hasSubject, subjectPath } from "./subject-mask";
+import { scheduleScenes } from "./layout-schedule";
+import type { StylePack } from "./style-pack";
 import { proposeCuts } from "./ai-cuts";
 import { fixTranscript } from "./ai-fix-transcript";
 import { trimSilence } from "./auto-trim-silence";
@@ -739,6 +741,23 @@ function topKeyword(projectId: string): string | null {
   return best && best.n >= 2 ? best.text : null;
 }
 
+/**
+ * Thiết bị nổi mà bộ dáng có, để lịch màn xoay vòng qua chúng.
+ *
+ * Suy từ khai báo, không cho khai tay — cùng lý lẽ `devicesOf`: một ô khai riêng
+ * là nguồn sự thật thứ hai, và nó lệch mà không ai thấy.
+ */
+function layoutHeroes(pack: StylePack): string[] {
+  const out: string[] = [];
+  if (pack.behindText) out.push("chu-sau-nguoi");
+  if (pack.subjectEdge) out.push("vien-nguoi");
+  if (pack.sweep) out.push("vet-quet");
+  if (pack.graphics?.length) out.push("hinh-dan");
+  // Không thiết bị nào thì bố cục TỰ nó là thiết bị nổi: đổi cả khung hình đã
+  // là thay đổi lớn nhất người xem thấy được.
+  return out.length > 0 ? out : ["doi-bo-cuc"];
+}
+
 export async function runExport(projectId: string) {
   setJob(projectId, "export", "running", 5, "Đang chuẩn bị");
   const sources = mainSources(projectId);
@@ -943,6 +962,67 @@ export async function runExport(projectId: string) {
     ? ((await emptiestBand(projectId, baseInfo.duration / 2))?.index ?? 0)
     : 0;
 
+  /*
+   * LỊCH MÀN — chỉ xếp khi bộ dáng khai bố cục.
+   *
+   * Mốc nắn lấy từ mép cụm chữ đã quy sang trục ĐÃ CẮT, cùng hệ với mọi thứ
+   * `burnElements` vẽ. Lấy mốc gốc là lệch đúng bằng phần đã bỏ — lỗi tôi đã
+   * mắc một lần với mặt nạ người.
+   */
+  const layoutPack = readStylePack(projectId);
+  const phraseMarks = (
+    db
+      .prepare(
+        `SELECT w.end_sec AS at FROM elements e JOIN words w ON w.id = e.to_word_id
+          WHERE e.project_id=? AND e.kind='text' ORDER BY w.end_sec`,
+      )
+      .all(projectId) as Array<{ at: number }>
+  )
+    .map((row) => mapToOutput(kept, row.at))
+    .filter((at): at is number => at !== null);
+  const firstInsert = (
+    db
+      .prepare(
+        "SELECT stored_path FROM media_files WHERE project_id=? AND role='insert' ORDER BY position LIMIT 1",
+      )
+      .get(projectId) as { stored_path: string } | undefined
+  )?.stored_path ?? null;
+  // Mốc các cụm CÓ từ nhấn — bộ xếp lịch dùng để biết đoạn nào mang tin.
+  const keywordMarks = (
+    db
+      .prepare(
+        `SELECT w.end_sec AS at FROM elements e JOIN words w ON w.id = e.to_word_id
+          WHERE e.project_id=? AND e.kind='text'
+            AND e.keywords IS NOT NULL AND e.keywords<>'' ORDER BY w.end_sec`,
+      )
+      .all(projectId) as Array<{ at: number }>
+  )
+    .map((row) => mapToOutput(kept, row.at))
+    .filter((at): at is number => at !== null);
+  const schedule =
+    layoutPack.layouts.length > 0
+      ? scheduleScenes(
+          // Độ dài phim ĐÃ CẮT = tổng các khoảng còn giữ. Không đo lại bằng
+          // `probe` vì tệp cắt chưa dựng xong ở điểm này.
+          kept.reduce((sum, range) => sum + (range.end - range.start), 0),
+          { layouts: layoutPack.layouts, heroes: layoutHeroes(layoutPack) },
+          { phrases: phraseMarks, cuts: junctions.map((j) => j.start), keywords: keywordMarks },
+          firstInsert !== null,
+        )
+      : [];
+  /*
+   * Tỉ lệ nguồn và chỗ người đứng — hai số làm ô ôm đúng người.
+   *
+   * Đo một lần ở giữa phim: người ngồi yên gần như suốt, và một phép đo đủ để
+   * chọn khổ ô. `subjectShift` là phần phải dịch khung cắt LÊN — đo được đỉnh
+   * đầu ở 0,35 còn cắt giữa thì ô ôm đầy trần nhà.
+   */
+  const sourceAspect =
+    baseInfo.width && baseInfo.height ? baseInfo.width / baseInfo.height : undefined;
+  const subjectShift = hasSubject(projectId)
+    ? -Math.max(0, 0.5 - ((await emptiestBand(projectId, baseInfo.duration / 2, 10))?.index ?? 5) / 10) * 0.6
+    : 0;
+
   const finalPath = await burnElements(
     projectId,
     cut,
@@ -971,6 +1051,10 @@ export async function runExport(projectId: string) {
      */
     behindLine,
     behindBand,
+    schedule,
+    firstInsert,
+    sourceAspect,
+    subjectShift,
   );
 
   // Nhạc đặt theo thời gian NGUỒN trên dải, nên phải quy sang dải ĐÃ CẮT: bỏ

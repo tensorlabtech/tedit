@@ -22,6 +22,8 @@ import { ffmpeg, probe, run } from "./media-tools";
 import { wrapMeta } from "./graphics-manifest";
 import { layoutHeadline } from "./headline";
 import { GRAPHICS_DIR, outDir, resolvePackFont, workDir } from "./paths";
+import { layoutPlan, sourceCount } from "./layout-render";
+import type { ScheduledScene } from "./timing";
 import {
   boxBorderW,
   ffmpegColor,
@@ -1049,6 +1051,19 @@ export async function burnElements(
    */
   behindLine: string | null = null,
   behindBand = 0,
+  /**
+   * Lịch màn. Rỗng là không dùng bố cục — dòng chính giữ nguyên khung hình.
+   *
+   * Xếp ở `layout-schedule.ts` chứ không ở đây: tệp này là tầng vẽ, còn xếp lịch
+   * cần đọc mép cụm chữ và luật thời gian.
+   */
+  schedule: readonly ScheduledScene[] = [],
+  /** Tệp tư liệu cho ô phụ của bố cục `hai-o`. `null` là chưa có. */
+  layoutInsert: string | null = null,
+  /** Tỉ lệ video nguồn — ô bám theo để phép cắt không bỏ gì. */
+  sourceAspect: number | undefined = undefined,
+  /** Dịch khung cắt theo chỗ người đứng. Âm là dịch lên. */
+  subjectShift = 0,
 ) {
   const target = join(outDir(projectId), "final.mp4");
   const inserts = elements.filter(
@@ -1213,6 +1228,39 @@ export async function burnElements(
   // Độ dài bản ĐÃ CẮT — mép cuối của quãng cuối khi chia quãng bật/tắt, và cũng
   // là `-t` của lệnh xuất ở cuối hàm. Đo một lần, dùng hai chỗ.
   const cutSeconds = (await probe(cut)).duration;
+
+  /*
+   * BỐ CỤC — sớm nhất trong mọi thứ bộ dáng vẽ, và là thứ DUY NHẤT đổi luồng nền.
+   *
+   * Mọi trục khác đều là lớp dán lên khung hình. Trục này thì ngược: nó bắt đầu
+   * từ NỀN TRANG rồi đặt khung hình vào một Ô trên đó. Nên nó phải chạy trước —
+   * mọi lớp sau đều vẽ lên kết quả của nó.
+   *
+   * Không có lịch màn thì bỏ qua hẳn, và dòng chính vẫn là khung hình như cũ.
+   * Bộ dáng nào không khai `layouts` thì không trả giá gì.
+   */
+  if (schedule.length > 0 && pack.page) {
+    const copies = sourceCount(schedule);
+    const labels = Array.from({ length: copies }, (_, i) => `[lysrc${i}]`);
+    const plan = layoutPlan(
+      pack, schedule, labels, GRAPHICS_DIR, OUT_WIDTH, OUT_HEIGHT,
+      layoutInsert, cutSeconds, sourceAspect, subjectShift,
+    );
+    if (plan.page) {
+      filters.push(`${stream}split=${copies}${labels.join("")}`);
+      filters.push(...plan.chains);
+      let cursor = plan.page;
+      plan.overlays.forEach((item, index) => {
+        const next = `[lyon${index}]`;
+        filters.push(
+          `${cursor}${item.label}overlay=${item.x}:${item.y}:enable='${item.enable}'${next}`,
+        );
+        cursor = next;
+      });
+      stream = cursor;
+    }
+  }
+
   const cutMarks = effects
     .filter((item) => item.kind !== "none")
     .map((item) => effectPeak(item.start, item.end, item.kind));
