@@ -17,6 +17,7 @@ import { api } from "@/lib/api";
 
 import {
   FLOW_STEPS,
+  STAGES_OF,
   currentStep,
   stepIndex,
   type FlowStepId,
@@ -303,12 +304,19 @@ export function FlowPage() {
             <Card className="lg:h-full lg:min-h-0">
               <CardHeader>
                 <CardTitle>
-                  Máy đang làm · {snap.steps.filter((s) => s.status === "done").length}
-                  /{snap.steps.length}
+                  Máy đang làm ·{" "}
+                  {
+                    snap.steps.filter(
+                      (s) => STAGES_OF[at].includes(s.key) && s.status === "done",
+                    ).length
+                  }
+                  /{STAGES_OF[at].length}
                 </CardTitle>
               </CardHeader>
               <CardContent className="grid min-h-0 flex-1 content-start gap-1 overflow-y-auto">
-                {snap.steps.map((item) => (
+                {snap.steps
+                  .filter((item) => STAGES_OF[at].includes(item.key))
+                  .map((item) => (
                   <StepRow
                     key={item.key}
                     step={item}

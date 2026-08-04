@@ -146,3 +146,30 @@ export function canGoBack(from: FlowStepId, to: FlowStepId): boolean {
   const door = stepIndex(ONE_WAY_AFTER);
   return !(a > door && b <= door);
 }
+
+/**
+ * Chặng máy nào thuộc bước nào — để ô phải chỉ bày phần của bước đang đứng.
+ *
+ * ══ VÌ SAO CẦN ══
+ *
+ * Bản đầu bước "Chuẩn bị" bày cả mười bốn chặng, kể cả những chặng chạy sau khi
+ * người dùng soát cắt xong. Người xem đọc ra là "máy đang làm hết mọi thứ", rồi
+ * tới bước 7 lại thấy y nguyên danh sách ấy lần nữa.
+ *
+ * ══ KHE GIỮA BƯỚC 5 VÀ 6 ══
+ *
+ * `commit-cut` và `fix` chạy SAU cổng soát cắt và TRƯỚC cổng soát chính tả — hai
+ * chặng không bước nào nhận. Chúng thuộc về bước SOÁT LỜI: chúng chính là thứ
+ * dựng nên bản chép mà bước ấy sắp soát, nên lúc chờ chúng, người dùng đang chờ
+ * bước 6 mở ra.
+ */
+export const STAGES_OF: Record<FlowStepId, string[]> = {
+  "main-footage": [],
+  "b-roll": [],
+  brief: [],
+  preparing: ["prepare", "describe", "transcribe", "silence", "cuts"],
+  cut: ["review-cut"],
+  proofread: ["commit-cut", "fix", "review-text"],
+  building: ["captions", "keywords", "place", "effects", "music"],
+  studio: [],
+};

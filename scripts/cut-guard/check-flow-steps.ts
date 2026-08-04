@@ -13,6 +13,7 @@ import {
   FLOW_STEPS,
   ONE_WAY_AFTER,
   canGoBack,
+  STAGES_OF,
   currentStep,
   stepIndex,
   type FlowState,
@@ -132,6 +133,32 @@ for (const step of FLOW_STEPS) {
   check(`nhóm "${step.group}" không phải tiếng Việt`, !VIETNAMESE.test(step.group));
 }
 check("vai người/máy dùng từ tiếng Anh", FLOW_STEPS.every((s) => s.actor === "user" || s.actor === "machine"));
+
+/*
+ * ══ MỖI CHẶNG MÁY THUỘC ĐÚNG MỘT BƯỚC ══
+ *
+ * Bản đầu bước "Chuẩn bị" bày cả mười bốn chặng, kể cả những chặng chạy sau khi
+ * người dùng soát cắt xong — người xem đọc ra là "máy làm hết mọi thứ", rồi tới
+ * bước 7 lại thấy y nguyên danh sách ấy.
+ *
+ * Sót một chặng thì nó không hiện ở đâu cả; xếp nó vào hai bước thì nó hiện hai
+ * lần. Cả hai đều im lặng.
+ */
+console.log("\nMỗi chặng máy thuộc đúng một bước");
+const { STEP_PLAN } = await import("../../server/pipeline-steps");
+const owned = Object.values(STAGES_OF).flat();
+for (const step of STEP_PLAN) {
+  check(
+    `chặng "${step.key}" có bước nhận`,
+    owned.filter((key) => key === step.key).length === 1,
+    `${owned.filter((key) => key === step.key).length} bước nhận nó`,
+  );
+}
+check(
+  "không bước nào nhận chặng không có thật",
+  owned.every((key) => STEP_PLAN.some((step) => step.key === key)),
+  owned.filter((key) => !STEP_PLAN.some((s) => s.key === key)).join(", "),
+);
 
 console.log("\nPhép kiểm BẮT được lỗi (thử phá)");
 // Cổng mở mà mạch báo đã xong: trạng thái mâu thuẫn, và `settled` phải thắng
