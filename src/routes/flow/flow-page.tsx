@@ -205,7 +205,9 @@ export function FlowPage() {
     <div className="grid min-h-svh gap-2 bg-background p-2 text-foreground lg:h-svh lg:grid-rows-[auto_1fr] lg:overflow-hidden">
       {/* Hàng tiêu đề: tên dự án và ĐƯỜNG RA. Thiếu nó thì trang là ngõ cụt —
           lối về duy nhất là nút lùi trình duyệt. */}
-      <Card>
+      {/* DÍNH trên cùng: cửa sổ thấp thì trang cuộn, và hàng này trôi mất —
+          mất luôn "Trở về" lẫn nút chính, tức mất đường ra giữa chừng. */}
+      <Card className="sticky top-0 z-10">
         <CardHeader>
           <CardTitle>{title}</CardTitle>
           <CardAction>

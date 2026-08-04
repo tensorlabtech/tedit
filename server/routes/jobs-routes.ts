@@ -120,7 +120,17 @@ app.get("/api/projects/:id/jobs/:kind", async (request, reply) => {
   const job = db
     .prepare("SELECT * FROM jobs WHERE project_id=? AND kind=?")
     .get(id, kind) as Record<string, unknown> | undefined;
-  if (!job) return reply.code(404).send({ error: "Chưa chạy việc này" });
+  /*
+   * CHƯA CHẠY không phải LỖI — trả `null` với mã 200.
+   *
+   * Dự án mới nào cũng chưa có việc nào, mà trang hỏi việc này đều đặn để biết
+   * tiến độ. Trả 404 thì mỗi dự án mới đẻ ra một dòng đỏ "Failed to load
+   * resource" trong console, lặp mỗi lượt hỏi — và một dòng đỏ thường trực thì
+   * khi có lỗi THẬT không ai còn nhìn nữa.
+   *
+   * Đo trên một dự án vừa tạo: đây đúng là nguồn duy nhất của dòng đỏ ấy.
+   */
+  if (!job) return reply.send(null);
   // Đứng thứ mấy — CHỈ một con số, không kèm mã dự án hay ai đứng trước. Đây là
   // route mọi người dùng đều gọi được cho dự án của mình.
   return { ...job, queuePosition: queuePosition(id, kind) };

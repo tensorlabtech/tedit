@@ -285,7 +285,13 @@ export function SequencePreviewCard({
               /* Mỗi cảnh một khúc, rộng theo đúng thời lượng của nó — chạy tới đâu
                  khúc đó đầy tới đó. Đây là chỗ duy nhất thấy được cảnh nào dài cảnh
                  nào ngắn mà không phải in ra một con số nào cả. */
-              <div className="flex h-1.5 w-full gap-0.5">
+              /* MỘT cảnh thì không vẽ: một khúc chiếm trọn bề ngang trông y
+                 hệt thanh nạp, và nó chẳng nói được cảnh nào dài cảnh nào ngắn
+                 vì chỉ có một cảnh. */
+              <div
+                className="flex h-1.5 w-full gap-0.5"
+                hidden={scenes.length < 2}
+              >
                 {scenes.map((scene, order) => (
                   // Khúc này cao 6px và không có nhãn nào — rê vào là cách DUY NHẤT
                   // biết nó là cảnh nào trước khi bấm.
