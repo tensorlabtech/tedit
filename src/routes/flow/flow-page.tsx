@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 
 import { ArrowRightIcon } from "lucide-react";
@@ -22,6 +22,13 @@ import {
   type FlowStepId,
 } from "../../../server/flow-steps";
 import { FlowSidebar } from "./flow-sidebar";
+import { InsertMediaCard } from "../upload/insert-media-card";
+import { MainTimelineCard } from "../upload/main-timeline-card";
+import { SequencePreviewCard } from "../upload/sequence-preview-card";
+import { useUpload } from "../upload/use-upload";
+import { toast } from "@/components/ui/toast";
+import { findStylePack } from "../../../server/style-pack-catalog";
+import type { MediaRole } from "./../upload/upload-data";
 
 /**
  * MỘT MÀN, NHIỀU BƯỚC — sidebar trái, nội dung phải.
@@ -106,6 +113,56 @@ export function FlowPage() {
     };
   }, [projectId]);
 
+  /*
+   * Ba bước nạp dùng LẠI thẻ của `/upload`, không dựng mới.
+   *
+   * `SequencePreviewCard` đã là ô xem trước có chỗ trống lúc chưa nạp gì,
+   * `MainTimelineCard` đã là danh sách ngang có kéo-thả. Dựng lại là chép hơn
+   * sáu trăm dòng đã chạy tốt để được đúng thứ ấy.
+   *
+   * Keo dán thì phải bê theo — nó nằm trong `upload-page.tsx` chứ không nằm
+   * trong hook. Chép chừng ba chục dòng ở đây rẻ hơn bóc nó ra thành hook thứ
+   * ba mà hai nơi cùng dùng: hai nơi ấy sẽ đòi hai thứ khác nhau ngay lượt sau.
+   */
+  const upload = useUpload(projectId);
+  const pickRef = useRef<HTMLInputElement>(null);
+  const pickRole = useRef<MediaRole | undefined>(undefined);
+  const [previewId, setPreviewId] = useState<string | null>(null);
+
+  const handleFiles = (incoming: File[], role?: MediaRole) => {
+    const result = upload.addFiles(incoming, role);
+    if (result.accepted > 0) {
+      toast.add({ title: `Đã thêm ${result.accepted} tệp`, type: "success" });
+    }
+    for (const item of result.rejected) {
+      toast.add({ title: item.name, description: item.reason, type: "error" });
+    }
+  };
+  const handleRemove = (id: string) => {
+    const restore = upload.removeFile(id);
+    // Ô vừa gỡ mà đang mở trong khung xem thì phải đóng khung lại.
+    if (previewId === id) setPreviewId(null);
+    toast.add({
+      title: "Đã gỡ tệp",
+      timeout: 12000,
+      actionProps: { children: "Hoàn tác", onClick: restore },
+    });
+  };
+  const handleMove = (id: string, role: MediaRole) => {
+    const reason = upload.setRole(id, role);
+    if (reason) toast.add({ title: reason, type: "error" });
+  };
+  const openPicker = (role?: MediaRole) => {
+    pickRole.current = role;
+    pickRef.current?.click();
+  };
+  // Chưa bấm ô nào thì lấy cảnh đầu — khung xem để trống trong khi mạch đã có
+  // video là một khoảng trắng vô nghĩa.
+  const previewing =
+    upload.files.find((item) => item.id === previewId) ??
+    upload.mainFiles[0] ??
+    null;
+
   const machineAt = currentStep(snap);
   const at = viewing ?? machineAt;
   const step = FLOW_STEPS[stepIndex(at)];
@@ -156,25 +213,83 @@ export function FlowPage() {
           <CardHeader>
             <CardTitle>{step.label}</CardTitle>
           </CardHeader>
-          <CardContent className="grid min-h-0 flex-1 place-items-center">
-            {/*
-              Nội dung riêng từng bước CHƯA dựng. Nói thẳng ra thế, ở giữa
-              khung — một ô trống với chữ trôi ở góc thì người dùng đọc ra là
-              sản phẩm hỏng, còn một dòng ở giữa nói "chưa xong" thì đọc ra
-              đúng như nó là.
-            */}
-            <Empty>
-              <EmptyTitle>
-                {step.actor === "machine"
-                  ? "Máy đang làm"
-                  : "Màn của bước này chưa dựng"}
-              </EmptyTitle>
-              <EmptyDescription>
-                {step.actor === "machine"
-                  ? "Chưa tới lượt bạn — cứ đóng trang cũng được."
-                  : "Tạm thời làm việc này ở bàn dựng."}
-              </EmptyDescription>
-            </Empty>
+          <CardContent className="grid min-h-0 flex-1 overflow-hidden">
+            {/* Ô chọn tệp ẩn — cả hai thẻ đều gọi qua `openPicker`. */}
+            <input
+              ref={pickRef}
+              type="file"
+              accept="video/*"
+              multiple
+              hidden
+              onChange={(event) => {
+                const picked = Array.from(event.target.files ?? []);
+                if (picked.length > 0) handleFiles(picked, pickRole.current);
+                event.target.value = "";
+              }}
+            />
+            {at === "main-footage" ? (
+              /* Xem trước TRÊN, danh sách ngang DƯỚI — mắt đi từ thứ đang xem
+                 xuống thứ để chọn, không phải ngược lại. */
+              /* `minmax(0,1fr)` chứ không `1fr`: với `1fr` thì ô xem trước lấy chiều
+                 cao theo NỘI DUNG và đẩy danh sách dưới ra khỏi khung — chụp màn
+                 thấy "Mạch chính" bị cắt cụt ở đáy. `minmax(0,…)` cho hàng trên
+                 co lại được. */
+              <div className="grid min-h-0 gap-2 lg:grid-rows-[minmax(0,1fr)_auto]">
+                <SequencePreviewCard
+                  pack={findStylePack(upload.stylePack)}
+                  scenes={upload.mainFiles.filter((i) => i.status !== "error")}
+                  file={previewing}
+                  source={previewing ? upload.sourceOf(previewing.id) : undefined}
+                  onSelect={setPreviewId}
+                  onDescribe={(id, description) =>
+                    void upload.saveDescription(id, description)
+                  }
+                />
+                <MainTimelineCard
+                  files={upload.mainFiles}
+                  sourceOf={upload.sourceOf}
+                  onOpen={setPreviewId}
+                  onPick={() => openPicker("main")}
+                  onDropFiles={(files) => handleFiles(files, "main")}
+                  onRemove={handleRemove}
+                  onMove={(id) => handleMove(id, "insert")}
+                  onCancel={upload.cancelUpload}
+                  onRetry={upload.retryUpload}
+                  selectedId={previewing?.id ?? null}
+                  onReorder={upload.moveFile}
+                  onReorderTo={upload.moveFileTo}
+                />
+              </div>
+            ) : at === "b-roll" ? (
+              <InsertMediaCard
+                files={upload.insertFiles}
+                sourceOf={upload.sourceOf}
+                onOpen={setPreviewId}
+                onPick={() => openPicker("insert")}
+                onPickFromLibrary={() => openPicker("insert")}
+                onDropFiles={(files) => handleFiles(files, "insert")}
+                onRemove={handleRemove}
+                onMove={(id) => handleMove(id, "main")}
+                onCancel={upload.cancelUpload}
+                onRetry={upload.retryUpload}
+                selectedId={previewing?.id ?? null}
+              />
+            ) : (
+              <div className="grid place-items-center">
+                <Empty>
+                  <EmptyTitle>
+                    {step.actor === "machine"
+                      ? "Máy đang làm"
+                      : "Màn của bước này chưa dựng"}
+                  </EmptyTitle>
+                  <EmptyDescription>
+                    {step.actor === "machine"
+                      ? "Chưa tới lượt bạn — cứ đóng trang cũng được."
+                      : "Tạm thời làm việc này ở bàn dựng."}
+                  </EmptyDescription>
+                </Empty>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
