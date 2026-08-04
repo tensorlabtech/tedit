@@ -93,7 +93,17 @@ export function MediaPickerDialog({
   // Thả tệp thẳng vào bảng. Bắt ở cả bảng chứ không chỉ ở ô "Lấy tệp": người kéo
   // tệp từ Finder sang thì cả bảng là đích họ nhắm tới, không phải một ô nhỏ.
   const { over: dragging, dropProps } = useFileDrop((files) => {
-    setTab("project");
+    /*
+     * Chỉ nhảy sang tab dự án khi hộp CÓ tab.
+     *
+     * Hộp mở từ nút "Từ kho" chạy `tabs={false}` — người dùng đã nói rõ họ muốn
+     * cái kho. Ép sang danh sách dự án thì từ lần thứ hai trở đi nút ấy thôi
+     * làm được việc của nó: bấm "Từ kho" mà chỉ thấy thứ mình đã có.
+     *
+     * Đo được: kho có 7 tư liệu trong CSDL, hộp hiện "2 tư liệu" — đúng bằng số
+     * tư liệu dự án.
+     */
+    if (tabs) setTab("project");
     onUpload?.(files);
   });
 
