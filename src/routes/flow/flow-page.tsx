@@ -23,6 +23,7 @@ import {
 } from "../../../server/flow-steps";
 import { FlowSidebar } from "./flow-sidebar";
 import { MediaPickerDialog } from "@/components/media-picker-dialog";
+import { BigDropZone } from "./big-drop-zone";
 import { BRollList } from "./broll-list";
 import { SceneStrip } from "./scene-strip";
 import { SequencePreviewCard } from "../upload/sequence-preview-card";
@@ -266,7 +267,22 @@ export function FlowPage() {
               event.target.value = "";
             }}
           />
-          {at === "main-footage" ? (
+          {at === "main-footage" && upload.mainFiles.length === 0 ? (
+            <BigDropZone
+              title="Thả video chính vào đây"
+              hint="Đây là phần người nói. Thả nhiều tệp một lúc cũng được — thứ tự sắp lại sau."
+              onFiles={(files) => handleFiles(files, "main")}
+              onPick={() => openPicker("main")}
+            />
+          ) : at === "b-roll" && upload.insertFiles.length === 0 ? (
+            <BigDropZone
+              title="Thả tư liệu chèn vào đây"
+              hint="Ảnh hoặc video chèn giữa lời nói. Không có cũng được — máy vẫn dựng bình thường."
+              onFiles={(files) => handleFiles(files, "insert")}
+              onPick={() => openPicker("insert")}
+              onPickFromLibrary={() => setLibraryOpen(true)}
+            />
+          ) : at === "main-footage" ? (
             /*
              * Xem trước bên TRÁI, dải phim dựng ĐỨNG bên phải.
              *
