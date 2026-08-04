@@ -24,6 +24,7 @@ import {
 import { FlowSidebar } from "./flow-sidebar";
 import { MediaPickerDialog } from "@/components/media-picker-dialog";
 import { BigDropZone } from "./big-drop-zone";
+import { BriefStep } from "./brief-step";
 import { BRollList } from "./broll-list";
 import { SceneStrip } from "./scene-strip";
 import { SequencePreviewCard } from "../upload/sequence-preview-card";
@@ -281,6 +282,15 @@ export function FlowPage() {
               onFiles={(files) => handleFiles(files, "insert")}
               onPick={() => openPicker("insert")}
               onPickFromLibrary={() => setLibraryOpen(true)}
+            />
+          ) : at === "brief" ? (
+            <BriefStep
+              title={upload.title}
+              brief={upload.profile}
+              stylePack={upload.stylePack}
+              onTitle={(v) => void upload.saveTitle(v)}
+              onBrief={(v) => void upload.saveProfile(v)}
+              onStylePack={(id) => void upload.saveStylePack(id)}
             />
           ) : at === "main-footage" ? (
             /*
