@@ -30,9 +30,23 @@ function sampleFromWords(words: Array<{ text: string }>) {
   return spoken.length >= 3 ? spoken.join(" ") : SAMPLE_FALLBACK;
 }
 
+/** Một dòng trong bảng soát ở cổng. */
+export type ReviewRow = {
+  id: string;
+  text: string;
+  /** Giây bắt đầu — để người dùng biết chỗ ấy nằm đâu trong phim. */
+  at: number;
+  /** Cổng cắt: câu này đang bị gạch. Cổng chữ: độ tin của từ. */
+  meta: string;
+};
+
 export type PipelineView = {
   title: string;
   pipeline: ApiPipeline | null;
+  /** Câu máy định BỎ — hiện ở cổng soát cắt. */
+  willCut: ReviewRow[];
+  /** Từ máy nghe không chắc, thấp nhất lên đầu — hiện ở cổng soát chính tả. */
+  unsure: ReviewRow[];
   /** Mã bộ dáng đang lưu; rỗng với dự án dựng trước khi có cột này. */
   stylePack: string | null;
   /** Chữ vẽ trong ô mẫu — lời thật của người dùng khi đã chép xong. */
@@ -59,6 +73,8 @@ export type PipelineView = {
 
 export function usePipeline(projectId: string | undefined): PipelineView {
   const [title, setTitle] = useState("Dự án");
+  const [willCut, setWillCut] = useState<ReviewRow[]>([]);
+  const [unsure, setUnsure] = useState<ReviewRow[]>([]);
   const [pipeline, setPipeline] = useState<ApiPipeline | null>(null);
   const [stylePack, setStylePack] = useState<string | null>(null);
   const [sampleText, setSampleText] = useState(SAMPLE_FALLBACK);
@@ -80,6 +96,34 @@ export function usePipeline(projectId: string | undefined): PipelineView {
       setPipeline(data.pipeline ?? null);
       setStylePack(data.project.style_pack ?? null);
       setSampleText(sampleFromWords(data.words));
+      /*
+       * Hai bảng soát dựng ngay tại đây từ dữ liệu đã có trong payload dự án —
+       * không thêm một lượt gọi mạng nào.
+       */
+      setWillCut(
+        (data.sentences as Array<{ id: string; text: string; start_sec: number; removed: number }>)
+          .filter((row) => row.removed === 1)
+          .map((row) => ({
+            id: row.id,
+            text: row.text,
+            at: row.start_sec,
+            meta: "sẽ bỏ",
+          })),
+      );
+      // Xếp theo ĐỘ TIN, thấp nhất lên đầu: máy biết nó không chắc ở đâu nhất,
+      // và đó là chỗ đáng đọc trước.
+      setUnsure(
+        data.words
+          .filter((word) => (word.confidence ?? 1) < 0.6)
+          .sort((a, b) => (a.confidence ?? 1) - (b.confidence ?? 1))
+          .slice(0, 40)
+          .map((word) => ({
+            id: word.id,
+            text: word.text,
+            at: word.start_sec,
+            meta: `${Math.round((word.confidence ?? 1) * 100)}%`,
+          })),
+      );
       // Ảnh thu nhỏ của cảnh chính ĐẦU TIÊN — dựng xong ngay ở chặng chuẩn bị,
       // tức là có trước cả lời chép.
       const main = data.files.find(
@@ -156,6 +200,8 @@ export function usePipeline(projectId: string | undefined): PipelineView {
   return {
     title,
     pipeline,
+    willCut,
+    unsure,
     stylePack,
     sampleText,
     posterUrl,

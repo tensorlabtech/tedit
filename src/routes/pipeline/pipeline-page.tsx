@@ -8,6 +8,7 @@ import {
   MinusIcon,
 } from "lucide-react";
 
+import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -258,6 +259,54 @@ export function PipelinePage() {
       </Card>
 
       <div className="grid gap-2 lg:min-h-0 lg:grid-cols-[3fr_2fr]">
+        {/*
+          ── BẢNG SOÁT Ở CỔNG ──
+
+          Chỉ hiện khi có cổng mở, và thay chỗ ô xem trước — lúc này việc của
+          người dùng là ĐỌC một danh sách, không phải xem video. Bày cả hai thì
+          mắt chia đôi và không cái nào được đọc.
+
+          Danh sách cắt gọn theo bản chất: máy chỉ gạch những chỗ nó thấy đáng
+          gạch. Danh sách chính tả cắt ở 40 dòng và xếp theo độ tin — đo một dự
+          án thật thì 62 trên 473 từ dưới ngưỡng, quá dài để đọc hết, mà ba từ
+          tệ nhất lại đúng ba chỗ người dùng phàn nàn.
+        */}
+        {awaiting ? (
+          <Card className="lg:min-h-0">
+            <CardHeader>
+              <CardTitle>
+                {awaiting === "soat-cat"
+                  ? `Máy định bỏ ${view.willCut.length} đoạn`
+                  : `${view.unsure.length} chỗ máy nghe không chắc`}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="min-h-0 flex-1 overflow-y-auto">
+              <div className="grid gap-1">
+                {(awaiting === "soat-cat" ? view.willCut : view.unsure).map(
+                  (row) => (
+                    <div
+                      key={row.id}
+                      className="flex items-baseline gap-2 rounded-md border border-border px-2 py-1"
+                    >
+                      <span className="text-muted-foreground tabular-nums text-xs">
+                        {Math.floor(row.at / 60)}:
+                        {String(Math.floor(row.at % 60)).padStart(2, "0")}
+                      </span>
+                      <span className="flex-1 truncate">{row.text}</span>
+                      <Badge variant="secondary">{row.meta}</Badge>
+                    </div>
+                  ),
+                )}
+                {(awaiting === "soat-cat" ? view.willCut : view.unsure)
+                  .length === 0 ? (
+                  <p className="text-muted-foreground">
+                    Không có gì cần soát — bấm tiếp là xong.
+                  </p>
+                ) : null}
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
         {/* Ô xem trước có mặt từ sớm là CÓ LÝ DO: chặng đầu xong sau khoảng mười
             giây đã có video ghép. Chờ trước một thanh tiến độ thì dài; chờ
             trước chính cái video của mình thì không. */}
