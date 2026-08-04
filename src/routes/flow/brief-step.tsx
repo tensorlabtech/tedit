@@ -18,6 +18,15 @@ import type { StylePackId } from "../../../server/style-pack";
  * từ khoá hay lặp, tên riêng dễ nghe nhầm, cả kịch bản nếu có. Càng nhiều thì
  * bảy chặng mô hình phía sau càng bớt đoán.
  *
+ * ══ MỘT CỘT, MỘT THẺ ══
+ *
+ * Bản đầu chia hai cột: đề bài trái, phong cách phải. Sai — hai ô chữ ngắn ngủi
+ * chiếm nguyên một cột và bỏ trống hai phần ba chiều cao, trong khi lưới phong
+ * cách bên kia phải cuộn.
+ *
+ * Đây là một biểu mẫu, mà biểu mẫu thì đọc từ trên xuống: tên → mô tả → chọn
+ * phong cách. Một thẻ, một cột, cuộn dọc.
+ *
  * ══ LƯỚI PHONG CÁCH ══
  *
  * Mỗi bộ một khung 9:16 với tên ở giữa — cùng khổ với video sẽ xuất ra, nên khi
@@ -43,71 +52,62 @@ export function BriefStep({
   onStylePack: (id: StylePackId) => void;
 }) {
   return (
-    <div className="grid gap-2 lg:h-full lg:min-h-0 lg:grid-cols-[22rem_1fr]">
-      <Card className="lg:min-h-0">
-        <CardHeader>
-          <CardTitle>Đề bài</CardTitle>
-        </CardHeader>
-        {/* `grid-rows-[auto_1fr]` chứ không `content-start`: ô mô tả phải ăn hết
-            chỗ còn lại. Với `content-start` nó co theo nội dung và còn ba dòng,
-            trong khi nửa dưới thẻ bỏ trống — mà đây là ô đáng gõ nhiều nhất. */}
-        <CardContent className="grid min-h-0 flex-1 grid-rows-[auto_1fr] gap-3 overflow-y-auto">
-          <label className="grid gap-1.5">
-            <span className="text-muted-foreground text-xs uppercase">Tên</span>
-            <Input
-              defaultValue={title}
-              placeholder="Đặt tên cho dễ tìm lại"
-              onBlur={(event) => onTitle(event.target.value)}
-            />
-          </label>
-          <label className="grid min-h-0 grid-rows-[auto_1fr_auto] gap-1.5">
-            <span className="text-muted-foreground text-xs uppercase">
-              Video nói về gì
-            </span>
-            <Textarea
-              defaultValue={brief}
-              className="h-full resize-none"
-              placeholder={
-                "Gõ mọi thứ liên quan vào đây — càng nhiều máy càng bớt đoán:\n\n" +
-                "· tên riêng dễ nghe nhầm (công ty, sản phẩm, thuật ngữ)\n" +
-                "· nhịp muốn nhanh hay chậm\n" +
-                "· từ nào đáng nhấn\n" +
-                "· kịch bản, dàn ý nếu có"
-              }
-              onBlur={(event) => onBrief(event.target.value)}
-            />
-            {/* Nói rõ chữ này ĐI ĐÂU. Không nói thì nó trông như một ô ghi chú
-                cho vui, và người dùng bỏ trống — mất đúng cái đòn bẩy rẻ nhất. */}
-            <span className="text-muted-foreground text-xs">
-              Máy dùng đoạn này để nghe cho đúng tên riêng, chọn từ nhấn và đặt
-              tư liệu. Bỏ trống cũng chạy, chỉ là máy phải đoán nhiều hơn.
-            </span>
-          </label>
-        </CardContent>
-      </Card>
+    <Card className="lg:h-full lg:min-h-0">
+      <CardHeader>
+        <CardTitle>Đề bài</CardTitle>
+      </CardHeader>
+      <CardContent className="grid min-h-0 flex-1 content-start gap-4 overflow-y-auto">
+        <label className="grid max-w-xl gap-1.5">
+          <span className="text-muted-foreground text-xs uppercase">Tên</span>
+          <Input
+            defaultValue={title}
+            placeholder="Đặt tên cho dễ tìm lại"
+            onBlur={(event) => onTitle(event.target.value)}
+          />
+        </label>
 
-      <Card className="lg:min-h-0">
-        <CardHeader>
-          <CardTitle>Phong cách</CardTitle>
-        </CardHeader>
-        <CardContent className="min-h-0 flex-1 overflow-y-auto">
+        <label className="grid gap-1.5">
+          <span className="text-muted-foreground text-xs uppercase">
+            Video nói về gì
+          </span>
+          <Textarea
+            defaultValue={brief}
+            rows={5}
+            placeholder={
+              "Gõ mọi thứ liên quan — càng nhiều máy càng bớt đoán: tên riêng dễ " +
+              "nghe nhầm, nhịp nhanh hay chậm, từ nào đáng nhấn, kịch bản nếu có."
+            }
+            onBlur={(event) => onBrief(event.target.value)}
+          />
+          {/* Nói rõ chữ này ĐI ĐÂU. Không nói thì nó trông như một ô ghi chú
+              cho vui, và người dùng bỏ trống — mất đúng đòn bẩy rẻ nhất. */}
+          <span className="text-muted-foreground text-xs">
+            Máy dùng đoạn này để nghe cho đúng tên riêng, chọn từ nhấn và đặt tư
+            liệu. Bỏ trống cũng chạy, chỉ là máy phải đoán nhiều hơn.
+          </span>
+        </label>
+
+        <div className="grid gap-1.5">
+          <span className="text-muted-foreground text-xs uppercase">
+            Phong cách
+          </span>
           {/* `auto-fill` + `minmax`: thêm bộ thì lưới tự thêm cột, không phải
               sửa số cột ở đây. Mười hai bộ hôm nay, ba mươi bộ vẫn gọn. */}
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(8rem,1fr))] gap-2">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(7rem,1fr))] gap-2">
             {STYLE_PACKS.map((pack) => (
               <button
                 key={pack.id}
                 type="button"
                 onClick={() => onStylePack(pack.id)}
                 data-state={pack.id === stylePack ? "here" : "off"}
-                className="grid aspect-[9/16] cursor-pointer place-items-center rounded-lg border border-border p-2 text-center data-[state=here]:ring-2 data-[state=here]:ring-primary data-[state=here]:ring-inset"
+                className="grid aspect-[9/16] cursor-pointer place-items-center rounded-lg border border-border p-2 text-center text-sm data-[state=here]:ring-2 data-[state=here]:ring-primary data-[state=here]:ring-inset"
               >
-                <span className="text-sm">{pack.label}</span>
+                {pack.label}
               </button>
             ))}
           </div>
-        </CardContent>
-      </Card>
-    </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
