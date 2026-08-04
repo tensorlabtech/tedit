@@ -1,5 +1,11 @@
-import { Fragment, useMemo, useRef, useState } from "react";
-import { CheckIcon, PauseIcon, PlayIcon } from "lucide-react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import {
+  CheckIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  PauseIcon,
+  PlayIcon,
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,19 +18,19 @@ import { cn } from "@/lib/utils";
 import { useTextReview, type ReviewWord } from "./use-text-review";
 
 /**
- * BƯỚC SOÁT LỜI — bản chép bày ra, sửa chính tả tại chỗ.
+ * BƯỚC SOÁT LỜI — bản chép bày ra, sửa chính tả tại chỗ, nghe chạy để bắt lỗi.
  *
- * ══ MỌI CHỮ ĐỀU SỬA ĐƯỢC ══
+ * ══ NGHE & SOÁT (KARAOKE) ══
  *
- * Chấm dưới chỉ là GỢI Ý mời mắt tới chỗ máy tự nhận không chắc — nhưng máy tự
- * tin vẫn sai ở đồng âm ("chuyện/chuyến"). Nên bấm chữ NÀO cũng mở được ô sửa,
- * không riêng chữ gạch chân. Bấm là nghe lại đúng quãng của từ ấy luôn.
+ * Vì phụ đề CHÍNH LÀ sản phẩm, cách soát tự nhiên nhất là phát video và TÔ từ
+ * đang đọc — thấy đúng thứ sẽ xuất ra. Lỗi đập vào tai/mắt trong mạch, bấm chữ
+ * là dừng đúng chỗ và sửa. Mốc từng tiếng đã có sẵn nên chỉ cần một vòng đọc
+ * `currentTime` → từ.
  *
- * ══ SỬA MỘT CHỖ, ÁP HẾT ══
+ * ══ MỌI CHỮ ĐỀU SỬA, MỘT CHỖ ÁP HẾT ══
  *
- * Tên riêng / từ mượn sai thì sai đều: "network" chép nhầm "nem quốc" ở mấy chỗ.
- * Nên ô sửa mời "Sửa cả N chỗ giống" — một thao tác thay cho N. Chỉ đổi chữ nên
- * an toàn, và sửa nhầm thì có "Hoàn tác" ngay ở thông báo.
+ * Bấm chữ nào cũng mở ô sửa (máy tự tin vẫn sai đồng âm). Chữ lặp thì mời "Sửa
+ * cả N chỗ". Sửa nhầm thì "Hoàn tác" ngay trên thông báo.
  */
 
 export function SoatLoiStep({
@@ -38,43 +44,107 @@ export function SoatLoiStep({
   const review = useTextReview(projectId);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(false);
-  const stopAt = useRef<number>(0);
+  /** Từ đang được đọc lúc phát — tô sáng như phụ đề chạy. */
+  const [playingId, setPlayingId] = useState<string | null>(null);
+  /** Chỉ một ô sửa mở tại một thời điểm — nhấc lên đây để nhảy chỗ ngờ mở được. */
+  const [openId, setOpenId] = useState<string | null>(null);
+  /** Mốc tự dừng: hữu hạn khi nghe một quãng, vô hạn khi nghe chạy suốt. */
+  const stopAt = useRef<number>(Number.POSITIVE_INFINITY);
+
+  const allWords = useMemo(
+    () => review.sentences.flatMap((sentence) => sentence.words),
+    [review.sentences],
+  );
 
   /** Số chỗ trùng mỗi chữ (không phân biệt hoa–thường) — để mời "Sửa cả N chỗ". */
   const counts = useMemo(() => {
     const map = new Map<string, number>();
-    for (const sentence of review.sentences) {
-      for (const word of sentence.words) {
-        const key = word.text.trim().toLowerCase();
-        map.set(key, (map.get(key) ?? 0) + 1);
-      }
+    for (const word of allWords) {
+      const key = word.text.trim().toLowerCase();
+      map.set(key, (map.get(key) ?? 0) + 1);
     }
     return map;
-  }, [review.sentences]);
+  }, [allWords]);
 
-  /** Nghe lại đúng quãng của một từ — chừa một nhịp hai đầu cho đủ ngữ cảnh. */
+  // Vòng phát: tô từ đang đọc, và dừng khi qua mốc `stopAt` (chế độ nghe-một-quãng).
+  useEffect(() => {
+    if (!playing) return;
+    let frame = 0;
+    const tick = () => {
+      const video = videoRef.current;
+      if (video) {
+        const at = video.currentTime;
+        if (at >= stopAt.current) video.pause();
+        else {
+          const word = allWords.find((item) => at >= item.start && at < item.end);
+          setPlayingId(word?.id ?? null);
+        }
+      }
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [playing, allWords]);
+
+  /** Nghe lại đúng quãng của một từ rồi dừng — chừa một nhịp hai đầu. */
   const hear = (start: number, end: number) => {
     const video = videoRef.current;
     if (!video) return;
+    stopAt.current = end + 0.5;
     video.currentTime = Math.max(0, start - 0.5);
     void video.play();
-    stopAt.current = end + 0.5;
-    const tick = () => {
-      const node = videoRef.current;
-      if (!node) return;
-      if (node.currentTime >= stopAt.current) node.pause();
-      else if (!node.paused) requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
   };
 
-  const togglePlay = () => {
+  /** Nghe CHẠY SUỐT — không tự dừng, tô từng từ. Phát/dừng dùng chung nút này. */
+  const toggleKaraoke = () => {
     const video = videoRef.current;
     if (!video) return;
-    stopAt.current = Number.POSITIVE_INFINITY;
-    if (video.paused) void video.play();
-    else video.pause();
+    if (video.paused) {
+      stopAt.current = Number.POSITIVE_INFINITY;
+      if (video.ended || video.currentTime >= (allWords.at(-1)?.end ?? 0))
+        video.currentTime = 0;
+      void video.play();
+    } else {
+      video.pause();
+    }
   };
+
+  const openWord = (word: ReviewWord) => {
+    setOpenId(word.id);
+    hear(word.start, word.end);
+  };
+
+  /** Nhảy tới chỗ ngờ kế/trước, mở ô sửa và đưa vào giữa khung. */
+  const jumpUnsure = (dir: 1 | -1) => {
+    const ids = review.unsure.map((word) => word.id);
+    if (ids.length === 0) return;
+    const here = openId ? ids.indexOf(openId) : -1;
+    const next = here < 0 ? (dir > 0 ? 0 : ids.length - 1) : (here + dir + ids.length) % ids.length;
+    const word = allWords.find((item) => item.id === ids[next]);
+    if (!word) return;
+    openWord(word);
+    requestAnimationFrame(() =>
+      document
+        .querySelector(`[data-word-id="${word.id}"]`)
+        ?.scrollIntoView({ block: "center", behavior: "smooth" }),
+    );
+  };
+
+  // Phím CÁCH: phát/dừng nghe-chạy. Bỏ qua khi đang gõ trong ô sửa.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement;
+      if (target.closest("input, textarea, [contenteditable]")) return;
+      if (event.key === " ") {
+        event.preventDefault();
+        toggleKaraoke();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // toggleKaraoke chỉ đọc ref — không cần vào deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allWords]);
 
   const undoToast = (title: string, revert: () => Promise<void>) =>
     toast.add({
@@ -94,6 +164,7 @@ export function SoatLoiStep({
   };
 
   const done = !review.loading && review.unsure.length === 0;
+  const hereIndex = openId ? review.unsure.findIndex((w) => w.id === openId) : -1;
 
   return (
     <div className="grid gap-2 lg:h-full lg:min-h-0 lg:grid-cols-[1fr_22rem]">
@@ -105,16 +176,39 @@ export function SoatLoiStep({
             {done ? (
               <Badge>Đã soát xong</Badge>
             ) : (
-              <Badge variant="secondary">
-                {review.unsure.length} chỗ máy nghe không chắc
-              </Badge>
+              <div className="flex items-center gap-1.5">
+                <Badge variant="secondary" className="tabular-nums">
+                  {hereIndex >= 0
+                    ? `Chỗ ${hereIndex + 1}/${review.unsure.length}`
+                    : `${review.unsure.length} chỗ chưa chắc`}
+                </Badge>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  tooltip="Chỗ ngờ trước"
+                  aria-label="Chỗ ngờ trước"
+                  onClick={() => jumpUnsure(-1)}
+                >
+                  <ChevronLeftIcon />
+                </Button>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  tooltip="Chỗ ngờ kế"
+                  aria-label="Chỗ ngờ kế"
+                  onClick={() => jumpUnsure(1)}
+                >
+                  <ChevronRightIcon />
+                </Button>
+              </div>
             )}
           </CardAction>
         </CardHeader>
         <CardContent className="min-h-0 overflow-y-auto">
           <p className="text-muted-foreground mb-3 text-sm">
-            Bấm chữ bất kỳ để nghe lại và sửa · chữ gạch chân là chỗ máy nghe
-            không chắc.
+            Bấm chữ bất kỳ để nghe lại và sửa · chữ gạch chân là chỗ máy chưa
+            chắc · phím <kbd className="bg-muted rounded px-1 text-xs">Cách</kbd>{" "}
+            nghe chạy.
           </p>
           <div className="space-y-3 text-lg leading-relaxed">
             {review.sentences.map((sentence) => (
@@ -125,7 +219,12 @@ export function SoatLoiStep({
                     <EditableWord
                       word={word}
                       count={counts.get(word.text.trim().toLowerCase()) ?? 1}
-                      onHear={() => hear(word.start, word.end)}
+                      playing={playingId === word.id}
+                      open={openId === word.id}
+                      onOpenChange={(next) => {
+                        if (next) openWord(word);
+                        else if (openId === word.id) setOpenId(null);
+                      }}
                       onFix={(text) => void onFix(word, text)}
                       onFixAll={(text) => void onFixAll(word, text)}
                       onConfirm={() => void review.confirm(word.id)}
@@ -138,33 +237,32 @@ export function SoatLoiStep({
         </CardContent>
       </Card>
 
-      {/* Nghe thử. */}
+      {/* Nghe & soát. */}
       <Card className="lg:min-h-0">
-        <CardContent className="grid min-h-0 place-items-center overflow-hidden">
+        <CardContent className="grid min-h-0 content-start gap-3 overflow-hidden">
           {previewUrl ? (
-            <div className="relative mx-auto aspect-[9/16] h-full overflow-hidden rounded-lg">
-              <video
-                ref={videoRef}
-                src={previewUrl}
-                className="h-full w-full object-cover"
-                onPlay={() => setPlaying(true)}
-                onPause={() => setPlaying(false)}
-                onClick={togglePlay}
-              />
-              <div className="absolute inset-x-0 bottom-0 z-20 flex items-center gap-2 bg-gradient-to-t from-black/70 to-transparent p-2 pt-8">
-                <Button
-                  variant="secondary"
-                  size="icon-sm"
-                  aria-label={playing ? "Tạm dừng" : "Phát"}
-                  onClick={togglePlay}
-                >
-                  {playing ? <PauseIcon /> : <PlayIcon />}
-                </Button>
-                <span className="text-xs text-white">
-                  Bấm một chữ để nghe lại đúng chỗ đó
-                </span>
+            <>
+              <div className="relative mx-auto aspect-[9/16] max-h-full overflow-hidden rounded-lg">
+                <video
+                  ref={videoRef}
+                  src={previewUrl}
+                  className="h-full w-full object-cover"
+                  onPlay={() => setPlaying(true)}
+                  onPause={() => {
+                    setPlaying(false);
+                    setPlayingId(null);
+                  }}
+                  onClick={toggleKaraoke}
+                />
               </div>
-            </div>
+              <Button className="w-full" onClick={toggleKaraoke}>
+                {playing ? <PauseIcon /> : <PlayIcon />}
+                {playing ? "Tạm dừng" : "Nghe & soát"}
+              </Button>
+              <p className="text-muted-foreground text-center text-xs">
+                Phát và tô từng chữ như bản xuất — bấm một chữ để dừng và sửa.
+              </p>
+            </>
           ) : (
             <p className="text-muted-foreground text-center">
               Chưa có bản xem trước. Máy đang ghép mạch chính.
@@ -177,52 +275,50 @@ export function SoatLoiStep({
 }
 
 /**
- * Một từ trong bản chép — bấm mở ô sửa ngay tại chỗ, nghe lại đúng quãng của nó.
+ * Một từ trong bản chép — bấm mở ô sửa, tô sáng khi đang được đọc.
  *
  * Chữ ngờ gạch chân để mời mắt; chữ thường chỉ sáng nền khi rê vào — đủ để biết
- * bấm được mà không làm cả bản chép thành một hàng nút nhấp nháy.
+ * bấm được mà không làm cả bản chép nhấp nháy.
  */
 function EditableWord({
   word,
   count,
-  onHear,
+  playing,
+  open,
+  onOpenChange,
   onFix,
   onFixAll,
   onConfirm,
 }: {
   word: ReviewWord;
-  /** Số chỗ trùng chữ này — >1 thì mời "Sửa cả N chỗ". */
   count: number;
-  onHear: () => void;
+  /** Đang được đọc lúc phát — tô sáng như phụ đề karaoke. */
+  playing: boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   onFix: (text: string) => void;
   onFixAll: (text: string) => void;
   onConfirm: () => void;
 }) {
-  const [open, setOpen] = useState(false);
   const [text, setText] = useState(word.text);
-
-  const close = () => setOpen(false);
+  useEffect(() => {
+    if (open) setText(word.text);
+  }, [open, word.text]);
 
   return (
-    <Popover
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        if (next) {
-          setText(word.text);
-          onHear();
-        }
-      }}
-    >
+    <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger
         render={
           <button
             type="button"
+            data-word-id={word.id}
             className={cn(
-              "cursor-pointer rounded-sm underline-offset-4",
+              "cursor-pointer rounded-sm underline-offset-4 transition-colors",
               word.unsure
                 ? "text-primary underline decoration-primary decoration-dotted decoration-2 hover:bg-primary/10"
                 : "hover:bg-muted",
+              // Từ đang đọc — nền sắc chủ đạo, đúng cảm giác phụ đề chạy.
+              playing && "bg-primary/25 ring-primary/40 rounded ring-1",
             )}
           />
         }
@@ -241,7 +337,7 @@ function EditableWord({
           onChange={(event) => setText(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter") {
-              close();
+              onOpenChange(false);
               onFix(text);
             }
           }}
@@ -251,19 +347,18 @@ function EditableWord({
             size="sm"
             className="flex-1"
             onClick={() => {
-              close();
+              onOpenChange(false);
               onFix(text);
             }}
           >
             Sửa lại
           </Button>
-          {/* "Đúng rồi" chỉ cho chữ ngờ — chữ máy đã chắc thì không cần xác nhận. */}
           {word.unsure ? (
             <Button
               size="sm"
               variant="secondary"
               onClick={() => {
-                close();
+                onOpenChange(false);
                 onConfirm();
               }}
             >
@@ -272,13 +367,12 @@ function EditableWord({
             </Button>
           ) : null}
         </div>
-        {/* Sửa-tất-cả: chỉ hiện khi chữ này lặp — tên riêng/từ mượn sai đều. */}
         {count > 1 ? (
           <button
             type="button"
             className="border-primary/40 text-primary hover:bg-primary/10 cursor-pointer rounded-md border border-dashed px-2 py-1.5 text-left text-xs font-medium"
             onClick={() => {
-              close();
+              onOpenChange(false);
               onFixAll(text);
             }}
           >
