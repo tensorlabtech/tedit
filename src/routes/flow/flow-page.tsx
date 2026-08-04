@@ -157,10 +157,6 @@ export function FlowPage() {
   };
   // Chưa bấm ô nào thì lấy cảnh đầu — khung xem để trống trong khi mạch đã có
   // video là một khoảng trắng vô nghĩa.
-  const previewing =
-    upload.files.find((item) => item.id === previewId) ??
-    upload.mainFiles[0] ??
-    null;
 
   /*
    * Mạch LỆCH thì CHẶN, không nhắc.
@@ -178,6 +174,16 @@ export function FlowPage() {
   const machineAt = currentStep(snap);
   const at = viewing ?? machineAt;
   const step = FLOW_STEPS[stepIndex(at)];
+  /*
+   * Khung xem chiếu đúng LOẠI tệp của bước đang đứng.
+   *
+   * Bản đầu luôn rơi về `mainFiles[0]`, nên ở bước cảnh phụ nó chiếu một cảnh
+   * CHÍNH, và ô mô tả bên dưới hỏi "Tư liệu này là gì?" cho một cảnh chính.
+   * Chụp một dự án mới mới thấy — dự án cũ có sẵn cả hai loại nên không lộ.
+   */
+  const pool = at === "b-roll" ? upload.insertFiles : upload.mainFiles;
+  const previewing =
+    pool.find((item) => item.id === previewId) ?? pool[0] ?? null;
 
   if (loading) {
     return (
@@ -311,7 +317,10 @@ export function FlowPage() {
               />
             </div>
           ) : (
-            <Card className="lg:min-h-0">
+            /* Thẻ rỗng cũng phải PHỦ KÍN: ở bước chưa dựng, thẻ co lại còn
+               một dải ngắn trên đỉnh và để lại hai phần ba màn nền trơn —
+               chụp một dự án mới mới thấy. */
+            <Card className="lg:min-h-0 lg:h-full">
               <CardContent className="grid min-h-0 flex-1 place-items-center">
                 <Empty>
                   <EmptyTitle>

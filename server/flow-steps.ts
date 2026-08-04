@@ -113,9 +113,19 @@ export function currentStep(state: FlowState): FlowStepId {
   // Mạch chạy mà không cổng nào mở: máy đang làm việc của nó. Chưa qua cổng cắt
   // thì là chặng chuẩn bị, qua rồi thì là chặng dựng nốt.
   if (state.started) return "preparing";
+  /*
+   * Đi theo ĐÚNG thứ tự sidebar: cảnh chính → cảnh phụ → đề bài.
+   *
+   * Bản đầu xét `hasBrief` trước `b-roll`, nên dự án có cảnh chính mà chưa nhập
+   * đề bài nhảy thẳng bước 3 và bỏ qua bước 2 — luồng tám bước mà bước 2 chỉ
+   * tới được sau khi đã làm bước 3.
+   *
+   * Cảnh phụ KHÔNG bắt buộc, nên không có cách nào biết người dùng "xong" nó.
+   * Mốc để đi tiếp là ĐỀ BÀI: có đề bài nghĩa là họ đã đi qua bước 2 rồi.
+   */
   if (!state.hasMain) return "main-footage";
-  if (!state.hasBrief) return "brief";
-  return "b-roll";
+  if (!state.hasBrief) return "b-roll";
+  return "brief";
 }
 
 /** Bước `id` đứng thứ mấy. `-1` với tên lạ. */

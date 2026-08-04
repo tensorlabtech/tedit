@@ -66,8 +66,9 @@ for (const step of FLOW_STEPS) {
 console.log("\nSuy đúng bước từ trạng thái");
 const cases: Array<[string, Partial<FlowState>, FlowStepId]> = [
   ["dự án trống", {}, "main-footage"],
-  ["có cảnh chính, chưa có đề bài", { hasMain: true }, "brief"],
-  ["đủ cả hai", { hasMain: true, hasBrief: true }, "b-roll"],
+  // Chưa có đề bài thì đứng ở CẢNH PHỤ, không nhảy cóc sang đề bài.
+  ["có cảnh chính, chưa có đề bài", { hasMain: true }, "b-roll"],
+  ["có đề bài rồi", { hasMain: true, hasBrief: true }, "brief"],
   ["mạch đang chạy", { hasMain: true, hasBrief: true, started: true }, "preparing"],
   ["cổng cắt mở", { started: true, awaiting: "review-cut" }, "cut"],
   ["cổng chữ mở", { started: true, awaiting: "review-text" }, "proofread"],
