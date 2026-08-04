@@ -26,6 +26,7 @@ import { FlowSidebar } from "./flow-sidebar";
 import { MediaPickerDialog } from "@/components/media-picker-dialog";
 import { BigDropZone } from "./big-drop-zone";
 import { BriefStep } from "./brief-step";
+import { CutStep, type CutSentence } from "./cut-step";
 import { StepRow } from "../pipeline/pipeline-page";
 import type { ApiStep } from "@/lib/api";
 import { BRollList } from "./broll-list";
@@ -68,6 +69,8 @@ type Snapshot = {
   started: boolean;
   /** Mười bốn chặng máy — chỉ bày ở BÊN PHẢI lúc bước máy đang chạy. */
   steps: ApiStep[];
+  /** Câu đã chép, cho bước soát cắt. */
+  sentences: CutSentence[];
 };
 
 const TRONG: Snapshot = {
@@ -77,6 +80,7 @@ const TRONG: Snapshot = {
   settled: false,
   started: false,
   steps: [],
+  sentences: [],
 };
 
 export function FlowPage() {
@@ -109,6 +113,13 @@ export function FlowPage() {
           settled: data.pipeline?.settled ?? false,
           started: (data.pipeline?.steps.length ?? 0) > 0,
           steps: data.pipeline?.steps ?? [],
+          sentences: (data.sentences ?? []).map((row) => ({
+            id: row.id,
+            text: row.text,
+            start: row.start_sec,
+            end: row.end_sec,
+            removed: row.removed === 1,
+          })),
         });
       } finally {
         if (alive) setLoading(false);
@@ -289,6 +300,22 @@ export function FlowPage() {
               onFiles={(files) => handleFiles(files, "insert")}
               onPick={() => openPicker("insert")}
               onPickFromLibrary={() => setLibraryOpen(true)}
+            />
+          ) : at === "cut" ? (
+            <CutStep
+              sentences={snap.sentences}
+              previewUrl={projectId ? api.baseVideoUrl(projectId) : null}
+              onToggle={(id, removed) => {
+                // Ghi ngay, không đợi nút Lưu: mỗi dòng là một quyết định độc
+                // lập, gom lại rồi lưu một lượt chỉ tạo thêm một chỗ để mất.
+                void api.setSentenceRemoved(id, removed);
+                setSnap((cur) => ({
+                  ...cur,
+                  sentences: cur.sentences.map((item) =>
+                    item.id === id ? { ...item, removed } : item,
+                  ),
+                }));
+              }}
             />
           ) : step.actor === "machine" ? (
             /*

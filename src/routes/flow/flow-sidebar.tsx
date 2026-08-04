@@ -1,5 +1,7 @@
 import { CheckIcon, LockIcon } from "lucide-react";
 
+import { Spinner } from "@/components/ui/spinner";
+
 import { Card, CardContent } from "@/components/ui/card";
 import {
   FLOW_STEPS,
@@ -108,9 +110,10 @@ export function FlowSidebar({
               {locked ? (
                 <LockIcon className="text-muted-foreground size-4" />
               ) : null}
-              {here && step.actor === "machine" ? (
-                <span className="text-muted-foreground text-xs">máy</span>
-              ) : null}
+              {/* Máy đang chạy thì QUAY, không phải chữ 'máy'. Con quay nói
+                  'đang chạy' mà không phải đọc; chữ thì phải đọc rồi mới hiểu,
+                  và nó đứng yên nên trông y như một nhãn tĩnh. */}
+              {here && step.actor === "machine" ? <Spinner /> : null}
             </div>
           );
         })}
