@@ -27,8 +27,19 @@ Dự án này thiết kế với giao diện đồng bộ vả nhất quán, ch�
 
 - Viền chỉ để gợi mép, luôn là border-border không tự chế viền đậm hơn tại nơi gọi.
 
+### Border XUYÊN CARD (gom nhóm bằng kẻ ngang)
+
+- Kẻ ngăn nhóm / kẻ dưới tiêu đề trong một Card phải **chạm HAI MÉP thẻ**, KHÔNG thụt vào. Thụt lề đọc ra như gạch chân lạc chỗ chứ không như ranh giới.
+- Cách làm: `-mx-(--card-spacing) border-t border-border` rồi trả lại `px-(--card-spacing)` cho chữ (âm lề đúng bằng đệm thẻ). Xem mẫu `src/dev/skin/grouping-panel.tsx` và trang `/_dev/skin`.
+- Khi lồng Card trong Card (vd cột phải có tab): thẻ NGOÀI để `CardContent` `px-0`, thẻ TRONG tự lo đệm ngang — nhờ vậy kẻ của thẻ trong chạm mép thẻ ngoài. Đừng lột px của thẻ trong.
+
 ## Quy tắc code
 
 - Dùng full Tiếng Anh nhé (tên hàm, biến, đường dẫn, ... tất cả mọi thứ), chỉ có cái text hiện lên UI là tiếng Việt thôi
 
 ## Nếu tôi bảo làm hết đừng hỏi thì hãy tự động đi tiếp nhé
+
+## Quy tắc báo cáo
+
+- Nếu sửa UI thì bắt buộc phải check xem đã đúng Expect chưa có lỗi gì không, chụp ảnh tự kiểm tra nếu cần
+- Nếu về UX cần tự hỏi như vậy có phù hợp cho user không? Có ảnh hưởng chức năng khác không? Có cách nào thông minh hơn không

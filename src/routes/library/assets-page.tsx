@@ -185,10 +185,12 @@ export function AssetsPage() {
             }
           />
         ) : (
-          <ScrollArea className="min-h-0" viewportClassName="scroll-fade-b">
-            {/* Đệm 3px chừa chỗ cho vòng tiêu điểm: nó vẽ RA NGOÀI hộp thẻ nên
-                sát mép vùng cuộn là bị cắt cụt — cùng lý do với lưới Dự án. */}
-            <div className="grid grid-cols-2 gap-2 p-[3px] md:grid-cols-3 xl:grid-cols-4">
+          // `p-0` ĐÈ lên `p-[3px]` mặc định của viewport `ScrollArea`: đệm 3px đó
+          // là khe thở cho viền chọn ở bàn dựng, nhưng ở đây nó chỉ làm tile thụt
+          // 3px so với tiêu đề và ô tìm. Bỏ để mép trái thẳng hàng; đổi lại vòng
+          // tiêu điểm bàn phím ở tile sát mép cuộn có thể bị cắt vài pixel.
+          <ScrollArea className="min-h-0" viewportClassName="scroll-fade-b p-0">
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-4">
               {hien.map((asset) => (
                 <AssetTile
                   key={asset.file}

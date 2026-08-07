@@ -120,7 +120,14 @@ app.post("/api/projects/:id/music/restore", async (request, reply) => {
     end: number;
     volume: number;
   };
-  if (!resolve(body.storedPath).startsWith(resolve(mediaDir(id)))) {
+  // Nhạc đến từ HAI chỗ hợp lệ: tệp người dùng tự tải nằm trong thư mục dự án,
+  // còn nhạc chọn từ KHO dùng chung nằm ở thư mục kho. Chốt cắt/pipeline chọn
+  // nhạc từ kho, nên chỉ chấp nhận thư mục dự án là gỡ nhạc rồi hoàn tác luôn
+  // trả về 400 — mất nhạc không lấy lại được. Cho cả hai gốc, chặn phần còn lại.
+  const src = resolve(body.storedPath);
+  const allowed =
+    src.startsWith(resolve(mediaDir(id))) || src.startsWith(resolve(LIBRARY));
+  if (!allowed) {
     return reply.code(400).send({ error: "Tệp không thuộc dự án này" });
   }
   const track = restoreMusic(id, {

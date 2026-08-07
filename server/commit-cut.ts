@@ -2,14 +2,13 @@ import { existsSync } from "node:fs";
 import { rename } from "node:fs/promises";
 import { join } from "node:path";
 
-import { buildAsrPrompt } from "./asr-bias";
 import { buildEnvelope } from "./audio-envelope";
 import { db, newId } from "./db";
 import { makeFilmstrip, probe } from "./media-tools";
 import { thumbDir, workDir } from "./paths";
 import { keptRanges } from "./pipeline";
 import { buildPreview, cutRanges } from "./render";
-import { transcribeAudio } from "./transcribe";
+import { type AsrSegment } from "./transcribe";
 
 /**
  * CHỐT LÁT CẮT — nướng phần đã bỏ vào tệp, rồi chép lời lại trên tệp mới.
@@ -28,12 +27,14 @@ import { transcribeAudio } from "./transcribe";
  * Chốt xong thì **chỉ còn một trục**. Không còn gì để quy đổi, nên không còn
  * chỗ nào để lệch.
  *
- * ══ VÌ SAO PHẢI CHÉP LẠI, KHÔNG DỜI MỐC ══
+ * ══ DỜI MỐC, KHÔNG CHÉP LẠI ══
  *
- * Dời mốc từ sang trục mới thì rẻ hơn, nhưng nó giữ nguyên NHỮNG CHỮ CŨ. Phép
- * cắt bỏ khoảng lặng và đoạn bật/tắt máy quay, nên hai mép ghép lại thành một
- * đoạn tiếng chưa ai từng nghe — mà bản chép vẫn tả đoạn tiếng cũ. Chép lại thì
- * bản chép luôn là thứ tai nghe được, và đó là điều kiện để bước sau tin nó.
+ * Bản trước chép lại toàn bộ bằng whisper (~1 phút) vì sợ "dời mốc thì bản chép
+ * tả đoạn tiếng cũ". Nhưng cắt chỉ bỏ khoảng THỜI GIAN (im lặng, tiếng động, đoạn
+ * thừa) — CHỮ đã nói ở hai bên KHÔNG đổi. Mà chặng cắt (VAD) đánh mép trong khoảng
+ * KHÔNG-GIỌNG nên không chặt trúng giữa từ. Vậy chỉ cần dời mốc từ còn lại sang
+ * trục mới và bỏ từ nằm trong vùng đã cắt — đúng, tức thì, giữ nguyên bản chép
+ * tốt (đã qua refill VAD + lọc babble), không đẻ lỗi mới từ một lượt whisper nữa.
  *
  * ══ THỨ TỰ, VÀ VÌ SAO KHÔNG ĐƯỢC ĐẢO ══
  *
@@ -95,10 +96,14 @@ export async function commitCut(
   // là một tệp khác (đã cắt, ngắn hơn), nên bản xem trước, dải ảnh và đường bao
   // cũ còn theo trục cũ (118s) sẽ trật hẳn với timeline mới (52s): sóng lệch
   // lời, dải ảnh lệch khung, khung xem phát nhầm bản chưa cắt. `buildPreview` cho
-  // ra bản xem trước nhẹ VÀ `audio.wav` mới trong cùng một lượt giải mã, nên máy
-  // nghe chép từ đúng tệp mà khung xem sẽ phát.
+  // ra bản xem trước nhẹ VÀ `audio.wav` mới trong cùng một lượt giải mã.
   const { preview, audio } = await buildPreview(projectId, [base]);
-  const segments = await transcribeAudio(audio, "vi", buildAsrPrompt(projectId));
+  // DỜI MỐC bản chép cũ sang trục đã cắt — KHÔNG chép lại bằng whisper. Cắt chỉ
+  // bỏ khoảng THỜI GIAN (im lặng, tiếng động, đoạn thừa), KHÔNG đổi CHỮ đã nói ở
+  // hai bên; mà cắt VAD lại đánh mép trong khoảng không-giọng nên chẳng chặt trúng
+  // giữa từ. Nên dời mốc là đủ và ĐÚNG, lại tức thì — bỏ được ~1 phút whisper mỗi
+  // lần chốt. (Đọc bản chép cũ TRƯỚC khi `rewrite` xoá nó bên dưới.)
+  const segments = remapTranscript(projectId, kept);
 
   const previewInfo = await probe(preview);
   // Video vừa NGẮN lại — ghi độ dài mới để nối-đoạn-đuôi và gieo-lại-đoạn không
@@ -135,6 +140,13 @@ export async function commitCut(
     db.prepare("DELETE FROM sentences WHERE project_id=?").run(projectId);
     // Lát cắt đã nằm trong tệp: giữ lại là cắt hai lần cùng một chỗ.
     db.prepare("DELETE FROM manual_cuts WHERE project_id=?").run(projectId);
+    // Xoá phần tử là mất luôn phụ đề đã dựng. HẠ cờ đã-gieo để chặng captions
+    // dựng lại — không thì luồng SAI (chữ dựng trước khi cắt) ra bàn dựng KHÔNG
+    // CÓ PHỤ ĐỀ mà chẳng báo gì. Luồng ĐÚNG cắt trước khi dựng chữ nên cờ vốn
+    // đang 0, câu này là no-op; nó chỉ cứu luồng sai và lần chốt-cắt lại.
+    db.prepare(
+      "UPDATE projects SET captions_seeded=0, subtitles=0 WHERE id=?",
+    ).run(projectId);
 
     const insertSentence = db.prepare(
       "INSERT INTO sentences (id, project_id, position, text, start_sec, end_sec, removed) VALUES (?,?,?,?,?,?,0)",
@@ -160,6 +172,73 @@ export async function commitCut(
     wordsAfter: countWords(projectId),
     skipped: false,
   };
+}
+
+/**
+ * Dời bản chép hiện có sang trục ĐÃ CẮT — thay cho chép lại bằng whisper.
+ *
+ * `toOutput` gộp các khoảng GIỮ lại liền nhau: mốc gốc `t` rơi vào khoảng giữ thứ
+ * i thì mốc mới = tổng độ dài các khoảng trước đó + phần trong khoảng i. Từ nào
+ * NẰM TRONG vùng đã bỏ thì bỏ luôn (giữa nó không có tiếng để mà giữ).
+ *
+ * Câu giữ NGUYÊN chữ gốc khi không rụng từ nào (giữ dấu câu whisper đặt); rụng từ
+ * thì ghép lại từ các từ còn — vì phần bỏ đã không còn tiếng.
+ */
+function remapTranscript(
+  projectId: string,
+  kept: Array<{ start: number; end: number }>,
+): AsrSegment[] {
+  const toOutput = (t: number) => {
+    let acc = 0;
+    for (const range of kept) {
+      if (t < range.start) return acc;
+      if (t <= range.end) return acc + (t - range.start);
+      acc += range.end - range.start;
+    }
+    return acc;
+  };
+  const inKept = (t: number) =>
+    kept.some((range) => t >= range.start && t <= range.end);
+
+  const sentences = db
+    .prepare(
+      "SELECT id, text FROM sentences WHERE project_id=? ORDER BY start_sec, position",
+    )
+    .all(projectId) as Array<{ id: string; text: string }>;
+
+  const out: AsrSegment[] = [];
+  for (const sentence of sentences) {
+    const words = db
+      .prepare(
+        "SELECT text, start_sec, end_sec, confidence FROM words WHERE sentence_id=? ORDER BY position",
+      )
+      .all(sentence.id) as Array<{
+      text: string;
+      start_sec: number;
+      end_sec: number;
+      confidence: number | null;
+    }>;
+    // Giữ từ nào có TÂM nằm trong vùng giữ (mép rơi vào chỗ cắt vẫn tính là giữ).
+    const kw = words
+      .filter((w) => inKept((w.start_sec + w.end_sec) / 2))
+      .map((w) => ({
+        text: w.text,
+        start: toOutput(w.start_sec),
+        end: toOutput(w.end_sec),
+        confidence: w.confidence ?? 1,
+      }));
+    if (kw.length === 0) continue;
+    out.push({
+      text:
+        kw.length === words.length
+          ? sentence.text
+          : kw.map((w) => w.text).join(" "),
+      start: kw[0].start,
+      end: kw[kw.length - 1].end,
+      words: kw,
+    });
+  }
+  return out;
 }
 
 function countWords(projectId: string): number {

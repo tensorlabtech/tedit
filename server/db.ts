@@ -264,6 +264,21 @@ CREATE TABLE IF NOT EXISTS effects (
   kind        TEXT NOT NULL
 );
 
+-- Bố cục người dùng CHỌN TAY cho một màn — ghi đè bố cục máy tự xếp.
+--
+-- Neo bằng mốc BẮT ĐẦU MÀN trên dải đã cắt (mili-giây). Lịch màn xếp lại mỗi lượt
+-- dựng, nên neo là một MỐC chứ không phải chỉ số màn: màn nào CHỨA mốc ấy thì
+-- nhận bố cục đã chọn. Sửa lời làm màn xê dịch thì mốc vẫn rơi vào đúng màn.
+--
+-- Chỉ lưu màn người dùng ĐỘNG VÀO. Màn chưa ai đụng thì máy tự xếp — gieo sẵn cả
+-- lịch thì đổi phong cách hay sửa lời là phải nhớ gieo lại từng màn.
+CREATE TABLE IF NOT EXISTS scene_layouts (
+  project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  anchor_ms   INTEGER NOT NULL,
+  layout      TEXT NOT NULL,
+  PRIMARY KEY (project_id, anchor_ms)
+);
+
 -- Từng chặng của lượt dựng, để màn chờ nói được máy đang ở đâu.
 --
 -- Không đọc ra từ bảng jobs được: ở đó cả lượt dựng là MỘT dòng với một con số
@@ -431,6 +446,9 @@ for (const [table, column, type] of [
   ["elements", "reveal", "TEXT DEFAULT 'none'"],
   // Hình dáng khung tư liệu: square | portrait | wide | full
   ["elements", "shape", "TEXT DEFAULT 'full'"],
+  // Bố cục HIỆN b-roll (chỉ cho element kind='insert'): hai-o | vuong-ngang |
+  // ngang-vuong. NULL là để máy tự chọn (xoay vòng họ hai-ô).
+  ["elements", "insert_layout", "TEXT"],
   ["projects", "subtitle_band", "TEXT DEFAULT 'bottom'"],
   // DÒNG TIÊU ĐỀ của cả video — một dòng chữ đại diện, không neo vào tiếng nào.
   //
@@ -451,9 +469,11 @@ for (const [table, column, type] of [
   // điều làm việc đổi bộ dáng an toàn tuyệt đối: đổi = ghi một dòng, video vẽ
   // lại theo, còn nội dung và bố cục người dùng đã chỉnh thì không đụng tới.
   //
-  // `DEFAULT 'goc'` là đủ cho dự án cũ — vá cột dần nên chúng ra đúng như trước,
-  // không cần migration riêng. Tên rác thì `readStylePack` rơi về bộ gốc.
-  ["projects", "style_pack", "TEXT DEFAULT 'goc'"],
+  // Default là bộ mặc định HIỆN HÀNH (`nhip-den`), KHÔNG phải "goc" đã xoá: dự án
+  // mới không set cột này sẽ dính default, mà "goc" thì không có bố cục. Dự án cũ
+  // đã lỡ mang "goc" thì `readStylePack` rơi về bộ mặc định để render, nhưng layout
+  // đã lưu thì vẫn rỗng — cần migration riêng nếu muốn chúng có bố cục.
+  ["projects", "style_pack", "TEXT DEFAULT 'nhip-den'"],
   // BA TRỤC NHÃN của kho nhạc — vốn từ ĐÓNG, xem `server/music-tags.ts`.
   //
   // Tách khỏi cột `tags` tự do chứ không nhét chung: `tags` là chữ NGƯỜI đọc
@@ -469,6 +489,14 @@ for (const [table, column, type] of [
   // hiệu ứng — hàng soát mời họ đặt lại. Không tự đặt lại: hiệu ứng và tư liệu
   // chèn là những vật nằm trên dải, người dùng nhìn thấy và có thể đã sắp lại.
   ["projects", "effects_style_pack", "TEXT"],
+  // PHONG CÁCH CHỮ mặc định của cả video — chỉ mượn phần CHỮ (font, HOA/thường,
+  // màu, viền, quầng) của một bộ khác, KHÔNG đụng nhịp/b-roll/bố cục/nhạc. Tách
+  // khỏi `style_pack` chính vì đây là trục đổi được AN TOÀN (không lệch nhịp).
+  // `NULL` = theo font của chính `style_pack`.
+  ["projects", "font_style", "TEXT"],
+  // Phong cách chữ RIÊNG của một cụm — đè lên mặc định dự án. `NULL` = theo dự
+  // án. Cùng loại cột-đè-mặc-định với `keyword_color`/`letter_case` của cụm.
+  ["elements", "font_style", "TEXT"],
   // TỰ CÂN HÌNH — bật sẵn.
   //
   // Người dùng quay bằng điện thoại trong phòng: đo 81 tệp thật trong
@@ -680,6 +708,26 @@ function migrateLayoutAxisNames() {
   })();
 }
 migrateLayoutAxisNames();
+
+/**
+ * Gộp `kind='insert'` (b-roll cũ) về `kind='layout'`.
+ *
+ * B-roll và ô người GIỜ là MỘT loại "khung"; cái phân biệt là có `media_file_id`
+ * hay không, không phải `kind`. Một `kind` duy nhất cho khung. Idempotent — chạy
+ * lại không còn hàng nào khớp.
+ */
+db.prepare("UPDATE elements SET kind='layout' WHERE kind='insert'").run();
+
+/**
+ * Chữ chép lời về cỡ ĐỀU (`even`).
+ *
+ * Bỏ trục "cỡ chữ / dẫn-nhỏ-ý-to" khỏi bảng sửa: mỗi bộ dáng để chữ đồng đều,
+ * người dùng chỉ chọn chỗ đặt + màu từ nhấn. Chữ cũ mang `taper`/`keyword-large`/
+ * `mixed-size` phải đưa về `even` để không còn chữ to chữ bé lẫn lộn. Idempotent.
+ */
+db.prepare(
+  "UPDATE elements SET emphasis='even' WHERE kind='text' AND emphasis IS NOT NULL AND emphasis <> 'even'",
+).run();
 
 /**
  * Dọn dấu vết của chặng gắn emoji đã bỏ.

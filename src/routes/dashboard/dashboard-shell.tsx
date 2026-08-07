@@ -22,10 +22,10 @@ export function DashboardShell() {
       {/* Đệm nằm ở đây, không ở từng màn: mọi màn bên trong đều được cùng một
           khoảng lề mà không phải nhớ tự thêm.
 
-          `pl-0` là cố ý. Thanh bên dạng `floating` đã tự đệm 8px quanh mình, kể cả
-          mép phải — cộng thêm đệm trái ở đây nữa thì khe giữa hai thẻ thành 16px
-          trong khi mọi khe khác trong ứng dụng là 8px, và một khe rộng gấp đôi đọc
-          ra như hai vùng không liên quan. */}
+          Thanh bên nay KHÔNG còn nền riêng (trong suốt, hoà vào nền trang) nên nó
+          không phải một "thẻ" cạnh thẻ nội dung nữa — chỉ thẻ nội dung nổi lên.
+          `pl-0` để nội dung bắt đầu ngay sau lề phải của thanh bên; khe đọc ra từ
+          chính đệm trong của thanh bên. */}
       <SidebarInset className="min-h-0 min-w-0 overflow-hidden p-2 pl-0">
         <Outlet />
       </SidebarInset>

@@ -45,6 +45,12 @@ export type CutClip = {
   srcStart: number;
 };
 
+/** Các đoạn đã đánh dấu BỎ, rút ra từ một tập `segment` bất kỳ. */
+const removedSpans = (rows: ApiSegment[]): Span[] =>
+  rows
+    .filter((row) => row.removed === 1)
+    .map((row) => ({ id: row.id, start: row.start_sec, end: row.end_sec }));
+
 export function useCutEdit(projectId: string | undefined) {
   const [segments, setSegments] = useState<ApiSegment[]>([]);
   const [clips, setClips] = useState<CutClip[]>([]);
@@ -67,16 +73,53 @@ export function useCutEdit(projectId: string | undefined) {
   const history = useRef<Array<Array<{ start: number; end: number }>>>([]);
   const [depth, setDepth] = useState(0);
 
+  /**
+   * Trạng thái đoạn, đọc-ĐỒNG-BỘ.
+   *
+   * Mọi phép sửa cần trạng thái MỚI NHẤT ngay lúc chạy, không đợi React vẽ lại.
+   * `setSegments` chỉ thấy ở lượt vẽ sau, nên trong một chuỗi phép nối đuôi (xem
+   * `enqueue`) mà đọc từ state thì phép sau đọc trúng trạng thái CŨ của phép
+   * trước. Giữ một bản trong ref, cập nhật cùng nhịp với state.
+   */
+  const segmentsRef = useRef<ApiSegment[]>([]);
+  const applyRows = useCallback((rows: ApiSegment[]) => {
+    segmentsRef.current = rows;
+    setSegments(rows);
+  }, []);
+
+  /**
+   * HÀNG ĐỢI MỘT LÀN — mọi phép sửa cắt chạy nối đuôi, không bao giờ chồng nhau.
+   *
+   * Mỗi phép là một chuỗi nhiều vòng gọi máy chủ (`dissolve`→`removeRange`…) cùng
+   * mutate bảng `segment`. Kéo qua lại nhanh khiến hai chuỗi đè lên nhau: kết quả
+   * về sai thứ tự, hai lát cắt cạnh nhau bị gộp và đoạn phim ở giữa BIẾN MẤT mà
+   * người dùng không bấm gì. Nối đuôi thì phép sau luôn chạy trên trạng thái đã
+   * yên của phép trước — hết xung đột. Lỗi một phép không chặn phép kế (`op` chạy
+   * ở cả hai nhánh) để một lần hỏng mạng không khoá cứng cả dải.
+   */
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
+  const enqueue = useCallback(<T,>(op: () => Promise<T>): Promise<T> => {
+    const run = queue.current.then(op, op);
+    queue.current = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }, []);
+
   useEffect(() => {
     if (!projectId) return;
     let alive = true;
     void (async () => {
-      const [rows, project] = await Promise.all([
-        api.listSegments(projectId),
-        api.getProject(projectId),
-      ]);
+      // `getProject` TRƯỚC — chính lượt ấy kéo đoạn cuối tới ĐỘ DÀI THẬT của
+      // `base.mp4` (server `extendToDuration`). Rồi `sealCutGaps` HÀN mọi lỗ hổng
+      // giữa các đoạn cho liền mạch (lỗ ở màn Cắt là rác của cú kéo dở dang; nếu
+      // để đó thì `keptFromSegments` và Soát lời tính là "đã bỏ" còn màn Cắt vẫn
+      // hiện là giữ — ba nơi lệch). Nó trả về luôn danh sách đã hàn.
+      const project = await api.getProject(projectId);
+      const rows = await api.sealCutGaps(projectId);
       if (!alive) return;
-      setSegments(rows);
+      applyRows(rows);
 
       /*
        * Clip trên dải là CÁC TỆP CẢNH CHÍNH nối đuôi nhau, không phải các đoạn.
@@ -103,6 +146,15 @@ export function useCutEdit(projectId: string | undefined) {
         });
         at += length;
       }
+      // Kéo mép clip cuối tới ĐỘ DÀI THẬT (mép đoạn cuối, server đã kéo tới độ dài
+      // đo từ `base.mp4`). Tổng `file.duration` các tệp gốc hay HỤT vài phần mười
+      // giây (video VFR đo thiếu), nên để clip cuối dừng ở đó thì còn một khúc đuôi
+      // footage thật mà trần cắt không với tới. Khớp lại thì dải phim phủ hết và
+      // cắt được tới cuối.
+      const trueEnd = rows.at(-1)?.end_sec ?? at;
+      if (laid.length > 0 && trueEnd > laid[laid.length - 1].end + 0.02) {
+        laid[laid.length - 1] = { ...laid[laid.length - 1], end: trueEnd };
+      }
       setClips(laid);
       setStrip({
         url: api.filmstripUrl(projectId, project.project.strip_seconds),
@@ -124,12 +176,16 @@ export function useCutEdit(projectId: string | undefined) {
     return () => {
       alive = false;
     };
-  }, [projectId]);
+  }, [projectId, applyRows]);
 
-  const total = clips.at(-1)?.end ?? segments.at(-1)?.end_sec ?? 0;
-  const spans: Span[] = segments
-    .filter((row) => row.removed === 1)
-    .map((row) => ({ id: row.id, start: row.start_sec, end: row.end_sec }));
+  // Trần cắt = mép muộn nhất giữa clip cuối và đoạn cuối. Đoạn cuối do server kéo
+  // tới độ dài THẬT (`extendToDuration`), nên `Math.max` bắt được khúc đuôi mà tổng
+  // `file.duration` (mép clip) đo hụt — không thì kéo cắt không tới cuối footage.
+  const total = Math.max(
+    clips.at(-1)?.end ?? 0,
+    segments.at(-1)?.end_sec ?? 0,
+  );
+  const spans: Span[] = removedSpans(segments);
 
   /**
    * Trả một khoảng về video và xoá hai lằn chia của nó.
@@ -171,38 +227,51 @@ export function useCutEdit(projectId: string | undefined) {
       for (const span of [...target].sort((a, b) => b.start - a.start)) {
         rows = await api.removeRange(projectId, span.start, span.end, true);
       }
-      setSegments(rows);
+      applyRows(rows);
     },
-    [projectId, dissolve],
+    [projectId, dissolve, applyRows],
   );
 
+  // Chụp trạng thái TRƯỚC một phép — đọc từ ref (mới nhất), không từ `spans`
+  // trong closure (có thể là bản của lượt vẽ cũ giữa một chuỗi phép nối đuôi).
   const remember = useCallback(() => {
-    history.current.push(spans.map(({ start, end }) => ({ start, end })));
+    history.current.push(
+      removedSpans(segmentsRef.current).map(({ start, end }) => ({
+        start,
+        end,
+      })),
+    );
     setDepth(history.current.length);
-  }, [spans]);
+  }, []);
 
-  const undo = useCallback(async () => {
-    const previous = history.current.pop();
-    setDepth(history.current.length);
-    if (previous) await applySpans(previous);
-  }, [applySpans]);
+  const undo = useCallback(
+    () =>
+      enqueue(async () => {
+        const previous = history.current.pop();
+        setDepth(history.current.length);
+        if (previous) await applySpans(previous);
+      }),
+    [applySpans, enqueue],
+  );
 
   const resizeSpan = useCallback(
-    async (id: string, start: number, end: number) => {
-      if (!projectId) return;
-      remember();
-      await dissolve(id);
-      setSegments(await api.removeRange(projectId, start, end, true));
-    },
-    [projectId, dissolve, remember],
+    (id: string, start: number, end: number) =>
+      enqueue(async () => {
+        if (!projectId) return;
+        remember();
+        await dissolve(id);
+        applyRows(await api.removeRange(projectId, start, end, true));
+      }),
+    [projectId, dissolve, remember, enqueue, applyRows],
   );
 
   const deleteSpan = useCallback(
-    async (id: string) => {
-      remember();
-      setSegments(await dissolve(id));
-    },
-    [dissolve, remember],
+    (id: string) =>
+      enqueue(async () => {
+        remember();
+        applyRows(await dissolve(id));
+      }),
+    [dissolve, remember, enqueue, applyRows],
   );
 
   /**
@@ -241,37 +310,44 @@ export function useCutEdit(projectId: string | undefined) {
    * cho vừa; hẹp quá mới chịu thua, và lúc ấy phải NÓI, không im.
    */
   const addSpanAt = useCallback(
-    async (at: number): Promise<string | null> => {
-      if (!projectId || total <= 0) return null;
-      const before = spans.filter((span) => span.end <= at).at(-1);
-      const after = spans.find((span) => span.start > at);
-      const floor = before?.end ?? 0;
-      const ceiling = after?.start ?? total;
-      if (at < floor || at >= ceiling) return null;
+    (at: number): Promise<string | null> =>
+      enqueue(async () => {
+        if (!projectId || total <= 0) return null;
+        // Mốc kề bên đọc từ trạng thái TƯƠI (ref), không từ `spans` closure — nếu
+        // không, thêm ngay sau một cú kéo có thể tính floor/ceiling trên bản cũ.
+        const live = removedSpans(segmentsRef.current);
+        const before = live.filter((span) => span.end <= at).at(-1);
+        const after = live.find((span) => span.start > at);
+        const floor = before?.end ?? 0;
+        const ceiling = after?.start ?? total;
+        if (at < floor || at >= ceiling) return null;
 
-      const quiet = silenceAround(at);
-      let start: number;
-      let end: number;
-      if (quiet) {
-        start = Math.max(floor, quiet.start);
-        end = Math.min(ceiling, quiet.end);
-      } else {
-        start = Math.max(floor, Math.min(at - NEW_SPAN / 2, ceiling - MIN_NEW_SPAN));
-        end = Math.min(start + NEW_SPAN, ceiling);
-      }
-      if (end - start < MIN_NEW_SPAN) return null;
+        const quiet = silenceAround(at);
+        let start: number;
+        let end: number;
+        if (quiet) {
+          start = Math.max(floor, quiet.start);
+          end = Math.min(ceiling, quiet.end);
+        } else {
+          start = Math.max(
+            floor,
+            Math.min(at - NEW_SPAN / 2, ceiling - MIN_NEW_SPAN),
+          );
+          end = Math.min(start + NEW_SPAN, ceiling);
+        }
+        if (end - start < MIN_NEW_SPAN) return null;
 
-      remember();
-      const rows = await api.removeRange(projectId, start, end, true);
-      setSegments(rows);
-      // Trả về đoạn VỪA TẠO để nơi gọi active luôn — đoạn phủ giữa khoảng vừa bỏ.
-      const mid = (start + end) / 2;
-      const created = rows.find(
-        (row) => row.removed === 1 && row.start_sec <= mid && row.end_sec >= mid,
-      );
-      return created?.id ?? null;
-    },
-    [projectId, total, spans, remember, silenceAround],
+        remember();
+        const rows = await api.removeRange(projectId, start, end, true);
+        applyRows(rows);
+        // Trả đoạn VỪA TẠO để nơi gọi active luôn — đoạn phủ giữa khoảng vừa bỏ.
+        const mid = (start + end) / 2;
+        const created = rows.find(
+          (row) => row.removed === 1 && row.start_sec <= mid && row.end_sec >= mid,
+        );
+        return created?.id ?? null;
+      }),
+    [projectId, total, remember, silenceAround, enqueue, applyRows],
   );
 
   return {

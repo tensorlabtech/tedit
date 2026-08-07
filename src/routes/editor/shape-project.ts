@@ -141,10 +141,15 @@ export function shape(data: ApiProject) {
           ? element.letter_case
           : null,
       keyColor: element.key_color ?? null,
+      fontStyle: element.font_style ?? null,
     }));
 
+  // B-ROLL = phần tử CÓ tư liệu, KHÔNG phân biệt `kind`. B-roll và ô người giờ là
+  // một loại "khung"; cái phân biệt duy nhất là có `media_file_id` hay không. Lọc
+  // theo media thay vì theo `kind='insert'` để một khung 'layout' vừa gắn tư liệu
+  // cũng thành b-roll ngay.
   const inserts: Insert[] = data.elements
-    .filter((element) => element.kind === "insert")
+    .filter((element) => element.media_file_id)
     .map((element) => {
       // Tư liệu chèn LUÔN neo theo từ — chỉ chữ tự do mới bỏ trống hai mã này.
       const from = wordsById.get(element.from_word_id ?? "");
@@ -170,6 +175,7 @@ export function shape(data: ApiProject) {
             ? "fade-up"
             : "none") as RevealId,
         shape: (element.shape ?? "full") as ShapeId,
+        insertLayout: element.insert_layout ?? undefined,
         // Xem trước phải là TỆP THẬT, không phải ô màu có tên: ô màu không cho
         // biết tư liệu có che mặt người nói hay không.
         url: file ? api.mediaUrl(file.id) : undefined,

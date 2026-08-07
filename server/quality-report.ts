@@ -151,7 +151,7 @@ export function qualityReport(projectId: string): QualityReport {
       : 0,
     effects: count("SELECT COUNT(*) AS n FROM effects WHERE project_id=?"),
     inserts: count(
-      "SELECT COUNT(*) AS n FROM elements WHERE project_id=? AND kind='insert'",
+      "SELECT COUNT(*) AS n FROM elements WHERE project_id=? AND media_file_id IS NOT NULL",
     ),
     musicTracks: count(
       "SELECT COUNT(*) AS n FROM music_tracks WHERE project_id=?",

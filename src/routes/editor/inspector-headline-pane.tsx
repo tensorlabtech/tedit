@@ -6,7 +6,7 @@ import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
 
-import { findStylePack } from "../../../server/style-pack-catalog";
+import { applyFontStyle, findStylePack } from "../../../server/style-pack-catalog";
 import type { EditorState } from "./use-editor";
 
 /**
@@ -24,7 +24,7 @@ import type { EditorState } from "./use-editor";
 export function InspectorHeadlinePane({ editor }: { editor: EditorState }) {
   const [lines, setLines] = useState<string[] | null>(null);
   const [asking, setAsking] = useState(false);
-  const pack = findStylePack(editor.stylePack);
+  const pack = applyFontStyle(findStylePack(editor.stylePack), editor.fontStyle);
   const projectId = editor.projectId;
 
   // Chưa mở dự án thì không có gì để lưu vào.

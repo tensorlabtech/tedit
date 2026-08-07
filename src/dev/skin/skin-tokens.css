@@ -62,7 +62,7 @@
    Mặt thẻ rời khỏi trắng tinh (0.99 chứ không phải 1.0) để còn chỗ mà chia nấc:
    giữ 1.0 thì cả thang chỉ còn ~6% cho 5 nấc. */
 .skin-lab[data-skin="light"] {
-    --background: oklch(0.925 0.004 310);
+    --background: oklch(0.975 0.004 310);
     --foreground: oklch(0.145 0 0);
     --card: oklch(0.99 0.004 310);
     --card-foreground: oklch(0.145 0 0);

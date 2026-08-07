@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { PauseIcon, PlayIcon } from "lucide-react";
+import { FilmIcon, PauseIcon, PlayIcon } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import {
   GradeFilterDefs,
   gradeFilterId,
@@ -13,25 +14,22 @@ import {
   Headline,
   OverlayTextBlock,
 } from "@/dev/overlays/overlay-render";
+import { StyleSweep } from "@/dev/overlays/style-sweep";
+import { ScenePage } from "@/dev/overlays/scene-page";
 
 import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 
 import { packForElement } from "../../../server/style-pack";
-import { findStylePack } from "../../../server/style-pack-catalog";
+import { applyFontStyle, findStylePack } from "../../../server/style-pack-catalog";
 
 import { formatTime } from "./editor-data";
 import { findJunction } from "../../../server/junction-kinds";
 import { PreviewMusic } from "./preview-music";
 import { StyleSwitchDialog } from "./style-switch-dialog";
 import type { EditorState } from "./use-editor";
+import { activeScene, sceneCells } from "./scene-layout-geometry";
 
 /**
  * Khung xem trước CHẠY hiệu ứng hiện chữ theo vạch thời gian.
@@ -41,17 +39,38 @@ import type { EditorState } from "./use-editor";
  * dùng canh chữ ở khung xem rồi xuất ra mới thấy nhịp khác hẳn.
  */
 
+/**
+ * TẠM ẨN nút đổi phong cách: đổi phong cách cả video là thao tác nhiều rủi ro
+ * (ghi lại chữ, có thể lệch nhịp/hiệu ứng đã đặt tay). Bật lại bằng cách đặt cờ
+ * này `true` khi luồng đổi phong cách đã chắc.
+ */
+const SHOW_STYLE_SWITCH = false;
+
 export function PreviewPanel({
   editor,
   playing,
   onTogglePlay,
+  proofread,
 }: {
   editor: EditorState;
   playing: boolean;
   onTogglePlay: () => void;
+  /**
+   * Bước Soát lời: thay caption karaoke-từng-tiếng (theo style pack) bằng một
+   * caption PHẲNG — cả cụm hiện một lúc, chữ thường dễ đọc, gạch chấm chỗ máy
+   * nghi ngờ. Soát chữ là đọc CẢ DÒNG rồi đối chiếu tai; karaoke một-chữ-to giấu
+   * mất phần còn lại của câu, mà style thì chưa chốt ở bước này.
+   */
+  proofread?: boolean;
 }) {
   const [styleOpen, setStyleOpen] = useState(false);
-  const projectPack = findStylePack(editor.stylePack);
+  // Bộ dáng của dự án, ĐÃ áp phong cách chữ mặc định. `applyFontStyle` chỉ đổi
+  // trục CHỮ nên mọi thứ khác (nắn màu, trang, nhịp) đọc từ đây vẫn nguyên; cụm
+  // nào tự đặt phong cách chữ riêng thì `packForElement` đè tiếp ở dưới.
+  const projectPack = applyFontStyle(
+    findStylePack(editor.stylePack),
+    editor.fontStyle,
+  );
   // Lọc theo MỐC của chính phần tử, không tra ngược ra hai đầu từ.
   //
   // Bản trước tra `wordsById` rồi lấy mốc của từ. Chữ TỰ DO neo theo giờ nên hai
@@ -72,6 +91,10 @@ export function PreviewPanel({
   // của nó để làm đồng hồ. Xem chú thích ở `use-editor.ts`.
   const videoRef = editor.videoRef;
   const insertRef = useRef<HTMLVideoElement>(null);
+  // Video b-roll trong Ô bố cục — mỗi ô một thẻ, tua theo đồng hồ DẢI như lớp
+  // insert fallback, không phát đồng hồ riêng (autoPlay/loop trước đây làm nó
+  // chạy lệch, không dừng theo dải).
+  const cellVideos = useRef(new Map<number, HTMLVideoElement>());
   const boxRef = useRef<HTMLDivElement>(null);
 
   /**
@@ -117,8 +140,16 @@ export function PreviewPanel({
      * nhau, đúng như chuỗi lọc ffmpeg — ở đó mỗi bộ lọc cũng nối tiếp bộ trước.
      */
     const acc = {
-      zoom: 0, sang: 0, bhoa: 0, xoay: 0,
-      dichX: 0, dichY: 0, nhoe: 0, vien: 0, sac: 0, tuongPhan: 0,
+      zoom: 0,
+      sang: 0,
+      bhoa: 0,
+      xoay: 0,
+      dichX: 0,
+      dichY: 0,
+      nhoe: 0,
+      vien: 0,
+      sac: 0,
+      tuongPhan: 0,
     };
     const now = editor.toOutput(editor.time);
     for (const item of editor.effects) {
@@ -171,6 +202,55 @@ export function PreviewPanel({
     return { transform, filter };
   })();
 
+  /*
+   * Mốc cắt cho VỆT QUÉT — cùng nguồn với bản xuất: `effects` (bỏ `none`), mốc
+   * `outPeak` trên dải đã cắt. `render.ts` truyền đúng danh sách này vào `sweepSteps`.
+   */
+  const sweepMarks = editor.effects
+    .filter((item) => item.kind !== "none")
+    .map((item) => item.outPeak);
+  const sweepAt = editor.toOutput(editor.time);
+
+  /*
+   * BỐ CỤC CẢNH — server xếp lịch màn, màn hình vẽ video vào ô trên nền trang.
+   *
+   * Chỉ bộ dáng có nền trang (`pack.page`) mới bẻ khung thành ô; bộ phủ kín giữ
+   * nguyên video object-cover như cũ. `cell` là ô CHÍNH tại vạch hiện tại; `null`
+   * nghĩa là giữ khung phủ kín.
+   */
+  const sceneLayout = editor.sceneLayout;
+  const pageOn = Boolean(
+    projectPack.page && sceneLayout && sceneLayout.schedule.length > 0,
+  );
+  const cells =
+    pageOn && sceneLayout
+      ? sceneCells(
+          sceneLayout.schedule,
+          sceneLayout.sourceAspect,
+          sweepAt,
+          sceneLayout.inserts,
+          projectPack.scenePush?.ratePerSecond ?? 0,
+        )
+      : null;
+  const cell = cells?.main ?? null;
+
+  /*
+   * Thiết bị dựa vào TÁCH NỀN NGƯỜI (chữ sau người, viền người) chưa vẽ ở màn
+   * hình: cần mặt nạ người theo thời gian mà khung xem chưa dựng. Thay vì vẽ sai,
+   * gắn nhãn trung thực ở đúng những màn có thiết bị ấy — người dùng biết nó CÓ,
+   * chỉ là xem ở bản xuất.
+   */
+  const heroNow =
+    pageOn && sceneLayout
+      ? (activeScene(sceneLayout.schedule, sweepAt)?.hero ?? null)
+      : null;
+  const subjectDeviceLabel =
+    heroNow === "chu-sau-nguoi"
+      ? "Chữ sau người — hiện ở bản xuất"
+      : heroNow === "vien-nguoi"
+        ? "Viền người — hiện ở bản xuất"
+        : null;
+
   /**
    * Vạch đang đứng trong một quãng đã bỏ — khung này sẽ không có trong video.
    *
@@ -205,14 +285,41 @@ export function PreviewPanel({
     else video.pause();
   }, [editor.time, insert, playing]);
 
+  // Ô B-ROLL theo bố cục: tua mỗi thẻ video theo mốc DẢI. B-roll bắt đầu từ giây
+  // 0 của chính nó tại lúc màn b-roll mở, nên trừ mốc bắt đầu màn (trục đã cắt).
+  useEffect(() => {
+    const videos = cellVideos.current;
+    const scene =
+      pageOn && sceneLayout ? activeScene(sceneLayout.schedule, sweepAt) : null;
+    const start = scene && scene.insert !== undefined ? scene.start : null;
+    if (start === null) {
+      videos.forEach((video) => video.pause());
+      return;
+    }
+    const want = Math.max(0, sweepAt - start);
+    videos.forEach((video) => {
+      if (Math.abs(video.currentTime - want) > 0.3) video.currentTime = want;
+      if (playing) void video.play().catch(() => {});
+      else video.pause();
+    });
+  }, [sweepAt, playing, sceneLayout, pageOn]);
+
   // Cụm đang hiện tại vạch — thứ Dialog đổi dáng vẽ trong khung xem lớn của nó,
   // để ngữ cảnh đi theo người dùng thay vì bắt họ nhớ mình đang đứng ở đâu.
   //
   // Vạch ở chỗ chưa có chữ thì lấy CỤM ĐẦU của dự án: vẫn là chữ thật của người
   // dùng, chỉ không phải chữ ngay dưới vạch. Trống hẳn mới là thứ đọc ra như lỗi.
   const atPlayhead =
-    visible[0] ??
-    [...editor.textElements].sort((a, b) => a.start - b.start)[0];
+    visible[0] ?? [...editor.textElements].sort((a, b) => a.start - b.start)[0];
+
+  // Tua theo vị trí chuột trên thanh: phần trăm trên TRỤC ĐÃ CẮT (giống đồng hồ),
+  // rồi ánh xạ ngược về giây GỐC để `seek` — `editor.time` chạy theo giây gốc.
+  const seekAtClientX = (clientX: number, track: HTMLElement) => {
+    const rect = track.getBoundingClientRect();
+    if (rect.width <= 0 || editor.outputDuration <= 0) return;
+    const frac = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    editor.seek(editor.toSource(frac * editor.outputDuration));
+  };
 
   return (
     /*
@@ -224,40 +331,30 @@ export function PreviewPanel({
      * tab ở cột phải đã đủ tải. `CardHeader` tự thành lưới hai cột khi có
      * `CardAction`, nên thẻ chỉ cao thêm đúng một hàng tiêu đề.
      */
-    <Card className="min-h-80 lg:min-h-0">
-      <CardHeader>
-        <CardTitle>Xem trước</CardTitle>
-        <CardAction>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => setStyleOpen(true)}
-          >
-            Phong cách video
-          </Button>
-        </CardAction>
-      </CardHeader>
-      <StyleSwitchDialog
-        open={styleOpen}
-        onOpenChange={setStyleOpen}
-        value={editor.stylePack}
-        onAccept={(next) => void editor.setStylePack(next)}
-        // Khung hình thật làm nền ô mẫu — cùng thứ màn nạp tệp dùng. Thiếu nó
-        // thì hộp này bày mười ô nền đen trơn, và trục MÀU HÌNH của phong cách
-        // thành vô hình đúng ở chỗ để chọn nó.
-        poster={editor.posterUrl}
-        preview={
-          atPlayhead
-            ? {
-                text: atPlayhead.content,
-                align: atPlayhead.align,
-                emphasis: atPlayhead.emphasis,
-                band: atPlayhead.position as BandId,
-                keywords: atPlayhead.keywords,
-              }
-            : null
-        }
-      />
+    <Card className="min-h-80 min-w-0 lg:min-h-0">
+      {SHOW_STYLE_SWITCH && (
+        <StyleSwitchDialog
+          open={styleOpen}
+          onOpenChange={setStyleOpen}
+          value={editor.stylePack}
+          onAccept={(next) => void editor.setStylePack(next)}
+          // Khung hình thật làm nền ô mẫu — cùng thứ màn nạp tệp dùng. Thiếu nó
+          // thì hộp này bày mười ô nền đen trơn, và trục MÀU HÌNH của phong cách
+          // thành vô hình đúng ở chỗ để chọn nó.
+          poster={editor.posterUrl}
+          preview={
+            atPlayhead
+              ? {
+                  text: atPlayhead.content,
+                  align: atPlayhead.align,
+                  emphasis: atPlayhead.emphasis,
+                  band: atPlayhead.position as BandId,
+                  keywords: atPlayhead.keywords,
+                }
+              : null
+          }
+        />
+      )}
       <CardContent className="flex min-h-0 flex-1 flex-col">
         <AspectRatio ratio={9 / 16} className="mx-auto min-h-0 flex-1">
           <div
@@ -285,193 +382,327 @@ export function PreviewPanel({
                 có trong bản xuất. Nút phát và đồng hồ nằm NGOÀI: chúng là
                 giao diện của bàn dựng, không phải nội dung khung hình. */}
             <ContentRect pack={projectPack}>
-            {/* Tiêu đề đứng ở tầng KHUNG, vẽ một lần — không đi theo từng cụm
+              {/* NỀN TRANG đứng dưới cùng — video-vào-ô để lộ nó ra quanh mép. CHỈ
+                vẽ khi đang có MÀN (`cell`): lịch thưa để trống chỗ mặc định, mà ở
+                chỗ ấy khung phải là video phủ kín, không phải nền trang trơ. */}
+              {pageOn && cell && <ScenePage pack={projectPack} />}
+              {/* Tiêu đề đứng ở tầng KHUNG, vẽ một lần — không đi theo từng cụm
                 phụ đề như `OverlayTextBlock`. */}
-            <Headline text={editor.headline} pack={projectPack} />
-            {editor.projectId && editor.duration > 0 && (
-              <video
-                ref={videoRef}
-                src={api.baseVideoUrl(editor.projectId)}
-                className="absolute inset-0 size-full object-cover"
-                // Nhấn zoom chỉ phóng HÌNH GỐC: chữ và tư liệu vẽ sau nên giữ
-                // nguyên cỡ, đúng như bản in ra.
-                // Độ mạnh lấy từ BỘ DÁNG, không phải hằng dùng chung: bộ
-                // "nhanh" và bộ "êm" chọn kiểu chuyển cảnh khác nhau mà cú zoom
-                // vẫn đẩy bằng nhau thì xem video thật vẫn hao hao.
-                //
-                // NẮN MÀU của phong cách đứng TRƯỚC hiệu ứng chỗ nối — cùng thứ
-                // tự với chuỗi lọc ffmpeg, nơi nắn màu là bộ lọc đầu tiên.
-                style={junctionStyle}
-                muted={false}
-                playsInline
-                preload="auto"
-              />
-            )}
-            <div className="absolute inset-x-[5%] top-[10%] bottom-[20%] rounded-md border border-dashed border-muted-foreground/25" />
-
-            {insert &&
-              (() => {
-                const box = shapeBox(insert.shape);
-                // Hiệu ứng chạy theo VẠCH, không theo vòng lặp: người dùng tua tới
-                // đâu thì thấy đúng trạng thái ở đó, giống lúc xem video thật.
-                //
-                // `translateY` theo % tính trên chiều cao CỦA HỘP, còn máy chủ
-                // trượt theo % chiều cao KHUNG — `revealCss` nhận `box.h` để
-                // chia lại, không thì hộp nhỏ trượt ít hơn bản in ra.
-                const effectStyle = revealCss(
-                  insert.reveal,
-                  editor.time - insert.start,
-                  box.h,
-                );
-                return (
-                  <div
-                    // Bo góc: bản in ra khoét góc bằng biểu thức trong luồng tư
-                    // liệu, nên hai bên khớp nhau. Dáng "đè kín" không bo.
-                    className={
-                      insert.shape === "full"
-                        ? "absolute overflow-hidden"
-                        : "absolute overflow-hidden rounded-[3cqw]"
-                    }
-                    style={{
-                      left: `${box.x * 100}%`,
-                      top: `${box.y * 100}%`,
-                      width: `${box.w * 100}%`,
-                      height: `${box.h * 100}%`,
-                      ...effectStyle,
-                    }}
-                  >
-                    {insert.url ? (
-                      // Tư liệu THẬT, không phải ô màu có tên: ô màu không cho biết
-                      // nó có che mặt người nói hay không.
-                      // Nắn màu ĐÈ luôn lên tư liệu chèn, đúng như bản in ra:
-                      // chèn một mảnh chưa nắn vào giữa dải đã nắn thì mỗi lần
-                      // chèn là một lần màu nhảy.
-                      insert.isVideo ? (
-                        <video
-                          key={insert.id}
-                          ref={insertRef}
-                          src={insert.url}
-                          className="size-full object-cover"
-                          style={gradeStyle(projectPack)}
-                          muted
-                          playsInline
-                        />
-                      ) : (
-                        <img
-                          key={insert.id}
-                          src={insert.url}
-                          alt=""
-                          className="size-full object-cover"
-                          style={gradeStyle(projectPack)}
-                        />
-                      )
-                    ) : (
-                      <div className="flex size-full items-center justify-center bg-secondary">
-                        <span className="text-xs text-secondary-foreground">
-                          {insert.label}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-
-            {!inSkipped &&
-              visible.map((element) => (
-                <OverlayTextBlock
-                  key={element.id}
-                  config={{
-                    text: element.content,
-                    align: element.align,
-                    emphasis: element.emphasis,
-                    band: element.position as BandId,
-                    keywords: element.keywords,
-                    insert: { kind: "none", shape: "wide" },
-                  }}
-                  // Bộ dáng HIỆU LỰC của riêng cụm này: bộ của dự án, cộng phần
-                  // cụm tự đè. Thiếu dòng này thì khung xem vẽ bằng bộ gốc
-                  // trong khi video xuất ra vẽ bằng bộ đã chọn — đúng lỗi "xem
-                  // một đằng xuất một nẻo" mà cả hệ này chống.
-                  pack={packForElement(projectPack, element, element.keywords)}
-                  // Đang CHỌN cụm này mà không phát: hiện chữ ĐỦ, không theo
-                  // nhịp từng tiếng.
-                  //
-                  // Bấm một dòng thì vạch nhảy tới `đầu cụm + 0,05s` — đúng
-                  // khoảnh khắc chữ mới bật tiếng đầu. Nên chọn một cụm 14
-                  // tiếng để sửa mà khung xem hiện đúng chữ "Ngày": sửa chữ mà
-                  // không thấy chữ. Nhịp thật vẫn xem được bằng cách bấm phát,
-                  // và mọi cụm KHÔNG chọn vẫn chạy đúng nhịp.
-                  seconds={
-                    !playing &&
-                    editor.selection?.kind === "text" &&
-                    editor.selection.id === element.id
-                      ? element.end - element.start
-                      : editor.time - element.start
+              <Headline text={editor.headline} pack={projectPack} />
+              {editor.projectId && editor.duration > 0 && (
+                // Ô video: phủ kín khung khi không có màn (`cell` rỗng — khoảng
+                // trống hoặc bộ phủ kín); thu vào ô khi đang có màn.
+                // Bo góc bằng `rounded-[3cqw]` như tư liệu chèn — cùng lối làm tròn
+                // ở màn hình, phép kiểm parity soi hình học ô chứ không soi góc.
+                <div
+                  className={
+                    cell?.masked
+                      ? "absolute overflow-hidden rounded-[3cqw]"
+                      : "absolute inset-0"
                   }
-                  // Nhịp nói thật, đúng luật của máy chủ: chỉ dùng khi chữ còn
-                  // y nguyên lời của khoảng từ nó neo vào (xem `nhipNoi` ở
-                  // `server/pipeline.ts`). Thiếu chỗ này thì khung xem bật cả
-                  // cụm một lúc trong khi bản in ra chạy theo tiếng.
-                  //
-                  // Trừ đi mốc đầu cụm: `OverlayTextBlock` đếm giây TỪ ĐẦU CỤM,
-                  // còn máy chủ nhận mốc tuyệt đối. Quên trừ là chữ đứng im tới
-                  // tận cuối video mới hiện.
-                  wordStarts={editor
-                    .wordStarts(element)
-                    ?.map((at) => at - element.start)}
-                  // Chữ đã viết lại thì không còn mốc thật; rải đều số tiếng
-                  // trong ĐÚNG khoảng của cụm. Nhịp cố định 0,07 giây/tiếng
-                  // chạy hết trong nửa giây rồi đứng im, không liên quan gì tới
-                  // chỗ đó nói nhanh hay chậm.
-                  span={element.end - element.start}
-                  ring={
-                    editor.selection?.kind === "text" &&
-                    editor.selection.id === element.id
-                  }
-                  // Bấm tiếng để đánh dấu từ khoá — CHỈ trên chữ đang chọn.
-                  //
-                  // Bật cho mọi chữ thì mỗi lần bấm vào khung xem để chạy/dừng
-                  // là đánh dấu nhầm một tiếng của cụm đang hiện, mà người dùng
-                  // không hề định sửa nó.
-                  //
-                  // Đây là hàng thẻ tiếng ở bảng bên phải, dời về đúng chỗ nó
-                  // tác động: điều khiển nên là thứ gần nhất về không gian với
-                  // nội dung nó chi phối. Hàng thẻ vẫn còn trong "Tinh chỉnh"
-                  // cho lúc tua ra ngoài khoảng của chữ — lúc ấy không còn tiếng
-                  // nào trên màn để mà bấm.
-                  // Chỉ hai dáng dùng tới từ khoá (xem `dungTuKhoa` ở bảng sửa
-                  // chữ). Ở hai dáng kia, bấm một tiếng sẽ ghi một dấu không đổi
-                  // được gì trên bản in ra — im lặng làm một việc vô nghĩa còn
-                  // tệ hơn không cho bấm.
-                  onPickWord={
-                    editor.selection?.kind === "text" &&
-                    editor.selection.id === element.id &&
-                    (element.emphasis === "keyword-large" ||
-                      element.emphasis === "mixed-size")
-                      ? (text) => {
-                          const has = element.keywords.includes(text);
-                          editor.updateTextElement(element.id, {
-                            keywords: has
-                              ? element.keywords.filter((item) => item !== text)
-                              : [...element.keywords, text],
-                          });
+                  style={
+                    cell
+                      ? {
+                          left: `${cell.left}%`,
+                          top: `${cell.top}%`,
+                          width: `${cell.width}%`,
+                          height: `${cell.height}%`,
                         }
                       : undefined
                   }
-                />
+                >
+                  <video
+                    ref={videoRef}
+                    src={api.baseVideoUrl(editor.projectId)}
+                    className="size-full object-cover"
+                    // Nhấn zoom chỉ phóng HÌNH GỐC: chữ và tư liệu vẽ sau nên giữ
+                    // nguyên cỡ, đúng như bản in ra.
+                    //
+                    // NẮN MÀU của phong cách đứng TRƯỚC hiệu ứng chỗ nối — cùng thứ
+                    // tự với chuỗi lọc ffmpeg, nơi nắn màu là bộ lọc đầu tiên.
+                    style={junctionStyle}
+                    muted={false}
+                    playsInline
+                    preload="auto"
+                  />
+                </div>
+              )}
+              {/* Ô B-ROLL vẽ SAU ô người → ĐÈ LÊN người. Chỗ đè là thân/vai, không
+                phải mặt; b-roll nguyên vẹn, không bị người cắt. Cùng thứ tự z bản
+                xuất (`phu` khai z cao hơn `chinh`). */}
+              {cells?.inserts.map(({ box, media }, index) => (
+                <div
+                  key={index}
+                  className={
+                    box.masked
+                      ? "absolute overflow-hidden rounded-[3cqw]"
+                      : "absolute overflow-hidden"
+                  }
+                  style={{
+                    left: `${box.left}%`,
+                    top: `${box.top}%`,
+                    width: `${box.width}%`,
+                    height: `${box.height}%`,
+                  }}
+                >
+                  {media === null ? (
+                    // PLACEHOLDER: khung 2 ô chưa gắn tư liệu — ô trống để thấy cấu
+                    // trúc, chưa có nội dung.
+                    <div className="grid size-full place-items-center gap-1 bg-neutral-700/60 text-center text-white/70">
+                      <FilmIcon className="size-[6cqw]" />
+                      <span className="text-[3.5cqw] leading-none">
+                        Chưa có tư liệu
+                      </span>
+                    </div>
+                  ) : media.isVideo ? (
+                    <video
+                      ref={(node) => {
+                        if (node) cellVideos.current.set(index, node);
+                        else cellVideos.current.delete(index);
+                      }}
+                      src={api.mediaUrl(media.id)}
+                      className="size-full object-cover"
+                      style={gradeStyle(projectPack)}
+                      muted
+                      playsInline
+                    />
+                  ) : (
+                    <img
+                      src={api.mediaUrl(media.id)}
+                      alt=""
+                      className="size-full object-cover"
+                      style={gradeStyle(projectPack)}
+                    />
+                  )}
+                </div>
               ))}
+              <div className="absolute inset-x-[5%] top-[10%] bottom-[20%] rounded-md border border-dashed border-muted-foreground/25" />
 
-            {inSkipped && (
-              // Nằm TRÊN mọi lớp khác: khung này sẽ không có trong video, nên
-              // không được để chữ hay tư liệu nào hiện lên cùng lúc — thấy chữ ở
-              // đây là tưởng nó sẽ có trong bản in ra.
-              <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/85">
-                <span className="text-xs text-muted-foreground">
-                  Đoạn này đã bỏ, sẽ không có trong video
-                </span>
-              </div>
-            )}
+              {/* B-roll vẽ đè CHỈ khi không có bố cục ô. Bộ có bố cục thì b-roll đã
+                hiện trong ô phụ của màn — vẽ thêm lớp đè nữa là hiện đôi. */}
+              {insert &&
+                !pageOn &&
+                (() => {
+                  const box = shapeBox(insert.shape);
+                  // Hiệu ứng chạy theo VẠCH, không theo vòng lặp: người dùng tua tới
+                  // đâu thì thấy đúng trạng thái ở đó, giống lúc xem video thật.
+                  //
+                  // `translateY` theo % tính trên chiều cao CỦA HỘP, còn máy chủ
+                  // trượt theo % chiều cao KHUNG — `revealCss` nhận `box.h` để
+                  // chia lại, không thì hộp nhỏ trượt ít hơn bản in ra.
+                  const effectStyle = revealCss(
+                    insert.reveal,
+                    editor.time - insert.start,
+                    box.h,
+                  );
+                  return (
+                    <div
+                      // Bo góc: bản in ra khoét góc bằng biểu thức trong luồng tư
+                      // liệu, nên hai bên khớp nhau. Dáng "đè kín" không bo.
+                      className={
+                        insert.shape === "full"
+                          ? "absolute overflow-hidden"
+                          : "absolute overflow-hidden rounded-[3cqw]"
+                      }
+                      style={{
+                        left: `${box.x * 100}%`,
+                        top: `${box.y * 100}%`,
+                        width: `${box.w * 100}%`,
+                        height: `${box.h * 100}%`,
+                        ...effectStyle,
+                      }}
+                    >
+                      {insert.url ? (
+                        // Tư liệu THẬT, không phải ô màu có tên: ô màu không cho biết
+                        // nó có che mặt người nói hay không.
+                        // Nắn màu ĐÈ luôn lên tư liệu chèn, đúng như bản in ra:
+                        // chèn một mảnh chưa nắn vào giữa dải đã nắn thì mỗi lần
+                        // chèn là một lần màu nhảy.
+                        insert.isVideo ? (
+                          <video
+                            key={insert.id}
+                            ref={insertRef}
+                            src={insert.url}
+                            className="size-full object-cover"
+                            style={gradeStyle(projectPack)}
+                            muted
+                            playsInline
+                          />
+                        ) : (
+                          <img
+                            key={insert.id}
+                            src={insert.url}
+                            alt=""
+                            className="size-full object-cover"
+                            style={gradeStyle(projectPack)}
+                          />
+                        )
+                      ) : (
+                        <div className="flex size-full items-center justify-center bg-secondary">
+                          <span className="text-xs text-secondary-foreground">
+                            {insert.label}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
+              {/* Vệt quét đứng TRÊN video/tư liệu, DƯỚI chữ — cùng thứ tự lớp với
+                `render.ts` (sweep sau graphics, trước chữ và tiêu đề). */}
+              <StyleSweep
+                pack={projectPack}
+                cutMarks={sweepMarks}
+                seconds={sweepAt}
+              />
+
+              {!inSkipped &&
+                !proofread &&
+                visible.map((element) => (
+                  <OverlayTextBlock
+                    key={element.id}
+                    config={{
+                      text: element.content,
+                      align: element.align,
+                      emphasis: element.emphasis,
+                      band: element.position as BandId,
+                      keywords: element.keywords,
+                      insert: { kind: "none", shape: "wide" },
+                    }}
+                    // Bộ dáng HIỆU LỰC của riêng cụm này: bộ của dự án, cộng phần
+                    // cụm tự đè. Thiếu dòng này thì khung xem vẽ bằng bộ gốc
+                    // trong khi video xuất ra vẽ bằng bộ đã chọn — đúng lỗi "xem
+                    // một đằng xuất một nẻo" mà cả hệ này chống.
+                    pack={packForElement(
+                      projectPack,
+                      element,
+                      element.keywords,
+                    )}
+                    // Đang CHỌN cụm này mà không phát: hiện chữ ĐỦ, không theo
+                    // nhịp từng tiếng.
+                    //
+                    // Bấm một dòng thì vạch nhảy tới `đầu cụm + 0,05s` — đúng
+                    // khoảnh khắc chữ mới bật tiếng đầu. Nên chọn một cụm 14
+                    // tiếng để sửa mà khung xem hiện đúng chữ "Ngày": sửa chữ mà
+                    // không thấy chữ. Nhịp thật vẫn xem được bằng cách bấm phát,
+                    // và mọi cụm KHÔNG chọn vẫn chạy đúng nhịp.
+                    seconds={
+                      !playing &&
+                      editor.selection?.kind === "text" &&
+                      editor.selection.id === element.id
+                        ? element.end - element.start
+                        : editor.time - element.start
+                    }
+                    // Nhịp nói thật, đúng luật của máy chủ: chỉ dùng khi chữ còn
+                    // y nguyên lời của khoảng từ nó neo vào (xem `nhipNoi` ở
+                    // `server/pipeline.ts`). Thiếu chỗ này thì khung xem bật cả
+                    // cụm một lúc trong khi bản in ra chạy theo tiếng.
+                    //
+                    // Trừ đi mốc đầu cụm: `OverlayTextBlock` đếm giây TỪ ĐẦU CỤM,
+                    // còn máy chủ nhận mốc tuyệt đối. Quên trừ là chữ đứng im tới
+                    // tận cuối video mới hiện.
+                    wordStarts={editor
+                      .wordStarts(element)
+                      ?.map((at) => at - element.start)}
+                    // Chữ đã viết lại thì không còn mốc thật; rải đều số tiếng
+                    // trong ĐÚNG khoảng của cụm. Nhịp cố định 0,07 giây/tiếng
+                    // chạy hết trong nửa giây rồi đứng im, không liên quan gì tới
+                    // chỗ đó nói nhanh hay chậm.
+                    span={element.end - element.start}
+                    ring={
+                      editor.selection?.kind === "text" &&
+                      editor.selection.id === element.id
+                    }
+                    // Bấm tiếng để đánh dấu từ khoá — CHỈ trên chữ đang chọn.
+                    //
+                    // Bật cho mọi chữ thì mỗi lần bấm vào khung xem để chạy/dừng
+                    // là đánh dấu nhầm một tiếng của cụm đang hiện, mà người dùng
+                    // không hề định sửa nó.
+                    //
+                    // Đây là hàng thẻ tiếng ở bảng bên phải, dời về đúng chỗ nó
+                    // tác động: điều khiển nên là thứ gần nhất về không gian với
+                    // nội dung nó chi phối. Hàng thẻ vẫn còn trong "Tinh chỉnh"
+                    // cho lúc tua ra ngoài khoảng của chữ — lúc ấy không còn tiếng
+                    // nào trên màn để mà bấm.
+                    // Chỉ hai dáng dùng tới từ khoá (xem `dungTuKhoa` ở bảng sửa
+                    // chữ). Ở hai dáng kia, bấm một tiếng sẽ ghi một dấu không đổi
+                    // được gì trên bản in ra — im lặng làm một việc vô nghĩa còn
+                    // tệ hơn không cho bấm.
+                    onPickWord={
+                      editor.selection?.kind === "text" &&
+                      editor.selection.id === element.id &&
+                      (element.emphasis === "keyword-large" ||
+                        element.emphasis === "mixed-size")
+                        ? (text) => {
+                            const has = element.keywords.includes(text);
+                            editor.updateTextElement(element.id, {
+                              keywords: has
+                                ? element.keywords.filter(
+                                    (item) => item !== text,
+                                  )
+                                : [...element.keywords, text],
+                            });
+                          }
+                        : undefined
+                    }
+                  />
+                ))}
+
+              {/* CAPTION PHẲNG của bước Soát lời — cả cụm một lúc, chữ thường,
+                  gạch chấm chỗ máy nghi ngờ (cùng dấu với hàng bản chép). Đặt ở
+                  hạ phần ba như phụ đề thường, KHÔNG theo band/emphasis của style
+                  pack: ở đây đọc để soát, không phải xem thành phẩm. Chỉ lời NÓI
+                  (`!byTime`); tiêu đề tự do đã có `Headline` lo. */}
+              {!inSkipped &&
+                proofread &&
+                visible
+                  .filter((element) => !element.byTime)
+                  .map((element) => {
+                    const words = editor.captionWords(element);
+                    return (
+                      <div
+                        key={element.id}
+                        className="pointer-events-none absolute inset-x-[6%] bottom-[16%] flex justify-center"
+                      >
+                        <p className="rounded-md bg-black/45 px-[3cqw] py-[1.5cqw] text-center text-[5cqw] font-semibold leading-tight text-balance text-white [text-shadow:0_1px_3px_rgba(0,0,0,0.55)]">
+                          {words
+                            ? words.map((word) => (
+                                <span
+                                  key={word.id}
+                                  className={cn(
+                                    word.unsure &&
+                                      "underline decoration-dotted decoration-white/70 underline-offset-4",
+                                  )}
+                                >
+                                  {word.text}{" "}
+                                </span>
+                              ))
+                            : element.content}
+                        </p>
+                      </div>
+                    );
+                  })}
+
+              {subjectDeviceLabel && !inSkipped && (
+                // Nhãn nhỏ, không che khung: chỉ báo có một thiết bị dựa tách nền
+                // đang chạy màn này mà khung xem chưa dựng được.
+                <div className="pointer-events-none absolute inset-x-0 bottom-[8%] flex justify-center">
+                  <span className="rounded-full bg-background/80 px-2 py-0.5 text-xs text-muted-foreground">
+                    {subjectDeviceLabel}
+                  </span>
+                </div>
+              )}
+
+              {inSkipped && (
+                // Nằm TRÊN mọi lớp khác: khung này sẽ không có trong video, nên
+                // không được để chữ hay tư liệu nào hiện lên cùng lúc — thấy chữ ở
+                // đây là tưởng nó sẽ có trong bản in ra.
+                <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/85">
+                  <span className="text-xs text-muted-foreground">
+                    Đoạn này đã bỏ, sẽ không có trong video
+                  </span>
+                </div>
+              )}
             </ContentRect>
 
             {/* Nút phát và đồng hồ nằm ĐÈ lên đáy khung, không đứng dưới nó:
@@ -482,25 +713,57 @@ export function PreviewPanel({
 
                 `z-20` để còn bấm phát được cả khi đang đứng trong đoạn đã bỏ —
                 lớp phủ báo "đoạn này đã bỏ" nằm ở `z-10`. */}
-            <div className="absolute inset-x-0 bottom-0 z-20 flex items-center gap-2 bg-gradient-to-t from-black/70 to-transparent p-2 pt-8">
-              <Button
-                variant="secondary"
-                size="icon-sm"
-                aria-label={playing ? "Tạm dừng" : "Phát từ đây"}
-                // Không có video thì không có gì để phát — khoá lại thay vì để bấm
-                // vào một cái không nhúc nhích.
-                disabled={editor.duration === 0}
-                onClick={onTogglePlay}
-              >
-                {playing ? <PauseIcon /> : <PlayIcon />}
-              </Button>
-              {/* Màu trắng cứng chứ không phải `text-foreground`: nền là khung
-                  hình của người dùng, không phải nền của giao diện — ở chế độ
-                  sáng thì `text-foreground` là chữ đen trên nền tối. */}
-              <span className="text-xs text-white tabular-nums">
-                {formatTime(editor.toOutput(editor.time))} /{" "}
-                {formatTime(editor.outputDuration)}
-              </span>
+            <div className="absolute inset-x-0 bottom-0 z-20 flex flex-col gap-1.5 bg-gradient-to-t from-black/70 to-transparent p-2 pt-8">
+              {/* THANH TUA — chỉ ở Soát lời. Màn này KHÔNG có dòng thời gian như
+                  bàn dựng, mà kéo tới một chỗ ngờ để nghe lại là thao tác CHÍNH của
+                  bước soát. Bàn dựng/editor đã có Timeline riêng nên không cần. */}
+              {proofread && editor.duration > 0 ? (
+                <div
+                  role="slider"
+                  aria-label="Tua video"
+                  aria-valuemin={0}
+                  aria-valuemax={Math.round(editor.outputDuration)}
+                  aria-valuenow={Math.round(editor.toOutput(editor.time))}
+                  className="relative flex h-3 cursor-pointer items-center"
+                  onPointerDown={(event) => {
+                    event.currentTarget.setPointerCapture(event.pointerId);
+                    seekAtClientX(event.clientX, event.currentTarget);
+                  }}
+                  onPointerMove={(event) => {
+                    if (event.currentTarget.hasPointerCapture(event.pointerId))
+                      seekAtClientX(event.clientX, event.currentTarget);
+                  }}
+                >
+                  <div className="h-1 w-full overflow-hidden rounded-full bg-white/25">
+                    <div
+                      className="h-full rounded-full bg-white"
+                      style={{
+                        width: `${(editor.toOutput(editor.time) / editor.outputDuration) * 100}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              ) : null}
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="secondary"
+                  size="icon-sm"
+                  aria-label={playing ? "Tạm dừng" : "Phát từ đây"}
+                  // Không có video thì không có gì để phát — khoá lại thay vì để
+                  // bấm vào một cái không nhúc nhích.
+                  disabled={editor.duration === 0}
+                  onClick={onTogglePlay}
+                >
+                  {playing ? <PauseIcon /> : <PlayIcon />}
+                </Button>
+                {/* Màu trắng cứng chứ không phải `text-foreground`: nền là khung
+                    hình của người dùng, không phải nền của giao diện — ở chế độ
+                    sáng thì `text-foreground` là chữ đen trên nền tối. */}
+                <span className="text-xs text-white tabular-nums">
+                  {formatTime(editor.toOutput(editor.time))} /{" "}
+                  {formatTime(editor.outputDuration)}
+                </span>
+              </div>
             </div>
           </div>
         </AspectRatio>

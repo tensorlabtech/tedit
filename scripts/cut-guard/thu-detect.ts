@@ -10,6 +10,7 @@
 import { db } from "../../server/db";
 import { readEnvelope } from "../../server/audio-envelope";
 import { trimSilence } from "../../server/auto-trim-silence";
+import { readSpeech } from "../../server/vad";
 import { proposeCuts } from "../../server/ai-cuts";
 import { seedSegmentsByCaption } from "../../server/segment-seed";
 import { readStylePack } from "../../server/style-pack-store";
@@ -55,7 +56,11 @@ async function main() {
 
   // ── Bộ 1: LẶNG (deterministic từ sóng) ──────────────────────────────────
   const before1 = listSegments(projectId).filter((s) => s.removed).length;
-  const silence = trimSilence(projectId, await readEnvelope(projectId));
+  const silence = trimSilence(
+    projectId,
+    await readSpeech(projectId),
+    await readEnvelope(projectId),
+  );
   const afterSilence = listSegments(projectId).filter((s) => s.removed);
   console.log(`── LẶNG (đo sóng) — rút ${silence.trimmed} chỗ · ${silence.saved.toFixed(1)}s ──`);
   for (const s of afterSilence.slice(0, 40)) {

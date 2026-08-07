@@ -201,6 +201,13 @@ export type ScheduledScene = {
    * lẫn máy chủ, mà đường dẫn tệp chỉ có nghĩa ở máy chủ.
    */
   insert?: number;
+  /**
+   * Mã ELEMENT của segment đã đặt — để màn hình sửa/xoá đúng phần tử.
+   *
+   * Bỏ trống ở màn toàn-khung lấp khoảng trống (chỉ có lúc DỰNG, không phải một
+   * phần tử người dùng đặt).
+   */
+  elementId?: string;
 };
 
 export type Violation = { rule: string; detail: string };

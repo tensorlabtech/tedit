@@ -47,7 +47,9 @@ export function ProjectTile({
       }}
     >
       <CardContent className="flex flex-col gap-3">
-        <div className="relative aspect-video overflow-hidden rounded-lg bg-muted">
+        {/* Ảnh TRÀN MÉP thẻ (lề âm khớp `--card-spacing`) để mép trái ảnh thẳng
+            với tiêu đề trang. Góc trên bo theo thẻ nhờ `overflow-hidden` của Card. */}
+        <div className="relative -mx-(--card-spacing) -mt-(--card-spacing) aspect-video overflow-hidden rounded-b-xl bg-muted">
           {thumbnail ? (
             <img
               src={thumbnail}

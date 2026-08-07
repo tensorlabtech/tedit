@@ -25,12 +25,15 @@ export function useUndoStack({
   setSelection,
   applySegmentsRef,
   durationRef,
+  onInsertTrimmed,
 }: {
   projectId: string | undefined;
   setData: React.Dispatch<React.SetStateAction<Shaped | null>>;
   setSelection: (value: null) => void;
   applySegmentsRef: React.RefObject<(rows: ApiSegment[]) => void>;
   durationRef: React.RefObject<number>;
+  /** Hoàn tác gọt-mép b-roll: mốc từ tư liệu đổi lại → xếp lại lịch màn. */
+  onInsertTrimmed?: () => void;
 }) {
   /**
    * Ngăn hoàn tác lưu DỮ LIỆU, không lưu hàm.
@@ -220,6 +223,8 @@ export function useUndoStack({
         durationRef.current = shaped.duration;
         setData(shaped);
       }
+      // Mép b-roll trả về chỗ cũ → xếp lại lịch màn cho khung người theo kịp.
+      onInsertTrimmed?.();
       return;
     }
     if (last.type === "music-trim") {
@@ -305,7 +310,7 @@ export function useUndoStack({
           }
         : current,
     );
-  }, [undoStack, persist]);
+  }, [undoStack, persist, onInsertTrimmed]);
 
   return { undoStack, undoLabel, persist, pushUndo, undo };
 }

@@ -16,7 +16,7 @@ import { OverlayTextBlock } from "@/dev/overlays/overlay-render";
 import { api } from "@/lib/api";
 
 import { packForElement } from "../../../server/style-pack";
-import { findStylePack } from "../../../server/style-pack-catalog";
+import { applyFontStyle, findStylePack } from "../../../server/style-pack-catalog";
 import type { EditorState } from "./use-editor";
 
 /**
@@ -66,7 +66,7 @@ export function OpeningHookPane({
   const firstText = [...editor.textElements].sort(
     (a, b) => a.start - b.start,
   )[0];
-  const pack = findStylePack(editor.stylePack);
+  const pack = applyFontStyle(findStylePack(editor.stylePack), editor.fontStyle);
 
   // Chữ của đúng ba giây đầu, lấy từ bảng `words`.
   const opening = words

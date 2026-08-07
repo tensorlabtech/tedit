@@ -1,6 +1,6 @@
-import { FilmIcon, ImageIcon, LibraryIcon, TypeIcon } from "lucide-react";
+import { TypeIcon } from "lucide-react";
 
-import type { Insert, TextElement } from "./editor-data";
+import type { TextElement } from "./editor-data";
 import { TimelineBlock } from "./timeline-block";
 import type { Selection } from "./use-editor";
 
@@ -101,75 +101,6 @@ export function FreeTextLane({
           >
             {element.content || "chữ trống"}
           </span>
-        </TimelineBlock>
-      ))}
-    </div>
-  );
-}
-
-/**
- * Dải TƯ LIỆU CHÈN.
- *
- * Khối mang MẶT của tệp chứ không chỉ mang tên: một dòng "Video 2" không nói
- * được đang chèn cái gì, mà lúc dựng câu hỏi luôn là "chỗ này đang đè ảnh nào".
- */
-export function InsertLane({
-  inserts,
-  pxPerSecond,
-  selection,
-  onSelect,
-}: {
-  inserts: Insert[];
-  pxPerSecond: number;
-  selection: Selection;
-  onSelect: (id: string) => void;
-}) {
-  if (inserts.length === 0) return null;
-  return (
-    <div className="relative h-6">
-      {inserts.map((insert) => (
-        <TimelineBlock
-          key={insert.id}
-          blockId={insert.id}
-          start={insert.start}
-          end={insert.end}
-          pxPerSecond={pxPerSecond}
-          tone="insert"
-          active={selection?.kind === "insert" && selection.id === insert.id}
-          trimmable
-          // Nhãn trên dải đã rút ngắn (xem `shortMediaLabel`); tên tệp đầy đủ
-          // vẫn phải xem được ở đâu đó, không thì không biết đang chèn tệp nào.
-          title={
-            (insert.fullName ?? insert.label) +
-            (insert.fromLibrary ? " — lấy từ kho tư liệu" : "")
-          }
-          className="gap-1.5 pr-2"
-          onSelect={() => onSelect(insert.id)}
-        >
-          {insert.thumbUrl ? (
-            <span
-              className="h-full w-8 shrink-0 bg-cover bg-center"
-              style={{ backgroundImage: `url(${insert.thumbUrl})` }}
-            />
-          ) : (
-            <span className="grid h-full w-6 shrink-0 place-items-center">
-              {insert.isVideo ? (
-                <FilmIcon className="size-3" />
-              ) : (
-                <ImageIcon className="size-3" />
-              )}
-            </span>
-          )}
-          <span className="truncate">{insert.label}</span>
-          {/* Tư liệu máy TỰ LẤY TỪ KHO phải nói ra. Không đánh dấu thì người dùng
-              mở dải ra, thấy một clip mình chưa từng thêm vào dự án này, và
-              không có cách nào biết nó ở đâu ra. */}
-          {insert.fromLibrary && (
-            <LibraryIcon
-              className="size-3 shrink-0 opacity-70"
-              aria-label="từ kho"
-            />
-          )}
         </TimelineBlock>
       ))}
     </div>

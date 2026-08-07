@@ -1,6 +1,6 @@
-import { useRef, useState } from "react";
+import { useRef } from "react";
 import {
-  FilmIcon,
+  LayoutTemplateIcon,
   MusicIcon,
   PlusIcon,
   ScissorsIcon,
@@ -8,6 +8,7 @@ import {
   TypeIcon,
 } from "lucide-react";
 
+import { findLayout } from "../../../server/layout-kinds";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -16,7 +17,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-import { InsertPicker } from "./insert-picker";
 import { MIN_SEGMENT, type EditorState } from "./use-editor";
 
 /**
@@ -38,8 +38,14 @@ import { MIN_SEGMENT, type EditorState } from "./use-editor";
  * Cả hai đặt NGOÀI vùng cuộn của dải — vùng đó `overflow: hidden` nên nút thò ra
  * là bị xén. Chúng thò 12px vào phần đệm 20px của thẻ, nên vẫn nguyên vẹn.
  */
-export function TimelinePlayheadButtons({ editor }: { editor: EditorState }) {
-  const [moTuLieu, setMoTuLieu] = useState(false);
+export function TimelinePlayheadButtons({
+  editor,
+  /** Bàn dựng: ẩn nút ✂ tách đoạn — việc cắt đã làm ở bước riêng. */
+  studio,
+}: {
+  editor: EditorState;
+  studio?: boolean;
+}) {
   const musicInputRef = useRef<HTMLInputElement>(null);
 
   const noTranscriptYet = editor.sentences.length === 0;
@@ -76,7 +82,6 @@ export function TimelinePlayheadButtons({ editor }: { editor: EditorState }) {
           event.target.value = "";
         }}
       />
-      <InsertPicker editor={editor} open={moTuLieu} onOpenChange={setMoTuLieu} />
 
       <DropdownMenu>
         <DropdownMenuTrigger
@@ -110,13 +115,25 @@ export function TimelinePlayheadButtons({ editor }: { editor: EditorState }) {
             <TypeIcon />
             Thêm chữ
           </DropdownMenuItem>
-          <DropdownMenuItem
-            disabled={editor.uploadingMedia}
-            onClick={() => setMoTuLieu(true)}
-          >
-            <FilmIcon />
-            {editor.uploadingMedia ? "Đang tải lên…" : "Chèn tư liệu"}
-          </DropdownMenuItem>
+          {/* Thêm một KHUNG (ô người) khác mặc định ở câu vạch đang đứng — lấy
+              khung người đầu tiên bộ dáng khai, đổi/xoá sau ở "Đang sửa". Chỉ hiện
+              khi bộ dáng có bố cục người. */}
+          {(() => {
+            const person = editor.sceneLayout?.allowedLayouts.find(
+              (choice) => !findLayout(choice.id).needsInsert,
+            );
+            if (!person) return null;
+            return (
+              <DropdownMenuItem
+                onClick={() => void editor.addLayoutAtPlayhead(person.id)}
+              >
+                <LayoutTemplateIcon />
+                Thêm khung
+              </DropdownMenuItem>
+            );
+          })()}
+          {/* KHÔNG còn "Chèn tư liệu" riêng: b-roll giờ là một KHUNG có tư liệu.
+              Thêm khung 2 ô rồi gắn tư liệu ở "Đang sửa" — một đường duy nhất. */}
           <DropdownMenuItem onClick={() => musicInputRef.current?.click()}>
             <MusicIcon />
             Thêm nhạc
@@ -124,29 +141,31 @@ export function TimelinePlayheadButtons({ editor }: { editor: EditorState }) {
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <Button
-        variant="secondary"
-        size="icon-sm"
-        tooltipSide="bottom"
-        disabled={noTranscriptYet || !canSplit}
-        aria-label={
-          canSplit
-            ? "Tách đoạn tại vạch"
-            : "Vạch đang sát mép đoạn — kéo sang giữa đoạn rồi tách"
-        }
-        // Khoá thì MỜ MỖI ICON, không mờ cả nút.
-        //
-        // `disabled:opacity-50` của hệ làm cả cái nút trong suốt một nửa,
-        // mà ngay sau nó là VẠCH CHẠY — vạch lọt qua thân nút, đọc ra như
-        // nút bị gạch ngang. Giữ nền đặc thì nút vẫn là một vật liền, chỉ
-        // cái kéo nhạt đi để nói "chưa dùng được".
-        className="absolute -bottom-3 left-1/2 z-40 -translate-x-1/2 rounded-full shadow-md disabled:opacity-100 disabled:[&_svg]:opacity-30"
-        // TÁCH đoạn tại vạch, không cắt bỏ: tách rồi bỏ đoạn là hai bước nhìn
-        // thấy được và lấy lại được, còn cắt thẳng thì mất luôn.
-        onClick={() => void editor.splitAtPlayhead()}
-      >
-        <ScissorsIcon />
-      </Button>
+      {!studio && (
+        <Button
+          variant="secondary"
+          size="icon-sm"
+          tooltipSide="bottom"
+          disabled={noTranscriptYet || !canSplit}
+          aria-label={
+            canSplit
+              ? "Tách đoạn tại vạch"
+              : "Vạch đang sát mép đoạn — kéo sang giữa đoạn rồi tách"
+          }
+          // Khoá thì MỜ MỖI ICON, không mờ cả nút.
+          //
+          // `disabled:opacity-50` của hệ làm cả cái nút trong suốt một nửa,
+          // mà ngay sau nó là VẠCH CHẠY — vạch lọt qua thân nút, đọc ra như
+          // nút bị gạch ngang. Giữ nền đặc thì nút vẫn là một vật liền, chỉ
+          // cái kéo nhạt đi để nói "chưa dùng được".
+          className="absolute -bottom-3 left-1/2 z-40 -translate-x-1/2 rounded-full shadow-md disabled:opacity-100 disabled:[&_svg]:opacity-30"
+          // TÁCH đoạn tại vạch, không cắt bỏ: tách rồi bỏ đoạn là hai bước nhìn
+          // thấy được và lấy lại được, còn cắt thẳng thì mất luôn.
+          onClick={() => void editor.splitAtPlayhead()}
+        >
+          <ScissorsIcon />
+        </Button>
+      )}
     </>
   );
 }

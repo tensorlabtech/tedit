@@ -14,6 +14,7 @@ export function CaptionRow({
   active,
   inRange,
   onPick,
+  proofread,
 }: {
   row: TextElement;
   editor: EditorState;
@@ -21,6 +22,8 @@ export function CaptionRow({
   /** Đang nằm trong vùng chọn nhiều dòng */
   inRange: boolean;
   onPick: (row: TextElement, extend: boolean) => void;
+  /** Bước Soát lời: chỉ sửa CHỮ, ẩn nút cắt video (cắt là bước trước đó). */
+  proofread?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   // "Đã bỏ" suy từ CÁC QUÃNG KHÔNG VÀO VIDEO, không từ một cờ riêng của dòng.
@@ -88,7 +91,12 @@ export function CaptionRow({
         onClick={select}
         className="min-h-6 pt-0.5 text-xs text-muted-foreground tabular-nums"
       >
-        {formatTime(row.start)}
+        {/* Soát lời: đếm theo giờ ĐÃ CẮT để khớp đồng hồ khung xem. Ở đây cụm
+            đã cắt bị giấu, nên nếu để giờ gốc thì danh sách nhảy số ngay chỗ cắt
+            (vd 0:25 → 0:39) như thể mất đoạn — trong khi video chạy liền mạch. Bàn
+            dựng thì giữ giờ GỐC: cụm đã cắt vẫn bày (gạch ngang), giờ gốc mới nói
+            được nó nằm chỗ nào trong bản quay thật. */}
+        {formatTime(proofread ? editor.toOutput(row.start) : row.start)}
       </button>
       {editing ? (
         <CaptionInput
@@ -122,7 +130,11 @@ export function CaptionRow({
 
           Nút này ở lại cả lúc đang sửa. Gỡ nó ra thì dòng mất đúng 4px — nó cao
           28px trong khi hai thứ còn lại cao 24px, nên chính nó quyết chiều cao
-          dòng — và cả danh sách nhích lên khi bắt đầu gõ. */}
+          dòng — và cả danh sách nhích lên khi bắt đầu gõ.
+
+          Bước Soát lời ẩn hẳn nút này: cắt đã xong ở bước trước, ở đây cắt tiếp
+          là chồng lát cắt mới lên bản đã cắt — chỉ soát CHỮ thôi. */}
+      {proofread ? null : (
       <Button
         variant="ghost"
         size="icon-xs"
@@ -151,6 +163,7 @@ export function CaptionRow({
       >
         {removed ? <Undo2Icon /> : <EyeOffIcon />}
       </Button>
+      )}
     </div>
   );
 }

@@ -46,7 +46,10 @@ export function AssetTile({
       }}
     >
       <CardContent className="flex flex-col gap-3">
-        <div className="relative aspect-video overflow-hidden rounded-lg bg-muted">
+        {/* Ảnh TRÀN MÉP thẻ: lề âm khớp đúng đệm thẻ (`--card-spacing`) kéo ảnh ra
+            sát mép trái/phải/trên, để mép trái ảnh THẲNG với tiêu đề và ô tìm.
+            Góc trên bo theo thẻ nhờ `overflow-hidden rounded-xl` của Card. */}
+        <div className="relative -mx-(--card-spacing) -mt-(--card-spacing) aspect-video overflow-hidden rounded-b-xl bg-muted">
           <MediaThumb src={src} kind={asset.kind} />
 
           <Badge variant="secondary" className="absolute top-2 left-2 gap-1">

@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { composeProfile, settingsForProject } from "./settings";
 
 /**
  * Mồi từ vựng cho máy nghe — `initial_prompt` của whisper.
@@ -121,6 +122,11 @@ export function buildAsrPrompt(projectId: string): string {
   for (const row of earlier) if (isRareTerm(row.text)) terms.add(row.text);
 
   const parts = [LEAD];
+  // HỒ SƠ CHUNG (ngành, tên riêng — từ onboarding/Cài đặt): tên riêng ở đây là
+  // thứ whisper hay nghe sai nhất, nên mồi trước. Bơm lúc chạy thay vì seed vào
+  // `projects.profile` (cột đó là đề bài per-dự-án của luồng).
+  const hoSo = composeProfile(settingsForProject(projectId)).trim();
+  if (hoSo) parts.push(hoSo);
   // Lời tự khai đặt TRƯỚC danh sách từ: nó là văn xuôi thật nên whisper bám
   // được cả văn phong, còn danh sách từ rời chỉ mồi được mặt từ vựng.
   if (project?.profile?.trim()) parts.push(project.profile.trim());

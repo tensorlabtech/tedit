@@ -104,6 +104,8 @@ export type RenderElement = {
   letterCase?: StylePack["letterCase"] | null;
   /** Cụm này tự đè màu nhấn; rỗng thì theo bộ dáng của dự án */
   keyColor?: string | null;
+  /** Cụm này tự đè phong cách chữ; rỗng thì theo mặc định của dự án */
+  fontStyle?: string | null;
   /** Hình dáng khung tư liệu */
   shape?: InsertShape;
   /**
@@ -1130,19 +1132,27 @@ export async function burnElements(
     stream = label;
   }
 
-  inserts.forEach((insert, index) => {
-    const label = `[ins${index}]`;
-    // `setpts` dịch mốc luồng chèn về đúng chỗ trên dải chính; không dịch thì nó
-    // khớp theo thời gian của chính nó và luôn rơi về đầu video.
-    filters.push(insertFilter(insert, index, label, pack));
+  /*
+   * B-roll vẽ đè (shape) CHỈ khi bộ dáng không có bố cục ô. Bộ có bố cục thì chính
+   * b-roll ấy đã hiện trong Ô PHỤ của màn nó đè lên (`layoutPlan` dưới) — vẽ thêm
+   * một lớp đè nữa là hiện đôi. "Chèn tư liệu" và "bố cục hai ô" là một việc.
+   */
+  const layoutActive = schedule.length > 0 && pack.page !== null;
+  if (!layoutActive) {
+    inserts.forEach((insert, index) => {
+      const label = `[ins${index}]`;
+      // `setpts` dịch mốc luồng chèn về đúng chỗ trên dải chính; không dịch thì nó
+      // khớp theo thời gian của chính nó và luôn rơi về đầu video.
+      filters.push(insertFilter(insert, index, label, pack));
 
-    const next = `[ov${index}]`;
-    filters.push(
-      `${stream}${label}overlay=x=${insertX(insert)}:y=${insertY(insert)}:` +
-        `${enableRange(insert.start, insert.end)}${next}`,
-    );
-    stream = next;
-  });
+      const next = `[ov${index}]`;
+      filters.push(
+        `${stream}${label}overlay=x=${insertX(insert)}:y=${insertY(insert)}:` +
+          `${enableRange(insert.start, insert.end)}${next}`,
+      );
+      stream = next;
+    });
+  }
 
   /*
    * KHUNG BAO QUANH HÌNH — sau tư liệu chèn, trước mọi thứ bộ dáng vẽ.
@@ -1439,6 +1449,7 @@ export async function burnElements(
       {
         letterCase: text.letterCase ?? null,
         keyColor: text.keyColor ?? null,
+        fontStyle: text.fontStyle ?? null,
       },
       // VAI CHỮ theo chính cụm này: có từ khoá thì `accent`, không thì `voice`.
       // Đọc `elements.keywords` — dữ liệu `ai-keywords.ts` đã ghi sẵn, không mở
@@ -1645,7 +1656,10 @@ export async function burnElements(
     //
     // Nối các lệnh vẽ bằng dấu phẩy thành MỘT chuỗi thay vì mỗi tiếng một nhãn:
     // năm mươi cụm phụ đề là hơn hai trăm nhãn, đủ để đồ thị lọc dài quá mức.
-    const layer = `[${1 + inserts.length}:v]`;
+    // Chỉ số lớp chữ = sau BASE và sau các input CHÈN. Nhưng bộ có bố cục KHÔNG
+    // nạp input chèn (b-roll vào ô qua `movie=`), nên lúc ấy lớp chữ tụt về ngay
+    // sau base. Thiếu phép trừ này thì nhãn `[N:v]` trỏ vào một input không có.
+    const layer = `[${1 + (layoutActive ? 0 : inserts.length)}:v]`;
     filters.push(`${layer}${draws.join(",")}[txt]`);
     if (pack.glow) {
       filters.push(`[txt]split[glowsrc][txtmain]`);
@@ -1697,18 +1711,24 @@ export async function burnElements(
     cut,
     // Ảnh tĩnh chỉ có MỘT khung: không lặp thì điều kiện thời gian không bao
     // giờ khớp vì luồng ảnh đã hết ngay tại giây 0.
-    ...inserts.flatMap((insert) =>
-      insert.isStill
-        ? [
-            "-loop",
-            "1",
-            "-t",
-            (insert.end - insert.start + 0.5).toFixed(3),
-            "-i",
-            insert.mediaPath!,
-          ]
-        : ["-i", insert.mediaPath!],
-    ),
+    //
+    // Bộ có bố cục thì KHÔNG nạp input chèn: b-roll đã vào ô phụ (`layoutPlan`
+    // nạp bằng `movie=`), không vẽ lớp đè nên không cần `-i` — thêm vào là input
+    // thừa, và nhãn `[N:v]` phải khớp với phần đã bỏ ở trên.
+    ...(layoutActive
+      ? []
+      : inserts.flatMap((insert) =>
+          insert.isStill
+            ? [
+                "-loop",
+                "1",
+                "-t",
+                (insert.end - insert.start + 0.5).toFixed(3),
+                "-i",
+                insert.mediaPath!,
+              ]
+            : ["-i", insert.mediaPath!],
+        )),
     // Lớp trong suốt để vẽ chữ. PHẢI có thời lượng: nguồn `color` không giới hạn
     // thì bộ điều phối của ffmpeg kéo khung từ nó không ngừng — nó luôn sẵn sàng
     // trả khung tiếp theo nên không bao giờ chờ luồng video. Thiếu `d=` thì lệnh

@@ -18,11 +18,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
-import { Slider } from "@/components/ui/slider";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
+import { ProfileFields } from "@/components/profile-fields";
 import { api, type ApiSettings, type ApiStorage } from "@/lib/api";
 import { INSERT_SOURCE_LABELS } from "@/lib/insert-source-options";
 
@@ -106,147 +106,41 @@ export function SettingsPage() {
         <ScrollArea className="min-h-0" viewportClassName="scroll-fade-b">
           <div className="mx-auto grid w-full max-w-2xl gap-6 pb-4">
             <Nhom
-              ten="Máy nghe và sửa lời"
-              y="Thứ ảnh hưởng tới bản chép lời, trước khi có bất cứ hình ảnh nào."
+              ten="Hồ sơ của bạn"
+              y="Máy đọc để chép đúng tên riêng và hiểu video nói về mảng gì — điền một lần, mọi dự án sau tự có."
             >
+              <ProfileFields
+                value={{
+                  trade: settings.trade,
+                  names: settings.names,
+                  videoKind: settings.videoKind,
+                }}
+                onCommit={doi}
+              />
+
               <Field>
-                <FieldLabel htmlFor="profile">Lời dặn chung</FieldLabel>
+                <FieldLabel htmlFor="profile">Thêm gì nữa (tuỳ)</FieldLabel>
                 <Textarea
                   id="profile"
-                  className="min-h-24 resize-none"
+                  className="min-h-20 resize-none"
                   spellCheck={false}
-                  // Dựng lại khi cài đặt từ máy chủ về — `defaultValue` đọc
-                  // một lần lúc dựng, mà lúc ấy ô còn rỗng.
+                  // Dựng lại khi cài đặt từ máy chủ về — `defaultValue` đọc một
+                  // lần lúc dựng, mà lúc ấy ô còn rỗng.
                   key={settings.profile}
                   defaultValue={settings.profile}
-                  placeholder="Tên riêng máy hay nghe sai — cứ viết vào: mình lập công ty TensorLab, làm Golang với Redis"
+                  placeholder="Dặn thêm cho máy nghe và sửa lời, nếu ba ô trên chưa đủ"
                   onBlur={(event) => {
                     const clean = event.target.value.trim();
                     if (clean !== settings.profile) doi({ profile: clean });
                   }}
                 />
-                <FieldDescription>
-                  Nối vào trước lời dặn của từng dự án. Máy nghe đọc nó làm mồi
-                  từ vựng, chặng sửa lời tin nó hơn mọi suy đoán — nên tên công
-                  ty hay tên sản phẩm viết một lần ở đây là đủ cho mọi video.
-                </FieldDescription>
-              </Field>
-
-              <Field>
-                <FieldLabel>
-                  Tự rút quãng lặng dài hơn{" "}
-                  {settings.minSilence === 0
-                    ? "— đang tắt"
-                    : `${settings.minSilence.toFixed(1)} giây`}
-                </FieldLabel>
-                <Slider
-                  min={0}
-                  max={3}
-                  step={0.1}
-                  value={[settings.minSilence]}
-                  onValueChange={(value) =>
-                    setSettings((cur) =>
-                      cur
-                        ? {
-                            ...cur,
-                            minSilence: Array.isArray(value)
-                              ? value[0]!
-                              : value,
-                          }
-                        : cur,
-                    )
-                  }
-                  onValueCommitted={(value) =>
-                    doi({
-                      minSilence: Array.isArray(value) ? value[0]! : value,
-                    })
-                  }
-                />
-                <FieldDescription>
-                  Người kể chuyện chậm nên để cao, video hướng dẫn nhanh thì hạ
-                  xuống. Đặt 0 là đừng tự rút gì cả.
-                </FieldDescription>
               </Field>
             </Nhom>
 
             <Nhom
-              ten="Nhịp dựng"
-              y="Máy nhắm tới những con số này, rồi tự bỏ chỗ nào đặt vào sẽ hỏng nhịp."
+              ten="Máy tự làm"
+              y="Những việc máy tự lo khi dựng. Nhịp cắt, mật độ tư liệu và độ to nhạc giờ đi theo PHONG CÁCH của dự án, không chỉnh ở đây nữa."
             >
-              <Field>
-                <FieldLabel>
-                  Nhấn ở chỗ nối: mỗi {Math.round(settings.secondsPerEffect)}{" "}
-                  giây một lần
-                </FieldLabel>
-                <Slider
-                  min={3}
-                  max={60}
-                  step={1}
-                  value={[settings.secondsPerEffect]}
-                  onValueChange={(value) =>
-                    setSettings((cur) =>
-                      cur
-                        ? {
-                            ...cur,
-                            secondsPerEffect: Array.isArray(value)
-                              ? value[0]!
-                              : value,
-                          }
-                        : cur,
-                    )
-                  }
-                  onValueCommitted={(value) =>
-                    doi({
-                      secondsPerEffect: Array.isArray(value)
-                        ? value[0]!
-                        : value,
-                    })
-                  }
-                />
-                <FieldDescription>
-                  Số này là mục tiêu, không phải mệnh lệnh: máy vẫn bỏ những chỗ
-                  nối quá sát nhau, vì hai cú nhấn cách nhau dưới 2,5 giây đọc
-                  ra là giật chứ không phải nhịp.
-                </FieldDescription>
-              </Field>
-
-              <Field>
-                <FieldLabel>
-                  Tư liệu chèn:{" "}
-                  {settings.placesPerMinute === 0
-                    ? "đừng tự chèn"
-                    : `${Math.round(settings.placesPerMinute)} lần mỗi phút`}
-                </FieldLabel>
-                <Slider
-                  min={0}
-                  max={12}
-                  step={1}
-                  value={[settings.placesPerMinute]}
-                  onValueChange={(value) =>
-                    setSettings((cur) =>
-                      cur
-                        ? {
-                            ...cur,
-                            placesPerMinute: Array.isArray(value)
-                              ? value[0]!
-                              : value,
-                          }
-                        : cur,
-                    )
-                  }
-                  onValueCommitted={(value) =>
-                    doi({
-                      placesPerMinute: Array.isArray(value) ? value[0]! : value,
-                    })
-                  }
-                />
-                <FieldDescription>
-                  Chỉ đặt được những tư liệu ĐÃ CÓ MÔ TẢ — máy đọc mô tả để biết
-                  hình vẽ gì. Đặt 0 thì máy không tự chèn, bạn tự đặt tay ở bàn
-                  dựng.
-                </FieldDescription>
-              </Field>
-
               <Field>
                 <FieldLabel>Máy được lấy tư liệu ở đâu</FieldLabel>
                 <Select
@@ -273,40 +167,6 @@ export function SettingsPage() {
                   Mấy clip dùng đi dùng lại — cảnh bàn phím, góc văn phòng — thì
                   đánh dấu sao một lần, mọi dự án sau tự có. Chọn cả kho khi kho
                   còn ít và mô tả đã viết kỹ.
-                </FieldDescription>
-              </Field>
-
-              <Field>
-                <FieldLabel>
-                  Nhạc nền to nhất {Math.round(settings.musicVolume * 100)}%
-                </FieldLabel>
-                <Slider
-                  min={2}
-                  max={40}
-                  step={1}
-                  value={[Math.round(settings.musicVolume * 100)]}
-                  onValueChange={(value) =>
-                    setSettings((cur) =>
-                      cur
-                        ? {
-                            ...cur,
-                            musicVolume:
-                              (Array.isArray(value) ? value[0]! : value) / 100,
-                          }
-                        : cur,
-                    )
-                  }
-                  onValueCommitted={(value) =>
-                    doi({
-                      musicVolume:
-                        (Array.isArray(value) ? value[0]! : value) / 100,
-                    })
-                  }
-                />
-                <FieldDescription>
-                  Đây là TRẦN, không phải mức cố định: máy vẫn hạ thấp hơn ở
-                  đoạn lời dày. Trên 22% thì nhạc bắt đầu át tiếng người, nên đó
-                  cũng là mức cao nhất máy tự đặt.
                 </FieldDescription>
               </Field>
 

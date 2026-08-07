@@ -1,6 +1,6 @@
 import { db } from "./db";
 import type { StylePack } from "./style-pack";
-import { BASE_PACK, findStylePack } from "./style-pack-catalog";
+import { applyFontStyle, NHIP_DEN, findStylePack } from "./style-pack-catalog";
 
 /**
  * Đọc bộ dáng của một dự án — MỘT cổng duy nhất, và là cổng duy nhất chịu trách
@@ -21,9 +21,14 @@ import { BASE_PACK, findStylePack } from "./style-pack-catalog";
  */
 export function readStylePack(projectId: string): StylePack {
   const row = db
-    .prepare("SELECT style_pack FROM projects WHERE id=?")
-    .get(projectId) as { style_pack: string | null } | undefined;
+    .prepare("SELECT style_pack, font_style FROM projects WHERE id=?")
+    .get(projectId) as
+    | { style_pack: string | null; font_style: string | null }
+    | undefined;
   // Dự án không tồn tại, cột chưa vá, hay tên rác trong CSDL — cả ba đều rơi về
-  // bộ gốc. Thà ra dáng mặc định còn hơn dừng cả mạch vì một chuỗi lạ.
-  return row ? findStylePack(row.style_pack) : BASE_PACK;
+  // bộ mặc định. Thà ra dáng mặc định còn hơn dừng cả mạch vì một chuỗi lạ.
+  if (!row) return NHIP_DEN;
+  // Mặc định phong cách chữ CẢ VIDEO: đè phần chữ lên bộ đang dùng. Cụm nào tự
+  // đặt phong cách chữ riêng thì `packForElement` đè tiếp lên trên bản này.
+  return applyFontStyle(findStylePack(row.style_pack), row.font_style);
 }

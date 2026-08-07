@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 
 import { toast } from "@/components/ui/toast";
+import { isMenuOpen, isTypingIn } from "@/lib/keyboard-guards";
 
 import { ZOOM_STEP, zoomFactorFromWheel, type EditorState } from "./use-editor";
 
@@ -16,28 +17,6 @@ import { ZOOM_STEP, zoomFactorFromWheel, type EditorState } from "./use-editor";
  * trỏ đang ở ô gõ chữ — chặn những thứ đó là giành quyền của trình duyệt mà
  * không trả lại được gì.
  */
-
-/** Con trỏ đang ở ô gõ chữ — mọi phím tắt phải nhường. */
-function isTypingIn(target: EventTarget | null) {
-  const node = target instanceof HTMLElement ? target : null;
-  if (!node) return false;
-  if (node.isContentEditable) return true;
-  return ["INPUT", "TEXTAREA", "SELECT"].includes(node.tagName);
-}
-
-/**
- * Có bảng nổi nào đang mở không.
- *
- * Menu và hộp thoại có luật phím riêng (dấu cách chọn mục, Escape đóng bảng).
- * Cướp phím của chúng thì bảng chọn "Chỗ nối" bấm dấu cách không chọn được gì.
- */
-function isMenuOpen() {
-  return Boolean(
-    document.querySelector(
-      '[role="menu"],[role="listbox"],[role="dialog"],[role="alertdialog"]',
-    ),
-  );
-}
 
 export function useEditorGuards({
   editor,
@@ -108,6 +87,9 @@ export function useEditorGuards({
           void editor.deleteElement(selection.id);
         else if (selection.kind === "music") void editor.removeMusic(selection.id);
         else if (selection.kind === "junction") void editor.deleteEffect(selection.id);
+        // Ô người (khung KHÔNG tư liệu) là một khung bố cục — Delete gỡ nó về
+        // toàn khung, cùng việc với nút "Bỏ khung" trong bảng sửa.
+        else if (selection.kind === "scene") void editor.deleteSegment(selection.id);
         return;
       }
 

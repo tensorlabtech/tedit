@@ -9,8 +9,14 @@ import type { Selection } from "./use-editor";
  * Chiều cao phần KHUNG HÌNH của khối.
  *
  * 56 chứ không 44 như trước: dải chữ đè lên 16px trên cùng, nên ở 44 thì khung
- * hình chỉ còn 28px nhìn thấy — chữ che quá nửa. Ảnh sprite máy chủ dựng ở 88px
- * (2× của 44) nên vẽ ở 56 vẫn dưới cỡ gốc, không lên hạt.
+ * hình chỉ còn 28px nhìn thấy — chữ che quá nửa.
+ *
+ * PHẢI KHỚP `laneHeight` mà `makeFilmstrip` (server) dùng để dựng sprite. Sprite
+ * cao `2×laneHeight`, mà scale ngang cố định ở 1/2 (do `nativeSecondWidth`), nên
+ * scale dọc (`LANE_HEIGHT`/chiều-cao-sprite) chỉ bằng scale ngang khi con số này
+ * đúng bằng `laneHeight` server. Trước đây client đổi 44→56 mà server vẫn dựng ở
+ * 44 (sprite cao 88): vẽ ở 56 KHÔNG lên hạt nhưng BỊ kéo dài dọc 27% — mặt người
+ * dài ra. Đã cho server dựng ở 56 (sprite cao 112) để hết méo.
  */
 const LANE_HEIGHT = 56;
 
@@ -157,13 +163,7 @@ export function ClipLane({
               className="pointer-events-none absolute inset-x-0 bottom-0 bg-lane-text"
               style={{ height: WAVE_HEIGHT }}
             >
-              {envelope && (
-                <ClipWave
-                  clip={clip}
-                  envelope={envelope}
-                  pxPerSecond={pxPerSecond}
-                />
-              )}
+              {envelope && <ClipWave clip={clip} envelope={envelope} />}
             </span>
             <span
               title={clip.label}

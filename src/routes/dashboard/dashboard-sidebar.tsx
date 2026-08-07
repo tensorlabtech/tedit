@@ -16,7 +16,6 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarRail,
 } from "@/components/ui/sidebar";
 import { signOut, useSession } from "@/lib/auth-client";
 
@@ -35,7 +34,7 @@ const CONTACT_URL = "https://www.facebook.com/lehuythaidotcom/";
  * Thu về dạng icon thì hạ xuống 8px: bề ngang chỉ còn 48px, giữ 20px hai bên là
  * chừa 8px cho một cái nút rộng 32px.
  */
-const PAD = "p-5 group-data-[collapsible=icon]:p-2";
+const PAD = "p-5";
 
 function initials(name: string | undefined) {
   if (!name) return "?";
@@ -59,12 +58,12 @@ export function DashboardSidebar() {
     // `floating` là dạng THẺ: nó đệm 8px quanh thanh bên rồi bo góc và kẻ viền
     // phần bên trong, nên thanh bên nổi lên thành một khối cạnh thẻ nội dung thay
     // vì dán vào mép màn hình.
-    <Sidebar variant="floating" collapsible="icon">
+    <Sidebar collapsible="none" className="bg-transparent">
       <SidebarHeader className={PAD}>
         {/* Chỉ dấu nhận diện, KHÔNG kèm tên ứng dụng: thanh bên đã là chỗ của
             người đã vào trong rồi, nhắc lại tên sản phẩm ở đây chỉ ăn chỗ. Tên
             vẫn còn ở trang giới thiệu và màn đăng nhập. */}
-        <div className="flex items-center justify-between gap-2 group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:justify-center">
+        <div className="flex items-center justify-between gap-2">
           <AppLogo showName={false} />
           <ThemeToggleIcon />
         </div>
@@ -78,7 +77,7 @@ export function DashboardSidebar() {
 
             Cần hiện ra vì mấy ai chỉ có một tài khoản Google, mà vào bằng tài
             khoản khác thì danh sách dự án trống trơn và trông y như mất dữ liệu. */}
-        <SidebarGroup className={`${PAD} pt-0 group-data-[collapsible=icon]:hidden`}>
+        <SidebarGroup className={`${PAD} pt-0`}>
           {/* `bg-muted` chứ không để nền thẻ mặc định.
               `--card` và `--sidebar` là CÙNG một giá trị (`oklch(1 0 0)` ở nền
               sáng), nên thẻ này là trắng đè trắng và chỉ còn vòng viền
@@ -177,10 +176,6 @@ export function DashboardSidebar() {
         </SidebarMenuButton>
       </SidebarFooter>
 
-      {/* Dải mỏng ở mép phải để thu/mở thanh bên. Có nó thì bỏ được cái nút trong
-          vùng nội dung mà vẫn đóng/mở được — dải này thuộc về thanh bên, không
-          chiếm chỗ trong thẻ nội dung. */}
-      <SidebarRail />
     </Sidebar>
   );
 }

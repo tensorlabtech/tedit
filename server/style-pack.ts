@@ -23,6 +23,10 @@
 
 import type { MusicBias } from "./music-tags";
 import type { LayoutKindId } from "./layout-kinds";
+// `applyFontStyle` sống ở catalog (cạnh `findStylePack`). Catalog chỉ `import
+// type` ngược lại đây nên KHÔNG có vòng runtime, và nó không chạm `node:*` nên
+// trang xem vẫn nạp được tệp này.
+import { applyFontStyle } from "./style-pack-catalog";
 
 /*
  * Cách đánh dấu CHỖ NỐI — lấy thẳng từ `junction-kinds.ts`, không chép lại.
@@ -59,19 +63,14 @@ export type EmphasisId = "even" | "keyword-large" | "mixed-size" | "taper";
 /** Màu tách khỏi độ đục: `drawtext` nhận hai thứ đó ở hai tham số khác nhau. */
 export type Tone = { color: string; alpha: number };
 
-export type StylePackId =
-  | "goc"
-  | "chu-hoa-vang"
-  | "nhan-xanh"
-  | "net-thua"
-  | "dung-yen"
-  | "net-dac"
-  | "nghieng-tron"
-  | "dung-dung"
-  | "tung-chu"
-  | "sang-theo-loi"
-  | "phan"
-  | "nhip-den";
+/**
+ * Mười bộ dáng THAM SỐ trước đây đã bỏ (chỉ khác màu/font/nhanh chậm) — xem ghi
+ * chú ở `findStylePack` trong `style-pack-catalog.ts`. Chỉ còn hai bộ dựng theo
+ * lối THIẾT BỊ. Dự án cũ trong CSDL vẫn có thể mang một trong mười tên đã bỏ;
+ * cột lưu kiểu `string` (không phải `StylePackId`) đúng vì lý do đó — xem
+ * `projects-routes.ts`/`elements-routes.ts`.
+ */
+export type StylePackId = "nhip-den" | "phan";
 
 /**
  * NHÓM Ý ĐỒ — người dùng chọn theo "video của tôi thuộc loại gì".
@@ -711,6 +710,8 @@ export const styleCase = (text: string, pack: Pick<StylePack, "letterCase">) =>
 export type ElementStyleOverride = {
   letterCase: StylePack["letterCase"] | null;
   keyColor: string | null;
+  /** Phong cách chữ RIÊNG của cụm này — đè phần chữ, `null` là theo dự án. */
+  fontStyle: string | null;
 };
 
 /**
@@ -735,15 +736,21 @@ export function packForElement(
    */
   keywords: readonly string[] | null | undefined,
 ): ShownPack {
-  const font = pack.fonts[fontRoleFor(keywords)];
-  if (!override?.letterCase && !override?.keyColor) return { ...pack, font };
+  // Phong cách chữ RIÊNG của cụm đè TRƯỚC: mọi trục chữ (font, HOA/thường, màu,
+  // viền, quầng) đọc theo bản đã đè, rồi `letterCase`/`keyColor` của cụm mới đè
+  // tiếp lên trên — nên đổi màu từ nhấn của cụm vẫn thắng màu của phong cách chữ.
+  const base = override?.fontStyle
+    ? applyFontStyle(pack, override.fontStyle)
+    : pack;
+  const font = base.fonts[fontRoleFor(keywords)];
+  if (!override?.letterCase && !override?.keyColor) return { ...base, font };
   return {
-    ...pack,
+    ...base,
     font,
-    letterCase: override.letterCase ?? pack.letterCase,
+    letterCase: override.letterCase ?? base.letterCase,
     color: override.keyColor
-      ? { ...pack.color, key: { color: override.keyColor, alpha: 1 } }
-      : pack.color,
+      ? { ...base.color, key: { color: override.keyColor, alpha: 1 } }
+      : base.color,
   };
 }
 

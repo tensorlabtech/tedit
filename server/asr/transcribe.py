@@ -147,6 +147,9 @@ def chay_faster(audio_path: str, language: str, prompt: str) -> dict:
                 "start": seg.start,
                 "end": seg.end,
                 "no_speech_prob": seg.no_speech_prob,
+                "avg_logprob": seg.avg_logprob,
+                "compression_ratio": seg.compression_ratio,
+                "temperature": seg.temperature,
                 "words": [
                     {
                         "word": w.word,
@@ -205,6 +208,13 @@ def main() -> int:
                 # dõi.") với độ chắc từng chữ rất cao — con số này là chỗ duy
                 # nhất nó thú nhận. Máy chủ đối chiếu tiếp với sóng âm thật.
                 "no_speech_prob": float(seg.get("no_speech_prob", 0.0)),
+                # Ba con số whisper tự chấm độ tin của lượt giải mã này. Node dùng
+                # chúng để loại bản chép "đoán liều" khi chép lại các khoảng khó:
+                # avg_logprob thấp = không chắc; compression_ratio cao = lặp/gibberish;
+                # temperature > 0 = đã phải rơi về lấy mẫu ngẫu nhiên (fallback).
+                "avg_logprob": float(seg.get("avg_logprob", 0.0)),
+                "compression_ratio": float(seg.get("compression_ratio", 0.0)),
+                "temperature": float(seg.get("temperature", 0.0)),
                 "words": words,
             }
         )

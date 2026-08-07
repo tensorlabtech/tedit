@@ -29,7 +29,7 @@ import {
   type StylePackId,
   type Tone,
 } from "./style-pack";
-import { BASE_PACK, STYLE_PACKS, findStylePack } from "./style-pack-catalog";
+import { NHIP_DEN, STYLE_PACKS, findStylePack } from "./style-pack-catalog";
 import { SAFE, textWidth, usableWidthOf } from "./text-layout";
 import { readStylePack } from "./style-pack-store";
 
@@ -61,18 +61,33 @@ db.prepare(
 
 console.log("\nCột và luật rơi về mặc định");
 check(
-  "dự án mới có sẵn bộ dáng gốc",
-  readStylePack(projectId).id === "goc",
+  "dự án mới có sẵn bộ dáng mặc định",
+  readStylePack(projectId).id === "nhip-den",
   readStylePack(projectId).id,
 );
 
+db.prepare("UPDATE projects SET style_pack=? WHERE id=?").run(
+  "phan",
+  projectId,
+);
+check(
+  "đổi cột bằng tay thì đọc ra bộ mới",
+  readStylePack(projectId).id === "phan",
+);
+
+/*
+ * "chu-hoa-vang" là tên một trong MƯỜI bộ dáng THAM SỐ đã bỏ (xem ghi chú
+ * `findStylePack` trong `style-pack-catalog.ts`). Dự án cũ trong CSDL vẫn có
+ * thể mang tên này, và nó phải rơi về bộ mặc định sạch — không được sập, và
+ * không được lặng lẽ trộn font của một bộ đã không còn tồn tại.
+ */
 db.prepare("UPDATE projects SET style_pack=? WHERE id=?").run(
   "chu-hoa-vang",
   projectId,
 );
 check(
-  "đổi cột bằng tay thì đọc ra bộ mới",
-  readStylePack(projectId).id === "chu-hoa-vang",
+  "bộ dáng đã bỏ (chu-hoa-vang) rơi về bộ mặc định, không sập",
+  readStylePack(projectId).id === "nhip-den",
 );
 
 db.prepare("UPDATE projects SET style_pack=? WHERE id=?").run(
@@ -80,15 +95,21 @@ db.prepare("UPDATE projects SET style_pack=? WHERE id=?").run(
   projectId,
 );
 check(
-  "tên rác trong CSDL rơi về bộ gốc, không sập",
-  readStylePack(projectId).id === "goc",
+  "tên rác trong CSDL rơi về bộ mặc định, không sập",
+  readStylePack(projectId).id === "nhip-den",
 );
 
 db.prepare("UPDATE projects SET style_pack=NULL WHERE id=?").run(projectId);
-check("cột rỗng (dự án cũ) rơi về bộ gốc", readStylePack(projectId).id === "goc");
+check(
+  "cột rỗng (dự án cũ) rơi về bộ mặc định",
+  readStylePack(projectId).id === "nhip-den",
+);
 
-check("dự án không tồn tại rơi về bộ gốc", readStylePack("prj_khong_co").id === "goc");
-check("tên rỗng rơi về bộ gốc", findStylePack("").id === "goc");
+check(
+  "dự án không tồn tại rơi về bộ mặc định",
+  readStylePack("prj_khong_co").id === "nhip-den",
+);
+check("tên rỗng rơi về bộ mặc định", findStylePack("").id === "nhip-den");
 
 console.log("\nBất biến: đổi bộ dáng không đụng bảng elements");
 /*
@@ -233,20 +254,14 @@ for (const pack of STYLE_PACKS) {
 /*
  * DANH SÁCH DUYỆT cho bộ dáng dùng hai họ chữ.
  *
- * Bộ nào không có tên ở đây phải khai `accent` TRÙNG `voice`. Đây là thứ giữ
- * cho các bộ ngoài phạm vi xuất ra khung hình y hệt trước khi có trục này —
- * chúng là nhóm đối chứng, và nhóm đối chứng mà trôi thì không còn gì để so.
+ * Bộ nào không có tên ở đây phải khai `accent` TRÙNG `voice`. Ba bộ tham số
+ * từng ở đây (`dung-dung`, `nhan-xanh`, `nghieng-tron`) đã bỏ cùng đợt cắt còn
+ * hai bộ; `Nhịp đen` và `Phấn` đều dùng MỘT họ chữ cho cả hai vai, nên danh
+ * sách rỗng — không phải bỏ sót, mà là không còn bộ nào cần khai ở đây.
  *
  * Thêm tên vào đây là một quyết định về DÁNG, không phải một bước dọn kiểu.
  */
-const TWO_FACE_PACKS: StylePackId[] = [
-  // Hẹp ↔ rộng, cả hai đều sans: trục BỀ NGANG.
-  "dung-dung",
-  // Sans rộng bản ↔ serif nghiêng: trục NHÓM CHỮ.
-  "nhan-xanh",
-  // Sans hình học nghiêng ↔ serif chân thẳng tương phản mạnh.
-  "nghieng-tron",
-];
+const TWO_FACE_PACKS: StylePackId[] = [];
 
 for (const pack of STYLE_PACKS) {
   const paired = pack.fonts.accent.file !== pack.fonts.voice.file;
@@ -272,7 +287,7 @@ console.log("\nPhép ĐO bám theo vai chữ, không bám theo bộ dáng");
  * Archivo rộng bản), rồi khẳng định bề rộng ĐỔI theo vai.
  */
 const probe: StylePack = {
-  ...BASE_PACK,
+  ...NHIP_DEN,
   fonts: {
     voice: {
       file: "assets/fonts/Anton-Regular.ttf",
@@ -773,7 +788,7 @@ for (const pack of STYLE_PACKS) {
 console.log("\nDòng tiêu đề: rỗng không vẽ, dài không vỡ");
 {
   const probeTitle: StylePack = {
-    ...BASE_PACK,
+    ...NHIP_DEN,
     plate: { band: "bottom", heightShare: 0.12, tone: { color: "#2B5CE6", alpha: 1 } },
     title: {
       font: "voice",
@@ -789,7 +804,7 @@ console.log("\nDòng tiêu đề: rỗng không vẽ, dài không vỡ");
 
   check(
     "bộ không khai `title` thì không vẽ gì",
-    (await layoutHeadline("Có chữ hẳn hoi", withFontRole(BASE_PACK, "voice"), W, H)) === null,
+    (await layoutHeadline("Có chữ hẳn hoi", withFontRole(NHIP_DEN, "voice"), W, H)) === null,
   );
   for (const empty of ["", "   ", null, undefined]) {
     check(

@@ -6,6 +6,7 @@
  */
 import { readEnvelope } from "../../server/audio-envelope";
 import { trimSilence } from "../../server/auto-trim-silence";
+import { readSpeech } from "../../server/vad";
 import { db } from "../../server/db";
 
 const projectId = process.argv[2];
@@ -25,7 +26,7 @@ const before = (
 );
 
 const envelope = await readEnvelope(projectId);
-const result = trimSilence(projectId, envelope);
+const result = trimSilence(projectId, await readSpeech(projectId), envelope);
 
 const after = (
   db

@@ -109,7 +109,7 @@ function windows(scenes: readonly ScheduledScene[]): string {
  * Vì một lớp phủ gánh HẾT các màn cùng bố cục, biểu thức phải tự biết "màn đang
  * chạy bắt đầu lúc nào". Các khoảng không chồng nhau nên cộng lại là được.
  */
-const RAMP = 0.2;
+export const RAMP = 0.2;
 /** Chặn hai đầu hệ số xuất phát: từ toàn khung về ô nhỏ vẫn phải là một cú lướt. */
 const K_MIN = 0.6;
 const K_MAX = 1.8;
@@ -159,7 +159,7 @@ function ease(s: ScheduledScene): string {
  */
 const FIRST_SCENE_K = 0.82;
 
-function entryOf(
+export function entryOf(
   scene: ScheduledScene,
   schedule: readonly ScheduledScene[],
   box: { x: number; y: number; w: number; h: number },
@@ -191,7 +191,7 @@ function entryOf(
  * Chặn trần: dồn 6%/giây suốt một màn 15 giây là 90%, tức mất gần nửa khung.
  * Kho mẫu không có cú dồn nào quá 12% cho cả một màn.
  */
-const PUSH_MAX = 0.12;
+export const PUSH_MAX = 0.12;
 
 function pushFactor(entries: readonly SceneEntry[], rate: number): string {
   if (rate <= 0) return "";
@@ -305,7 +305,11 @@ export function layoutPlan(
       return;
     }
 
-    spec.slots.forEach((slot, at) => {
+    // Vẽ theo Z: ô z thấp nằm DƯỚI, z cao vẽ SAU nên nằm TRÊN. B-roll (`phu`) khai
+    // z cao hơn ô người nên đè lên — chỗ đè là thân/vai người, b-roll không bị cắt.
+    [...spec.slots]
+      .sort((a, b) => a.z - b.z)
+      .forEach((slot, at) => {
       /*
        * Ô `phu` dựng MỘT LỚP CHO MỖI TƯ LIỆU, không một lớp cho cả bố cục.
        *
@@ -316,10 +320,20 @@ export function layoutPlan(
        */
       const groups: Array<{ scenes: ScheduledScene[]; path: string | null; suffix: string; which: number }> =
         slot.role === "phu"
-          ? [...new Set(scenes.map((s) => s.insert ?? 0))]
+          ? // CHỈ màn CÓ tư liệu (`insert` xác định) mới dựng ô phụ. Màn 2 ô CHƯA
+            // gắn tư liệu (placeholder) thì bỏ ô phụ — người đứng ở ô chính, chỗ
+            // ô phụ để trống (nền trang), không lấy nhầm tệp của màn khác.
+            [
+              ...new Set(
+                scenes
+                  .filter((s) => s.insert !== undefined)
+                  .map((s) => s.insert as number),
+              ),
+            ]
               .sort((a, b) => a - b)
               .map((which) => ({
-                scenes: scenes.filter((s) => (s.insert ?? 0) === which),
+                scenes: scenes.filter((s) => s.insert === which),
+                // Chỉ số ngoài mảng thì QUAY VÒNG về 0, không ra ô trống lặng lẽ.
                 path: insertPaths[which % Math.max(1, insertPaths.length)] ?? null,
                 suffix: `i${which}`,
                 which,

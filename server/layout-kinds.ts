@@ -184,10 +184,12 @@ export const LAYOUT_SPECS: LayoutSpec[] = [
   {
     id: "hai-o",
     label: "Hai ô",
-    note: "Ô người và ô tư liệu chồng lệch nhau, chữ đè lên cả hai",
+    // Hai ô chồng lệch. TƯ LIỆU (b-roll) đè LÊN ô người: chỗ đè là góc dưới của
+    // ô người (thân/vai), không phải mặt — b-roll nguyên vẹn, không bị người cắt.
+    note: "Ô tư liệu đè lên ô người, chồng lệch; chữ đè lên cả hai",
     slots: [
-      { role: "phu", areaShare: 0.3, anchor: { x: 0.62, y: 0.68 }, mask: "o-bo-goc", z: 0 },
-      { role: "chinh", areaShare: 0.32, anchor: { x: 0.4, y: 0.3 }, mask: "o-bo-goc", z: 1 },
+      { role: "phu", areaShare: 0.3, anchor: { x: 0.62, y: 0.68 }, mask: "o-bo-goc", z: 1 },
+      { role: "chinh", areaShare: 0.32, anchor: { x: 0.4, y: 0.3 }, mask: "o-bo-goc", z: 0 },
     ],
     needsInsert: true,
   },
@@ -198,8 +200,8 @@ export const LAYOUT_SPECS: LayoutSpec[] = [
     slots: [
       // Hai ô KHÔNG chồng nhau và KHÔNG cùng tỉ lệ. `hai-o` cho cả hai bám nguồn
       // nên chúng ra cùng hình dạng, chồng lệch — nhìn ra là một ô bị nhân đôi.
-      { role: "chinh", aspect: "vuong", areaShare: 0.3, anchor: { x: 0.5, y: 0.3 }, mask: "o-bo-goc", z: 1 },
-      { role: "phu", aspect: "ngang", areaShare: 0.24, anchor: { x: 0.5, y: 0.68 }, mask: "o-bo-goc", z: 0 },
+      { role: "chinh", aspect: "vuong", areaShare: 0.3, anchor: { x: 0.5, y: 0.3 }, mask: "o-bo-goc", z: 0 },
+      { role: "phu", aspect: "ngang", areaShare: 0.24, anchor: { x: 0.5, y: 0.68 }, mask: "o-bo-goc", z: 1 },
     ],
     needsInsert: true,
   },
@@ -208,8 +210,8 @@ export const LAYOUT_SPECS: LayoutSpec[] = [
     label: "Ngang trên, vuông dưới",
     note: "Tư liệu 16/9 ở trên, ô người VUÔNG nằm dưới — đảo vai của bố cục trên",
     slots: [
-      { role: "phu", aspect: "ngang", areaShare: 0.24, anchor: { x: 0.5, y: 0.28 }, mask: "o-bo-goc", z: 0 },
-      { role: "chinh", aspect: "vuong", areaShare: 0.3, anchor: { x: 0.5, y: 0.66 }, mask: "o-bo-goc", z: 1 },
+      { role: "phu", aspect: "ngang", areaShare: 0.24, anchor: { x: 0.5, y: 0.28 }, mask: "o-bo-goc", z: 1 },
+      { role: "chinh", aspect: "vuong", areaShare: 0.3, anchor: { x: 0.5, y: 0.66 }, mask: "o-bo-goc", z: 0 },
     ],
     needsInsert: true,
   },

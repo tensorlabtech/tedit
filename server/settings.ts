@@ -55,8 +55,20 @@ export type Settings = {
    * Nối vào trước lời dặn riêng của từng dự án. Tên công ty hay tên sản phẩm thì
    * lần nào cũng thế, gõ lại ở từng dự án là việc thừa mà quên một lần là máy
    * nghe sai lần đó.
+   *
+   * Nay là ô "Thêm" tuỳ chọn — phần chính đã tách thành các trường cấu trúc bên
+   * dưới, dễ điền hơn một ô trống và ghép vào prompt sạch hơn (`composeProfile`).
    */
   profile: string;
+  /** HỒ SƠ CẤU TRÚC — bơm vào prompt qua `composeProfile`, dễ điền hơn ô trống. */
+  /** Kênh/người làm nội dung VỀ GÌ (ngành, chủ đề). */
+  trade: string;
+  /** Tên riêng hay bị nghe sai — công ty, sản phẩm, tên người. */
+  names: string;
+  /** Kiểu video thường làm (hướng dẫn, vlog, review…). */
+  videoKind: string;
+  /** Đã qua màn onboarding chưa — để không nhắc lại. KHÔNG bơm vào prompt. */
+  onboarded: boolean;
 };
 
 export const DEFAULTS: Settings = {
@@ -69,6 +81,10 @@ export const DEFAULTS: Settings = {
   autoGrade: true,
   wantMusic: true,
   profile: "",
+  trade: "",
+  names: "",
+  videoKind: "",
+  onboarded: false,
 };
 
 /** Kẹp về khoảng có nghĩa. Người dùng gõ tay được nên phải chặn ở máy chủ. */
@@ -103,7 +119,29 @@ function normalize(raw: Partial<Settings>): Settings {
     autoGrade: raw.autoGrade !== false,
     wantMusic: raw.wantMusic !== false,
     profile: String(raw.profile ?? "").slice(0, 600),
+    trade: String(raw.trade ?? "").slice(0, 300),
+    names: String(raw.names ?? "").slice(0, 300),
+    videoKind: String(raw.videoKind ?? "").slice(0, 200),
+    onboarded: raw.onboarded === true,
   };
+}
+
+/**
+ * Ghép hồ sơ cấu trúc thành ĐOẠN TEXT bơm vào prompt (qua `projects.profile` →
+ * `voiBoiCanh` + ASR bias). Chỉ lấy trường KHÔNG rỗng; ô "Thêm" (`profile`) đặt
+ * cuối để người dùng bổ sung gì tuỳ ý.
+ *
+ * Tách khỏi việc LƯU: lưu thì giữ từng trường (sửa lại được), còn cái bơm vào máy
+ * là một chuỗi phẳng — mô hình đọc câu, không đọc cấu trúc.
+ */
+export function composeProfile(s: Settings): string {
+  const lines = [
+    s.trade.trim() && `Kênh nói về: ${s.trade.trim()}`,
+    s.names.trim() && `Tên riêng chép cho đúng: ${s.names.trim()}`,
+    s.videoKind.trim() && `Kiểu video: ${s.videoKind.trim()}`,
+    s.profile.trim(),
+  ].filter(Boolean);
+  return lines.join("\n");
 }
 
 export function readSettings(userId: string): Settings {

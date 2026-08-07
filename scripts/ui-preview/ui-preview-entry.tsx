@@ -12,7 +12,10 @@ import {
 import { REVEALS } from "@/dev/overlays/overlay-model";
 import { TextOverrideRows } from "@/routes/editor/inspector-text-override-rows";
 import { FieldGroup } from "@/components/ui/field";
-import { findStylePack } from "../../server/style-pack-catalog";
+import {
+  DEFAULT_STYLE_PACK_ID,
+  findStylePack,
+} from "../../server/style-pack-catalog";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { StyleSwitchDialog } from "@/routes/editor/style-switch-dialog";
 import { StylePickerCard } from "@/routes/pipeline/style-picker-card";
@@ -41,7 +44,7 @@ const SAMPLES = [
 ];
 
 function Harness() {
-  const [pack, setPack] = useState<StylePackId>("goc");
+  const [pack, setPack] = useState<StylePackId>(DEFAULT_STYLE_PACK_ID);
   const [sample, setSample] = useState(SAMPLES[0]);
   const [dialogOpen, setDialogOpen] = useState(false);
 

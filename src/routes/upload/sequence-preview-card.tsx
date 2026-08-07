@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
+import { useSpacePlayPause } from "../editor/use-space-play-pause";
 import {
   baseName,
   formatDuration,
@@ -168,6 +169,10 @@ export function SequencePreviewCard({
    * phím này để dời chỗ và đã chặn sự kiện — nhảy cảnh lúc đó là cướp phím
    * giữa một cử chỉ đang dở.
    */
+  // Phím Cách = phát/dừng mạch. Hook tự nhường khi con trỏ ở ô chữ hoặc đang cầm
+  // ô kéo-thả (dnd-kit dùng Cách để nhấc/thả cảnh — đó là chỗ ưu tiên cao hơn).
+  useSpacePlayPause(() => setPlaying((current) => !current));
+
   const stepRef = useRef(step);
   stepRef.current = step;
   useEffect(() => {

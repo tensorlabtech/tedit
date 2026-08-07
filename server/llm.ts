@@ -57,6 +57,17 @@ const MODEL = process.env.OPENROUTER_MODEL ?? "deepseek/deepseek-v4-pro";
 const MODEL_CHEAP =
   process.env.OPENROUTER_MODEL_CHEAP ?? process.env.OPENROUTER_MODEL ?? MODEL;
 
+/**
+ * Mô hình cho lời gọi CÓ ẢNH (mô tả tư liệu chèn).
+ *
+ * `MODEL`/`MODEL_CHEAP` mặc định là deepseek — thuần chữ, KHÔNG nhận ảnh: lời gọi
+ * kèm ảnh trả về "No endpoints found that support image input", nên cả chặng mô
+ * tả tư liệu hỏng lặng lẽ (`describeInserts` nuốt lỗi) và b-roll không bao giờ
+ * đặt được. Tách riêng một mô hình nhìn được ảnh cho đúng những lời gọi cần nó.
+ */
+const MODEL_VISION =
+  process.env.OPENROUTER_MODEL_VISION ?? "openai/gpt-4o-mini";
+
 /** Hạt giống gửi kèm mọi lời gọi — xem chú thích ở chỗ dựng thân yêu cầu. */
 const SEED = Number(process.env.OPENROUTER_SEED ?? 7);
 
@@ -184,7 +195,12 @@ export async function ask<T>(options: {
   }
 
   const body = {
-    model: options.cheap ? MODEL_CHEAP : MODEL,
+    // Có ảnh thì BẮT BUỘC dùng mô hình nhìn được ảnh, bất kể `cheap`.
+    model: options.images?.length
+      ? MODEL_VISION
+      : options.cheap
+        ? MODEL_CHEAP
+        : MODEL,
     messages: [
       { role: "system", content: options.instructions },
       { role: "user", content },

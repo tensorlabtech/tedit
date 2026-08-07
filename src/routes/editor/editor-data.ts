@@ -66,6 +66,8 @@ export type Insert = {
   reveal: RevealId;
   /** Hình dáng khung tư liệu */
   shape: ShapeId;
+  /** Bố cục hiện b-roll — `undefined` là để máy tự chọn (xoay vòng họ hai-ô). */
+  insertLayout?: string;
   /** Tên tệp đầy đủ — chỉ để hiện khi trỏ chuột vào, nhãn trên dải đã rút ngắn */
   fullName?: string;
   id: string;
@@ -131,6 +133,8 @@ export type TextElement = {
    */
   letterCase?: "as-typed" | "upper" | null;
   keyColor?: string | null;
+  /** Phong cách chữ riêng cụm này; `null` là theo mặc định của dự án. */
+  fontStyle?: string | null;
   pinned?: boolean;
 };
 
@@ -480,7 +484,7 @@ export type UndoEntry =
       type: "restore";
       label: string;
       element: {
-        kind: "text" | "insert";
+        kind: "text" | "insert" | "layout";
         fromWordId: string;
         toWordId: string;
         /** Chữ TỰ DO dựng lại bằng cặp giây này, vì nó không có mã từ nào */

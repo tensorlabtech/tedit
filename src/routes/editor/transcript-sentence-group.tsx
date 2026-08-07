@@ -21,6 +21,7 @@ export function SentenceGroup({
   activeTime,
   inRangeIds,
   onPick,
+  proofread,
 }: {
   sentence: Sentence;
   rows: TextElement[];
@@ -30,6 +31,8 @@ export function SentenceGroup({
   inRangeIds: Set<string>;
   /** Bấm một dòng — `mo` là bấm thường, `noiDai` là Shift-bấm */
   onPick: (row: TextElement, extend: boolean) => void;
+  /** Bước Soát lời: chỉ sửa chữ, ẩn nút cắt. */
+  proofread?: boolean;
 }) {
   return (
     <div
@@ -76,6 +79,7 @@ export function SentenceGroup({
           activeTime={activeTime}
           inRangeIds={inRangeIds}
           onPick={onPick}
+          proofread={proofread}
         />
       )}
     </div>
@@ -99,12 +103,14 @@ function Rows({
   activeTime,
   inRangeIds,
   onPick,
+  proofread,
 }: {
   rows: TextElement[];
   editor: EditorState;
   activeTime: number;
   inRangeIds: Set<string>;
   onPick: (row: TextElement, extend: boolean) => void;
+  proofread?: boolean;
 }) {
   return (
     <>
@@ -116,6 +122,7 @@ function Rows({
           active={activeTime >= row.start && activeTime < row.end}
           inRange={inRangeIds.has(row.id)}
           onPick={onPick}
+          proofread={proofread}
         />
       ))}
     </>

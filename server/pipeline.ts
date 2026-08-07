@@ -19,13 +19,15 @@ import { seedSegmentsByCaption } from "./segment-seed";
 import { buildAsrPrompt } from "./asr-bias";
 import { pickCaptionBand } from "./caption-band";
 import { buildSubjectMask, emptiestBand, hasSubject, subjectPath } from "./subject-mask";
-import { scheduleScenes } from "./layout-schedule";
-import type { StylePack } from "./style-pack";
+import { fillFullFrame, scheduleScenes } from "./layout-schedule";
+import { buildPlacedSegments } from "./layout-segments";
 import { proposeCuts } from "./ai-cuts";
 import { fixTranscript } from "./ai-fix-transcript";
 import { trimSilence } from "./auto-trim-silence";
+import { detectSpeech, readSpeech } from "./vad";
 import { describeInserts } from "./ai-broll-describe";
 import { placeInserts } from "./ai-broll-place";
+import { placePersonLayouts } from "./place-person-layouts";
 import { pickEffects } from "./ai-effects";
 import { pickKeywords } from "./ai-keywords";
 import { pickMusic } from "./ai-music";
@@ -36,6 +38,7 @@ import { behindPhrase } from "./style-pack";
 import { fromLegacyLayout, type Band } from "./text-layout";
 import { failStrandedSteps, resetSteps, setStep } from "./pipeline-steps";
 import { transcribeAudio } from "./transcribe";
+import { refillTranscriptionGaps } from "./refill-transcription-gaps";
 
 type Row = Record<string, unknown>;
 
@@ -193,6 +196,10 @@ export async function runTranscribe(projectId: string) {
   // quãng lặng, và phép lọc câu bịa đều đọc từ đây. Hỏng thì thôi — cả ba chỗ
   // đều có đường lùi.
   const envelope = await buildEnvelope(projectId, audio).catch(() => null);
+  // NHẬN DIỆN GIỌNG NÓI: tách giọng khỏi im lặng VÀ tiếng động. Chặng cắt lặng
+  // đọc từ đây (bỏ được sột soạt), và chỗ có giọng mà máy nghe bỏ sót cũng lấy từ
+  // đây để ép chép lại. Hỏng thì thôi — cắt lặng rơi về đường bao biên độ.
+  await detectSpeech(projectId, audio).catch(() => null);
 
   /*
    * TÁCH NGƯỜI KHỎI NỀN — một lần cho cả video, ngay sau khi có bản xem trước.
@@ -272,7 +279,20 @@ export async function runTranscribe(projectId: string) {
   // Đối chiếu với sóng âm rồi mới ghi: whisper bịa ra câu trên quãng không ai
   // nói, và không có gì trong bản chép lời tự nói ra điều đó — xem
   // `hallucination-filter.ts`.
-  const { kept: segments, dropped } = filterHallucinations(heard, envelope);
+  const { kept, dropped } = filterHallucinations(heard, envelope);
+  // Cứu lời máy nghe BỎ RƠI: whisper vấp một cửa sổ 30s thì ảo giác rồi nhả rỗng,
+  // để lại khoảng dài "không có từ" DÙ ÂM VẪN TO. Không có bước này thì cắt-im-lặng
+  // xoá nhầm cả mảng thoại (đo được một video suýt mất 21s narration). Chép LẠI
+  // từng khoảng còn to mà thiếu từ, đưa khúc ngắn + ngữ cảnh sạch cho whisper.
+  const refill = await refillTranscriptionGaps(
+    projectId,
+    audio,
+    kept,
+    envelope,
+    await readSpeech(projectId),
+    buildAsrPrompt(projectId),
+  );
+  const segments = refill.segments;
 
   /**
    * Ghi lại MỐC THỜI GIAN của mọi phần tử trước khi xoá bảng từ.
@@ -329,7 +349,9 @@ export async function runTranscribe(projectId: string) {
     .prepare("SELECT COUNT(*) AS n FROM words WHERE project_id=?")
     .get(projectId) as { n: number };
   setStep(projectId, "transcribe", "done", {
-    result: `${wordCount.n} từ · ${segments.length} câu`,
+    result:
+      `${wordCount.n} từ · ${segments.length} câu` +
+      (refill.refilled > 0 ? ` · cứu ${refill.addedWords} từ bị bỏ rơi` : ""),
   });
 
   /*
@@ -444,6 +466,41 @@ export async function resumeAfterCutReview(projectId: string) {
       ? "không có gì để cắt"
       : `bỏ ${cut.removedSeconds.toFixed(1)}s · chép lại ${cut.wordsAfter} từ`,
   });
+
+  /*
+   * GIEO LẠI ĐOẠN LÊN TRỤC VIDEO ĐÃ CẮT — ngay đây, TRƯỚC cổng `review-text`.
+   *
+   * Sau `commitCut` thì chữ và trục thời gian là bản MỚI (video đã cắt), còn
+   * `segments` vẫn là bản CŨ trên trục NGUỒN với các lát cắt pre-commit. Cổng Soát
+   * lời mở ngay dưới và đọc CẢ hai: caption trên trục ĐÃ CẮT, còn `skipRanges` từ
+   * segments trên trục NGUỒN — vùng bỏ mốc nguồn áp NHẦM lên caption đã cắt, giấu
+   * mất cả câu người dùng đã giữ (đo thật: "Mình muốn ghi lại dấu mốc ngày hôm
+   * nay" còn mỗi "nay", vì segment [0,1.56] nguồn trùm đầu câu 0-2.3 của bản cắt).
+   *
+   * Lát cắt đã NƯỚNG vào video nên ở đây KHÔNG còn gì để bỏ: gieo lại thành đoạn
+   * TRƠN (toàn giữ) khớp đúng chữ mới, `skipRanges` rỗng. Chặng `captions` vẫn gieo
+   * một lần nữa sau khi soát (để bắt các dòng người dùng thêm lúc soát) nên đây
+   * không thừa — nó chỉ lấp đúng cửa sổ giữa commit-cut và cổng soát lời.
+   */
+  if (!cut.skipped) {
+    const cutSeconds =
+      (
+        db
+          .prepare("SELECT video_seconds FROM projects WHERE id=?")
+          .get(projectId) as { video_seconds: number | null } | undefined
+      )?.video_seconds ?? 0;
+    if (cutSeconds > 0) {
+      db.prepare("DELETE FROM segments WHERE project_id=?").run(projectId);
+      await seedSegmentsByCaption(
+        projectId,
+        cutSeconds,
+        readStylePack(projectId),
+      );
+      db.prepare("UPDATE projects SET segments_by_caption=4 WHERE id=?").run(
+        projectId,
+      );
+    }
+  }
 
   /**
    * Sửa chỗ nghe nhầm NGAY SAU khi có lời, trước mọi thứ dựng trên lời.
@@ -851,23 +908,6 @@ function topKeyword(projectId: string): string | null {
   return best && best.n >= 2 ? best.text : null;
 }
 
-/**
- * Thiết bị nổi mà bộ dáng có, để lịch màn xoay vòng qua chúng.
- *
- * Suy từ khai báo, không cho khai tay — cùng lý lẽ `devicesOf`: một ô khai riêng
- * là nguồn sự thật thứ hai, và nó lệch mà không ai thấy.
- */
-function layoutHeroes(pack: StylePack): string[] {
-  const out: string[] = [];
-  if (pack.behindText) out.push("chu-sau-nguoi");
-  if (pack.subjectEdge) out.push("vien-nguoi");
-  if (pack.sweep) out.push("vet-quet");
-  if (pack.graphics?.length) out.push("hinh-dan");
-  // Không thiết bị nào thì bố cục TỰ nó là thiết bị nổi: đổi cả khung hình đã
-  // là thay đổi lớn nhất người xem thấy được.
-  return out.length > 0 ? out : ["doi-bo-cuc"];
-}
-
 export async function runExport(projectId: string) {
   setJob(projectId, "export", "running", 5, "Đang chuẩn bị");
   const sources = mainSources(projectId);
@@ -1080,55 +1120,23 @@ export async function runExport(projectId: string) {
    * mắc một lần với mặt nạ người.
    */
   const layoutPack = readStylePack(projectId);
-  const phraseMarks = (
-    db
-      .prepare(
-        `SELECT w.end_sec AS at FROM elements e JOIN words w ON w.id = e.to_word_id
-          WHERE e.project_id=? AND e.kind='text' ORDER BY w.end_sec`,
-      )
-      .all(projectId) as Array<{ at: number }>
-  )
-    .map((row) => mapToOutput(kept, row.at))
-    .filter((at): at is number => at !== null);
   /*
-   * TẤT CẢ tư liệu chèn, theo thứ tự người dùng xếp.
-   *
-   * Bản trước lấy `LIMIT 1`, nên mọi lần chèn b-roll trong cả phim đều là cùng
-   * một ảnh — ba bố cục b-roll khác hình dạng mà nội dung bên trong y hệt nhau.
+   * LỊCH MÀN + tư liệu — MỘT nguồn `buildPlacedSegments`, cùng đường với khung xem
+   * trước (`scene-schedule.ts`). B-roll và ô người đọc từ cùng bảng `elements`,
+   * neo theo từ → giây đã cắt. Vắng segment = toàn-khung (không sinh màn).
    */
-  const insertPaths = (
-    db
-      .prepare(
-        "SELECT stored_path FROM media_files WHERE project_id=? AND role='insert' ORDER BY position",
-      )
-      .all(projectId) as Array<{ stored_path: string }>
-  ).map((row) => row.stored_path);
-  // Mốc các cụm CÓ từ nhấn — bộ xếp lịch dùng để biết đoạn nào mang tin.
-  const keywordMarks = (
-    db
-      .prepare(
-        `SELECT w.end_sec AS at FROM elements e JOIN words w ON w.id = e.to_word_id
-          WHERE e.project_id=? AND e.kind='text'
-            AND e.keywords IS NOT NULL AND e.keywords<>'' ORDER BY w.end_sec`,
-      )
-      .all(projectId) as Array<{ at: number }>
-  )
-    .map((row) => mapToOutput(kept, row.at))
-    .filter((at): at is number => at !== null);
+  const { segments: placedSegments, media: placedMedia } = buildPlacedSegments(
+    projectId,
+    kept,
+    layoutPack.layouts,
+  );
+  const insertPaths = placedMedia.map((item) => item.path);
+  // Lấp khoảng trống bằng toàn-khung: `layoutPlan` lấy nền trang làm nền, nên chỗ
+  // trống phải có một màn phủ kín để ra video, không ra nền trang trơ. (`keptTotal`
+  // = độ dài phim đã cắt, tính ở trên.)
   const schedule =
     layoutPack.layouts.length > 0
-      ? scheduleScenes(
-          // Độ dài phim ĐÃ CẮT = tổng các khoảng còn giữ. Không đo lại bằng
-          // `probe` vì tệp cắt chưa dựng xong ở điểm này.
-          kept.reduce((sum, range) => sum + (range.end - range.start), 0),
-          {
-            layouts: layoutPack.layouts,
-            heroes: layoutHeroes(layoutPack),
-            pushShare: layoutPack.scenePush?.share ?? 0,
-          },
-          { phrases: phraseMarks, cuts: junctions.map((j) => j.start), keywords: keywordMarks },
-          insertPaths.length,
-        )
+      ? fillFullFrame(scheduleScenes(keptTotal, placedSegments), keptTotal)
       : [];
   /*
    * Tỉ lệ nguồn và chỗ người đứng — hai số làm ô ôm đúng người.
@@ -1312,8 +1320,13 @@ function resolveElements(
     const start = rawStart ?? (rawEnd === null ? null : keptBefore(kept, source.from));
     const end = rawEnd ?? (rawStart === null ? null : keptBefore(kept, source.to));
     if (start === null || end === null || end <= start) continue;
+    // Khung KHÔNG tư liệu (ô người, hay khung 2 ô chưa gắn media) là CẤU TRÚC bố
+    // cục — `layoutPlan` vẽ nó từ lịch màn, không phải một lớp phủ ở đây. Chỉ chữ
+    // và b-roll (có media) mới thành lớp phủ.
+    if (!row.media_path && row.kind !== "text") continue;
     out.push({
-      kind: row.kind === "insert" ? "insert" : "text",
+      // B-roll = có tư liệu (render kind "insert"); còn lại là chữ.
+      kind: row.media_path ? "insert" : "text",
       start,
       end,
       content: (row.content as string) ?? undefined,
@@ -1340,6 +1353,7 @@ function resolveElements(
           ? row.letter_case
           : null,
       keyColor: (row.key_color as string | null) ?? null,
+      fontStyle: (row.font_style as string | null) ?? null,
       reveal: normalizeReveal(row.reveal as string | null),
       shape: (row.shape as RenderElement["shape"]) ?? "full",
       mediaPath: (row.media_path as string) ?? undefined,
@@ -1459,7 +1473,11 @@ function aiJobs(projectId: string): AiJob[] {
       // và hai bên không tranh nhau cắt cùng một quãng.
       key: "silence",
       run: async () => {
-        const { trimmed, saved } = trimSilence(projectId, await readEnvelope(projectId));
+        const { trimmed, saved } = trimSilence(
+          projectId,
+          await readSpeech(projectId),
+          await readEnvelope(projectId),
+        );
         return trimmed > 0
           ? `rút ${trimmed} chỗ · ${saved.toFixed(1)}s`
           : "không có chỗ nào";
@@ -1491,6 +1509,15 @@ function aiJobs(projectId: string): AiJob[] {
           `đặt ${placed} chỗ` +
           (rejected > 0 ? ` · gạt ${rejected}${why ? ` (${why})` : ""}` : "")
         );
+      },
+    },
+    {
+      // Ô người chạy SAU b-roll: nó nhắm 30% thời-gian-CÒN-LẠI (tổng − b-roll),
+      // nên b-roll phải đặt xong trước.
+      key: "layout",
+      run: async () => {
+        const { placed } = placePersonLayouts(projectId);
+        return `${placed} khung người`;
       },
     },
     {

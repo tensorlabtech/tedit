@@ -30,7 +30,7 @@ import {
   splitVerbatimCaptions,
 } from "../caption-elements";
 import { suggestOpeningLines } from "../ai-opening";
-import { STYLE_PACKS } from "../style-pack-catalog";
+import { DEFAULT_STYLE_PACK_ID, STYLE_PACKS } from "../style-pack-catalog";
 import { readStylePack } from "../style-pack-store";
 import { type Band } from "../text-layout";
 
@@ -119,20 +119,30 @@ app.post("/api/projects", async (request) => {
   // chỉ dự án mới mới theo số mới.
   const setting = readSettings(request.viewer!.id);
   db.prepare(
-    `INSERT INTO projects (id, title, status, created_at, owner_id, profile, min_silence, want_captions, want_music, insert_source, auto_grade)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    // `style_pack` set TƯỜNG MINH: cột này có `DEFAULT 'goc'` (bộ nay đã xoá), nên
+    // không set thì dự án MỚI cũng dính bộ cũ không-bố-cục. Lấy bộ mặc định hiện
+    // hành từ catalog để một chỗ đổi là mọi dự án mới theo.
+    `INSERT INTO projects (id, title, status, created_at, owner_id, profile, min_silence, want_captions, want_music, insert_source, auto_grade, style_pack)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
   ).run(
     id,
     body.title?.trim() || "Dự án mới",
     "draft",
     Date.now(),
     request.viewer!.id,
-    setting.profile,
+    // ĐỀ BÀI của RIÊNG dự án — bắt đầu RỖNG, người dùng nhập ở bước "Đề bài".
+    //
+    // KHÔNG seed hồ sơ user-level vào đây: `projects.profile` là mốc "đã qua bước
+    // Đề bài" của luồng (`hasBrief`), seed sẵn là luồng tưởng đã nhập đề bài rồi
+    // và nhảy qua bước "Cảnh phụ". Hồ sơ chung (onboarding) bơm vào prompt ở
+    // `ai-context`/`asr-bias` lúc chạy, không đi qua cột này.
+    "",
     setting.minSilence,
     setting.wantCaptions ? 1 : 0,
     setting.wantMusic ? 1 : 0,
     setting.insertSource,
     setting.autoGrade ? 1 : 0,
+    DEFAULT_STYLE_PACK_ID,
   );
   return { id };
 });
@@ -155,10 +165,11 @@ app.patch("/api/projects/:id", async (request, reply) => {
     wantMusic?: boolean;
     insertSource?: string;
     stylePack?: string;
+    fontStyle?: string | null;
     headline?: string;
   };
   const sets: string[] = [];
-  const values: Array<string | number> = [];
+  const values: Array<string | number | null> = [];
 
   if (body.title !== undefined) {
     // Tên rỗng thì trả về mặc định, không lưu chuỗi rỗng: một ô không có chữ
@@ -244,6 +255,17 @@ app.patch("/api/projects/:id", async (request, reply) => {
     sets.push("min_silence=?");
     values.push(pack.intensity.minSilence);
   }
+  // PHONG CÁCH CHỮ mặc định cả video. `null` là XOÁ đè (theo font của bộ chính);
+  // một tên thì phải có trong danh sách — nhận rồi rơi lặng thì màn báo "đã lưu"
+  // mà CSDL giữ thứ khác. KHÔNG kéo `min_silence` như `stylePack`: đây chỉ đổi
+  // chữ, nhịp cắt giữ nguyên.
+  if (body.fontStyle !== undefined) {
+    if (body.fontStyle !== null && !STYLE_PACKS.some((item) => item.id === body.fontStyle)) {
+      return reply.code(400).send({ error: "Không có phong cách chữ này" });
+    }
+    sets.push("font_style=?");
+    values.push(body.fontStyle);
+  }
   if (sets.length === 0) {
     return reply.code(400).send({ error: "Không có gì để đổi" });
   }
@@ -256,7 +278,7 @@ app.patch("/api/projects/:id", async (request, reply) => {
   }
   return db
     .prepare(
-      "SELECT id, title, profile, min_silence, want_captions, want_music, insert_source, style_pack, auto_grade, headline FROM projects WHERE id=?",
+      "SELECT id, title, profile, min_silence, want_captions, want_music, insert_source, style_pack, font_style, auto_grade, headline FROM projects WHERE id=?",
     )
     .get(id);
 });

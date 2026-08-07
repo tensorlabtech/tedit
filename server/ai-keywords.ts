@@ -98,7 +98,13 @@ export async function pickKeywords(projectId: string): Promise<{
   rejected: number;
   rounds: number;
 }> {
+  // SÀN chung cho mọi bộ dáng: gần như cụm nào cũng có một tiếng được nhấn. Đặt
+  // ở đây, một chỗ, thay vì nâng `keywordShare` của từng bộ — nâng từng bộ thì
+  // xoá mất bậc "nhấn thưa/nhấn dày" vốn phân biệt các bộ, mà lại là chín chỗ để
+  // quên. Bộ nào tự khai cao hơn sàn thì giữ nguyên phần cao đó.
+  const KEYWORD_SHARE_FLOOR = 0.85;
   const { keywordShare } = readStylePack(projectId).intensity;
+  const share = Math.max(KEYWORD_SHARE_FLOOR, keywordShare);
   const total = (
     db
       .prepare(
@@ -107,7 +113,7 @@ export async function pickKeywords(projectId: string): Promise<{
       )
       .get(projectId) as { n: number }
   ).n;
-  const target = Math.floor(total * keywordShare);
+  const target = Math.floor(total * share);
 
   let applied = 0;
   let rejected = 0;

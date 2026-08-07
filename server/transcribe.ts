@@ -39,6 +39,12 @@ export type AsrSegment = {
   end: number;
   /** Mô hình tự đánh giá "chỗ này không có ai nói", 0–1 */
   no_speech_prob?: number;
+  /** Trung bình log-xác suất từng token — càng ÂM càng không chắc (-1 là mốc ngờ) */
+  avg_logprob?: number;
+  /** Tỉ lệ nén bản chép — cao (>2.4) là lặp/gibberish */
+  compression_ratio?: number;
+  /** Nhiệt độ giải mã — >0 nghĩa là đã phải rơi về lấy mẫu ngẫu nhiên (fallback) */
+  temperature?: number;
   words: AsrWord[];
 };
 

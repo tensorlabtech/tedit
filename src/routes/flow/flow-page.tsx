@@ -4,13 +4,7 @@ import { useNavigate, useParams } from "react-router";
 import { ArrowRightIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Empty, EmptyDescription, EmptyTitle } from "@/components/ui/empty";
 import { Spinner } from "@/components/ui/spinner";
 import { api } from "@/lib/api";
@@ -30,7 +24,8 @@ import { FinishCutButton } from "./finish-cut-button";
 import { FinishTextButton } from "./finish-text-button";
 import { CutStep, type CutWord } from "./cut-step";
 import { SoatLoiStep } from "./soat-loi-step";
-import { StepRow } from "../pipeline/pipeline-page";
+import { STUDIO_ACTION_SLOT, StudioStep } from "./studio-step";
+import { MachineWorkingPanel } from "./machine-working-panel";
 import type { ApiStep } from "@/lib/api";
 import { BRollList } from "./broll-list";
 import { SceneStrip } from "./scene-strip";
@@ -116,24 +111,31 @@ export function FlowPage() {
   const navigate = useNavigate();
   const [snap, setSnap] = useState<Snapshot>(TRONG);
   const [loading, setLoading] = useState(true);
-  const [title, setTitle] = useState("");
   /**
-   * Bước người dùng ĐANG XEM — khác bước máy đang ở.
+   * BƯỚC NHẬP LIỆU (main → cảnh phụ → đề bài) là một WIZARD một chiều, người dùng
+   * TỰ bấm "Tiếp" để sang bước sau.
    *
-   * Bấm về một bước đã qua thì chỉ đổi cái đang xem, không kéo lùi mạch. `null`
-   * là bám theo máy, và đó là mặc định: người dùng mở trang ra phải thấy đúng
-   * chỗ cần họ, không phải chỗ họ xem lần trước.
+   * Tách khỏi máy: `currentStep` suy bước từ dữ liệu (vừa có cảnh chính là nhảy
+   * "cảnh phụ"), mà người dùng không muốn bị NHẢY ngay khi vừa thả tệp — họ muốn
+   * đứng lại xem, rồi bấm sang. Nên ba bước nhập do `intakeStep` cầm; máy chạy rồi
+   * (`snap.started`) thì bám theo máy. Luồng MỘT CHIỀU: không quay lại bước cũ
+   * (sidebar không bấm được), chỉ tiến bằng nút.
    */
-  const [viewing, setViewing] = useState<FlowStepId | null>(null);
+  const [intakeStep, setIntakeStep] = useState(0);
+  const intakeInited = useRef(false);
 
   useEffect(() => {
-    if (!projectId) return;
+    // Chưa có mã (vào `/flow` để tạo mới): không có gì để tải — tắt cờ chờ ngay,
+    // không thì `loading` khởi tạo `true` kẹt mãi và cả màn chỉ có vòng xoay.
+    if (!projectId) {
+      setLoading(false);
+      return;
+    }
     let alive = true;
     const pull = async () => {
       try {
         const data = await api.getProject(projectId);
         if (!alive) return;
-        setTitle(data.project.title);
         setSnap({
           hasMain: data.files.some((file) => file.role === "main"),
           hasBrief: Boolean(data.project.profile?.trim()),
@@ -181,6 +183,14 @@ export function FlowPage() {
    * ba mà hai nơi cùng dùng: hai nơi ấy sẽ đòi hai thứ khác nhau ngay lượt sau.
    */
   const upload = useUpload(projectId);
+  // TẠO-KHI-THẢ: vào `/flow` chưa có mã, thả tệp đầu tiên là `ensureProject` tạo
+  // dự án rồi mã nhảy lên đường dẫn để tải lại không mất việc — cùng lối `/upload`
+  // (tránh đẻ dự án rỗng khi bấm "Dự án mới" rồi bỏ ngang).
+  useEffect(() => {
+    if (upload.projectId && !projectId) {
+      navigate(`/flow/${upload.projectId}`, { replace: true });
+    }
+  }, [upload.projectId, projectId, navigate]);
   const pickRef = useRef<HTMLInputElement>(null);
   const pickRole = useRef<MediaRole | undefined>(undefined);
   const [previewId, setPreviewId] = useState<string | null>(null);
@@ -227,7 +237,20 @@ export function FlowPage() {
   const stale = upload.transcriptStale || upload.briefStale;
 
   const machineAt = currentStep(snap);
-  const at = viewing ?? machineAt;
+  // Khởi tạo intakeStep MỘT LẦN theo trạng thái (dự án dở giữa chừng thì vào đúng
+  // bước), rồi để nút đẩy — không cho snap về sau kéo nó đi.
+  useEffect(() => {
+    if (intakeInited.current || loading) return;
+    intakeInited.current = true;
+    if (!snap.started)
+      setIntakeStep(snap.hasBrief ? 2 : snap.hasMain ? 1 : 0);
+  }, [loading, snap.started, snap.hasBrief, snap.hasMain]);
+  const INTAKE_STEPS = ["main-footage", "b-roll", "brief"] as const;
+  // Máy chưa chạy → bước do wizard cầm; chạy rồi → bám máy (bước máy tự tiến qua
+  // Chuẩn bị/Cắt/Soát/Dựng/Bàn dựng).
+  const at: FlowStepId = snap.started
+    ? machineAt
+    : INTAKE_STEPS[Math.min(intakeStep, 2)];
   const step = FLOW_STEPS[stepIndex(at)];
   /*
    * Khung xem chiếu đúng LOẠI tệp của bước đang đứng.
@@ -255,6 +278,54 @@ export function FlowPage() {
   const previewing =
     pool.find((item) => item.id === previewId) ?? pool[0] ?? null;
 
+  /*
+   * NÚT VIỆC CHÍNH của bước — header đã bỏ, nút xuống CHÂN cột phải.
+   *
+   * Đặt ngay dưới chỗ người dùng vừa thao tác: soát xong bản cắt thì nút "Chốt"
+   * nằm ngay dưới dải cắt, không phải ngước lên đỉnh trang tìm. Bước máy đang
+   * chạy thì không có nút — chờ là chờ.
+   *
+   * Studio để TRƯỚC nhánh `user` chung: bàn dựng cũng là bước của người, nhưng
+   * nút của nó là ô cắm portal cho "Xuất video" (render từ `StudioStep`), không
+   * phải nút "Mở bàn dựng".
+   */
+  const action = stale ? (
+    <Button onClick={() => void upload.startTranscribe()}>
+      Chép lại lời
+      <ArrowRightIcon data-icon="inline-end" />
+    </Button>
+  ) : at === "cut" && projectId ? (
+    <FinishCutButton
+      projectId={projectId}
+      cuts={snap.cut.count}
+      seconds={snap.cut.seconds}
+      kept={snap.cut.kept}
+    />
+  ) : machineBusy ? null : at === "proofread" && projectId ? (
+    <FinishTextButton projectId={projectId} unsureCount={snap.unsureCount} />
+  ) : at === "studio" ? (
+    <div id={STUDIO_ACTION_SLOT} className="contents" />
+  ) : at === "main-footage" ? (
+    /* WIZARD một chiều: mỗi bước nhập xong bấm "Tiếp" sang bước KẾ, không nhảy
+       thẳng vào chép lời. Cảnh chính bắt buộc — chưa có thì nút mờ. */
+    <Button disabled={!snap.hasMain} onClick={() => setIntakeStep(1)}>
+      Tiếp
+      <ArrowRightIcon data-icon="inline-end" />
+    </Button>
+  ) : at === "b-roll" ? (
+    // Cảnh phụ KHÔNG bắt buộc — luôn cho đi tiếp.
+    <Button onClick={() => setIntakeStep(2)}>
+      Tiếp
+      <ArrowRightIcon data-icon="inline-end" />
+    </Button>
+  ) : at === "brief" ? (
+    // Bước nhập CUỐI: bắt đầu chép lời, máy tự chạy tiếp các bước sau.
+    <Button onClick={() => void upload.startTranscribe()}>
+      Bắt đầu chép lời
+      <ArrowRightIcon data-icon="inline-end" />
+    </Button>
+  ) : null;
+
   if (loading) {
     return (
       <div className="grid min-h-0 flex-1 place-items-center">
@@ -272,67 +343,23 @@ export function FlowPage() {
      * ghi rõ mọi trang đều dạng bento phủ kín — tôi phạm chính quy tắc của dự
      * án, và ảnh chụp lộ ra ngay.
      */
-    <div className="grid min-h-svh gap-2 bg-background p-2 text-foreground lg:h-svh lg:grid-rows-[auto_1fr] lg:overflow-hidden">
-      {/* Hàng tiêu đề: tên dự án và ĐƯỜNG RA. Thiếu nó thì trang là ngõ cụt —
-          lối về duy nhất là nút lùi trình duyệt. */}
-      {/* DÍNH trên cùng: cửa sổ thấp thì trang cuộn, và hàng này trôi mất —
-          mất luôn "Trở về" lẫn nút chính, tức mất đường ra giữa chừng. */}
-      <Card className="sticky top-0 z-10">
-        <CardHeader>
-          <CardTitle>{title}</CardTitle>
-          <CardAction>
-            <Button variant="ghost" onClick={() => navigate("/")}>
-              Trở về
-            </Button>
-            {/* Việc chính của bước là một NÚT, không phải chữ gạch chân trôi
-                giữa khung. Bước của máy thì không có nút — chờ là chờ. */}
-            {stale ? (
-              <Button onClick={() => void upload.startTranscribe()}>
-                Chép lại lời
-                <ArrowRightIcon data-icon="inline-end" />
-              </Button>
-            ) : at === "cut" && projectId ? (
-              /*
-               * Việc chính của bước CẮT là chốt bản cắt, không phải mở bàn dựng.
-               *
-               * Trước đây mọi bước của người đều ra cùng một nút "Mở bàn dựng",
-               * nên ở bước này người dùng soát xong không có đường nào đi tiếp:
-               * bấm nút thì sang `/editor`, mà `/editor` thấy dự án đang kẹt ở
-               * cổng nên đá về màn chờ. Một vòng tròn không lối ra.
-               */
-              <FinishCutButton
-                projectId={projectId}
-                cuts={snap.cut.count}
-                seconds={snap.cut.seconds}
-                kept={snap.cut.kept}
-              />
-            ) : machineBusy ? null : at === "proofread" && projectId ? (
-              // Cổng thứ hai — soát chính tả xong thì máy dựng nốt. Không phải
-              // cửa một chiều (khác `cut`), nên một nút thẳng là đủ, không hỏi.
-              <FinishTextButton
-                projectId={projectId}
-                unsureCount={snap.unsureCount}
-              />
-            ) : step.actor === "user" ? (
-              <Button onClick={() => navigate(`/editor/${projectId}`)}>
-                Mở bàn dựng
-                <ArrowRightIcon data-icon="inline-end" />
-              </Button>
-            ) : null}
-          </CardAction>
-        </CardHeader>
-      </Card>
+    <div className="hide-scrollbars grid min-h-svh gap-2 bg-background p-2 text-foreground lg:h-svh lg:grid-cols-[8.5rem_1fr] lg:overflow-hidden">
+      {/* Header đã bỏ: tên dự án lên đỉnh sidebar, "Trang chủ" xuống chân sidebar,
+          nút việc chính xuống chân cột phải — mỗi thứ về đúng chỗ người dùng cần. */}
+      <FlowSidebar
+        current={at}
+        // Luồng MỘT CHIỀU: sidebar chỉ là bản đồ "đang ở đâu", không bấm được —
+        // bước trước `at` là đã qua, bước sau là chưa tới. Tiến bằng nút, không
+        // quay lại.
+        onHome={() => navigate("/")}
+      />
 
-      <div className="grid gap-2 lg:min-h-0 lg:grid-cols-[15rem_1fr]">
-        <FlowSidebar
-          current={at}
-          reached={machineAt}
-          // Mạch lệch thì khoá từ sau bước đề bài — nhưng KHÔNG kéo `reached`
-          // lùi, để sidebar vẫn nói đúng máy đã chạy tới đâu.
-          blockAfter={stale ? "brief" : null}
-          onPick={(id) => setViewing(id)}
-        />
-
+      {/* Cột phải: nội dung bước ở trên, NÚT việc chính ghim ở chân.
+          `min-w-0`: đây là ô `1fr` của lưới ngoài `[8.5rem_1fr]`. Grid-item mặc
+          định `min-width:auto` — không cho co dưới min-content, nên bước nào có
+          khung xem rộng là cả ô này phình quá bề ngang, đẩy nội dung lòi khỏi mép
+          và bị `overflow-hidden` cắt (ring cột phải mất một cạnh). Cho co về 0. */}
+      <div className="grid min-h-0 min-w-0 gap-2 lg:h-full lg:grid-rows-[minmax(0,1fr)_auto]">
         {/*
           Ô phải KHÔNG bọc thêm một Card nữa.
 
@@ -342,14 +369,16 @@ export function FlowPage() {
           tầng khung chồng nhau: tiêu đề lặp, và tầng ngoài ăn hết chiều cao nên
           danh sách dưới bị cắt cụt.
 
-          Tên bước đã nằm ở sidebar và ở hàng tiêu đề trên cùng. Nhắc lần thứ ba
-          không thêm gì.
+          Tên bước đã nằm ở sidebar. Nhắc lần nữa ở đây không thêm gì.
         */}
-        <div className="grid min-h-0 gap-2 lg:h-full lg:grid-rows-[minmax(0,1fr)]">
+        <div className="grid min-h-0 min-w-0 gap-2 lg:h-full lg:grid-rows-[minmax(0,1fr)]">
           <input
             ref={pickRef}
             type="file"
-            accept="video/*"
+            // Cảnh phụ nhận cả ẢNH lẫn video (b-roll có thể là ảnh); cảnh chính
+            // chỉ video. Trước đây một `accept="video/*"` dùng chung ẩn mất ảnh ở
+            // hộp chọn tệp của cảnh phụ.
+            accept={at === "b-roll" ? "video/*,image/*" : "video/*"}
             multiple
             hidden
             onChange={(event) => {
@@ -381,48 +410,25 @@ export function FlowPage() {
             />
           ) : step.actor === "machine" || machineBusy ? (
             /*
-             * Bước MÁY: bày mười bốn chặng ở BÊN PHẢI.
+             * Bước MÁY: bày các chặng của bước ấy ở BÊN PHẢI.
              *
              * Sidebar cố tình gộp chúng vào một dòng — nó là bản đồ, không phải
              * nhật ký. Nhưng lúc máy đang chạy thì người dùng muốn biết nó đang
-             * làm gì, và đây đúng là chỗ để nhìn.
-             *
-             * Dùng lại `StepRow` của màn chờ cũ: cùng một danh sách chặng thì
-             * hai chỗ vẽ khác nhau là hai chỗ phải sửa mỗi lần thêm chặng.
+             * làm gì, và đây đúng là chỗ để nhìn — dựng như đang-sống, vì quãng
+             * chờ tự động này chính là thứ đang bán.
              */
-            <Card className="lg:h-full lg:min-h-0">
-              <CardHeader>
-                <CardTitle>
-                  Máy đang làm ·{" "}
-                  {
-                    snap.steps.filter(
-                      (s) => STAGES_OF[at].includes(s.key) && s.status === "done",
-                    ).length
-                  }
-                  /{STAGES_OF[at].length}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="grid min-h-0 flex-1 content-start gap-1 overflow-y-auto">
-                {snap.steps
-                  .filter((item) => STAGES_OF[at].includes(item.key))
-                  .map((item) => (
-                  <StepRow
-                    key={item.key}
-                    step={item}
-                    // Dùng lại đường có sẵn ở `api` chứ không gọi fetch trần:
-                    // một chỗ đổi đường dẫn thì mọi nơi theo.
-                    onRetry={() => void api.retryStep(projectId!, item.key)}
-                  />
-                ))}
-              </CardContent>
-            </Card>
+            <MachineWorkingPanel
+              steps={snap.steps.filter((item) =>
+                STAGES_OF[at].includes(item.key),
+              )}
+              // Dùng lại đường có sẵn ở `api` chứ không gọi fetch trần: một chỗ
+              // đổi đường dẫn thì mọi nơi theo.
+              onRetry={(key) => void api.retryStep(projectId!, key)}
+            />
           ) : at === "proofread" ? (
             /* Cổng soát chính tả đã mở (hai chặng máy `commit-cut`/`fix` chạy
                xong thì nhánh máy ở trên không còn bắt). Bày bản chép để soát. */
-            <SoatLoiStep
-              projectId={projectId}
-              previewUrl={projectId ? api.baseVideoUrl(projectId) : null}
-            />
+            <SoatLoiStep projectId={projectId} />
           ) : at === "brief" ? (
             <BriefStep
               title={upload.title}
@@ -442,8 +448,12 @@ export function FlowPage() {
              *
              * Xếp hai cột thì cả hai chỗ phí ấy biến mất cùng lúc.
              */
-            <div className="grid gap-2 lg:h-full lg:min-h-0 lg:grid-cols-[1fr_22rem]">
+            <div className="grid gap-2 lg:h-full lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_34rem]">
               <SequencePreviewCard
+                // Grid-item của track `minmax(0,1fr)` vẫn `min-width:auto` — phải
+                // cho `min-w-0` lên chính Card này thì nó mới co, không thì khung
+                // xem 9:16 giữ nguyên min-content và đẩy cột phải lòi khỏi màn.
+                className="min-w-0"
                 pack={findStylePack(upload.stylePack)}
                 scenes={upload.mainFiles.filter((i) => i.status !== "error")}
                 file={previewing}
@@ -465,8 +475,12 @@ export function FlowPage() {
           ) : at === "b-roll" ? (
             /* Cùng hình dạng hai cột với bước cảnh chính — người dùng học một
                bố cục, dùng cho cả hai bước. */
-            <div className="grid gap-2 lg:h-full lg:min-h-0 lg:grid-cols-[1fr_22rem]">
+            <div className="grid gap-2 lg:h-full lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_34rem]">
               <SequencePreviewCard
+                // Grid-item của track `minmax(0,1fr)` vẫn `min-width:auto` — phải
+                // cho `min-w-0` lên chính Card này thì nó mới co, không thì khung
+                // xem 9:16 giữ nguyên min-content và đẩy cột phải lòi khỏi màn.
+                className="min-w-0"
                 pack={findStylePack(upload.stylePack)}
                 /*
                  * `scenes` là MẠCH CHÍNH, kể cả ở bước tư liệu.
@@ -498,6 +512,10 @@ export function FlowPage() {
                 onRemove={handleRemove}
               />
             </div>
+          ) : at === "studio" ? (
+            /* Bước cuối "Bàn dựng": bàn dựng thế hệ mới — editor lược phần cắt.
+               Nút xuất video nằm trong chính workspace này. */
+            <StudioStep projectId={projectId} />
           ) : (
             /* Thẻ rỗng cũng phải PHỦ KÍN: ở bước chưa dựng, thẻ co lại còn
                một dải ngắn trên đỉnh và để lại hai phần ba màn nền trơn —
@@ -514,6 +532,16 @@ export function FlowPage() {
             </Card>
           )}
         </div>
+
+        {/* Chân cột phải: NÚT việc chính của bước. Bước máy đang chạy thì `action`
+            rỗng — hàng này biến mất, không để lại thẻ trống. */}
+        {action ? (
+          <Card size="sm">
+            <CardContent className="flex items-center justify-end gap-2">
+              {action}
+            </CardContent>
+          </Card>
+        ) : null}
       </div>
 
       {/* Hộp kho tư liệu — nút "Từ kho" ở thẻ cảnh phụ mở cái này. Thiếu nó thì

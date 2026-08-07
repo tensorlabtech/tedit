@@ -22,18 +22,18 @@
  * khai báo thì không có bản thứ hai để lệch — chép sang là tự tạo ra đúng thứ
  * `/_dev/overlays` sinh ra để bắt.
  */
-import { BASE_PACK } from "../../../server/style-pack-catalog";
+import { NHIP_DEN } from "../../../server/style-pack-catalog";
 import { boxPadShare, withFontRole } from "../../../server/style-pack";
 import type { ShownPack } from "../../../server/style-pack";
 
 /**
- * Bộ gốc đã chốt vai PHỤ ĐỀ — mặc định cho những chỗ gọi chưa có cụm nào.
+ * Bộ mặc định đã chốt vai PHỤ ĐỀ — dùng cho những chỗ gọi chưa có cụm nào.
  *
  * Không để mặc định là `StylePack` chưa chốt vai: chốt vai là việc nơi gọi
  * phải nghĩ, và một mặc định lặng lẽ chọn hộ chính là cách cụm cảm xúc bị vẽ
  * bằng font phụ đề mà không ai thấy.
  */
-const BASE_SHOWN = withFontRole(BASE_PACK, "voice");
+const BASE_SHOWN = withFontRole(NHIP_DEN, "voice");
 
 
 /** Trần dòng: dài hơn thì TÁCH CỤM, không co chữ. Khớp `MAX_LINES` của máy chủ. */

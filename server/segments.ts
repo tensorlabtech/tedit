@@ -140,6 +140,13 @@ export function splitAt(projectId: string, at: number, least = MIN_LENGTH) {
     null,
   );
   db.prepare("UPDATE segments SET end_sec=? WHERE id=?").run(at, target.id);
+  // Nửa SAU kế thừa cờ `removed` của đoạn gốc. `insert` mặc định `removed=0`, nên
+  // chẻ trúng một khoảng ĐANG BỎ thì nửa sau hoá "giữ" — kéo mép một chỗ cắt trùm
+  // lên chỗ cắt khác là chỗ kia biến mất, phim ở đó lặng lẽ trở lại bản dựng (đo
+  // được: gộp hai chỗ cắt làm "còn 1:07" nhảy lên "còn 1:14").
+  if (target.removed) {
+    db.prepare("UPDATE segments SET removed=1 WHERE id=?").run(newId2);
+  }
   renumber(projectId);
   return newId2;
 }
@@ -498,4 +505,39 @@ export function extendToDuration(projectId: string, total: number) {
   insert(projectId, last.position + 1, last.end_sec, total, null);
   renumber(projectId);
   return true;
+}
+
+/**
+ * HÀN LỖ HỔNG giữa hai đoạn liền kề — đoạn phải liền mạch từ 0 tới hết.
+ *
+ * Màn Cắt lỗi chỉ bỏ CẢ khoảng, KHÔNG gọt mép, nên mọi lỗ hổng ở bước ấy là RÁC
+ * (một cú kéo dở dang thời còn tranh async để lại). Mà lỗ hổng thì `keptFromSegments`
+ * bỏ qua (mất khỏi video xuất), và `cuts` bên Soát lời tính nó là "đã bỏ" — trong
+ * khi màn Cắt chỉ nhìn `removed` nên vẫn hiện nó là GIỮ. Ba nơi lệch nhau, người
+ * dùng thấy content còn ở màn Cắt mà biến mất khi soát lời.
+ *
+ * Hàn thì lỗ nhập vào đoạn GIỮ liền kề (kéo mép nó lấp sang) để KHÔNG đánh rơi
+ * nội dung người dùng không cố ý bỏ; hai bên đều đã-bỏ thì kéo đoạn trước lấp
+ * sang (vẫn nằm trong chỗ bỏ). CHỈ gọi ở màn Cắt: bàn dựng gọt-mép có chủ ý cũng
+ * đẻ ra lỗ, hàn ở đó là undo việc người dùng cố tình làm.
+ */
+export function sealGaps(projectId: string): number {
+  const segs = listSegments(projectId); // theo thứ tự position
+  let sealed = 0;
+  for (let i = 0; i < segs.length - 1; i += 1) {
+    const a = segs[i];
+    const b = segs[i + 1];
+    if (b.start_sec - a.end_sec <= 0.001) continue; // đã liền
+    if (a.removed === 0 || b.removed !== 0) {
+      // Đoạn trước GIỮ (nhập lỗ vào chỗ giữ), hoặc đoạn sau cũng đã-bỏ (nhập vào
+      // đâu cũng là chỗ bỏ) → kéo mép SAU của đoạn trước lấp tới đầu đoạn sau.
+      db.prepare("UPDATE segments SET end_sec=? WHERE id=?").run(b.start_sec, a.id);
+    } else {
+      // Đoạn trước đã-bỏ mà đoạn sau GIỮ → kéo mép TRƯỚC của đoạn sau lùi lại để
+      // lỗ nhập vào chỗ giữ, không rơi vào chỗ bỏ.
+      db.prepare("UPDATE segments SET start_sec=? WHERE id=?").run(a.end_sec, b.id);
+    }
+    sealed += 1;
+  }
+  return sealed;
 }

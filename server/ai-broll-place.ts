@@ -31,8 +31,12 @@ function insertSourceOf(projectId: string) {
  * Mô hình chỉ đề xuất theo mã từ; mọi ràng buộc do code giữ.
  */
 
-/** Ngắn hơn thì nháy một cái đã hết, dài hơn thì mất mặt người nói quá lâu. */
-const MIN_SECONDS = 1.2;
+/**
+ * Ngắn hơn thì nháy một cái đã hết chưa kịp đọc ra hình gì; dài hơn thì mất mặt
+ * người nói quá lâu. 2,5s là mức tối thiểu để một tư liệu HIỆN CÓ NGHĨA — mắt kịp
+ * nhận ra nó minh hoạ điều đang nói.
+ */
+const MIN_SECONDS = 2.5;
 const MAX_SECONDS = 4;
 /** Tổng thời lượng bị tư liệu che, tính trên toàn video. */
 const MAX_SHARE = 0.3;
@@ -113,7 +117,7 @@ export async function placeInserts(projectId: string): Promise<{
     (
       db
         .prepare(
-          "SELECT media_file_id FROM elements WHERE project_id=? AND kind='insert' AND media_file_id IS NOT NULL",
+          "SELECT media_file_id FROM elements WHERE project_id=? AND media_file_id IS NOT NULL",
         )
         .all(projectId) as Array<{ media_file_id: string }>
     ).map((row) => row.media_file_id),
@@ -194,9 +198,11 @@ export async function placeInserts(projectId: string): Promise<{
   // `reveal` lấy từ bộ dáng thay vì chôn cứng `'none'`: đây là chỗ DUY NHẤT
   // sinh ra tư liệu chèn tự động, nên nó quyết định dáng của cả video. Người
   // dùng vẫn đổi từng cái ở bảng sửa, và bảng sửa vẫn bày đủ mọi kiểu.
+  // B-roll = khung CÓ tư liệu, `kind='layout'` như mọi khung. Phân biệt bằng
+  // `media_file_id`, không bằng `kind`.
   const insert = db.prepare(
     `INSERT INTO elements (id, project_id, kind, from_word_id, to_word_id, media_file_id, align, emphasis, reveal, shape)
-     VALUES (?,?,'insert',?,?,?,'center','taper',?,'full')`,
+     VALUES (?,?,'layout',?,?,?,'center','taper',?,'full')`,
   );
   const taken: Array<{ start: number; end: number }> = [];
   const seen = new Set<string>();

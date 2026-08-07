@@ -201,6 +201,9 @@ function StripRow({
                 variant="ghost"
                 size="icon-xs"
                 aria-label={`Gỡ ${file.name}`}
+                // Tooltip NGẮN, không để mặc định lấy nguyên tên tệp từ aria-label
+                // — overlay dài portal ra sát mép phải đẩy document, hiện scrollbar.
+                tooltip="Gỡ cảnh"
                 onClick={() => onRemove(file.id)}
                 className="col-start-1 row-start-1 opacity-0 group-hover:opacity-100"
               >

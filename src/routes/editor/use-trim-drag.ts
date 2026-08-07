@@ -30,12 +30,19 @@ export function useTrimDrag({
   pushUndo,
   applySegmentsRef,
   effectsRef,
+  onInsertTrimmed,
 }: {
   projectId: string | undefined;
   setData: React.Dispatch<React.SetStateAction<Shaped | null>>;
   pushUndo: (entry: UndoEntry) => void;
   applySegmentsRef: React.RefObject<(rows: ApiSegment[]) => void>;
   effectsRef: React.RefObject<EffectRow[]>;
+  /**
+   * Gọt mép b-roll xong: mốc từ của tư liệu đã đổi, nên LỊCH MÀN phải xếp lại —
+   * khung người hai bên nới ra lấp đúng chỗ b-roll vừa co. Không gọi thì dải bố
+   * cục còn một cái hở tới lần nạp sau.
+   */
+  onInsertTrimmed?: () => void;
 }) {
   const dragTrim = useRef<{
     /** Mỗi loại một đường ghi khác nhau */
@@ -309,6 +316,8 @@ export function useTrimDrag({
           wordId: pending.wasWordId,
         });
       }
+      // Mép b-roll đổi → xếp lại lịch màn để khung người lấp đúng chỗ vừa co.
+      onInsertTrimmed?.();
       return;
     }
     if (pending.kind === "effect") {
@@ -400,7 +409,7 @@ export function useTrimDrag({
       edge: pending.edge,
       at: pending.was,
     });
-  }, [projectId, pushUndo]);
+  }, [projectId, pushUndo, onInsertTrimmed]);
 
   /**
    * Những chỗ KHÔNG vào video, suy ra từ ĐOẠN — không có danh sách riêng nào nữa.

@@ -6,6 +6,7 @@ import {
   createCaptionElements,
 } from "../caption-elements";
 import { KEY_COLORS } from "../style-pack";
+import { STYLE_PACKS } from "../style-pack-catalog";
 import { readStylePack } from "../style-pack-store";
 import { type Band } from "../text-layout";
 
@@ -16,12 +17,16 @@ export default async function elementsRoutes(app: FastifyInstance) {
 app.post("/api/projects/:id/elements", async (request, reply) => {
   const { id } = request.params as { id: string };
   const body = request.body as {
-    kind?: "text" | "insert";
+    // `layout` = ô NGƯỜI (segment bố cục không cần tư liệu). `insert` = b-roll (có
+    // tư liệu). Cùng bảng, phân biệt bằng `media_file_id`.
+    kind?: "text" | "insert" | "layout";
     fromWordId?: string;
     toWordId?: string;
     content?: string;
     band?: string;
     mediaFileId?: string;
+    /** Mã bố cục cho segment (b-roll hoặc ô người). */
+    insertLayout?: string | null;
     /** Neo theo giờ — chữ tự do dùng cặp này thay cho cặp mã từ */
     start?: number;
     end?: number;
@@ -47,8 +52,8 @@ app.post("/api/projects/:id/elements", async (request, reply) => {
   assertInProject(id, "word", body.toWordId);
   const elementId = newId("e");
   db.prepare(
-    `INSERT INTO elements (id, project_id, kind, from_word_id, to_word_id, start_sec, end_sec, content, position_band, media_file_id, align, emphasis, reveal, shape)
-     VALUES (?,?,?,?,?,?,?,?,?,?,'center','taper','none','full')`,
+    `INSERT INTO elements (id, project_id, kind, from_word_id, to_word_id, start_sec, end_sec, content, position_band, media_file_id, insert_layout, align, emphasis, reveal, shape)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,'center','taper','none','full')`,
   ).run(
     elementId,
     id,
@@ -60,6 +65,7 @@ app.post("/api/projects/:id/elements", async (request, reply) => {
     body.content ?? null,
     body.band ?? "top",
     body.mediaFileId ?? null,
+    body.insertLayout ?? null,
   );
   return db.prepare("SELECT * FROM elements WHERE id=?").get(elementId);
 });
@@ -82,6 +88,8 @@ app.patch("/api/projects/:id/elements/style", async (request, reply) => {
     band?: string;
     align?: string;
     emphasis?: string;
+    /** Phong cách chữ cho CẢ VIDEO: đặt mặc định dự án + xoá đè từng cụm. */
+    fontStyle?: string | null;
   };
   const sets: string[] = [];
   const values: string[] = [];
@@ -97,16 +105,31 @@ app.patch("/api/projects/:id/elements/style", async (request, reply) => {
     sets.push("emphasis=?");
     values.push(body.emphasis);
   }
-  if (sets.length === 0) {
+  let changed = 0;
+  if (sets.length > 0) {
+    changed = db
+      .prepare(
+        `UPDATE elements SET ${sets.join(", ")}
+         WHERE project_id=? AND kind='text' AND start_sec IS NULL`,
+      )
+      .run(...values, id).changes;
+  }
+  // PHONG CÁCH CHỮ cả video: KHÁC các trục trên — không ghi vào từng cụm mà đặt
+  // MẶC ĐỊNH dự án rồi XOÁ đè của mọi cụm, để tất cả cùng theo một bộ. `null` là
+  // bỏ đè (theo font của bộ chính). Tên lạ gạt về `null`.
+  if (body.fontStyle !== undefined) {
+    const next = STYLE_PACKS.some((p) => p.id === body.fontStyle)
+      ? body.fontStyle
+      : null;
+    db.prepare("UPDATE projects SET font_style=? WHERE id=?").run(next, id);
+    db.prepare(
+      "UPDATE elements SET font_style=NULL WHERE project_id=? AND kind='text'",
+    ).run(id);
+  }
+  if (sets.length === 0 && body.fontStyle === undefined) {
     return reply.code(400).send({ error: "Không có kiểu nào để áp" });
   }
-  const result = db
-    .prepare(
-      `UPDATE elements SET ${sets.join(", ")}
-       WHERE project_id=? AND kind='text' AND start_sec IS NULL`,
-    )
-    .run(...values, id);
-  return { changed: result.changes };
+  return { changed };
 });
 
 app.patch("/api/elements/:elementId", async (request, reply) => {
@@ -118,10 +141,16 @@ app.patch("/api/elements/:elementId", async (request, reply) => {
     emphasis?: string;
     reveal?: string;
     shape?: string;
+    /** Bố cục hiện b-roll (element kind='insert'). `null` = để máy tự chọn. */
+    insertLayout?: string | null;
+    /** Đổi tệp media của b-roll (element kind='insert'). */
+    mediaFileId?: string;
     keywords?: string[];
     /** `null` = bỏ đè, quay về theo bộ dáng của dự án */
     letterCase?: string | null;
     keyColor?: string | null;
+    /** Phong cách chữ riêng cụm này. `null` = theo mặc định dự án. */
+    fontStyle?: string | null;
     sentenceId?: string;
     fromWordId?: string;
     toWordId?: string;
@@ -192,6 +221,25 @@ app.patch("/api/elements/:elementId", async (request, reply) => {
       elementId,
     );
   }
+  // Bố cục b-roll: nhận cả `null` (về tự động) nên không gộp vào vòng chỉ-chuỗi dưới.
+  if (body.insertLayout !== undefined) {
+    db.prepare("UPDATE elements SET insert_layout=? WHERE id=?").run(
+      body.insertLayout,
+      elementId,
+    );
+  }
+  // Đổi tệp b-roll: tệp phải thuộc CHÍNH dự án của phần tử — cổng chặn đã xác nhận
+  // phần tử thuộc người gọi, nên chỉ còn buộc tệp cùng dự án với nó.
+  if (typeof body.mediaFileId === "string") {
+    const owns = db
+      .prepare("SELECT 1 FROM media_files WHERE id=? AND project_id=?")
+      .get(body.mediaFileId, current.project_id);
+    if (!owns) return reply.code(400).send({ error: "Tệp không thuộc dự án" });
+    db.prepare("UPDATE elements SET media_file_id=? WHERE id=?").run(
+      body.mediaFileId,
+      elementId,
+    );
+  }
   for (const [key, value] of [
     ["align", body.align],
     ["emphasis", body.emphasis],
@@ -232,6 +280,17 @@ app.patch("/api/elements/:elementId", async (request, reply) => {
       ? body.keyColor
       : null;
     db.prepare("UPDATE elements SET key_color=? WHERE id=?").run(
+      next,
+      elementId,
+    );
+  }
+  // Phong cách chữ riêng cụm. `null` = bỏ đè; tên lạ cũng gạt về `null` để không
+  // có chuỗi rác đi vào lệnh vẽ.
+  if (body.fontStyle !== undefined) {
+    const next = STYLE_PACKS.some((item) => item.id === body.fontStyle)
+      ? body.fontStyle
+      : null;
+    db.prepare("UPDATE elements SET font_style=? WHERE id=?").run(
       next,
       elementId,
     );

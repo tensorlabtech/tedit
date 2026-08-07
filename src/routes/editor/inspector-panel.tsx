@@ -1,5 +1,3 @@
-import { Trash2Icon } from "lucide-react";
-
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,43 +8,30 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { FieldDescription } from "@/components/ui/field";
 
-import {
-  REVEALS,
-  type RevealId,
-} from "@/dev/overlays/overlay-model";
+import { findLayout } from "../../../server/layout-kinds";
 
 import { MusicInspector } from "./inspector-music";
 import { EffectPane } from "./inspector-effect-pane";
-import { InsertShapeTiles } from "./inspector-insert-shape-tiles";
 import { InspectorHeadlinePane } from "./inspector-headline-pane";
 import { TextPane } from "./inspector-text-pane";
+import { LayoutKhungPane } from "./inspector-layout-pane";
 import { demElement, type EditorState } from "./use-editor";
 
 /**
- * Hai trục CHUYỂN ĐỘNG — chỗ nối và cách tư liệu hiện ra — chỉ có NHÃN, không
- * icon, không ô xem trước.
+ * Các trục CHUYỂN ĐỘNG — kiểu chỗ nối, cách tư liệu hiện ra — bày bằng CHỮ, không
+ * icon, không ảnh xem trước.
  *
- * Ô xem trước thì không dựng được: ảnh tĩnh làm "zoom vào" và "zoom ra" ra cùng
- * một hình.
+ * Ảnh xem trước không dựng được: một khung tĩnh làm "zoom vào" và "zoom ra" ra
+ * cùng một hình. Icon cũng không hợp — một đời trước từng thử `—` `><` `<>` `⚡`
+ * `○`, và ở cỡ nhỏ chúng đọc ra như ký tự bàn phím chứ không nói thêm được gì.
  *
- * Icon thì tôi có thêm một đời — `—` `><` `<>` `⚡` `○` — và đó là quyết định
- * sai. Thêm vì hai hàng kia (Chỗ đặt, Căn ngang) có icon, tức vì ĐỐI XỨNG chứ
- * không vì chúng nói thêm được gì: `><` với `<>` ở cỡ 14px đọc ra như ký tự bàn
- * phím, còn `—` cho "Cắt thẳng" thì chỉ là một gạch ngang. Mà chúng ăn ~25px mỗi
- * nút, đủ để năm lựa chọn gãy thành 4+1 dòng — dải chọn xuống dòng là mất luôn
- * lợi thế "thấy hết cùng lúc", tức mất lý do dùng dải chọn.
- *
- * Luật rút ra: icon chỉ có chỗ khi khái niệm VẼ RA ĐƯỢC (trên/giữa/dưới,
- * trái/phải/bậc thang). Khái niệm về THỜI GIAN thì để chữ nói.
+ * Luật rút ra: icon chỉ có chỗ khi khái niệm VẼ RA ĐƯỢC (trên/giữa/dưới). Khái
+ * niệm về CHUYỂN ĐỘNG hay THỜI GIAN thì để chữ nói. Và khi một trục có nhiều lựa
+ * chọn (gần ba chục kiểu chỗ nối, sau này hàng trăm kiểu khung), bảng chỉ bày cái
+ * ĐANG chọn + nút Đổi, cả danh sách nằm trong modal lưới — bày phẳng hết ra thì
+ * vừa tràn mép vừa bắt người dùng đọc một dãy dài rồi so từng cái.
  */
 
 export function InspectorPanel({
@@ -119,6 +104,28 @@ export function InspectorPanel({
     return <MusicInspector key={track.id} track={track} editor={editor} />;
   }
 
+  if (selection.kind === "scene") {
+    const scene = editor.sceneLayout?.schedule.find(
+      (item) => item.elementId === selection.id,
+    );
+    if (!scene?.elementId) return null;
+    // Ô NGƯỜI = khung KHÔNG tư liệu. Mốc màn ở trục ĐÃ CẮT → quy về gốc cho chạy thử.
+    return (
+      <LayoutKhungPane
+        key={selection.id}
+        editor={editor}
+        elementId={scene.elementId}
+        layout={scene.layout}
+        media={null}
+        srcStart={editor.toSource(scene.start)}
+        srcEnd={editor.toSource(scene.end)}
+        outStart={scene.start}
+        outEnd={scene.end}
+        onPreview={onPreview}
+      />
+    );
+  }
+
   if (selection.kind === "clip") {
     const segment = editor.segments.find((item) => item.id === selection.id);
     if (!segment) return null;
@@ -173,103 +180,29 @@ export function InspectorPanel({
   const item = editor.inserts.find((insert) => insert.id === selection.id);
   if (!item) return null;
 
-  /**
-   * Đổi một lựa chọn là CHẠY THỬ ngay đúng khoảng tư liệu này.
-   *
-   * "Hiện ra" là chuyển động thuần; còn "Dáng khung" tuy là hình tĩnh nhưng nó
-   * hiện ra CÙNG với chuyển động ấy, nên xem lại vẫn đáng.
-   *
-   * Chỉ chạy khi ĐỔI LỰA CHỌN, không chạy khi vừa chọn khối — cùng lý do với
-   * bảng chữ.
-   */
-  const replay = () => onPreview(item.start - 0.2, item.end + 0.3);
-
+  // B-ROLL = khung CÓ tư liệu (2 ô). Cùng bảng "Khung" với ô người — không còn
+  // bảng riêng. Mốc của `editor.inserts` ở trục GỐC (theo từ) → quy sang trục đã
+  // cắt cho tiêu đề/đặt tư liệu.
+  const firstBroll = (editor.sceneLayout?.allowedLayouts ?? []).find((choice) =>
+    findLayout(choice.id).needsInsert,
+  )?.id;
   return (
-    <Card className="h-full min-h-0">
-      <CardHeader>
-        {/* Không huy hiệu độ dài, không dòng tên tệp.
-            Độ dài: đổi một lựa chọn là khối tự chạy thử, xem là biết dài ngắn.
-            Tên tệp: khối trên dải đã mang ẢNH THẬT của nó, và khung xem đang
-            chiếu chính nó — một dòng "Ảnh · personal-tracker" chỉ lặp lại bằng
-            chữ thứ hai mắt đang nhìn. */}
-        <CardTitle>Tư liệu chèn</CardTitle>
-      </CardHeader>
-      <CardContent className="min-h-0 flex-1">
-        <div className="grid gap-3">
-          <Field>
-            <FieldLabel>Dáng khung</FieldLabel>
-            {/* Bốn ô vẽ ra, thay cho câu tả dài nhất bảng này từng có:
-                "Đè kín phủ toàn khung; ba dáng còn lại là một hộp thụt 8% mỗi
-                bên, đặt ở 13% chiều cao". Câu ấy đọc ra một bức tranh bằng lời
-                và bắt nhớ ba con số. */}
-            <InsertShapeTiles
-              value={item.shape}
-              onChange={(next) => {
-                editor.setInsertStyle(item.id, { shape: next });
-                replay();
-              }}
-            />
-          </Field>
-          <Field>
-            <FieldLabel>Hiện ra</FieldLabel>
-            {/*
-             * Hộp CHỌN chứ không phải dải nút, kể từ khi kho có 5 kiểu.
-             *
-             * Ghi chú ở đầu tệp này nói rõ: dải chọn mà xuống dòng là mất hẳn
-             * lợi thế "thấy hết cùng lúc" — hai hàng nút so le đọc còn chậm hơn
-             * một hộp chọn. Năm nhãn ("Cắt thẳng", "Mờ + lên", "Mờ dần",
-             * "Trượt vào", "Giữ rồi bật") không nằm vừa một hàng ở cột này.
-             *
-             * Trục này là trục về THỜI GIAN nên để chữ nói, không thêm icon —
-             * cũng theo ghi chú ấy.
-             */}
-            <Select
-              // `items` là BẮT BUỘC, không phải tuỳ chọn.
-              //
-              // `SelectValue` của Base UI in ra chính GIÁ TRỊ khi Root không có
-              // bảng tra nhãn — đo thật: hộp chọn hiện "fade-up" thay vì
-              // "Mờ + lên". Danh sách thả xuống thì vẫn đúng nhãn, nên lỗi này
-              // chỉ lộ ra ở trạng thái ĐÓNG, tức là ở trạng thái người dùng
-              // nhìn thấy gần như suốt.
-              items={Object.fromEntries(
-                REVEALS.map((reveal) => [reveal.id, reveal.label]),
-              )}
-              value={item.reveal}
-              onValueChange={(value) => {
-                const next = value as RevealId | null;
-                if (!next) return;
-                editor.setInsertStyle(item.id, { reveal: next });
-                replay();
-              }}
-            >
-              <SelectTrigger size="sm" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {REVEALS.map((reveal) => (
-                  <SelectItem key={reveal.id} value={reveal.id}>
-                    {reveal.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <FieldDescription>
-              {REVEALS.find((reveal) => reveal.id === item.reveal)?.note}
-            </FieldDescription>
-          </Field>
-        </div>
-      </CardContent>
-      <CardFooter>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => void editor.deleteElement(item.id)}
-        >
-          <Trash2Icon data-icon="inline-start" />
-          Gỡ tư liệu này
-        </Button>
-      </CardFooter>
-    </Card>
+    <LayoutKhungPane
+      key={selection.id}
+      editor={editor}
+      elementId={item.id}
+      layout={item.insertLayout ?? firstBroll ?? "hai-o"}
+      media={{
+        thumbUrl: item.thumbUrl ?? item.url,
+        isVideo: item.isVideo,
+        label: item.fullName ?? item.label,
+      }}
+      srcStart={item.start}
+      srcEnd={item.end}
+      outStart={editor.toOutput(item.start)}
+      outEnd={editor.toOutput(item.end)}
+      onPreview={onPreview}
+    />
   );
 }
 

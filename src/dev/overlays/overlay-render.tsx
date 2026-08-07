@@ -1,4 +1,4 @@
-import { BASE_PACK } from "../../../server/style-pack-catalog";
+import { NHIP_DEN } from "../../../server/style-pack-catalog";
 import {
   cssColor,
   headlineRoom,
@@ -11,8 +11,8 @@ import {
 } from "../../../server/style-pack";
 
 
-/** Bộ gốc đã chốt vai PHỤ ĐỀ — cùng mặc định với `overlay-model.ts`. */
-const BASE_SHOWN = withFontRole(BASE_PACK, "voice");
+/** Bộ mặc định đã chốt vai PHỤ ĐỀ — cùng mặc định với `overlay-model.ts`. */
+const BASE_SHOWN = withFontRole(NHIP_DEN, "voice");
 import { OverlayFrame } from "./overlay-frame";
 import {
   BANDS,
@@ -527,7 +527,7 @@ const WRAP_CAPS: Record<string, number> = {
   "gach-chan": 120,
 };
 
-const graphicUrl = (id: string) =>
+export const graphicUrl = (id: string) =>
   Object.entries(GRAPHIC_URLS).find(([path]) => path.endsWith(`/${id}.png`))?.[1];
 
 /**
@@ -752,7 +752,7 @@ export function OverlayRender({
   showSafeArea = true,
   background,
   headline,
-  headlinePack = BASE_PACK,
+  headlinePack = NHIP_DEN,
 }: {
   config: OverlayConfig;
   pack?: ShownPack;

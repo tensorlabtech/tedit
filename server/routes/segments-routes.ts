@@ -5,6 +5,7 @@ import {
   mergeIntoPrevious,
   cutExactly,
   removeRange,
+  sealGaps,
   skippedSpans,
   renameSegment,
   setSegmentRemoved,
@@ -72,6 +73,14 @@ app.post("/api/projects/:id/segments/remove-range", async (request, reply) => {
   return body.exact
     ? cutExactly(id, body.start, body.end)
     : removeRange(id, body.start, body.end);
+});
+
+// Hàn lỗ hổng giữa các đoạn — CHỈ màn Cắt lỗi gọi (nơi mọi lỗ là rác). Trả về
+// danh sách đã liền mạch để client vẽ lại ngay.
+app.post("/api/projects/:id/segments/seal-gaps", async (request) => {
+  const { id } = request.params as { id: string };
+  sealGaps(id);
+  return listSegments(id);
 });
 
 app.get("/api/projects/:id/skipped", async (request) => {

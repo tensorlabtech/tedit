@@ -21,7 +21,10 @@ import {
 
 
 import type { StylePackId } from "../../../server/style-pack";
-import { findStylePack } from "../../../server/style-pack-catalog";
+import {
+  DEFAULT_STYLE_PACK_ID,
+  findStylePack,
+} from "../../../server/style-pack-catalog";
 
 import { shortMediaLabel } from "./editor-data";
 import type { AudioEnvelope } from "./timeline-audio-lane";
@@ -51,6 +54,9 @@ export type Selection =
   | { kind: "music"; id: string }
   // Chỗ nối không có mã riêng — nó LÀ một mốc. Dùng chính giây bản gốc làm mã.
   | { kind: "junction"; id: string }
+  // Màn cũng không có mã riêng — lịch xếp lại mỗi lượt. Dùng mốc bắt đầu (mili-giây,
+  // dạng chuỗi) làm mã: màn nào bắt đầu ở mốc ấy thì là màn đang chọn.
+  | { kind: "scene"; id: string }
   | null;
 
 /*
@@ -62,6 +68,7 @@ export {
   ZOOM_STEP,
   zoomFactorFromWheel,
 } from "./timeline-zoom";
+import { useSceneLayout } from "./use-scene-layout";
 
 /**
  * Mỗi nửa của một đoạn phải còn ít nhất chừng này thì mới tách được.
@@ -244,6 +251,7 @@ export function useEditor(projectId: string | undefined) {
             .catch(boQuaLoi());
         }
         setStylePackState(findStylePack(project.project.style_pack).id);
+        setFontStyleState(project.project.font_style ?? null);
         setHeadlineState(project.project.headline ?? "");
         setEffectsStylePack(project.project.effects_style_pack ?? null);
         // Giá trị cũ vẫn đọc được: 1 và "in" đều là nhấn zoom vào.
@@ -319,12 +327,20 @@ export function useEditor(projectId: string | undefined) {
   );
 
   const applySegmentsRef = useRef<(rows: ApiSegment[]) => void>(() => {});
+
+  // LỊCH MÀN nạp lại khi số này đổi. Khai SỚM (trước `useUndoStack`/`useTrimDrag`)
+  // vì cả gọt-mép lẫn hoàn-tác b-roll đều cần bơm nó: mốc từ của tư liệu đổi thì
+  // khung người hai bên phải xếp lại lấp đúng chỗ b-roll vừa co/nới.
+  const [layoutReload, setLayoutReload] = useState(0);
+  const bumpLayoutReload = useCallback(() => setLayoutReload((n) => n + 1), []);
+
   const { undoLabel, pushUndo, undo } = useUndoStack({
     projectId,
     setData,
     setSelection,
     applySegmentsRef,
     durationRef,
+    onInsertTrimmed: bumpLayoutReload,
   });
 
   /**
@@ -571,6 +587,7 @@ export function useEditor(projectId: string | undefined) {
             // Dùng `??` ở đây là nuốt mất chính cái ý đó.
             letterCase: patch.letterCase,
             keyColor: patch.keyColor,
+            fontStyle: patch.fontStyle,
           })
           .catch(boQuaLoi());
         return {
@@ -738,7 +755,12 @@ export function useEditor(projectId: string | undefined) {
    * cùng giữ một luật.
    */
   const applyTextStyleToAll = useCallback(
-    async (style: { band?: string; align?: string; emphasis?: string }) => {
+    async (style: {
+      band?: string;
+      align?: string;
+      emphasis?: string;
+      fontStyle?: string | null;
+    }) => {
       if (!projectId) return 0;
       const saved = await api
         .applyTextStyleToAll(projectId, style)
@@ -748,6 +770,9 @@ export function useEditor(projectId: string | undefined) {
         const shaped = shape(fresh);
         durationRef.current = shaped.duration;
         setData(shaped);
+        // Phong cách chữ cả video vừa đổi ở máy chủ — kéo mặc định MỚI về state,
+        // không thì khung xem vẫn vẽ theo mặc định cũ tới lần tải lại.
+        setFontStyleState(fresh.project.font_style ?? null);
       }
       return saved?.changed ?? 0;
     },
@@ -864,6 +889,14 @@ export function useEditor(projectId: string | undefined) {
         : current,
     );
     setSelection({ kind: "text", id: created.id });
+    // Thêm chữ HOÀN TÁC ĐƯỢC: không ghi sổ thì thêm nhầm một cụm, bấm hoàn tác
+    // lại đứng im (nút mờ hẳn) — trong khi thêm hiệu ứng thì lùi được, hai việc
+    // giống nhau mà hành xử khác nhau. Undo kiểu "element" gỡ đúng cụm vừa tạo.
+    pushUndoRef.current({
+      type: "element",
+      label: "Thêm chữ",
+      elementId: created.id,
+    });
   }, [projectId, data, time]);
 
   /**
@@ -917,6 +950,11 @@ export function useEditor(projectId: string | undefined) {
           : current,
       );
       setSelection({ kind: "text", id: created.id });
+      pushUndoRef.current({
+        type: "element",
+        label: "Thêm câu mở",
+        elementId: created.id,
+      });
     },
     [projectId, data],
   );
@@ -935,7 +973,7 @@ export function useEditor(projectId: string | undefined) {
       if (words.length === 0) return;
 
       const created = await api.createElement(projectId, {
-        kind: "insert",
+        kind: "layout",
         fromWordId: words[0].id,
         toWordId: words[words.length - 1].id,
         mediaFileId,
@@ -979,6 +1017,11 @@ export function useEditor(projectId: string | undefined) {
           : current,
       );
       setSelection({ kind: "insert", id: created.id });
+      pushUndoRef.current({
+        type: "element",
+        label: "Chèn tư liệu",
+        elementId: created.id,
+      });
     },
     [projectId, data, time],
   );
@@ -1012,7 +1055,7 @@ export function useEditor(projectId: string | undefined) {
         type: "restore",
         label: "Gỡ tư liệu",
         element: {
-          kind: "insert",
+          kind: "layout",
           fromWordId: insert.fromWordId,
           toWordId: insert.toWordId,
           mediaFileId: insert.mediaFileId,
@@ -1032,6 +1075,8 @@ export function useEditor(projectId: string | undefined) {
         : current,
     );
     setSelection(null);
+    // Xoá b-roll cũng đổi lịch màn (khung đó biến mất) → nạp lại cho khung xem.
+    setLayoutReload((n) => n + 1);
   }, []);
 
   /** Tách đoạn tại vạch giữa — thay cho việc cắt bỏ cứng nửa giây. */
@@ -1131,6 +1176,7 @@ export function useEditor(projectId: string | undefined) {
     pushUndo,
     applySegmentsRef,
     effectsRef,
+    onInsertTrimmed: bumpLayoutReload,
   });
 
   const cuts = useMemo(() => {
@@ -1534,7 +1580,19 @@ export function useEditor(projectId: string | undefined) {
    * không đụng một hàng dữ liệu nào. Vì thế nó ở đây chứ không ở Inspector —
    * Inspector là nơi sửa VẬT ĐANG CHỌN.
    */
-  const [stylePack, setStylePackState] = useState<StylePackId>("goc");
+  const [stylePack, setStylePackState] =
+    useState<StylePackId>(DEFAULT_STYLE_PACK_ID);
+  // PHONG CÁCH CHỮ mặc định cả video — `null` là theo font của `stylePack`. Trục
+  // đổi được AN TOÀN: chỉ đổi dáng chữ, không đụng nhịp/bố cục nên không cần nạp
+  // lại lịch màn như `setStylePack`.
+  const [fontStyle, setFontStyleState] = useState<string | null>(null);
+  /*
+   * LỊCH MÀN dùng chung cho khung xem trước lẫn lane bố cục — nạp ở đây, không ở
+   * từng thẻ, để đổi bố cục ở lane thì khung xem cập nhật cùng một nguồn.
+   * `layoutReload` (khai trên, cạnh `useTrimDrag`) bơm sau khi đổi phong cách hay
+   * gọt mép b-roll để lấy lịch mới.
+   */
+  const sceneLayout = useSceneLayout(projectId, stylePack, layoutReload);
   /**
    * DÒNG TIÊU ĐỀ của cả video.
    *
@@ -1552,20 +1610,205 @@ export function useEditor(projectId: string | undefined) {
    */
   const [effectsStylePack, setEffectsStylePack] = useState<string | null>(null);
 
-  /** Đổi cách một tư liệu hiện ra, hoặc hình dáng khung của nó. */
+  /** Đổi cách một tư liệu hiện ra, hình dáng khung, hoặc BỐ CỤC b-roll của nó. */
   const setInsertStyle = useCallback(
-    (id: string, patch: { reveal?: RevealId; shape?: ShapeId }) => {
+    (
+      id: string,
+      patch: {
+        reveal?: RevealId;
+        shape?: ShapeId;
+        insertLayout?: string | null;
+      },
+    ) => {
       setData((current) =>
         current
           ? {
               ...current,
               inserts: current.inserts.map((item) =>
-                item.id === id ? { ...item, ...patch } : item,
+                item.id === id
+                  ? {
+                      ...item,
+                      ...patch,
+                      insertLayout:
+                        patch.insertLayout !== undefined
+                          ? (patch.insertLayout ?? undefined)
+                          : item.insertLayout,
+                    }
+                  : item,
               ),
             }
           : current,
       );
       void api.updateElement(id, patch).catch(boQuaLoi());
+      // Đổi bố cục b-roll → lịch màn đổi theo, nạp lại.
+      if (patch.insertLayout !== undefined) setLayoutReload((n) => n + 1);
+    },
+    [],
+  );
+
+  /** Đổi TỆP media của một b-roll — chọn ảnh/video khác cho ô của nó. */
+  const setInsertMedia = useCallback((id: string, mediaFileId: string) => {
+    setData((current) => {
+      if (!current) return current;
+      const file = current.insertLibrary.find((x) => x.id === mediaFileId);
+      return {
+        ...current,
+        inserts: current.inserts.map((item) =>
+          item.id === id
+            ? {
+                ...item,
+                mediaFileId,
+                label: file
+                  ? shortMediaLabel(
+                      file.name,
+                      current.insertLibrary.findIndex((x) => x.id === file.id),
+                    )
+                  : item.label,
+                fullName: file?.name,
+                url: file ? api.mediaUrl(file.id) : undefined,
+                thumbUrl: file?.thumb_path
+                  ? api.fileUrl(file.thumb_path)
+                  : undefined,
+                isVideo: file?.kind !== "image",
+              }
+            : item,
+        ),
+      };
+    });
+    void api.updateElement(id, { mediaFileId }).catch(boQuaLoi());
+    // Tỉ lệ tệp mới đổi ô phụ; lịch màn đọc lại.
+    setLayoutReload((n) => n + 1);
+  }, []);
+
+  /**
+   * ĐỔI một màn NGƯỜI thành b-roll — đặt một tư liệu chiếm ĐÚNG khoảng của màn.
+   *
+   * Màn neo theo GIỜ (đã cắt), còn b-roll là element neo theo TỪ. Quy mốc màn về
+   * giây gốc rồi lấy các từ rơi trong đó làm span — b-roll chạy trùng khoảng màn.
+   */
+  const addSceneBroll = useCallback(
+    async (
+      startSec: number,
+      endSec: number,
+      mediaFileId: string,
+      layout?: string,
+    ) => {
+      if (!projectId) return;
+      const current = dataRef.current;
+      if (!current) return;
+      const s0 = timeMapRef.current.toSource(startSec);
+      const s1 = timeMapRef.current.toSource(endSec);
+      const words = current.words.filter((w) => w.end > s0 && w.start < s1);
+      if (words.length === 0) return;
+      const created = await api.createElement(projectId, {
+        kind: "layout",
+        fromWordId: words[0].id,
+        toWordId: words[words.length - 1].id,
+        mediaFileId,
+        insertLayout: layout ?? null,
+      });
+      const fresh = await api.getProject(projectId).catch(() => null);
+      if (fresh) setData(shape(fresh));
+      setSelection({ kind: "insert", id: created.id });
+      setLayoutReload((n) => n + 1);
+    },
+    [projectId],
+  );
+
+  /**
+   * Đổi một B-ROLL thành ô NGƯỜI — gỡ tư liệu, giữ nguyên khoảng.
+   *
+   * B-roll và ô người CÙNG là một "khung", chỉ khác ở chỗ có tư liệu hay không.
+   * Gỡ tư liệu = tạo lại một khung KHÔNG media trên đúng span của nó (neo theo
+   * chính cặp từ b-roll đang neo), rồi xoá b-roll cũ.
+   */
+  const convertBrollToPerson = useCallback(
+    async (brollId: string, layout: string) => {
+      if (!projectId) return;
+      const insert = dataRef.current?.inserts.find((i) => i.id === brollId);
+      if (!insert) return;
+      const created = await api.createElement(projectId, {
+        kind: "layout",
+        fromWordId: insert.fromWordId,
+        toWordId: insert.toWordId,
+        insertLayout: layout,
+      });
+      await api.deleteElement(brollId).catch(boQuaLoi());
+      const fresh = await api.getProject(projectId).catch(() => null);
+      if (fresh) setData(shape(fresh));
+      setSelection({ kind: "scene", id: created.id });
+      setLayoutReload((n) => n + 1);
+    },
+    [projectId],
+  );
+
+  /**
+   * Đặt một ô NGƯỜI (segment bố cục không cần tư liệu) tại CÂU vạch đang đứng.
+   *
+   * Cùng lối `addInsertAtPlayhead` nhưng KHÔNG media: element `kind='layout'` neo
+   * theo cả câu. Vắng segment = toàn-khung, nên đây là cách "đặt một khung khác
+   * mặc định" ở chỗ vạch. Chọn ngay để người dùng đổi khung/xoá ở "Đang sửa".
+   */
+  const addLayoutAtPlayhead = useCallback(
+    async (layout: string) => {
+      if (!projectId || !data) return;
+      const sentence =
+        data.sentences.find((item) => time >= item.start && time < item.end) ??
+        data.sentences[0];
+      if (!sentence) return;
+      // Ô người là một NHẤN NGẮN, không phải cả câu: câu chép lời có thể dài 20s+.
+      // Lấy các từ trong ~3s quanh vạch; hụt thì rơi về vài từ đầu câu.
+      const inSentence = data.words.filter((w) => w.sentenceId === sentence.id);
+      const near = inSentence.filter((w) => w.end > time && w.start < time + 3);
+      const words = near.length > 0 ? near : inSentence.slice(0, 8);
+      if (words.length === 0) return;
+      const created = await api.createElement(projectId, {
+        kind: "layout",
+        fromWordId: words[0].id,
+        toWordId: words[words.length - 1].id,
+        insertLayout: layout,
+      });
+      setSelection({ kind: "scene", id: created.id });
+      setLayoutReload((n) => n + 1);
+    },
+    [projectId, data, time],
+  );
+
+  /** Đổi bố cục của một segment (ô người) — PATCH + nạp lại lịch. */
+  const setSegmentLayout = useCallback(
+    (elementId: string, layout: string) => {
+      void api.updateElement(elementId, { insertLayout: layout }).catch(boQuaLoi());
+      setLayoutReload((n) => n + 1);
+    },
+    [],
+  );
+
+  /**
+   * Gắn TƯ LIỆU cho một khung — khung 2 ô placeholder thành b-roll.
+   *
+   * Tư liệu là một thuộc tính của khung: gắn vào là ô phụ có nội dung. Nạp lại cả
+   * dự án (để `inserts` có khối mới có mặt tệp) rồi chọn nó dạng b-roll.
+   */
+  const setSegmentMedia = useCallback(
+    async (elementId: string, mediaFileId: string) => {
+      if (!projectId) return;
+      await api
+        .updateElement(elementId, { mediaFileId })
+        .catch(boQuaLoi());
+      const fresh = await api.getProject(projectId).catch(() => null);
+      if (fresh) setData(shape(fresh));
+      setSelection({ kind: "insert", id: elementId });
+      setLayoutReload((n) => n + 1);
+    },
+    [projectId],
+  );
+
+  /** Xoá một segment bố cục → chỗ ấy về TOÀN-KHUNG (mặc định). */
+  const deleteSegment = useCallback(
+    async (elementId: string) => {
+      await api.deleteElement(elementId).catch(boQuaLoi());
+      setSelection(null);
+      setLayoutReload((n) => n + 1);
     },
     [],
   );
@@ -1626,6 +1869,26 @@ export function useEditor(projectId: string | undefined) {
       setStylePackState(next);
       await api
         .updateProject(projectId, { stylePack: next })
+        .catch(boQuaLoi());
+      // Lấy lại lịch màn theo bộ dáng MỚI — sau khi PATCH xong, không thì server
+      // đọc cột cũ và trả lịch của bộ trước.
+      setLayoutReload((n) => n + 1);
+    },
+    [projectId],
+  );
+
+  /**
+   * Đổi PHONG CÁCH CHỮ mặc định cả video. `null` = xoá đè (theo `stylePack`).
+   *
+   * KHÔNG nạp lại lịch màn: chỉ đổi dáng chữ (font/màu/viền/quầng), không đụng
+   * nhịp cắt/b-roll/bố cục — lịch màn giữ nguyên, khung xem tự vẽ lại chữ.
+   */
+  const setFontStyle = useCallback(
+    async (next: string | null) => {
+      if (!projectId) return;
+      setFontStyleState(next);
+      await api
+        .updateProject(projectId, { fontStyle: next as StylePackId | null })
         .catch(boQuaLoi());
     },
     [projectId],
@@ -1732,6 +1995,32 @@ export function useEditor(projectId: string | undefined) {
         label: `Tạo ${created.length} chữ`,
         elementIds: created,
       });
+    },
+    [projectId],
+  );
+
+  /**
+   * Thêm một câu vào chỗ máy nghe SÓT (bước Soát lời, khe "＋ thêm lời").
+   *
+   * Máy chủ dựng câu + chia đều mốc cho các chữ trong `[start, end]`; rồi gieo
+   * caption cho câu ấy để nó hiện thành DÒNG chép được như mọi câu khác. Đọc lại
+   * cả bản để bảng chép và dải cùng thấy câu mới.
+   */
+  const addMissingLine = useCallback(
+    async (start: number, end: number, text: string) => {
+      if (!projectId) return;
+      const added = await api
+        .addSentence(projectId, { start, end, text })
+        .catch(() => null);
+      if (added?.sentence?.id) {
+        await api.createCaptions(projectId, added.sentence.id).catch(() => null);
+      }
+      const fresh = await api.getProject(projectId).catch(() => null);
+      if (fresh) {
+        const shaped = shape(fresh);
+        durationRef.current = shaped.duration;
+        setData(shaped);
+      }
     },
     [projectId],
   );
@@ -2076,11 +2365,23 @@ export function useEditor(projectId: string | undefined) {
     setZoomPunch,
     stylePack,
     setStylePack,
+    fontStyle,
+    setFontStyle,
+    /** Lịch màn (khung xem + lane bố cục dùng chung). `null` khi bộ dáng không có bố cục. */
+    sceneLayout: sceneLayout.data,
+    /** Đặt/xoá bố cục chọn tay cho một màn. */
+    addLayoutAtPlayhead,
+    setSegmentLayout,
+    setSegmentMedia,
+    deleteSegment,
+    convertBrollToPerson,
     headline,
     setHeadline,
     effectsStylePack,
     redoEffects,
     setInsertStyle,
+    setInsertMedia,
+    addSceneBroll,
     removeCut,
     undo,
     undoLabel,
@@ -2098,6 +2399,7 @@ export function useEditor(projectId: string | undefined) {
     updateWord,
     confirmWord,
     createCaptionsForSentence,
+    addMissingLine,
     draftTextContent,
     commitTextContent,
     mergeTextWithNext,

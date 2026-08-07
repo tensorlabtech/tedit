@@ -10,7 +10,13 @@ import { cn } from "@/lib/utils";
  * mắt chỉ lướt qua chứ không đọc. Bảng màu khai ở `--lane-*` trong `index.css`,
  * không đặt màu tại chỗ gọi.
  */
-export type LaneTone = "word" | "text" | "insert" | "music" | "junction";
+export type LaneTone =
+  | "word"
+  | "text"
+  | "insert"
+  | "music"
+  | "junction"
+  | "layout";
 
 const TONE: Record<LaneTone, string> = {
   word: "bg-lane-word text-lane-word-foreground",
@@ -18,6 +24,7 @@ const TONE: Record<LaneTone, string> = {
   insert: "bg-lane-insert text-lane-insert-foreground",
   music: "bg-lane-music text-lane-music-foreground",
   junction: "bg-lane-junction text-lane-junction-foreground",
+  layout: "bg-lane-layout text-lane-layout-foreground",
 };
 
 export function TimelineBlock({

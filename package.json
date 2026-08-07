@@ -21,12 +21,13 @@
     "check:layout": "tsx scripts/layout-guard/check-layout.ts",
     "check:timing": "tsx scripts/timing-guard/check-timing.ts",
     "check:slots": "tsx scripts/layout-guard/check-slots.ts",
+    "check:scene-preview": "tsx scripts/overlay-parity/check-scene-preview-geometry.ts",
     "check:llm-cache": "tsx scripts/llm-guard/check-llm-cache.ts",
     "check:commit-cut": "tsx scripts/cut-guard/check-commit-cut.ts",
     "check:flow": "tsx scripts/cut-guard/check-flow-gates.ts",
     "check:steps": "tsx scripts/cut-guard/check-flow-steps.ts",
     "check:flow-e2e": "tsx scripts/flow-test/check-flow-end-to-end.ts",
-    "check:all": "npm run typecheck && npm run lint && npm run check:fonts && npm run check:graphics && npm run check:ownership && npm run check:style-pack && npm run check:layout && npm run check:timing && npm run check:slots && npm run check:llm-cache && npm run check:commit-cut && npm run check:flow && npm run check:steps && npm run check:flow-e2e && npm run check:upload && npm run check:render",
+    "check:all": "npm run typecheck && npm run lint && npm run check:fonts && npm run check:graphics && npm run check:ownership && npm run check:style-pack && npm run check:layout && npm run check:timing && npm run check:slots && npm run check:scene-preview && npm run check:llm-cache && npm run check:commit-cut && npm run check:flow && npm run check:steps && npm run check:flow-e2e && npm run check:upload && npm run check:render",
     "dev:all": "concurrently -n web,api -c cyan,magenta \"vite\" \"tsx watch server/main.ts\""
   },
   "dependencies": {

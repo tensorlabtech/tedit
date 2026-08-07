@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import {
 import { Empty, EmptyDescription, EmptyTitle } from "@/components/ui/empty";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
+import { AddLineRow } from "./transcript-add-line-row";
 import { formatTime, type TextElement } from "./editor-data";
 import { SentenceGroup } from "./transcript-sentence-group";
 import { SilenceRow } from "./transcript-silence-row";
@@ -28,7 +29,17 @@ import type { EditorState } from "./use-editor";
  * Giờ mỗi dòng là một CỤM: đúng cái sẽ hiện lên khung hình ở giây đó. Câu chỉ
  * còn là cách nhóm các dòng, vì bỏ nội dung thì bỏ theo câu.
  */
-export function TranscriptPanel({ editor }: { editor: EditorState }) {
+export function TranscriptPanel({
+  editor,
+  proofread,
+}: {
+  editor: EditorState;
+  /**
+   * Bước Soát lời: đổi tiêu đề sang đếm chỗ ngờ, ẩn nút cắt và thanh chọn-nhiều-
+   * dòng — ở đây chỉ soát CHỮ, việc cắt đã xong ở bước trước.
+   */
+  proofread?: boolean;
+}) {
   /**
    * Cuộn tới dòng đang chọn khi cú chọn đến TỪ NƠI KHÁC.
    *
@@ -187,6 +198,20 @@ export function TranscriptPanel({ editor }: { editor: EditorState }) {
     );
   }, [anchor, focus, ordered]);
 
+  // Đếm chỗ máy nghe không chắc — dưới 0,6 độ tin, cùng mốc với bàn dựng. Dùng
+  // cho tiêu đề bước Soát lời ("N chỗ máy nghe không chắc").
+  const unsureCount = useMemo(
+    () => editor.words.filter((word) => (word.confidence ?? 1) < 0.6).length,
+    [editor.words],
+  );
+
+  // Cụm nằm trong khoảng ĐÃ BỎ — ở bước Soát lời thì giấu đi (chỉ soát cái sẽ
+  // hiện lên), còn bàn dựng thì vẫn bày để cắt/trả lại.
+  const isRemoved = (row: TextElement) => {
+    const mid = (row.start + row.end) / 2;
+    return editor.skipRanges.some((span) => mid >= span.start && mid < span.end);
+  };
+
   const selectable = ordered.filter((item) => range.has(item.id));
   const extendTo = async () => {
     if (selectable.length === 0) return;
@@ -200,12 +225,18 @@ export function TranscriptPanel({ editor }: { editor: EditorState }) {
   return (
     <Card className="min-h-80 lg:min-h-0">
       <CardHeader>
-        <CardTitle>Bản chép lời</CardTitle>
+        <CardTitle className={proofread ? "tabular-nums" : undefined}>
+          {proofread
+            ? unsureCount > 0
+              ? `${unsureCount} chỗ máy nghe không chắc`
+              : "Đã soát xong"
+            : "Bản chép lời"}
+        </CardTitle>
         <CardAction>
           <Badge variant="secondary">{editor.words.length} từ</Badge>
         </CardAction>
       </CardHeader>
-      {selectable.length > 1 && (
+      {!proofread && selectable.length > 1 && (
         // Chỉ hiện khi thật sự có DẢI. Một dòng thì nút bỏ ngay trên dòng đó đã
         // đủ, thêm một thanh nữa chỉ là thêm một chỗ để phân vân.
         <div className="mx-4 flex items-center gap-2 rounded-lg bg-primary/10 px-3 py-1.5 text-xs">
@@ -280,22 +311,53 @@ export function TranscriptPanel({ editor }: { editor: EditorState }) {
                     (span) =>
                       span.start < sentence.start && span.end > previous.end,
                   );
+                const allRows = rowsBySentence.get(sentence.id) ?? [];
+                // Soát lời chỉ bày cụm SẼ HIỆN LÊN: cụm đã cắt giấu đi.
+                const rows = proofread
+                  ? allRows.filter((row) => !isRemoved(row))
+                  : allRows;
+                // Câu đã cắt hết (có cụm nhưng cụm nào cũng nằm trong khoảng bỏ)
+                // thì biến khỏi bước Soát lời — khác câu CHƯA có cụm nào (để yên
+                // cho `SentenceGroup` mời "Tạo chữ").
+                if (proofread && allRows.length > 0 && rows.length === 0)
+                  return null;
+                // Khe THIẾU LỜI trước câu này (chỉ ở Soát lời): câu đầu bắt đầu
+                // muộn = mất câu mở; giữa hai câu hở dài = có tiếng máy nghe sót.
+                const gapStart = previous ? previous.end : 0;
+                const gapLen = sentence.start - gapStart;
+                const showGap =
+                  proofread &&
+                  ((index === 0 && sentence.start > 0.6) ||
+                    (index > 0 && gapLen > 1.5));
                 return (
-                  <div key={sentence.id} className="grid gap-1.5">
-                    {previous && (leadIn >= 1 || cut) && (
+                  <Fragment key={sentence.id}>
+                    {showGap && (
+                      <AddLineRow
+                        seconds={gapLen}
+                        onAdd={(text) =>
+                          void editor.addMissingLine(
+                            gapStart,
+                            sentence.start,
+                            text,
+                          )
+                        }
+                      />
+                    )}
+                    {!proofread && previous && (leadIn >= 1 || cut) && (
                       <SilenceRow
                         start={previous.end}
                         end={sentence.start}
                         editor={editor}
                       />
                     )}
-                    {(() => (
+                    <div className="grid gap-1.5">
                       <SentenceGroup
                         sentence={sentence}
-                        rows={rowsBySentence.get(sentence.id) ?? []}
+                        rows={rows}
                         editor={editor}
                         activeTime={editor.time}
                         inRangeIds={range}
+                        proofread={proofread}
                         onPick={(row, extend) => {
                           if (extend && anchor) {
                             setFocus(row.id);
@@ -305,8 +367,8 @@ export function TranscriptPanel({ editor }: { editor: EditorState }) {
                           setFocus(null);
                         }}
                       />
-                    ))()}
-                  </div>
+                    </div>
+                  </Fragment>
                 );
               })}
             </div>

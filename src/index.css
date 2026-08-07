@@ -26,7 +26,7 @@
 
 @theme inline {
     --font-heading: var(--font-sans);
-    --font-sans: 'Be Vietnam Pro', sans-serif;
+    --font-sans: "Be Vietnam Pro", sans-serif;
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -45,6 +45,8 @@
     --color-lane-music-foreground: var(--lane-music-foreground);
     --color-lane-junction: var(--lane-junction);
     --color-lane-junction-foreground: var(--lane-junction-foreground);
+    --color-lane-layout: var(--lane-layout);
+    --color-lane-layout-foreground: var(--lane-layout-foreground);
     --color-chart-5: var(--chart-5);
     --color-chart-4: var(--chart-4);
     --color-chart-3: var(--chart-3);
@@ -107,7 +109,7 @@
      * vì ô nhập không thể sáng hơn mặt thẻ được nữa. Mặt thẻ rời khỏi trắng tinh
      * (0.99) để còn chỗ chia nấc — giữ 1.0 thì cả thang chỉ còn ~6% cho 5 nấc.
      */
-    --background: oklch(0.925 0.004 310);
+    --background: oklch(0.95 0.004 310);
     --foreground: oklch(0.145 0 0);
     --card: oklch(0.99 0.004 310);
     --card-foreground: oklch(0.145 0 0);
@@ -129,7 +131,7 @@
      * thứ tranh nhau chỗ nhấn.
      */
     --success: oklch(0.55 0.13 155);
-    --border: oklch(0.915 0.005 310);
+    --border: oklch(0.95 0.005 310);
     --input: oklch(0.955 0.004 310);
     --ring: oklch(0.58 0.15 310);
     --chart-1: oklch(0.8 0.07 310);
@@ -165,6 +167,10 @@
        (0,38–0,40), mà sắc đỏ cam ở độ sáng ấy còn trông nhạt thêm một nấc nữa,
        nên một khối bình thường đọc ra như đang bị khoá. */
     --lane-junction-foreground: oklch(0.32 0.15 25);
+    /* Bố cục: sắc chàm 260, tách khỏi bốn lane kia (tím 310, lam 195, lục 145,
+       cam 25) — dải này nói CẤU TRÚC khung nên đáng một màu riêng. */
+    --lane-layout: oklch(0.84 0.13 260);
+    --lane-layout-foreground: oklch(0.32 0.15 260);
     --radius: 0.5rem;
     --sidebar: oklch(1 0 0);
     --sidebar-foreground: oklch(0.145 0 0);
@@ -221,6 +227,8 @@
     --lane-music-foreground: oklch(0.96 0.05 145);
     --lane-junction: oklch(0.44 0.15 25);
     --lane-junction-foreground: oklch(0.96 0.05 25);
+    --lane-layout: oklch(0.44 0.15 260);
+    --lane-layout-foreground: oklch(0.96 0.05 260);
     --sidebar: oklch(0.185 0 0);
     --sidebar-foreground: oklch(0.985 0 0);
     --sidebar-primary: oklch(0.62 0.16 310);
@@ -232,64 +240,64 @@
 }
 
 @layer base {
-  * {
-    @apply border-border outline-ring/50;
+    * {
+        @apply border-border outline-ring/50;
     }
-  body {
-    @apply bg-background text-foreground;
+    body {
+        @apply bg-background text-foreground;
     }
-  html {
-    @apply font-sans;
+    html {
+        @apply font-sans;
     }
-  /* Cuộn quá mép KHÔNG được biến thành lệnh của trình duyệt.
+    /* Cuộn quá mép KHÔNG được biến thành lệnh của trình duyệt.
      Đây là ứng dụng một trang, không phải trang đọc: vuốt hai ngón sang trái
      lúc trượt dải mà nhảy về trang trước là mất chỗ đang làm. `none` chặn cả
      lùi/tiến bằng cử chỉ lẫn kéo-để-tải-lại và nảy mép trên di động.
      Lưu ý: Chrome trên Windows vẫn lùi được bằng cử chỉ chuột cảm ứng dù có
      khai báo này — chỗ đó phải chặn bằng `preventDefault` ở sự kiện lăn. */
-  html,
-  body {
-    overscroll-behavior: none;
+    html,
+    body {
+        overscroll-behavior: none;
     }
-  /* Vùng cuộn bên trong không đẩy cử chỉ ra ngoài cho trang cha hay trình duyệt. */
-  [data-slot="scroll-area-viewport"],
-  .overflow-y-auto,
-  .overflow-x-auto,
-  .overflow-auto {
-    overscroll-behavior: contain;
+    /* Vùng cuộn bên trong không đẩy cử chỉ ra ngoài cho trang cha hay trình duyệt. */
+    [data-slot="scroll-area-viewport"],
+    .overflow-y-auto,
+    .overflow-x-auto,
+    .overflow-auto {
+        overscroll-behavior: contain;
     }
-  /* Đang kéo thì CẢ TRANG ngừng bôi đen và giữ nguyên con trỏ nắm.
+    /* Đang kéo thì CẢ TRANG ngừng bôi đen và giữ nguyên con trỏ nắm.
      Chuột đi ra ngoài dải trong lúc kéo thì trình duyệt vẫn quét chọn chữ ở
      bản chép lời phía trên — đặt cờ này lên thẻ gốc lúc bắt đầu kéo. */
-  html[data-dragging] {
-    cursor: grabbing;
+    html[data-dragging] {
+        cursor: grabbing;
     }
-  html[data-dragging] * {
-    user-select: none !important;
-    cursor: grabbing !important;
+    html[data-dragging] * {
+        user-select: none !important;
+        cursor: grabbing !important;
     }
-  /* Mọi thứ bấm được đều là con trỏ bàn tay, khoá thì là con trỏ cấm */
-  button,
-  [role="button"],
-  [role="tab"],
-  [role="option"],
-  [role="menuitem"],
-  [role="menuitemcheckbox"],
-  [role="menuitemradio"],
-  [role="checkbox"],
-  [role="radio"],
-  [role="switch"],
-  a[href],
-  label[for],
-  summary,
-  select {
-    @apply cursor-pointer;
+    /* Mọi thứ bấm được đều là con trỏ bàn tay, khoá thì là con trỏ cấm */
+    button,
+    [role="button"],
+    [role="tab"],
+    [role="option"],
+    [role="menuitem"],
+    [role="menuitemcheckbox"],
+    [role="menuitemradio"],
+    [role="checkbox"],
+    [role="radio"],
+    [role="switch"],
+    a[href],
+    label[for],
+    summary,
+    select {
+        @apply cursor-pointer;
     }
-  button:disabled,
-  select:disabled,
-  [aria-disabled="true"],
-  [data-disabled] {
-    @apply cursor-not-allowed;
+    button:disabled,
+    select:disabled,
+    [aria-disabled="true"],
+    [data-disabled] {
+        @apply cursor-not-allowed;
     }
 }
 /* `scroll-fade-b` và `scroll-fade-x` được Message Scroller / Attachment Group
@@ -297,7 +305,11 @@
    class này không làm gì. Mép cụt của một vùng cuộn cắt ngang thân chữ; che mờ
    mép cho thấy "còn nữa" mà không phải cắt đôi con chữ. */
 @utility scroll-fade-b {
-  mask-image: linear-gradient(to bottom, black calc(100% - 1.5rem), transparent);
+    mask-image: linear-gradient(
+        to bottom,
+        black calc(100% - 1.5rem),
+        transparent
+    );
 }
 
 /* Vùng cuộn của `ScrollArea` tự đo được mình có tràn hay không, nên chỉ mờ mép
@@ -306,7 +318,7 @@
    nhắc. Chỗ tự dựng vùng cuộn bằng `overflow-y-auto` (bảng tin nhắn, lưới dự án)
    thì luôn tràn nên giữ nguyên nếp cũ. */
 [data-slot="scroll-area-viewport"]:not([data-overflowing]) {
-  mask-image: none;
+    mask-image: none;
 }
 
 /* Dải cuộn ngang mà mép TRÁI là đầu dải: `scroll-fade-x` mờ cả hai bên vô điều
@@ -314,14 +326,131 @@
    lỗi vẽ. Bản này chỉ mờ mép phải, đúng phía "còn nữa" của một dải xếp từ trái
    sang. Cuộn sang giữa dải thì mép trái cụt thật, nhưng đó là phần đã xem qua. */
 @utility scroll-fade-r {
-  mask-image: linear-gradient(to right, black calc(100% - 1.5rem), transparent);
+    mask-image: linear-gradient(
+        to right,
+        black calc(100% - 1.5rem),
+        transparent
+    );
 }
 
 @utility scroll-fade-x {
-  mask-image: linear-gradient(
-    to right,
-    transparent,
-    black 1.5rem calc(100% - 1.5rem),
-    transparent
-  );
+    mask-image: linear-gradient(
+        to right,
+        transparent,
+        black 1.5rem calc(100% - 1.5rem),
+        transparent
+    );
+}
+
+/* ẨN THANH CUỘN — vẫn cuộn được, chỉ giấu cái thanh.
+ *
+ * Dự án theo quy tắc "hạn chế scrollbar": một thanh cuộn lộ ra giữa lưới bento
+ * cắt ngang thân chữ và đọc ra như lỗi vẽ. Gắn class này lên thẻ gốc một màn là
+ * mọi vùng cuộn con (bản chép lời, danh sách cảnh…) đều giấu thanh, mà cuộn
+ * bằng con lăn / vuốt vẫn nguyên. Mép "còn nữa" đã có `scroll-fade-*` lo. */
+.hide-scrollbars,
+.hide-scrollbars * {
+    scrollbar-width: none; /* Firefox */
+}
+.hide-scrollbars::-webkit-scrollbar,
+.hide-scrollbars *::-webkit-scrollbar {
+    display: none; /* Chromium / WebKit */
+}
+
+/* Dải năng lực tự trượt vô tận ở trang giới thiệu (kiểu marquee). Nội dung được
+   nhân đôi trong JSX; dịch trái đúng một nửa là chỗ nối trùng khít nên vòng lặp
+   liền mạch. Dừng khi rê chuột. Tắt khi máy bật "giảm chuyển động". */
+@keyframes landing-marquee {
+    from {
+        transform: translateX(0);
+    }
+    to {
+        transform: translateX(-50%);
+    }
+}
+
+/* ══ MÀN "MÁY ĐANG LÀM" — hiệu ứng chờ AI ══
+ *
+ * Chờ máy dựng là lúc bán chính cái sự tự động, nên quãng chờ phải TRÔNG như
+ * đang-sống chứ không phải một danh sách đứng im. Ba lớp rất tiết chế, chỉ MỘT
+ * sắc nhấn (primary) để hợp gu tối-tối giản — không cầu vồng:
+ *   · ánh sáng quét qua tên chặng đang chạy,
+ *   · vòng thở nở ra rồi tan quanh biểu tượng chặng ấy,
+ *   · quầng sáng primary trôi nhè nhẹ sau khối hero.
+ * Đều là transform/opacity/box-shadow (compositor lo được) nên mượt 60fps.
+ * Tắt sạch khi máy bật "giảm chuyển động". */
+
+/* Ánh sáng quét qua chữ — báo "đang chạy" êm hơn spinner, không giật. */
+@keyframes flow-shimmer {
+    from {
+        background-position: 200% center;
+    }
+    to {
+        background-position: -200% center;
+    }
+}
+.flow-shimmer-text {
+    background-image: linear-gradient(
+        90deg,
+        var(--color-muted-foreground) 0%,
+        var(--color-muted-foreground) 38%,
+        var(--color-foreground) 50%,
+        var(--color-muted-foreground) 62%,
+        var(--color-muted-foreground) 100%
+    );
+    background-size: 200% 100%;
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+    animation: flow-shimmer 2.6s linear infinite;
+}
+
+/* Quầng sáng trôi sau khối hero — một sắc primary, mờ, thở chậm. */
+@keyframes flow-aurora {
+    0% {
+        transform: translate3d(-4%, -2%, 0) scale(1);
+        opacity: 0.16;
+    }
+    50% {
+        transform: translate3d(4%, 2%, 0) scale(1.12);
+        opacity: 0.26;
+    }
+    100% {
+        transform: translate3d(-4%, -2%, 0) scale(1);
+        opacity: 0.16;
+    }
+}
+.flow-aurora {
+    position: relative;
+    overflow: hidden;
+}
+.flow-aurora::before {
+    content: "";
+    position: absolute;
+    inset: -40%;
+    background: radial-gradient(
+        45% 45% at 50% 42%,
+        var(--color-primary) 0%,
+        transparent 70%
+    );
+    filter: blur(40px);
+    opacity: 0.2;
+    pointer-events: none;
+    animation: flow-aurora 9s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .flow-shimmer-text {
+        animation: none;
+        color: var(--color-foreground);
+        -webkit-text-fill-color: var(--color-foreground);
+    }
+    .flow-glow-ring {
+        animation: none;
+    }
+    .flow-aurora::before {
+        animation: none;
+        opacity: 0.14;
+    }
 }

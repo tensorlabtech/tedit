@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 
-import { BASE_PACK } from "../../../server/style-pack-catalog";
+import { NHIP_DEN } from "../../../server/style-pack-catalog";
 import { revealStyle } from "./use-reveal-loop";
 
 /**
@@ -178,7 +178,7 @@ export function FrameText({
         // đổ bóng mềm thì bản in ra không có.
         textShadow: `0 0 ${size * 12}cqw rgba(0,0,0,.9)`,
         ...(reveal
-          ? revealStyle(BASE_PACK, reveal.seconds, reveal.order, size, reveal.word)
+          ? revealStyle(NHIP_DEN, reveal.seconds, reveal.order, size, reveal.word)
           : undefined),
         ...style,
       }}

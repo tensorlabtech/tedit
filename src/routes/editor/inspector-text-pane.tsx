@@ -32,39 +32,36 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
-import { type BandId, type EmphasisId } from "@/dev/overlays/overlay-model";
-import { findStylePack } from "../../../server/style-pack-catalog";
+import { BANDS, type BandId, type EmphasisId } from "@/dev/overlays/overlay-model";
+import { applyFontStyle, findStylePack } from "../../../server/style-pack-catalog";
 
 import { formatTime, type TextElement } from "./editor-data";
-import { AlignRow, BandRow } from "./inspector-text-axis-rows";
+import { BandRow } from "./inspector-text-axis-rows";
 import { TextOverrideRows } from "./inspector-text-override-rows";
-import { TextShapeTiles } from "./inspector-text-shape-tiles";
 import type { EditorState } from "./use-editor";
 
 /**
  * Bảng sửa MỘT chữ trên màn.
  *
- * Bản trước bày cả bốn trục ngang hàng nhau, mỗi trục một nhãn và một câu tả:
- * 55 từ, 20 nút, cao 666px cho một chữ. Hơn nửa số từ là lời KỂ về lựa chọn chứ
- * không phải lựa chọn.
+ * Bản trước bày cả bốn trục ngang hàng nhau (dáng, căn ngang, chỗ đặt, từ khoá),
+ * mỗi trục một nhãn và một câu tả: 55 từ, 20 nút, cao 666px cho một chữ. Đếm trên
+ * chính kho dữ liệu của dự án (189 chữ), 179 chữ y nguyên mặc định — bảng đang dồn
+ * hết diện tích cho thứ gần như không ai đụng.
  *
- * Đếm trên chính kho dữ liệu của dự án (189 chữ) mới thấy bảng đang dồn hết
- * diện tích cho thứ gần như không ai đụng:
+ * Nay CỠ CHỮ, CĂN NGANG, KIỂU CHỮ đều do PHONG CÁCH quyết: mỗi bộ một dáng, chữ
+ * trong bộ đồng đều, người dùng không chỉnh từng cụm. Bảng chỉ còn hai thứ người
+ * ta thật sự đổi cho RIÊNG một cụm:
  *
- *   căn ngang  giữ `Giữa`          97,4%
- *   nhấn       giữ `Dẫn nhỏ · ý to` 97,9%
- *   dải dọc    giữ `Dưới`           96,3%
- *   từ khoá    không đánh dấu       97,9%
+ * · NỘI DUNG — thứ luôn được dùng, đứng đầu.
+ * · CHỖ ĐẶT — trên/giữa/dưới, bày bằng HÌNH nên không cần câu tả.
+ * · TỪ NHẤN — chọn tiếng nào đổi màu, rồi chọn màu.
  *
- *   y nguyên mặc định 179/189 · đổi đúng MỘT trục 5 · đổi từ hai trục lên 4
- *
- * Nên chia lại theo tần suất chứ không theo sơ đồ dữ liệu:
- *
- * · NỘI DUNG — thứ luôn được dùng, đứng đầu, không đổi gì.
- * · DÁNG và CHỖ ĐẶT — hai thứ thỉnh thoảng đổi, bày ra nhưng bằng HÌNH: mỗi
- *   lựa chọn là một bản thu nhỏ thật, nên không còn câu tả nào.
- * · CĂN NGANG và TỪ KHOÁ — hai thứ dùng 2–3%, lui vào "Tinh chỉnh".
+ * Ít trục hơn = nhìn một cái là xong.
  */
+const BAND_LABEL: Record<string, string> = Object.fromEntries(
+  BANDS.map((band) => [band.id, band.label]),
+);
+
 /** Lùi trước khi chạy, để mắt kịp bắt nhịp trước khi chữ bắt đầu hiện. */
 const LEAD_IN = 0.2;
 /** Chạy thêm một nhịp sau khi chữ hết, cho thấy nó tắt đi thế nào. */
@@ -86,11 +83,28 @@ export function TextPane({
    * ứng. Hiệu ứng thì chọn vào là để xem nó động; còn cụm chữ thì phần lớn lần
    * chọn là để SỬA CHỮ, tự chạy mỗi lần là phiền.
    *
-   * Chữ hiện ra theo TỪNG TIẾNG, nên cả ba trục đều đáng xem lại: đổi dáng là
-   * đổi cỡ từng tiếng, đổi dải hay đổi căn là đổi chỗ chúng bay tới.
+   * Chữ hiện ra theo TỪNG TIẾNG, nên đổi chỗ đặt hay đổi màu từ nhấn đều đáng xem
+   * lại: cái đổi chỗ chúng bay tới, cái đổi màu tiếng được nhấn.
    */
   const playPreview = () =>
     onPreview(element.start - LEAD_IN, element.end + TAIL);
+
+  // Bộ dáng của dự án ĐÃ áp phong cách chữ mặc định — nền để tính dáng chữ hiệu
+  // lực cho cụm này. Trục "phong cách chữ" đã gỡ khỏi UI (xem ghi chú ở
+  // `applyFontStyle`), nên hai lệnh gọi dưới đây chỉ còn tác dụng với dự án cũ
+  // vẫn giữ giá trị đã đặt trước đó — không có chỗ nào trong bảng này cho người
+  // dùng SỬA phong cách chữ nữa.
+  const projectPack = applyFontStyle(
+    findStylePack(editor.stylePack),
+    editor.fontStyle,
+  );
+  const elementPack = applyFontStyle(projectPack, element.fontStyle);
+  // Phong cách chữ HIỆU LỰC của cụm — thứ "Áp cho tất cả" phát ra cả video.
+  const effectiveFont = element.fontStyle ?? editor.fontStyle;
+  const effectiveFontLabel = effectiveFont
+    ? findStylePack(effectiveFont).label
+    : "bộ chính";
+
   const from = editor.wordsById.get(element.fromWordId);
   const deChong = editor.deLenNhau(element);
   // Chỉ chữ CHẠY THEO LỜI mới gộp được, và phải còn cụm nào ở sau nó: chữ tự do
@@ -123,23 +137,6 @@ export function TextPane({
   // Tách được khi cụm phủ từ hai TỪ trở lên: mỗi nửa phải còn ít nhất một từ để
   // neo vào. Chữ tự do không tách — nó không neo vào từ nào.
   const canSplit = !element.byTime && spokenWords >= 2;
-  /**
-   * Từ khoá CHỈ có nghĩa ở hai dáng.
-   *
-   * Đọc `buildRows` của `server/word-layout.ts`:
-   * · `tu-khoa-to` — cụm đánh dấu là cụm được PHÓNG TO. Không đánh dấu thì nó
-   *   bốc bừa tiếng đầu làm tâm.
-   * · `xen-co`     — tiếng đánh dấu là tiếng TO. Không đánh dấu thì xen theo
-   *   thứ tự chẵn lẻ.
-   * · `deu` và `dan-nho` — tiếng đánh dấu chỉ đổi độ đặc từ 0,92 sang 1,0. Trên
-   *   chữ trắng đè video, 8% độ đặc là không nhìn ra được.
-   *
-   * Trước đây tôi vẫn luôn bày hàng này, lý lẽ ghi trong mã là "tiếng đánh dấu
-   * in đậm hơn". Đọc lại mã dựng thì không có chỗ nào đổi nét chữ — lý lẽ ấy
-   * sai. Một hàng điều khiển không đổi được gì thì bày ra chỉ để lừa.
-   */
-  const usesKeywords =
-    element.emphasis === "keyword-large" || element.emphasis === "mixed-size";
 
   return (
     <Card className="h-full min-h-0">
@@ -183,8 +180,8 @@ export function TextPane({
       </CardHeader>
 
       <CardContent className="min-h-0 flex-1">
-        {/* Không bày thanh cuộn — nó ăn ~12px bề ngang, đủ để ô thứ tư của hàng
-            "Dáng" bị cắt cụt. `scroll-fade-b` che mờ mép dưới nên vẫn thấy được
+        {/* Không bày thanh cuộn — nó ăn ~12px bề ngang, đủ để ô cuối của hàng
+            "Chỗ đặt" bị cắt cụt. `scroll-fade-b` che mờ mép dưới nên vẫn thấy được
             là bên dưới còn nữa, mà không tốn pixel nào. */}
         <ScrollArea
           className="h-full"
@@ -223,37 +220,18 @@ export function TextPane({
               }}
             />
 
-            {/* Đứng ngay dưới ô nhập vì nó nói về chính thứ vừa gõ. */}
-            {!element.byTime && (
+            {/* CHỈ nói khi có chuyện đáng nói: chữ vừa gõ LỆCH số tiếng so với lời
+                đã nói, nên nhịp chuyển từ mốc-thật sang rải-đều. Lúc còn khớp thì
+                im — nói "vẫn khớp" mỗi cụm là tiếng ồn, không phải tin. */}
+            {!element.byTime && !matchesSpeech && (
               <p className="-mt-1.5 text-xs text-muted-foreground">
-                {matchesSpeech
-                  ? `${syllable.length} tiếng · khớp lời, chữ chạy theo nhịp nói thật`
-                  : `${syllable.length} tiếng cho ${spokenWords} từ đã nói · chữ rải đều trong khoảng`}
+                {`${syllable.length} tiếng cho ${spokenWords} từ đã nói · chữ rải đều trong khoảng`}
               </p>
             )}
 
-            <Field>
-              <FieldLabel>Cách xếp chữ</FieldLabel>
-              <TextShapeTiles
-                text={element.content}
-                align={element.align}
-                keywords={element.keywords}
-                value={element.emphasis}
-                pack={findStylePack(editor.stylePack)}
-                onChange={(next) => {
-                  editor.updateTextElement(element.id, { emphasis: next });
-                  playPreview();
-                }}
-              />
-            </Field>
-
-            {/* Ba trục còn lại chỉ cần ICON + NHÃN.
-                "Dáng" phải vẽ ra vì hình dạng khối chữ không gọi tên gọn được.
-                Còn "trên/giữa/dưới", "trái/giữa/phải" và một danh sách tiếng thì
-                ai cũng có sẵn khái niệm trong đầu — bày ba khung 9:16 chỉ để nói
-                "chữ ở trên" là dựng một bức tranh cho điều đọc một chữ là xong.
-                Bỏ khung đi thì cả ba trục vừa đủ chỗ hiện thẳng, không phải giấu
-                sau một lớp gập nữa. */}
+            {/* Hai trục người dùng đổi PER-CỤM: CHỖ ĐẶT và MÀU TỪ NHẤN. Cỡ chữ,
+                căn ngang, kiểu chữ đều do PHONG CÁCH quyết (chọn ở màn "Đổi
+                khung"), nên bảng này không còn trục chọn phong cách chữ riêng. */}
             <Field>
               <FieldLabel>Chỗ đặt</FieldLabel>
               <BandRow
@@ -265,31 +243,7 @@ export function TextPane({
               />
             </Field>
 
-            <Field>
-              <FieldLabel>Căn ngang</FieldLabel>
-              <AlignRow
-                value={element.align}
-                onChange={(next) => {
-                  editor.updateTextElement(element.id, { align: next });
-                  playPreview();
-                }}
-              />
-            </Field>
-
-            {/* Hai trục cụm này ĐÈ được, đặt sau ba trục bố cục: chúng là cách
-                nhấn MỘT chỗ, nên chỉ có nghĩa khi đã xong phần bố cục. */}
-            <TextOverrideRows
-              element={element}
-              pack={findStylePack(editor.stylePack)}
-              onChange={(patch) => {
-                editor.updateTextElement(element.id, patch);
-                playPreview();
-              }}
-            />
-
-            {/* Cảnh báo đứng NGAY DƯỚI thứ gây ra nó. Báo ở hàng "Cần bạn xem"
-                cách nửa màn hình thì người dùng đổi dải, thấy không sao, đi tiếp
-                — mười phút sau mới biết chữ đè chữ. */}
+            {/* Cảnh báo đứng NGAY DƯỚI thứ gây ra nó. */}
             {deChong.length > 0 && (
               <FieldDescription className="text-destructive">
                 Đang đè lên “{deChong[0].content || "chữ trống"}”
@@ -298,9 +252,10 @@ export function TextPane({
               </FieldDescription>
             )}
 
-            {usesKeywords && (
+            {/* TỪ NHẤN: chọn tiếng nào đổi màu, rồi chọn màu. Chữ giữ nguyên cỡ
+                (dáng "even" của phong cách), chỉ tiếng đánh dấu đổi MÀU. */}
             <Field>
-              <FieldLabel>Từ khoá</FieldLabel>
+              <FieldLabel>Từ nhấn</FieldLabel>
               <ToggleGroup
                 multiple
                 size="sm"
@@ -319,21 +274,30 @@ export function TextPane({
                 ))}
               </ToggleGroup>
             </Field>
-            )}
+
+            <TextOverrideRows
+              element={element}
+              pack={elementPack}
+              onChange={(patch) => {
+                editor.updateTextElement(element.id, patch);
+                playPreview();
+              }}
+            />
           </div>
         </ScrollArea>
       </CardContent>
 
       <CardFooter>
-      {/* Lấy kiểu của cụm này làm kiểu chung.
+      {/* Lấy CHỖ ĐẶT của cụm này làm chỗ đặt chung.
 
-          Đo trên một dự án thật: 82% cụm giữ dáng mặc định, 88% giữ chỗ đặt,
-          90% giữ căn ngang — người dùng không sửa từng cụm, họ muốn đổi phong
-          cách CẢ VIDEO. Không có nút này thì việc đó là năm chục cú bấm y hệt.
+          Chỗ đặt là trục layout duy nhất người dùng còn chỉnh cho riêng một cụm
+          (cỡ chữ, căn ngang, kiểu chữ đã do phong cách quyết). Phần lớn cụm giữ
+          nguyên mặc định — muốn dời hết xuống/lên là muốn đổi CẢ VIDEO, mà bảng
+          chỉ sửa được một cụm nên việc đó là năm chục cú bấm y hệt.
 
-          Ở CHÂN BẢNG chứ không trong vùng cuộn: đặt sau hàng "Căn ngang" thì
-          nó rơi xuống dưới mép vùng nhìn thấy 43px, và một cái nút phải cuộn
-          mới thấy thì coi như không có.
+          Ở CHÂN BẢNG chứ không trong vùng cuộn: đặt trong vùng cuộn thì nó rơi
+          xuống dưới mép nhìn thấy, và một cái nút phải cuộn mới thấy thì coi như
+          không có.
 
           Hỏi lại một lần vì nó đè lên mọi cụm, kể cả những cụm đã sửa tay; và
           nói rõ con số để người dùng biết mình vừa đổi bao nhiêu. */}
@@ -346,11 +310,12 @@ export function TextPane({
                 Áp cho tất cả
               </AlertDialogTrigger>
               <AlertDialogContent>
-                <AlertDialogTitle>Áp cho tất cả chữ?</AlertDialogTitle>
+                <AlertDialogTitle>Áp cho tất cả?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  Dáng, chỗ đặt và căn ngang của cụm này sẽ thay cho mọi cụm
-                  chữ chạy theo lời — kể cả những cụm bạn đã sửa riêng. Chữ tự
-                  do (tiêu đề, con số) không đổi.
+                  Chỗ đặt ({BAND_LABEL[element.position] ?? element.position}) và
+                  phong cách chữ ({effectiveFontLabel}) của cụm này sẽ thay cho
+                  mọi cụm chữ chạy theo lời — kể cả những cụm bạn đã sửa riêng.
+                  Chữ tự do (tiêu đề, con số) không đổi.
                 </AlertDialogDescription>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Thôi</AlertDialogCancel>
@@ -359,8 +324,7 @@ export function TextPane({
                       void editor
                         .applyTextStyleToAll({
                           band: element.position,
-                          align: element.align,
-                          emphasis: element.emphasis,
+                          fontStyle: effectiveFont,
                         })
                         .then((changed) => {
                           if (changed > 0) {

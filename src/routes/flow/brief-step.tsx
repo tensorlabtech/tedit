@@ -70,9 +70,13 @@ export function BriefStep({
           <span className="text-muted-foreground text-xs uppercase">
             Video nói về gì
           </span>
+          {/* `field-sizing-content` (design system) tự cao theo nội dung — dán
+              nguyên kịch bản vào là ô phình hết màn, nuốt cả nút bên dưới. Chặn
+              trần `max-h`: tới ngưỡng thì ô TỰ cuộn trong lòng, không đội trang. */}
           <Textarea
             defaultValue={brief}
             rows={5}
+            className="max-h-[42vh]"
             placeholder={
               "Gõ mọi thứ liên quan — càng nhiều máy càng bớt đoán: tên riêng dễ " +
               "nghe nhầm, nhịp nhanh hay chậm, từ nào đáng nhấn, kịch bản nếu có."

@@ -49,6 +49,9 @@ const EditorPage = lazy(() =>
 const UploadPage = lazy(() =>
   import("@/routes/upload/upload-page").then((m) => ({ default: m.UploadPage })),
 );
+const AdminPage = lazy(() =>
+  import("@/routes/admin/admin-page").then((m) => ({ default: m.AdminPage })),
+);
 const AssetsPage = lazy(() =>
   import("@/routes/library/assets-page").then((m) => ({
     default: m.AssetsPage,
@@ -155,10 +158,16 @@ createRoot(document.getElementById("root")!).render(
                 <Route path="/upload/:projectId?" element={<UploadPage />} />
                 {/* Màn chờ: máy dựng xong hết rồi mới tới lượt người dùng. */}
                 {/* Luồng tám bước — một màn, sidebar trái. Hai tuyến cũ giữ
-                    nguyên trong lúc nội dung từng bước dựng dần. */}
-                <Route path="/flow/:projectId" element={<FlowPage />} />
+                    nguyên để test.
+                    Mã dự án TUỲ CHỌN: "Dự án mới" vào `/flow` chưa có mã, dự án
+                    được tạo lúc thả tệp đầu tiên rồi mã nhảy lên đường dẫn (như
+                    `/upload`) — tránh đẻ dự án rỗng khi bấm rồi bỏ ngang. */}
+                <Route path="/flow/:projectId?" element={<FlowPage />} />
                 <Route path="/pipeline/:projectId" element={<PipelinePage />} />
                 <Route path="/editor/:projectId" element={<EditorPage />} />
+                {/* Màn quản trị — sau cổng đăng nhập; chốt quyền admin ở máy chủ
+                    (403) và trang tự hiện "không có quyền" nếu không phải admin. */}
+                <Route path="/admin" element={<AdminPage />} />
               </Route>
             </Routes>
             </Suspense>

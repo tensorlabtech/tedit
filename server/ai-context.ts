@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { composeProfile, settingsForProject } from "./settings";
 
 /**
  * BỐI CẢNH DỰ ÁN cho các chặng AI — thứ người dùng đã gõ mà máy chưa đọc.
@@ -29,13 +30,21 @@ export function boiCanhDuAn(projectId: string): string | null {
   if (!row) return null;
 
   const phan: string[] = [];
+
+  // HỒ SƠ CHUNG của người làm (ngành, tên riêng, giới thiệu — từ onboarding/Cài
+  // đặt). Đặt TRƯỚC vì nó đúng cho MỌI video của họ; đây là chỗ bơm nó vào prompt
+  // thay vì seed vào `projects.profile` (cột ấy là "Đề bài" per-dự-án, seed sẵn
+  // là luồng tưởng đã nhập đề bài rồi).
+  const hoSo = composeProfile(settingsForProject(projectId)).trim().slice(0, 500);
+  if (hoSo) phan.push(hoSo);
+
   const ten = String(row.title ?? "").trim();
   // Tên tự sinh ("Dự án 31/7") không nói gì về nội dung — bỏ qua, không thì nó
   // thành nhiễu ở mọi lời nhắc.
   if (ten && !/^Dự án \d/.test(ten)) phan.push(`Tên video: ${ten}`);
 
   const loiDan = String(row.profile ?? "").trim().slice(0, 300);
-  if (loiDan) phan.push(`Người làm video nói về nội dung: ${loiDan}`);
+  if (loiDan) phan.push(`Đề bài riêng video này: ${loiDan}`);
 
   return phan.length > 0 ? phan.join("\n") : null;
 }

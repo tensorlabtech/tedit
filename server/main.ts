@@ -23,6 +23,8 @@ import transcriptRoutes from "./routes/transcript-routes";
 import segmentsRoutes from "./routes/segments-routes";
 import jobsRoutes from "./routes/jobs-routes";
 import mediaRoutes from "./routes/media-routes";
+import sceneScheduleRoutes from "./routes/scene-schedule-routes";
+import adminRoutes from "./routes/admin-routes";
 import {
   queueStats,
   reapOrphans,
@@ -154,6 +156,8 @@ await app.register(transcriptRoutes);
 await app.register(segmentsRoutes);
 await app.register(jobsRoutes);
 await app.register(mediaRoutes);
+await app.register(sceneScheduleRoutes);
+await app.register(adminRoutes);
 
 
 

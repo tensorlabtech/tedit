@@ -51,18 +51,59 @@ function speechRatio(envelope: AudioEnvelope, from: number, to: number) {
   return count / (stop - start);
 }
 
+/**
+ * Chuỗi LẶP vô nghĩa — whisper rơi vào vòng lặp một âm ở đoạn khó ("Lu Lu Lu…",
+ * "MoMoMoMo…"). KHÔNG dựa được sóng âm (đoạn ấy vẫn có tiếng thật), phải soi
+ * chính VĂN BẢN: một token chiếm quá nửa câu, hoặc một token dài lặp một cụm ngắn.
+ */
+function isBabble(text: string): boolean {
+  const tokens = text.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length >= 5) {
+    const counts = new Map<string, number>();
+    for (const token of tokens) {
+      const key = token.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+      if (key) counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    const top = Math.max(0, ...counts.values());
+    if (top / tokens.length > 0.55) return true;
+  }
+  // "MoMoMoMo…" thường về như MỘT token dài: bỏ khoảng trắng rồi tìm cụm lặp.
+  const flat = text.replace(/\s+/g, "");
+  for (let unit = 1; unit <= 3; unit += 1) {
+    if (flat.length < unit * 6) continue;
+    const head = flat.slice(0, unit).toLowerCase();
+    let reps = 0;
+    for (let i = 0; i + unit <= flat.length; i += unit) {
+      if (flat.slice(i, i + unit).toLowerCase() === head) reps += 1;
+      else break;
+    }
+    if (reps * unit >= flat.length * 0.7) return true;
+  }
+  return false;
+}
+
 export function filterHallucinations(
   segments: AsrSegment[],
   envelope: AudioEnvelope | null,
 ): FilterResult {
-  // Không đo được sóng âm thì KHÔNG đoán: bỏ nhầm một câu thật còn tệ hơn giữ
-  // lại một câu bịa, vì câu bịa còn sửa được bằng tay.
-  if (!envelope) return { kept: segments, dropped: [] };
-
   const kept: AsrSegment[] = [];
   const dropped: FilterResult["dropped"] = [];
 
   for (const segment of segments) {
+    // Vòng lặp vô nghĩa: bỏ LUÔN, kể cả khi không đo được sóng âm — nó là văn bản
+    // rác chứ không phải "câu thật sửa được bằng tay".
+    if (isBabble(segment.text)) {
+      dropped.push({ text: segment.text, reason: "chuỗi lặp vô nghĩa (vòng lặp máy nghe)" });
+      continue;
+    }
+
+    // Không đo được sóng âm thì KHÔNG đoán tiếp: bỏ nhầm một câu thật còn tệ hơn
+    // giữ lại một câu bịa, vì câu bịa còn sửa được bằng tay.
+    if (!envelope) {
+      kept.push(segment);
+      continue;
+    }
+
     const ratio = speechRatio(envelope, segment.start, segment.end);
     const longestWord = segment.words.reduce(
       (max, word) => Math.max(max, word.end - word.start),

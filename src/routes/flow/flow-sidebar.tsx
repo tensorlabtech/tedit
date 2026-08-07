@@ -1,122 +1,145 @@
-import { CheckIcon, LockIcon } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  ClapperboardIcon,
+  CogIcon,
+  ImagesIcon,
+  type LucideIcon,
+  PencilLineIcon,
+  ScissorsIcon,
+  SpellCheckIcon,
+  VideoIcon,
+  Wand2Icon,
+} from "lucide-react";
 
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 
-import { Card, CardContent } from "@/components/ui/card";
 import {
   FLOW_STEPS,
-  ONE_WAY_AFTER,
   stepIndex,
   type FlowStepId,
 } from "../../../server/flow-steps";
 
 /**
- * SIDEBAR TÁM BƯỚC — bản đồ, không phải nhật ký.
+ * SIDEBAR TÁM BƯỚC — bản đồ "đang ở đâu", không phải danh sách nút.
  *
- * ══ VÌ SAO KHÔNG BÀY MƯỜI BỐN CHẶNG MÁY ══
+ * ══ VÌ SAO ĐỔI TỪ DÒNG SANG Ô DỌC CÓ BIỂU TƯỢNG ══
  *
- * Màn chờ cũ liệt kê cả mười bốn chặng của `STEP_PLAN`. Nó đúng với máy nhưng
- * sai với người: người dùng cần biết "đang ở đâu, còn mấy chặng", không cần
- * biết máy vừa xong lượt chọn từ khoá hay lượt đặt tư liệu.
+ * Bản trước là tám dòng chữ trải ngang, trông y như một danh sách bấm-được. Nhưng
+ * bảy trong tám bước KHÔNG phải để bấm — chúng chỉ nói "còn mấy chặng nữa". Dòng
+ * chữ mời bấm ở nơi phần lớn không bấm là mời hụt.
  *
- * Mười bốn chặng ấy gộp vào đúng hai dòng ở đây. Chi tiết vẫn hiện — nhưng ở
- * BÊN PHẢI, lúc bước ấy đang chạy, tức đúng lúc người ta muốn nhìn.
+ * Nay mỗi bước là một ô nhỏ: BIỂU TƯỢNG ở trên, SỐ THỨ TỰ + TÊN căn giữa ở dưới.
+ * Biểu tượng đọc nhanh hơn chữ, và cả cụm trông như một cột mốc trên bản đồ —
+ * người dùng liếc là biết mình đang ở đâu, không tưởng phải bấm.
  *
- * ══ BỎ NHÃN NHÓM VÀ VẠCH KHOÁ ══
+ * ══ CÁC TRẠNG THÁI — KHÔNG VIỀN, PHÂN CẤP BẰNG NỀN + ĐỘ ĐẬM ══
  *
- * Bản đầu có ba nhãn nhóm ("NẠP VÀO", "SOÁT", "CHỈNH") và một vạch kèm chữ
- * "qua đây là chép lời lại". Chụp màn ra thì cả bốn thứ ấy là nhiễu: tám dòng
- * đánh số 1–8 đã đọc được thứ tự rồi, còn nhãn nhóm chỉ chen vào giữa và đẩy
- * các bước xa nhau.
+ * Không ô nào có viền: chúng nằm trên mặt Card, và viền chỉ có việc khi hai mảng
+ * cùng độ sáng đứng cạnh nhau. Ba tầng đọc bằng nền và độ đậm chữ:
  *
- * Cửa một chiều vẫn còn — nó nằm trong `canGoBack`, và người dùng thấy nó qua
- * việc bước cũ KHÔNG bấm được nữa. Một dòng chữ giải thích trước khi ai đó cần
- * là dạy bài trước khi có câu hỏi.
+ * - Đang đứng (`here`): NỀN nhấn + chữ và biểu tượng màu nhấn. Đây là thứ DUY
+ *   NHẤT cần nổi — "làm gì đó để biết đang ở đâu".
+ * - Đã qua: chữ và biểu tượng XÁM (`muted-foreground`) — đọc ra "bản đồ".
+ * - Chưa tới: xám và mờ thêm (`opacity-45`).
+ *
+ * KHÔNG bấm được: luồng MỘT CHIỀU, tiến bằng nút ở cột phải, không quay lại bước
+ * cũ. Sidebar chỉ nói "đang ở đâu" — cho bấm quanh là loạn, đúng thứ vừa bỏ đi.
+ * Không dấu tích, không ổ khoá: vị trí đã kể hết — trước chỗ đứng là xong, sau là
+ * chưa tới.
+ *
+ * Máy đang chạy bước này thì biểu tượng THAY bằng con quay.
+ *
+ * ══ NÚT VỀ TRANG CHỦ ══
+ *
+ * Nằm DƯỚI CÙNG, tách khỏi mạch bước. Header cũ mang lối ra này, mà header đã bỏ
+ * đi — lối về phải có chỗ đứng cố định, và chân cột là chỗ mắt tìm "thoát ra".
  */
+
+/** Biểu tượng cho từng bước — để ở client, không nhét vào `flow-steps` (dùng chung với server). */
+const STEP_ICONS: Record<FlowStepId, LucideIcon> = {
+  "main-footage": VideoIcon,
+  "b-roll": ImagesIcon,
+  brief: PencilLineIcon,
+  preparing: CogIcon,
+  cut: ScissorsIcon,
+  proofread: SpellCheckIcon,
+  building: Wand2Icon,
+  studio: ClapperboardIcon,
+};
 
 export function FlowSidebar({
   current,
-  reached,
-  blockAfter = null,
-  onPick,
+  onHome,
 }: {
-  /** Bước đang XEM — cái được tô. */
+  /** Bước đang đứng — cái được tô. Bước trước nó là đã qua, sau là chưa tới. */
   current: FlowStepId;
-  /**
-   * Bước MÁY đã tới — mốc quyết định bấm được hay không.
-   *
-   * Tách khỏi `current` vì hai thứ khác nhau: bản đầu lấy `current` làm mốc,
-   * nên vừa bấm về bước 1 là bước 2 thành "chưa tới" và không bấm lại được.
-   */
-  reached: FlowStepId;
-  /**
-   * Khoá mọi bước SAU mốc này — dùng khi mạch lệch, phải chép lại lời.
-   *
-   * Tầng riêng, KHÔNG kéo `reached` lùi. Kéo lùi thì sidebar nói dối: bước 3–8
-   * hiện ra như "chưa tới" trong khi máy đã chạy tới bước 5, và người dùng mất
-   * hẳn thông tin mình đang ở đâu.
-   */
-  blockAfter?: FlowStepId | null;
-  onPick: (id: FlowStepId) => void;
+  onHome: () => void;
 }) {
   const at = stepIndex(current);
-  const far = stepIndex(reached);
-  const door = stepIndex(ONE_WAY_AFTER);
-  const wall = blockAfter ? stepIndex(blockAfter) : Infinity;
 
   return (
-    /*
-     * Bọc trong MỘT Card để cột trái phủ kín chiều cao.
-     *
-     * Trước đây tám thẻ rời nhau, hết thẻ thứ tám là 361px nền trơn — đo được
-     * ở 1440×900. `CLAUDE.md` dặn mọi thứ nằm trong một Card hoặc một thẻ trông
-     * cân bằng với Card.
-     */
     <Card className="lg:min-h-0">
-      <CardContent className="grid content-start gap-1 overflow-y-auto">
-        {FLOW_STEPS.map((step, index) => {
-          // Đang đứng thì KHÔNG phải "xong" — một bước vừa `here` vừa có dấu
-          // tích là hai câu trái nhau trên cùng một dòng.
-          const here = index === at;
-          const done = index < far && !here;
-          // Đang ĐỨNG thì không vẽ khoá: người dùng đang nhìn chính nó, bảo
-          // nó khoá là vô nghĩa. Cùng lẽ với chuyện không vẽ dấu tích ở đây.
-          const locked =
-            !here && ((far > door && index <= door) || index > wall);
-          // Bấm được mọi bước máy ĐÃ TỚI, kể cả đi tới lại sau khi lùi.
-          const openable = index <= far && !locked && !here;
+      {/* `flex-1` cho CardContent cao HẾT Card — thiếu nó thì thân thẻ chỉ cao
+          bằng nội dung, `flex-1` bên trong không có chỗ giãn, và nút Trang chủ
+          dính ngay dưới bước cuối thay vì tụt xuống đáy cột. */}
+      <CardContent className="flex min-h-0 flex-1 flex-col gap-1 px-2">
+        {/* Mạch bước — cuộn riêng phần này để nút Trang chủ luôn ở đáy. */}
+        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
+          {FLOW_STEPS.map((step, index) => {
+            const here = index === at;
+            // Luồng MỘT CHIỀU: trước bước đang đứng là đã qua (đậm), sau là chưa
+            // tới (mờ). Không bấm được — bản đồ, không phải nút.
+            const done = index < at && !here;
+            const Icon = STEP_ICONS[step.id];
+            // Máy đang chạy chính bước này thì biểu tượng QUAY.
+            const running = here && step.actor === "machine";
 
-          return (
-            <div
-              key={step.id}
-              data-state={here ? "here" : done ? "done" : "todo"}
-              onClick={() => openable && onPick(step.id)}
-              className={
-                "flex items-center gap-3 rounded-lg border border-border px-3 py-2.5 data-[state=here]:ring-2 data-[state=here]:ring-primary data-[state=here]:ring-inset data-[state=todo]:opacity-45" +
-                (openable ? " cursor-pointer" : "")
-              }
-            >
-              <span className="text-muted-foreground w-3 shrink-0 tabular-nums text-xs">
-                {index + 1}
-              </span>
-              <span className="flex-1 text-sm">{step.label}</span>
-              {/* Dấu tích màu NHẤN: nó là tin vui duy nhất trên cột này, và
-                  màu xám thì nó chìm nghỉm giữa bảy dòng xám khác. */}
-              {/* Khoá thì THAY dấu tích, không đứng cạnh — "đã xong" và "đang
-                  khoá" cạnh nhau là hai câu trái nhau trên một dòng. */}
-              {done && !locked ? (
-                <CheckIcon className="text-primary size-4" />
-              ) : null}
-              {locked ? (
-                <LockIcon className="text-muted-foreground size-4" />
-              ) : null}
-              {/* Máy đang chạy thì QUAY, không phải chữ 'máy'. Con quay nói
-                  'đang chạy' mà không phải đọc; chữ thì phải đọc rồi mới hiểu,
-                  và nó đứng yên nên trông y như một nhãn tĩnh. */}
-              {here && step.actor === "machine" ? <Spinner /> : null}
-            </div>
-          );
-        })}
+            return (
+              <div
+                key={step.id}
+                data-state={here ? "here" : done ? "done" : "todo"}
+                className="flex flex-col items-center gap-2 rounded-lg px-1.5 py-3 text-center data-[state=here]:bg-primary/10 data-[state=todo]:opacity-45"
+              >
+                {running ? (
+                  <Spinner className="text-primary size-6" />
+                ) : (
+                  <Icon
+                    className={
+                      "size-6 " +
+                      (here ? "text-primary" : "text-muted-foreground")
+                    }
+                  />
+                )}
+
+                <span
+                  className={
+                    "text-[11px] leading-tight " +
+                    (here
+                      ? "text-primary font-medium"
+                      : "text-muted-foreground")
+                  }
+                >
+                  {step.label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Lối ra — luôn ở đáy cột, tách khỏi mạch bước bằng cả khoảng trống.
+            Mũi tên "quay lại" chứ không phải nhà: đây là rời luồng dựng để trở
+            về, hành động lùi ra chứ không phải một điểm đến ngang hàng. */}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="mt-1 w-full justify-center gap-1.5"
+          onClick={onHome}
+        >
+          <ArrowLeftIcon className="size-4" />
+          Về trang chủ
+        </Button>
       </CardContent>
     </Card>
   );

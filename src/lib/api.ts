@@ -11,6 +11,7 @@ import { Upload as TusUpload } from "tus-js-client";
 
 import type { StylePackId } from "../../server/style-pack";
 import type { MusicTags } from "../../server/music-tags";
+import type { SceneScheduleResult } from "../../server/scene-schedule";
 
 const BASE = import.meta.env.VITE_API ?? "";
 
@@ -74,6 +75,8 @@ export type ApiElement = {
   letter_case?: string | null;
   /** Cụm này tự đè màu nhấn; rỗng là theo bộ dáng của dự án */
   key_color?: string | null;
+  /** Cụm này tự đè phong cách chữ; rỗng là theo mặc định dự án */
+  font_style?: string | null;
   id: string;
   kind: "text" | "insert";
   /** Rỗng với chữ tự do — nó neo theo `start_sec`/`end_sec` */
@@ -93,6 +96,8 @@ export type ApiElement = {
   reveal: string | null;
   /** Hình dáng khung tư liệu */
   shape: string | null;
+  /** Bố cục hiện b-roll (element kind='insert') */
+  insert_layout: string | null;
   /** Giá trị gộp kiểu cũ, chỉ để đổi sang hai trục khi đọc */
   layout: string | null;
   keywords: string | null;
@@ -238,7 +243,16 @@ export type ApiSettings = {
   wantCaptions: boolean;
   autoGrade: boolean;
   wantMusic: boolean;
+  /** Ô "Thêm" tuỳ chọn — hồ sơ chính đã tách thành các trường cấu trúc dưới. */
   profile: string;
+  /** Kênh/người làm nội dung về gì (ngành, chủ đề). */
+  trade: string;
+  /** Tên riêng hay bị nghe sai — công ty, sản phẩm, tên người. */
+  names: string;
+  /** Kiểu video thường làm. */
+  videoKind: string;
+  /** Đã qua onboarding chưa — để không nhắc lại. */
+  onboarded: boolean;
 };
 
 /**
@@ -291,6 +305,8 @@ export type ApiProject = {
      * đọc phải rơi về bộ gốc, xem `findStylePack`.
      */
     style_pack?: string | null;
+    /** PHONG CÁCH CHỮ mặc định cả video — chỉ đổi dáng chữ, `null` = theo `style_pack`. */
+    font_style?: string | null;
     /** Dòng tiêu đề của cả video — một cột trên `projects`, không nằm trong `elements`. */
     headline?: string | null;
     /** Bộ dáng đang dùng lúc chặng hiệu ứng chạy lần cuối; `null` là chưa chạy. */
@@ -422,6 +438,54 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+export type AdminUserRow = {
+  id: string;
+  email: string;
+  name: string | null;
+  createdAt: number | string | null;
+  projects: number;
+  videoSeconds: number;
+  lastProjectAt: number | null;
+  media: number;
+  mediaBytes: number;
+  exports: number;
+  lastExportAt: number | null;
+};
+
+export type AdminRecentProject = {
+  id: string;
+  title: string;
+  status: string;
+  createdAt: number;
+  videoSeconds: number | null;
+  ownerEmail: string | null;
+};
+
+export type AdminExportRow = {
+  id: string;
+  projectId: string;
+  title: string;
+  ownerEmail: string | null;
+  at: number;
+};
+
+export type AdminSummary = {
+  overview: {
+    users: number;
+    projects: number;
+    media: number;
+    mediaBytes: number;
+    videoSeconds: number;
+    jobs: number;
+    exports: number;
+  };
+  byStatus: Array<{ status: string; count: number }>;
+  users: AdminUserRow[];
+  orphanProjects: number;
+  recent: AdminRecentProject[];
+  recentExports: AdminExportRow[];
+};
+
 export const api = {
   createProject: (title: string) =>
     request<{ id: string }>("/api/projects", {
@@ -451,6 +515,8 @@ export const api = {
        * không lặng lẽ rơi về mặc định — màn chọn phải biết mình vừa lưu hụt.
        */
       stylePack?: StylePackId;
+      /** PHONG CÁCH CHỮ mặc định cả video. `null` = xoá đè (theo `stylePack`). */
+      fontStyle?: StylePackId | null;
       /** Dòng tiêu đề của cả video. Chuỗi rỗng là XOÁ, không phải "giữ nguyên". */
       headline?: string;
     },
@@ -475,6 +541,9 @@ export const api = {
     ),
 
   listProjects: () => request<ProjectSummary[]>("/api/projects"),
+
+  /** Màn quản trị — chỉ email admin gọi được (máy chủ trả 403 nếu không phải). */
+  adminSummary: () => request<AdminSummary>("/api/admin/summary"),
 
   getProject: (id: string) => request<ApiProject>(`/api/projects/${id}`),
 
@@ -727,6 +796,23 @@ export const api = {
       body: JSON.stringify({ text }),
     }),
 
+  /** Sửa CẢ DÒNG bằng văn bản mới — máy chủ khớp lại từ, giữ mốc, nội suy chữ chèn. */
+  setLineWords: (sentenceId: string, text: string) =>
+    request<{ words: ApiWord[] }>(`/api/sentences/${sentenceId}/words`, {
+      method: "PATCH",
+      body: JSON.stringify({ text }),
+    }),
+
+  /** Thêm câu vào khe máy bỏ sót lời — mốc chia đều trong `[start, end]`. */
+  addSentence: (
+    projectId: string,
+    body: { start: number; end: number; text: string },
+  ) =>
+    request<{ sentence: ApiSentence; words: ApiWord[] }>(
+      `/api/projects/${projectId}/sentences`,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+
   setSentenceRemoved: (sentenceId: string, removed: boolean) =>
     request<ApiSentence>(`/api/sentences/${sentenceId}`, {
       method: "PATCH",
@@ -736,7 +822,8 @@ export const api = {
   createElement: (
     projectId: string,
     body: {
-      kind: "text" | "insert";
+      // `layout` = ô người (segment bố cục không cần tư liệu); `insert` = b-roll.
+      kind: "text" | "insert" | "layout";
       /** Neo theo TỪ — chữ chép lời và tư liệu chèn */
       fromWordId?: string;
       toWordId?: string;
@@ -746,6 +833,8 @@ export const api = {
       content?: string;
       band?: string;
       mediaFileId?: string;
+      /** Mã bố cục cho segment (ô người hoặc b-roll) */
+      insertLayout?: string | null;
     },
   ) =>
     request<ApiElement>(`/api/projects/${projectId}/elements`, {
@@ -766,6 +855,10 @@ export const api = {
       reveal?: string;
       /** Hình dáng khung tư liệu */
       shape?: string;
+      /** Bố cục hiện b-roll (element kind='insert'). `null` = để máy tự chọn. */
+      insertLayout?: string | null;
+      /** Đổi tệp media của b-roll */
+      mediaFileId?: string;
       /** Kéo hai đầu khối chữ tự do trên dải */
       start?: number;
       end?: number;
@@ -776,6 +869,8 @@ export const api = {
        */
       letterCase?: "as-typed" | "upper" | null;
       keyColor?: string | null;
+      /** Phong cách chữ riêng cụm này. `null` = theo mặc định dự án. */
+      fontStyle?: string | null;
       /** Neo lại vào câu khác, giữ nguyên mọi thứ đã chỉnh */
       sentenceId?: string;
       /** Kéo mép: neo lại vào từ khác */
@@ -796,7 +891,13 @@ export const api = {
    */
   applyTextStyleToAll: (
     projectId: string,
-    style: { band?: string; align?: string; emphasis?: string },
+    style: {
+      band?: string;
+      align?: string;
+      emphasis?: string;
+      /** Phong cách chữ cho cả video: đặt mặc định dự án + xoá đè từng cụm. */
+      fontStyle?: string | null;
+    },
   ) =>
     request<{ changed: number }>(`/api/projects/${projectId}/elements/style`, {
       method: "PATCH",
@@ -1005,6 +1106,16 @@ export const api = {
   listSegments: (projectId: string) =>
     request<ApiSegment[]>(`/api/projects/${projectId}/segments`),
 
+  /**
+   * Hàn lỗ hổng giữa các đoạn cho liền mạch. CHỈ màn Cắt lỗi gọi: lỗ hổng ở đó
+   * là rác (cú kéo dở dang), còn bàn dựng thì gọt-mép có chủ ý cũng đẻ lỗ — hàn
+   * ở đó là undo việc người dùng cố ý làm.
+   */
+  sealCutGaps: (projectId: string) =>
+    request<ApiSegment[]>(`/api/projects/${projectId}/segments/seal-gaps`, {
+      method: "POST",
+    }),
+
   splitSegment: (projectId: string, at: number) =>
     request<ApiSegment[]>(`/api/projects/${projectId}/segments/split`, {
       method: "POST",
@@ -1138,4 +1249,13 @@ export const api = {
 
   exportUrl: (projectId: string) =>
     `${BASE}/files/projects/${projectId}/out/final.mp4`,
+
+  /**
+   * LỊCH MÀN cho khung xem trước — server xếp, màn hình vẽ theo.
+   *
+   * Bộ dáng không khai bố cục thì trả lịch rỗng và màn hình giữ video phủ kín.
+   */
+  sceneSchedule: (projectId: string) =>
+    request<SceneScheduleResult>(`/api/projects/${projectId}/scene-schedule`),
+
 };

@@ -27,12 +27,27 @@ import type { EditorState } from "./use-editor";
 export function RightPanel({
   editor,
   onPreview,
+  /**
+   * Bàn dựng: chỉ giữ lời nhắc DỰNG. Bỏ "silence" (gợi ý cắt) và "unsure"/
+   * "mismatch" (soát lời — đã xong ở bước riêng), vì bấm vào chúng gọi đúng
+   * những việc cắt/soát mà bước này không còn gánh.
+   */
+  studio,
 }: {
   editor: EditorState;
   /** Đưa vạch tới `at` (giây gốc) rồi cho chạy, dừng ở `denKhi` nếu có */
   onPreview: (at: number, until?: number) => void;
+  studio?: boolean;
 }) {
-  const { issues, boQua } = useReviewIssues(editor);
+  const { issues: allIssues, boQua } = useReviewIssues(editor);
+  const issues = studio
+    ? allIssues.filter(
+        (item) =>
+          item.kind !== "silence" &&
+          item.kind !== "unsure" &&
+          item.kind !== "mismatch",
+      )
+    : allIssues;
   const [tab, setTab] = useState("sua");
   // Theo dõi CHÍNH thứ đang chọn, không phải "có chọn gì không".
   //
@@ -73,7 +88,11 @@ export function RightPanel({
       <Tabs
         value={openTab}
         onValueChange={(value) => setTab(String(value))}
-        className="min-h-0 w-full min-w-0 flex-1"
+        // `gap-(--card-gap)` đè `gap-2` mặc định của Tabs: mặc định chỉ chừa 8px
+        // giữa hàng tiêu-đề-tab và đầu pane bên trong, nên đầu pane ("Chỉ cụm
+        // này", "Chưa chọn gì"…) dính sát ngay dưới đường kẻ tab. Kéo về đúng nhịp
+        // đầu–thân của Card (16px) cho hai tầng tách nhau rõ.
+        className="min-h-0 w-full min-w-0 flex-1 gap-(--card-gap)"
       >
         <CardHeader>
           {/* Các TIÊU ĐỀ đứng cạnh nhau, cái không mở thì mờ — chứ không phải
@@ -90,7 +109,10 @@ export function RightPanel({
             <TabsTrigger value="kho">Kho nhạc</TabsTrigger>
           </TabsList>
         </CardHeader>
-        <CardContent className="min-h-0 min-w-0 flex-1">
+        {/* `px-0`: cột phải để KHUNG SỬA bên trong tự lo đệm ngang, nhờ vậy đường
+            kẻ dưới tiêu đề (và mọi kẻ ngăn nhóm) chạm được HAI MÉP thẻ thay vì
+            thụt vào — đúng luật "border xuyên card" của design system. */}
+        <CardContent className="min-h-0 min-w-0 flex-1 px-0">
           {showReview && (
             <TabsContent value="soat" className="h-full min-h-0">
               {/* Giấu cả đầu thẻ của hàng soát: tab ngay trên đã nói "Cần bạn
@@ -139,7 +161,11 @@ function LotVo({
         // `h-full` cho cả vỏ lẫn thẻ bên trong: thiếu nó thì thẻ trong cao theo
         // nội dung, tràn khỏi thẻ ngoài và bị `overflow-hidden` cắt mất chân —
         // đúng chỗ đặt nút "Xoá chữ này".
-        "h-full min-h-0 [&>[data-slot=card]]:h-full [&>[data-slot=card]]:gap-3 [&>[data-slot=card]]:rounded-none [&>[data-slot=card]]:bg-transparent [&>[data-slot=card]]:py-0 [&>[data-slot=card]]:ring-0 [&_[data-slot=card-content]]:px-0 [&_[data-slot=card-footer]]:px-0 [&_[data-slot=card-header]]:px-0",
+        // KHÔNG lột đệm ngang của thẻ trong nữa: cột phải (`CardContent`) đã `px-0`
+        // nên thẻ trong tự lo đệm ngang, và đường kẻ header/nhóm của nó chạm được
+        // hai mép thẻ ngoài (border xuyên card). Vẫn lột nền/viền/đệm-dọc để nó nằm
+        // gọn trong thẻ có tab.
+        "h-full min-h-0 [&>[data-slot=card]]:h-full [&>[data-slot=card]]:gap-3 [&>[data-slot=card]]:rounded-none [&>[data-slot=card]]:bg-transparent [&>[data-slot=card]]:py-0 [&>[data-slot=card]]:ring-0",
         className,
       )}
     >

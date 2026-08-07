@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 
 import type { Clip } from "./editor-data";
 
@@ -35,16 +35,13 @@ type ClipView = Clip & {
  * Mỗi cột lấy ĐỈNH của khoảng nó gộp, không lấy trung bình: trung bình làm
  * phẳng mọi tiếng bật và dải sóng chỉ còn là một cái gò.
  */
-export function ClipWave({
+export const ClipWave = memo(function ClipWave({
   clip,
   envelope,
-  pxPerSecond,
 }: {
   clip: ClipView;
   envelope: AudioEnvelope;
-  pxPerSecond: number;
 }) {
-  const width = Math.max((clip.end - clip.start) * pxPerSecond - 2, 4);
   const length = clip.end - clip.start;
 
   // Gộp nhiều ô 20ms vào một cột và lấy ĐỈNH, không lấy trung bình: trung bình
@@ -53,28 +50,36 @@ export function ClipWave({
     const from = Math.floor(clip.srcStart / envelope.hop);
     const to = Math.ceil((clip.srcStart + length) / envelope.hop);
     const samples = Math.max(1, to - from);
-    // Một cột chiếm 3px: 2px thì các cột dính thành một mảng đặc, không đọc ra
-    // được nhịp nói. Số cột đi theo BỀ RỘNG THẬT của khối nên phóng to dải là
-    // sóng mịn ra theo, không đứng yên ở một độ chi tiết cố định.
-    //
-    // KHÔNG cho số cột vượt số ô 20ms đang có: khi một giây rộng hơn ~150px thì
-    // `width/3` đòi nhiều cột hơn số ô, `per` kẹp về 1, và vòng lấy đỉnh đọc lố
-    // sang ô của GIÂY SAU. Cột thì trải theo `bars.length` nên cả dải sóng bị
-    // nén và trượt — chỗ có tiếng vẽ trật khỏi giây thật, nhìn như "sóng lệch
-    // lời". Kẹp theo `samples` thì một ô = một cột, mỗi cột bám đúng mốc của nó.
-    const count = Math.max(1, Math.min(MAX_BARS, Math.round(width / 3), samples));
-    const per = Math.max(1, Math.floor(samples / count));
+    // Số cột theo SỐ Ô ENVELOPE (một cột/20ms), KHÔNG theo pixel bề rộng: SVG dưới
+    // đây `preserveAspectRatio=none` nên tự co giãn khi phóng. Trước đây `count`
+    // phụ thuộc `width`: mỗi nấc phóng đổi bề rộng là vòng lấy đỉnh chạy lại + hàng
+    // nghìn `<rect>` reconcile MỖI KHUNG → phóng dải GIẬT. Giờ cột cố định theo nội
+    // dung nên `memo` (bọc ngoài) bỏ qua được cả khối lúc phóng. Trần `MAX_BARS`
+    // chặn đoạn dài đẻ quá nhiều thẻ.
+    const count = Math.max(1, Math.min(MAX_BARS, samples));
     const out: number[] = [];
+    // Chia ĐỀU toàn bộ `samples` ô vào `count` cột bằng mốc PHÂN SỐ: cột i phủ
+    // đúng [i/count, (i+1)/count] của đoạn nguồn. Nhờ vậy mỗi cột nằm đúng vị trí
+    // giây của nó khi trải ra cả bề rộng khối.
+    //
+    // Bản cũ dùng `per = floor(samples/count)` (số nguyên): khi khối dài hơn ~40s
+    // thì `samples > MAX_BARS`, `per*count` NHỎ HƠN `samples` — vòng chỉ đọc tới
+    // ô thứ `per*count` rồi bỏ sót phần đuôi, MÀ `count` cột vẫn trải kín cả khối.
+    // Hệ quả: sóng bị kéo giãn ~5% và cả đoạn tiếng vẽ TRỄ dần về cuối khối — có
+    // chỗ lệch hơn một giây, thành ra "chỗ đang nói thì sóng phẳng, phần lặng ngay
+    // trước đó lại bị đẩy vào đúng chỗ playhead".
     for (let i = 0; i < count; i += 1) {
+      const lo = from + Math.floor((i * samples) / count);
+      const hi = from + Math.floor(((i + 1) * samples) / count);
       let peak = 0;
-      for (let j = from + i * per; j < from + (i + 1) * per; j += 1) {
+      for (let j = lo; j < Math.max(lo + 1, hi); j += 1) {
         const value = envelope.values[j] ?? 0;
         if (value > peak) peak = value;
       }
       out.push(peak);
     }
     return out;
-  }, [clip.srcStart, envelope, length, width]);
+  }, [clip.srcStart, envelope, length]);
 
   return (
     <span className="block h-full w-full overflow-hidden">
@@ -123,4 +128,4 @@ export function ClipWave({
       </svg>
     </span>
   );
-}
+});

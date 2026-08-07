@@ -26,7 +26,10 @@ import {
   type ScheduledScene,
 } from "../../server/timing";
 import { STYLE_PACKS } from "../../server/style-pack-catalog";
-import { scheduleScenes } from "../../server/layout-schedule";
+import {
+  scheduleScenes,
+  type PlacedSegment,
+} from "../../server/layout-schedule";
 import { HEADLINE_FADE } from "../../server/style-pack";
 
 let passed = 0;
@@ -151,58 +154,36 @@ check("chạm trần 15s ở phim dài", sceneLengthAt(300) === SCENE_MAX);
 check("quanh trung vị 8,8s đo được ở khối 4", Math.abs(sceneLengthAt(65) - 9.0) < 0.01);
 
 /*
- * ══ MỌI BỐ CỤC BỘ DÁNG KHAI ĐỀU PHẢI LÊN HÌNH ══
+ * ══ ENGINE THƯA: chỉ segment ĐÃ ĐẶT, KHÔNG lấp khoảng ══
  *
- * Bố cục khai mà không bao giờ được chọn là lỗi IM LẶNG tệ nhất trong nhóm này:
- * mã chạy đúng, không ai báo gì, chỉ có một bố cục biến mất khỏi sản phẩm.
- *
- * Đã mắc thật. Bản xoay vòng đầu dùng chung số thứ tự màn cho mọi họ bố cục, mà
- * màn có tư liệu rơi đúng vào những chỗ `sốMàn % 3 == 2` — nên `sốĐếm % 3` luôn
- * bằng 2 và họ ba bố cục hai ô chỉ có cái thứ ba được dùng. Đo trên bản dựng
- * thật: `ngang-vuong` 6,5 giây, `vuong-ngang` 0 giây. Không phép kiểm nào đỏ,
- * và nó chỉ lộ ra vì có người hỏi "đã soát chưa".
+ * Mô hình mới: toàn-khung là mặc định (không sinh màn), chỉ chỗ khác mặc định
+ * mới là segment. `scheduleScenes` không còn "xếp" — nó nhận segment đã đặt rồi
+ * kẹp/xếp/bỏ-chồng và trả về. Khoảng trống giữa các segment KHÔNG được lấp: bản
+ * dựng vẽ video phủ kín ở đó. Đây là điều bảo đảm không còn "auto-tile" lẻn về.
  */
-console.log("\nMọi bố cục bộ dáng khai đều được dùng");
-for (const pack of STYLE_PACKS) {
-  if (pack.layouts.length < 2) continue;
-  const wish = { layouts: pack.layouts, heroes: ["a", "b"] };
-  // Hai phút, mốc dứt cụm mỗi 0,4 giây — đủ dài để mọi vòng xoay quay hết.
-  const phrases = Array.from({ length: 300 }, (_, i) => i * 0.4);
-  /*
-   * Cứ mười giây thì năm giây DÀY từ nhấn.
-   *
-   * Không có mốc nhấn nào thì mật độ luôn bằng 0 và `toan-khung` không bao giờ
-   * được chọn — phép kiểm sẽ đỏ vì dữ liệu thử, không vì sản phẩm. Mà cho nhấn
-   * dày ĐỀU cũng sai nốt: lúc ấy mọi màn đều `toan-khung` và các bố cục còn lại
-   * biến mất. Đầu vào thật có cả đoạn nóng lẫn đoạn nguội, nên đầu vào thử cũng
-   * phải thế.
-   */
-  const keywords = phrases.filter((at) => at % 10 < 5);
-  const schedule = scheduleScenes(120, wish, { phrases, cuts: [], keywords }, true);
-  const seen = new Set(schedule.map((s) => s.layout));
-  const missing = pack.layouts.filter((id) => !seen.has(id));
-  check(
-    `"${pack.label}" dùng cả ${pack.layouts.length} bố cục`,
-    missing.length === 0,
-    `bỏ quên ${missing.join(", ")}`,
-  );
-}
-/*
- * Thử phá: gạt hết tư liệu chèn thì họ bố cục hai ô phải BIẾN MẤT, không được
- * dựng một ô đen. Đây là mặt trái của phép kiểm trên — nó phải phân biệt được
- * "bố cục bị bỏ quên" với "bố cục không dựng được".
- */
-const noInsert = scheduleScenes(
-  120,
-  { layouts: ["o-don", "toan-khung", "hai-o", "vuong-ngang"], heroes: ["a"] },
-  { phrases: Array.from({ length: 300 }, (_, i) => i * 0.4), cuts: [] },
-  false,
-);
+console.log("\nEngine THƯA: chỉ segment đã đặt, không lấp khoảng");
+const placed: PlacedSegment[] = [
+  { start: 20, end: 24, layout: "o-lech" }, // khai trước nhưng ra SAU
+  { start: 4, end: 7, layout: "hai-o", insert: 0 }, // b-roll
+  { start: 6, end: 9, layout: "o-don" }, // CHỒNG lên b-roll → bỏ
+  { start: 100, end: 130, layout: "o-don" }, // ngoài phim (total=60) → bỏ
+  { start: 30, end: 20, layout: "o-don" }, // end<start → bỏ
+];
+const sched = scheduleScenes(60, placed);
 check(
-  "không có tư liệu thì bố cục hai ô biến mất",
-  noInsert.every((s) => s.layout !== "hai-o" && s.layout !== "vuong-ngang"),
-  [...new Set(noInsert.map((s) => s.layout))].join(", "),
+  "xếp theo mốc bắt đầu",
+  sched.map((s) => s.start).join(",") === "4,20",
+  sched.map((s) => s.start).join(","),
 );
+check("bỏ đoạn chồng, hỏng, ngoài phim", sched.length === 2, `còn ${sched.length}`);
+check("giữ chỉ số tư liệu b-roll", sched[0]?.insert === 0);
+check(
+  "khoảng trống KHÔNG lấp (thưa)",
+  sched.reduce((sum, s) => sum + (s.end - s.start), 0) < 60,
+);
+check("mọi màn hero=null (thiết bị nhấn để dành)", sched.every((s) => s.hero === null));
+check("không segment nào chồng nhau", sched.every((s, i) => i === 0 || s.start >= sched[i - 1].end));
+check("tổng rỗng → lịch rỗng", scheduleScenes(60, []).length === 0);
 
 console.log(`\n${passed} đạt, ${failed} trượt`);
 process.exit(failed === 0 ? 0 : 1);

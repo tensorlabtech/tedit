@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import { PauseIcon, PlayIcon, ScissorsIcon } from "lucide-react";
+import { ScissorsIcon } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatDuration } from "@/lib/format-duration";
 
 import { TimelineSideRail } from "../editor/timeline-side-rail";
+import { useSpacePlayPause } from "../editor/use-space-play-pause";
 import { ZOOM_STEP, useTimelineZoom } from "../editor/timeline-zoom";
 import { CutLane, type Span } from "./cut-lane";
+import { FlowPreview } from "./flow-preview";
 import { useCutEdit } from "./use-cut-edit";
 
 /**
@@ -83,6 +84,12 @@ export function CutStep({
    * nghe được chính chỗ ấy. Hai việc trái nhau, nên tách bằng chủ ý.
    */
   const auditing = useRef<string | null>(null);
+  /**
+   * Mốc phát THẬT, cập nhật mỗi khung (60fps) cho dải trôi mượt mà không phải đẩy
+   * state 60fps. `CutLane` đọc nó trong vòng rAF riêng để lái `transform` trực
+   * tiếp; `time` state chỉ còn lo đồng hồ + cửa sổ dựng ảnh (20fps là đủ).
+   */
+  const liveTimeRef = useRef(0);
 
   const seek = (at: number) => {
     // KẸP [0, total]. Không kẹp thì kéo dải sang phải đẩy `time` xuống ÂM, và vì
@@ -91,6 +98,7 @@ export function CutStep({
     const bounded = Math.max(0, Math.min(total, at));
     const video = videoRef.current;
     if (video) video.currentTime = bounded;
+    liveTimeRef.current = bounded;
     setTime(bounded);
   };
 
@@ -107,7 +115,21 @@ export function CutStep({
   useEffect(() => {
     if (!playing) return;
     let frame = 0;
-    const tick = () => {
+    // Đọc `currentTime` MỖI khung: ghi vào `liveTimeRef` để `CutLane` lái dải trôi
+    // 60fps (mượt, khớp tiếng), CÒN đẩy vào state chỉ ~20 lần/giây — state giờ chỉ
+    // lo đồng hồ + cửa sổ dựng ảnh, mà mỗi lần đẩy vẫn dựng lại phần đó nên 60fps
+    // thì phí. Tách hai nhịp: hình trôi 60fps, dữ liệu 20fps.
+    const PUSH_EVERY_MS = 50;
+    let lastPush = 0;
+    // ĐỒNG HỒ MEDIA NỘI SUY. `video.currentTime` chỉ nhích theo khung hình video
+    // (~30fps, lại không đều) nên đọc thẳng thì dải TRÔI BẬC: có khung đứng rồi
+    // khung sau bù gấp đôi — "thi thoảng giật". Neo một mốc (media, đồng hồ tường)
+    // rồi chạy mượt rate 1 giữa các nấc; chỉ neo lại khi NHẢY chỗ cắt, tua lùi, hay
+    // lệch xa (video khựng). Nhờ vậy dải trôi đều 60fps mà vẫn bám đúng tiếng.
+    let anchorAt = 0;
+    let anchorPerf = 0;
+    let anchored = false;
+    const tick = (now: number) => {
       const video = videoRef.current;
       if (video) {
         let at = video.currentTime;
@@ -120,17 +142,45 @@ export function CutStep({
           ? spans.find((span) => span.id === auditing.current)
           : null;
         if (active && at >= active.end) auditing.current = null;
+        let jumped = false;
         if (here && auditing.current !== here.id) {
+          // Khoảng bỏ CHẠM cuối bản — không còn khung GIỮ nào phía sau. Nhảy tới
+          // `here.end` (= khung cuối video gốc) sẽ đứng ở khung của đoạn ĐÃ BỎ rồi
+          // đơ luôn ở đó. Thay vào đó DỪNG phát ngay đầu khoảng bỏ — khung giữ cuối.
+          if (here.end >= total - 0.01) {
+            video.currentTime = here.start;
+            video.pause();
+            liveTimeRef.current = here.start;
+            setTime(here.start);
+            return;
+          }
           video.currentTime = here.end;
           at = here.end;
+          jumped = true;
         }
-        setTime(at);
+        // Mốc cho dải trôi — NỘI SUY để mượt: chạy tiếp từ neo bằng đồng hồ tường,
+        // neo lại khi lần đầu / nhảy chỗ cắt / tua lùi / lệch > 0,2s (video khựng).
+        const predicted = anchorAt + (now - anchorPerf) / 1000;
+        if (!anchored || jumped || at < anchorAt - 0.02 || Math.abs(at - predicted) > 0.2) {
+          anchorAt = at;
+          anchorPerf = now;
+          anchored = true;
+          liveTimeRef.current = at;
+        } else {
+          liveTimeRef.current = predicted;
+        }
+        // Nhảy qua chỗ bỏ thì ĐẨY NGAY để đồng hồ bật tới chỗ mới không trễ; phát
+        // trơn thì gộp về 20fps cho khỏi dựng lại dữ liệu quá dày.
+        if (jumped || now - lastPush >= PUSH_EVERY_MS) {
+          lastPush = now;
+          setTime(at);
+        }
       }
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [playing, spans]);
+  }, [playing, spans, total]);
 
   const togglePlay = () => {
     const video = videoRef.current;
@@ -139,13 +189,16 @@ export function CutStep({
     else video.pause();
   };
 
+  // Phím Cách = phát/dừng, dùng chung bộ giáp với mọi màn có nút phát.
+  useSpacePlayPause(togglePlay);
+
   /*
-   * PHÍM TẮT như bàn dựng: Space phát/dừng, Delete xoá khoảng đang chọn, Esc bỏ
-   * chọn, ←/→ bước một nhịp. Người dùng đi từ bước này sang bàn dựng dùng đúng
-   * một bộ phản xạ, không phải học lại.
+   * PHÍM TẮT như bàn dựng: Delete xoá khoảng đang chọn, Esc bỏ chọn, ←/→ bước một
+   * nhịp. Người dùng đi từ bước này sang bàn dựng dùng đúng một bộ phản xạ, không
+   * phải học lại. (Phím Cách do `useSpacePlayPause` lo — xem trên.)
    *
-   * Bỏ qua khi đang gõ trong ô nhập — nếu không, bấm cách trong một ô chữ lại
-   * thành phát video.
+   * Bỏ qua khi đang gõ trong ô nhập — nếu không, phím trong một ô chữ lại thành
+   * lệnh của dải.
    */
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -153,10 +206,7 @@ export function CutStep({
       const target = event.target as HTMLElement;
       if (target.closest("input, textarea, [contenteditable]")) return;
       const video = videoRef.current;
-      if (event.key === " ") {
-        event.preventDefault();
-        togglePlay();
-      } else if (event.key === "Escape") {
+      if (event.key === "Escape") {
         setSelectedId(null);
       } else if (
         (event.key === "Delete" || event.key === "Backspace") &&
@@ -204,57 +254,28 @@ export function CutStep({
           và sửa các khoảng cắt NGAY trên dải. Chỗ máy định bỏ hiện thành lớp che
           trên dải, bấm để chọn, chuột phải để nghe/giữ lại. */}
       <div className="grid gap-2 lg:min-h-0">
-        {/* Khung xem: nút phát và đồng hồ nằm CHỒNG lên video, không thành một
-            hàng công cụ riêng — đúng preview của bàn dựng. */}
-        <Card className="lg:min-h-0">
-          <CardContent className="grid min-h-0 flex-1 place-items-center overflow-hidden">
-            {previewUrl ? (
-              // Khung khít video, khống chế theo CHIỀU CAO: `h-full aspect-[9/16]`
-              // → cao bằng ô, rộng theo tỉ lệ, căn giữa. Không dùng `AspectRatio`
-              // (nó tính theo bề ngang) vì ô preview ở đây RỘNG nên khung 9:16
-              // theo bề ngang sẽ cao quá và dải điều khiển tràn xuống dưới khung.
-              <div className="relative mx-auto aspect-[9/16] h-full overflow-hidden rounded-lg">
-                <video
-                  ref={videoRef}
-                  src={previewUrl}
-                  className="h-full w-full object-cover"
-                  onPlay={() => setPlaying(true)}
-                  onPause={() => setPlaying(false)}
-                  onClick={togglePlay}
-                />
-                {/* Dải điều khiển chồng đáy khung, nền chuyển mờ để chữ trắng đọc
-                    được trên khung hình sáng — cùng lối `PreviewPanel`. */}
-                <div className="absolute inset-x-0 bottom-0 z-20 flex items-center gap-2 bg-gradient-to-t from-black/70 to-transparent p-2 pt-8">
-                  <Button
-                    variant="secondary"
-                    size="icon-sm"
-                    aria-label={playing ? "Tạm dừng" : "Phát bản đã cắt"}
-                    onClick={togglePlay}
-                  >
-                    {playing ? <PauseIcon /> : <PlayIcon />}
-                  </Button>
-                  <span className="text-xs text-white tabular-nums">
-                    {formatDuration(time)} / {formatDuration(total)}
-                  </span>
-                  {/* Tóm tắt CẮT — thứ hữu ích nhất của cột "Máy định bỏ" cũ, giữ
-                      lại mà không cần cả cột: bỏ mấy chỗ và bản dựng sẽ còn dài
-                      bao nhiêu. Chép lời KHÔNG hiện ở đây — phần lớn nhát cắt là
-                      khoảng lặng vốn không có chữ, mà chữ thì đã có màn Soát lời. */}
-                  {spans.length > 0 ? (
-                    <span className="ml-auto flex items-center gap-1 text-xs text-white/90 tabular-nums">
-                      <ScissorsIcon className="size-3" />
-                      bỏ {spans.length} chỗ · còn {formatDuration(kept)}
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-            ) : (
-              <p className="text-muted-foreground text-center">
-                Chưa có bản xem trước. Máy đang ghép mạch chính.
-              </p>
-            )}
-          </CardContent>
-        </Card>
+        {/* Khung xem dùng chung với các bước khác — nút phát chồng lên video. */}
+        <FlowPreview
+          videoRef={videoRef}
+          src={previewUrl}
+          playing={playing}
+          onToggle={togglePlay}
+          onPlay={() => setPlaying(true)}
+          onPause={() => setPlaying(false)}
+          playLabel="Phát bản đã cắt"
+        >
+          <span className="text-xs text-white tabular-nums">
+            {formatDuration(time)} / {formatDuration(total)}
+          </span>
+          {/* Tóm tắt CẮT — thứ hữu ích nhất của cột "Máy định bỏ" cũ: bỏ mấy chỗ
+              và bản dựng còn dài bao nhiêu. */}
+          {spans.length > 0 ? (
+            <span className="ml-auto flex items-center gap-1 text-xs text-white/90 tabular-nums">
+              <ScissorsIcon className="size-3" />
+              bỏ {spans.length} chỗ · còn {formatDuration(kept)}
+            </span>
+          ) : null}
+        </FlowPreview>
       </div>
 
       {/* Dải chạy suốt bề ngang dưới cùng, ba nút (hoàn tác, +/−) đứng cột bên
@@ -270,6 +291,8 @@ export function CutStep({
               spans={spans}
               total={total}
               time={time}
+              playing={playing}
+              liveTimeRef={liveTimeRef}
               pxPerSecond={zoom.pxPerSecond}
               selectedId={selectedId}
               onSelect={setSelectedId}

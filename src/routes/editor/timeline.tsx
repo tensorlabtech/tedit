@@ -6,9 +6,10 @@ import { api } from "@/lib/api";
 
 import { formatTime } from "./editor-data";
 import { ClipLane } from "./timeline-clip-lane";
-import { FreeTextLane, InsertLane, TextLane } from "./timeline-element-lanes";
+import { FreeTextLane, TextLane } from "./timeline-element-lanes";
 import { TimelineContextMenu } from "./timeline-context-menu";
 import { EffectLane } from "./timeline-effect-lane";
+import { LayoutLane } from "./timeline-layout-lane";
 import { TimelineRuler } from "./timeline-ruler";
 import { TimelinePlayheadButtons } from "./timeline-playhead-buttons";
 import { SeamMarks } from "./timeline-seam-marks";
@@ -23,10 +24,16 @@ import { type EditorState, type Selection } from "./use-editor";
 export function Timeline({
   editor,
   onAudit,
+  /**
+   * Bàn dựng: dải chỉ để DỰNG, không cắt. Ẩn dấu chỗ cắt + tay nắm gọt mép đoạn
+   * + nút ✂; dải phim giữ lại làm nền định vị nhưng bấm không chọn được đoạn.
+   */
+  studio,
 }: {
   editor: EditorState;
   /** Nghe thử một quãng đã bỏ — vòng lặp phát nằm ở màn, nên phải nhờ lên trên */
   onAudit: (span: { start: number; end: number }) => void;
+  studio?: boolean;
 }) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
@@ -128,7 +135,7 @@ export function Timeline({
           <div className="relative min-w-0 flex-1">
             {/* `+` ở đầu TRÊN vạch, kéo cắt ở đầu DƯỚI. Cả hai nằm ngoài vùng
               cuộn vì vùng đó `overflow: hidden` sẽ xén mất phần thò ra. */}
-            <TimelinePlayheadButtons editor={editor} />
+            <TimelinePlayheadButtons editor={editor} studio={studio} />
             <div
               ref={viewportRef}
               data-timeline
@@ -147,8 +154,13 @@ export function Timeline({
                 ).closest<HTMLElement>("[data-block][data-kind]");
                 const kind = block?.dataset.kind;
                 const id = block?.dataset.blockId;
+                // Bàn dựng: đoạn phim KHÔNG phải mục chuột phải — mục duy nhất
+                // của nó là "Bỏ đoạn" (cắt), mà việc cắt đã ở bước riêng. Coi
+                // như bấm chỗ trống để bảng chỉ hiện câu hướng dẫn.
                 setNhamVao(
-                  kind && id ? ({ kind, id } as unknown as Selection) : null,
+                  kind && id && !(studio && kind === "clip")
+                    ? ({ kind, id } as unknown as Selection)
+                    : null,
                 );
               }}
               // Vùng này `overflow-hidden` nên không ai thấy nó cuộn, nhưng trình
@@ -191,6 +203,42 @@ export function Timeline({
                 }}
               >
                 <TimelineRuler pxPerSecond={pxPerSecond} range={range} />
+                {/* DẢI BỐ CỤC — cấu trúc khung hình, đặt trên cùng. MỘT dải liền
+                    mạch: khung người và b-roll chung hàng, không còn dải b-roll
+                    riêng với một cái "lỗ" chừa sẵn ở đây. Chỉ hiện với bộ dáng có
+                    bố cục; bấm một khối để chọn (khung người → bảng bố cục màn,
+                    b-roll → bảng b-roll). */}
+                {editor.sceneLayout &&
+                  editor.sceneLayout.schedule.length > 0 && (
+                    <div className="relative">
+                      <LayoutLane
+                        schedule={editor.sceneLayout.schedule}
+                        inserts={toVisible(editor.inserts)}
+                        pxPerSecond={pxPerSecond}
+                        selection={selection}
+                        onSelectScene={(elementId) =>
+                          editor.setSelection({ kind: "scene", id: elementId })
+                        }
+                        onSelectInsert={(id) => select("insert", id)}
+                      />
+                      {/* Tay nắm gọt mép b-roll đứng trên CHÍNH dải bố cục — cùng
+                          hàng với khối b-roll nó đang gọt. */}
+                      {selectedInsert && (
+                        <TrimHandles
+                          start={toOutput(selectedInsert.start) * pxPerSecond}
+                          end={toOutput(selectedInsert.end) * pxPerSecond}
+                          onGrab={(edge) => {
+                            drag.current.moved = true;
+                            setTrimming({
+                              kind: "insert",
+                              id: selectedInsert.id,
+                              edge,
+                            });
+                          }}
+                        />
+                      )}
+                    </div>
+                  )}
                 {/* Chữ TỰ DO trên cùng — nó là lớp trên cùng của khung hình, và
                   nó phải có hàng riêng vì có thể trùng giờ với chữ chép lời. */}
                 <div className="relative">
@@ -211,28 +259,6 @@ export function Timeline({
                         setTrimming({
                           kind: "text",
                           id: selectedText.id,
-                          edge,
-                        });
-                      }}
-                    />
-                  )}
-                </div>
-                <div className="relative">
-                  <InsertLane
-                    inserts={toVisible(editor.inserts)}
-                    pxPerSecond={pxPerSecond}
-                    selection={selection}
-                    onSelect={(id) => select("insert", id)}
-                  />
-                  {selectedInsert && (
-                    <TrimHandles
-                      start={toOutput(selectedInsert.start) * pxPerSecond}
-                      end={toOutput(selectedInsert.end) * pxPerSecond}
-                      onGrab={(edge) => {
-                        drag.current.moved = true;
-                        setTrimming({
-                          kind: "insert",
-                          id: selectedInsert.id,
                           edge,
                         });
                       }}
@@ -303,7 +329,9 @@ export function Timeline({
                     pxPerSecond={pxPerSecond}
                     range={range}
                     selection={selection}
-                    onSelect={(id) => select("clip", id)}
+                    // Bàn dựng: dải phim chỉ làm nền định vị, bấm không chọn đoạn
+                    // (chọn đoạn mở khung "Bỏ đoạn" — việc cắt đã ở bước riêng).
+                    onSelect={studio ? () => {} : (id) => select("clip", id)}
                     stripUrl={
                       editor.projectId
                         ? api.filmstripUrl(
@@ -318,13 +346,16 @@ export function Timeline({
                   />
                   {/* Dấu chỗ nối nằm TRÊN dải phim nhưng DƯỚI tay nắm gọt mép —
                     xem chú thích trong `timeline-seam-marks.tsx` về việc chia nửa
-                    trên / nửa dưới để hai thứ không tranh cú bấm. */}
-                  <SeamMarks
-                    editor={editor}
-                    pxPerSecond={pxPerSecond}
-                    onAudit={onAudit}
-                  />
-                  {selectedClip && (
+                    trên / nửa dưới để hai thứ không tranh cú bấm.
+                    Bàn dựng: bỏ hẳn — chúng thuần là công cụ soát/cắt. */}
+                  {!studio && (
+                    <SeamMarks
+                      editor={editor}
+                      pxPerSecond={pxPerSecond}
+                      onAudit={onAudit}
+                    />
+                  )}
+                  {!studio && selectedClip && (
                     <TrimHandles
                       start={toOutput(selectedClip.start) * pxPerSecond}
                       end={toOutput(selectedClip.end) * pxPerSecond}
