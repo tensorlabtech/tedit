@@ -26,6 +26,7 @@ export function useUndoStack({
   applySegmentsRef,
   durationRef,
   onInsertTrimmed,
+  onSceneTrimmed,
 }: {
   projectId: string | undefined;
   setData: React.Dispatch<React.SetStateAction<Shaped | null>>;
@@ -34,6 +35,8 @@ export function useUndoStack({
   durationRef: React.RefObject<number>;
   /** Hoàn tác gọt-mép b-roll: mốc từ tư liệu đổi lại → xếp lại lịch màn. */
   onInsertTrimmed?: () => void;
+  /** Hoàn tác gọt-mép ô người: mốc từ đổi lại → xếp lại lịch màn. */
+  onSceneTrimmed?: () => void;
 }) {
   /**
    * Ngăn hoàn tác lưu DỮ LIỆU, không lưu hàm.
@@ -227,6 +230,20 @@ export function useUndoStack({
       onInsertTrimmed?.();
       return;
     }
+    if (last.type === "scene-trim") {
+      // Ô người không nằm trong `data` — không cần nạp lại `shape(fresh)` như
+      // b-roll, chỉ cần ghi mã từ cũ rồi xếp lại lịch màn để đọc ra mốc mới.
+      await api
+        .updateElement(
+          last.elementId,
+          last.edge === "start"
+            ? { fromWordId: last.wordId }
+            : { toWordId: last.wordId },
+        )
+        .catch(boQuaLoi());
+      onSceneTrimmed?.();
+      return;
+    }
     if (last.type === "music-trim") {
       const row = await api
         .updateMusic(
@@ -310,7 +327,7 @@ export function useUndoStack({
           }
         : current,
     );
-  }, [undoStack, persist, onInsertTrimmed]);
+  }, [undoStack, persist, onInsertTrimmed, onSceneTrimmed]);
 
   return { undoStack, undoLabel, persist, pushUndo, undo };
 }

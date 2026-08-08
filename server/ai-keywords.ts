@@ -128,7 +128,52 @@ export async function pickKeywords(projectId: string): Promise<{
     rejected += pass.rejected;
     if (pass.applied === 0 || applied >= target) break;
   }
+
+  // SÀN AN TOÀN: mô hình gạt sạch (đo thật một bản chép: 66 đề xuất, khớp 0) thì
+  // lấp nốt bằng phép chọn đơn giản. Không có từ nhấn = KHÔNG highlight chữ (mode
+  // `even` tô từ khoá màu key) và KHÔNG ô người (`placePersonLayouts` chỉ đặt lên
+  // cụm có từ khoá) — mất cả hai dấu hiệu chính của bộ layout. Sàn 0.85 vốn đã ngụ
+  // ý "gần như cụm nào cũng nhấn một tiếng", nên lấp cho đủ là đúng ý.
+  if (applied < target) applied += heuristicFill(projectId, target - applied);
+
   return { applied, rejected, rounds };
+}
+
+/**
+ * Chọn từ nhấn KHÔNG cần mô hình — sàn cho khi AI gạt sạch.
+ *
+ * Lấy TIẾNG DÀI NHẤT trong cụm (bỏ tiếng dưới 3 chữ cái): danh/động từ mang tin
+ * thường dài hơn từ nối/đại từ/từ đệm ngắn. Thô nhưng đủ cho một sàn, và luôn là
+ * tiếng CÓ THẬT trong cụm nên khâu dựng chữ tìm ra được (khớp bằng chuỗi).
+ */
+function heuristicFill(projectId: string, room: number): number {
+  if (room <= 0) return 0;
+  const rows = db
+    .prepare(
+      `SELECT id, content FROM elements
+       WHERE project_id=? AND kind='text'
+         AND (keywords IS NULL OR keywords='')
+         AND content IS NOT NULL AND content<>''
+       ORDER BY rowid`,
+    )
+    .all(projectId) as Row[];
+  const update = db.prepare("UPDATE elements SET keywords=? WHERE id=?");
+  let filled = 0;
+  db.transaction(() => {
+    for (const row of rows) {
+      if (filled >= room) break;
+      const best = (row.content ?? "")
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((word) => ({ raw: word, key: norm(word) }))
+        .filter((item) => item.key.length >= 3)
+        .sort((a, b) => b.key.length - a.key.length)[0];
+      if (!best) continue;
+      update.run(best.raw, row.id);
+      filled += 1;
+    }
+  })();
+  return filled;
 }
 
 async function pickOnce(

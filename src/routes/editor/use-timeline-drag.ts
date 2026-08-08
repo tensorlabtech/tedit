@@ -6,8 +6,8 @@ import { setPageDragging } from "./use-editor-guards";
 /** Kéo bao nhiêu px mới tính là KÉO chứ không phải bấm. */
 const DRAG_THRESHOLD = 3;
 
-/** Loại khối gọt mép được — bàn dựng có năm, màn cắt chỉ dùng "clip". */
-export type TrimKind = "clip" | "music" | "insert" | "text" | "effect";
+/** Loại khối gọt mép được — bàn dựng có sáu, màn cắt chỉ dùng "clip". */
+export type TrimKind = "clip" | "music" | "insert" | "text" | "effect" | "scene";
 
 /**
  * Bộ ĐIỀU KHIỂN một dải — đúng phần `useTimelineDrag` cần, không hơn.
@@ -53,7 +53,7 @@ export function useTimelineDrag({
   const drag = useRef({ active: false, moved: false, x: 0, time: 0 });
   const [dragging, setDragging] = useState(false);
   const [trimming, setTrimming] = useState<{
-    kind: "clip" | "music" | "insert" | "text" | "effect";
+    kind: TrimKind;
     id: string;
     edge: "start" | "end";
   } | null>(null);

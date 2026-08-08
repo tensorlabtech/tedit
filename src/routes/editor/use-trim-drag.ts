@@ -1,14 +1,63 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import { api, type ApiSegment } from "@/lib/api";
 import type { JunctionId } from "@/dev/overlays/overlay-model";
+import type { ScheduledScene } from "../../../server/timing";
 import { shape, toMusicTrack } from "./shape-project";
 import type { UndoEntry, Word } from "./editor-data";
 import { boQuaLoi } from "./ignore-error";
 import { MIN_EFFECT_LENGTH, MIN_MUSIC_LENGTH, MIN_SEGMENT, MIN_TEXT_LENGTH } from "./editor-limits";
+import type { TrimKind } from "./use-timeline-drag";
 
 type Shaped = ReturnType<typeof shape>;
 type EffectRow = { id: string; start: number; end: number; kind: JunctionId };
+
+/** Tìm chỉ số TỪ gần `target` nhất trong đoạn [from, to], đo theo `metric`. */
+function nearestWordIndex(
+  words: readonly Word[],
+  from: number,
+  to: number,
+  target: number,
+  metric: (word: Word) => number,
+): number {
+  let best = from;
+  for (let i = from; i <= to; i += 1) {
+    if (
+      Math.abs(metric(words[i]) - target) <
+      Math.abs(metric(words[best]) - target)
+    ) {
+      best = i;
+    }
+  }
+  return best;
+}
+
+/**
+ * Thu hẹp biên tìm từ theo mốc XUẤT RA của khối LIỀN KỀ — không cho mép ô
+ * người vượt qua khối đó (không đè lên b-roll hay ô người khác).
+ */
+function clampSearchBound(
+  words: readonly Word[],
+  toOutput: (at: number) => number,
+  fixedIndex: number,
+  toward: "start" | "end",
+  limitOutput: number,
+  metric: (word: Word) => number,
+): number {
+  let bound = fixedIndex;
+  if (toward === "start") {
+    for (let i = fixedIndex; i >= 0; i -= 1) {
+      if (toOutput(metric(words[i])) < limitOutput - 0.001) break;
+      bound = i;
+    }
+  } else {
+    for (let i = fixedIndex; i < words.length; i += 1) {
+      if (toOutput(metric(words[i])) > limitOutput + 0.001) break;
+      bound = i;
+    }
+  }
+  return bound;
+}
 
 /**
  * KÉO MÉP một khối trên dải thời gian.
@@ -30,30 +79,57 @@ export function useTrimDrag({
   pushUndo,
   applySegmentsRef,
   effectsRef,
+  dataRef,
+  sceneScheduleRef,
+  timeMapRef,
   onInsertTrimmed,
+  onSceneTrimmed,
 }: {
   projectId: string | undefined;
   setData: React.Dispatch<React.SetStateAction<Shaped | null>>;
   pushUndo: (entry: UndoEntry) => void;
   applySegmentsRef: React.RefObject<(rows: ApiSegment[]) => void>;
   effectsRef: React.RefObject<EffectRow[]>;
+  /** Bản `data` mới nhất — nhánh "scene" cần `words` mà không đụng `current` của `setData`. */
+  dataRef: React.RefObject<Shaped | null>;
+  /** LỊCH MÀN mới nhất — ô người không nằm trong `data`, tra ở đây mốc hiện tại + khối liền kề. */
+  sceneScheduleRef: React.RefObject<readonly ScheduledScene[]>;
+  /** Quy đổi nguồn ⇄ xuất ra — ô người neo theo từ (mốc nguồn) nhưng schedule vẽ theo mốc XUẤT RA. */
+  timeMapRef: React.RefObject<{
+    toOutput: (at: number) => number;
+    toSource: (at: number) => number;
+  }>;
   /**
    * Gọt mép b-roll xong: mốc từ của tư liệu đã đổi, nên LỊCH MÀN phải xếp lại —
    * khung người hai bên nới ra lấp đúng chỗ b-roll vừa co. Không gọi thì dải bố
    * cục còn một cái hở tới lần nạp sau.
    */
   onInsertTrimmed?: () => void;
+  /** Gọt mép Ô NGƯỜI xong: mốc từ đã đổi, xếp lại lịch màn — cùng lý do trên. */
+  onSceneTrimmed?: () => void;
 }) {
+  /**
+   * Khối Ô NGƯỜI đang được kéo — bản xem trước CỤC BỘ. `schedule` là state
+   * RIÊNG (`useSceneLayout`), không đi qua `setData` như b-roll, nên không thể
+   * "cứ đổi `current` là dải tự vẽ lại" như mọi nhánh khác trong `trim`. Chỉ
+   * khối đang kéo cần override mốc của chính nó lúc vẽ.
+   */
+  const [scenePreview, setScenePreview] = useState<{
+    elementId: string;
+    start: number;
+    end: number;
+  } | null>(null);
+
   const dragTrim = useRef<{
     /** Mỗi loại một đường ghi khác nhau */
-    kind: "clip" | "music" | "insert" | "text" | "effect";
+    kind: TrimKind;
     id: string;
     edge: "start" | "end";
     /** Mốc mới của mép, chốt lúc thả tay */
     at: number;
     /** Mốc cũ, để hoàn tác */
     was: number;
-    /** Tư liệu chèn neo vào TỪ, nên mép của nó là một mã từ chứ không phải giây */
+    /** Tư liệu chèn / ô người neo vào TỪ, nên mép của nó là một mã từ chứ không phải giây */
     wordId?: string;
     wasWordId?: string;
     /**
@@ -63,15 +139,138 @@ export function useTrimDrag({
      * sau đổi mặc định dự án thì chỗ này trơ ra.
      */
     wasKind?: JunctionId;
+    /**
+     * Ô NGƯỜI: chỉ số từ ở mép ĐỐI DIỆN (không kéo) và mốc XUẤT RA của khối
+     * liền kề — tính MỘT LẦN lúc bắt đầu kéo, giữ nguyên suốt lượt để khỏi trôi
+     * vì sai số làm tròn cộng dồn qua từng khung chuột.
+     */
+    fixedIndex?: number;
+    neighborLimit?: number;
   } | null>(null);
 
   const trim = useCallback(
-    (
-      kind: "clip" | "music" | "insert" | "text" | "effect",
-      id: string,
-      edge: "start" | "end",
-      nextTime: number,
-    ) => {
+    (kind: TrimKind, id: string, edge: "start" | "end", nextTime: number) => {
+      // Ô NGƯỜI không sống trong `data`/`current` — lịch màn là state riêng
+      // (`use-scene-layout.ts`). Nhánh này đứng NGOÀI `setData`: chỉ đọc
+      // `dataRef`/`sceneScheduleRef` (đã fresh qua ref) rồi ghi vào
+      // `scenePreview` cục bộ, không đụng gì tới `current`.
+      if (kind === "scene") {
+        const schedule = sceneScheduleRef.current;
+        const scene = schedule.find(
+          (item) => item.elementId === id && item.insert === undefined,
+        );
+        const words = dataRef.current?.words ?? [];
+        if (!scene || words.length === 0) return;
+        const { toOutput, toSource } = timeMapRef.current;
+
+        const cache =
+          dragTrim.current?.kind === "scene" && dragTrim.current.id === id
+            ? dragTrim.current
+            : null;
+
+        // Mép ĐỐI DIỆN đứng yên suốt lượt kéo.
+        const fixedIndex =
+          cache?.fixedIndex ??
+          nearestWordIndex(
+            words,
+            0,
+            words.length - 1,
+            toSource(edge === "start" ? scene.end : scene.start),
+            edge === "start" ? (w) => w.end : (w) => w.start,
+          );
+
+        // Mốc XUẤT RA của khối liền kề ở phía đang kéo — không cho mép vượt
+        // qua, đúng luật "không đè lên b-roll/ô người khác".
+        const neighborLimit =
+          cache?.neighborLimit ??
+          (edge === "end"
+            ? schedule
+                .filter(
+                  (item) =>
+                    item.elementId !== id && item.start >= scene.end - 0.001,
+                )
+                .reduce(
+                  (min, item) => Math.min(min, item.start),
+                  Number.POSITIVE_INFINITY,
+                )
+            : schedule
+                .filter(
+                  (item) =>
+                    item.elementId !== id && item.end <= scene.start + 0.001,
+                )
+                .reduce((max, item) => Math.max(max, item.end), 0));
+
+        const wasWordId =
+          cache?.wasWordId ??
+          words[
+            nearestWordIndex(
+              words,
+              0,
+              words.length - 1,
+              toSource(edge === "start" ? scene.start : scene.end),
+              edge === "start" ? (w) => w.start : (w) => w.end,
+            )
+          ].id;
+
+        let pick: number;
+        if (edge === "start") {
+          const bound = clampSearchBound(
+            words,
+            toOutput,
+            fixedIndex,
+            "start",
+            neighborLimit,
+            (w) => w.start,
+          );
+          pick = nearestWordIndex(
+            words,
+            bound,
+            fixedIndex,
+            nextTime,
+            (w) => w.start,
+          );
+          // Giữ ít nhất một tiếng — hai mép trùng nhau là khối rộng 0.
+          if (pick >= fixedIndex) pick = Math.max(bound, fixedIndex - 1);
+        } else {
+          const bound = clampSearchBound(
+            words,
+            toOutput,
+            fixedIndex,
+            "end",
+            neighborLimit,
+            (w) => w.end,
+          );
+          pick = nearestWordIndex(
+            words,
+            fixedIndex,
+            bound,
+            nextTime,
+            (w) => w.end,
+          );
+          if (pick <= fixedIndex) pick = Math.min(bound, fixedIndex + 1);
+        }
+        const word = words[pick];
+
+        dragTrim.current = {
+          kind: "scene",
+          id,
+          edge,
+          at: edge === "start" ? toOutput(word.start) : toOutput(word.end),
+          was: cache?.was ?? (edge === "start" ? scene.start : scene.end),
+          wordId: word.id,
+          wasWordId,
+          fixedIndex,
+          neighborLimit,
+        };
+
+        setScenePreview({
+          elementId: id,
+          start: edge === "start" ? toOutput(word.start) : scene.start,
+          end: edge === "end" ? toOutput(word.end) : scene.end,
+        });
+        return;
+      }
+
       setData((current) => {
         if (!current) return current;
         // Hiệu ứng kéo theo GIÂY như chữ tự do. Cái đang TỰ SUY ở vết cắt thì
@@ -156,22 +355,16 @@ export function useTrimDrag({
           // Mép BÁM RANH GIỚI TỪ, không bám giây: tư liệu chèn neo vào khoảng
           // từ (đặc tả §1), nên "kéo dài thêm" nghĩa là phủ thêm một tiếng nữa.
           // Giữ ít nhất một tiếng — hai mép trùng nhau là khối rộng 0.
-          const gan = (from: number, to: number, lay: (w: Word) => number) => {
-            let best = from;
-            for (let i = from; i <= to; i += 1) {
-              if (
-                Math.abs(lay(words[i]) - nextTime) <
-                Math.abs(lay(words[best]) - nextTime)
-              ) {
-                best = i;
-              }
-            }
-            return best;
-          };
           const pick =
             edge === "start"
-              ? gan(0, to, (w) => w.start)
-              : gan(from, words.length - 1, (w) => w.end);
+              ? nearestWordIndex(words, 0, to, nextTime, (w) => w.start)
+              : nearestWordIndex(
+                  words,
+                  from,
+                  words.length - 1,
+                  nextTime,
+                  (w) => w.end,
+                );
           const word = words[pick];
           dragTrim.current = {
             kind: "insert",
@@ -294,7 +487,35 @@ export function useTrimDrag({
   const commitTrim = useCallback(async () => {
     const pending = dragTrim.current;
     dragTrim.current = null;
+    // Bản xem trước cục bộ hết nhiệm vụ ngay khi thả tay — dù kéo loại nào,
+    // vì `scenePreview` chỉ có ý nghĩa TRONG lúc kéo một ô người.
+    setScenePreview(null);
     if (!projectId || !pending) return;
+
+    if (pending.kind === "scene") {
+      if (pending.wordId) {
+        await api
+          .updateElement(
+            pending.id,
+            pending.edge === "start"
+              ? { fromWordId: pending.wordId }
+              : { toWordId: pending.wordId },
+          )
+          .catch(boQuaLoi());
+      }
+      if (pending.wasWordId) {
+        pushUndo({
+          type: "scene-trim",
+          label: "Đổi khoảng ô người",
+          elementId: pending.id,
+          edge: pending.edge,
+          wordId: pending.wasWordId,
+        });
+      }
+      // Mép ô người đổi → xếp lại lịch màn để khối liền kề lấp đúng chỗ vừa co.
+      onSceneTrimmed?.();
+      return;
+    }
 
     if (pending.kind === "insert") {
       if (pending.wordId) {
@@ -409,7 +630,7 @@ export function useTrimDrag({
       edge: pending.edge,
       at: pending.was,
     });
-  }, [projectId, pushUndo, onInsertTrimmed]);
+  }, [projectId, pushUndo, onInsertTrimmed, onSceneTrimmed]);
 
   /**
    * Những chỗ KHÔNG vào video, suy ra từ ĐOẠN — không có danh sách riêng nào nữa.
@@ -419,5 +640,5 @@ export function useTrimDrag({
    * hai chỗ lưu và hai cách hiện trên dải.
    */
 
-  return { dragTrim, trim, commitTrim };
+  return { dragTrim, trim, commitTrim, scenePreview };
 }

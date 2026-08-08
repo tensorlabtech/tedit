@@ -27,6 +27,7 @@ export function LayoutLane({
   inserts,
   pxPerSecond,
   selection,
+  scenePreview,
   onSelectScene,
   onSelectInsert,
 }: {
@@ -35,6 +36,12 @@ export function LayoutLane({
   inserts: readonly Insert[];
   pxPerSecond: number;
   selection: Selection;
+  /**
+   * Ô NGƯỜI đang bị kéo mép — mốc TẠM (mốc xuất ra) để vẽ đúng theo tay, vì
+   * lịch màn là state riêng không tự đổi lúc kéo (khác b-roll). `null`/`undefined`
+   * là không có ô nào đang kéo.
+   */
+  scenePreview?: { elementId: string; start: number; end: number } | null;
   /** Chọn một ô NGƯỜI theo MÃ ELEMENT — mở bảng sửa bố cục cho nó. */
   onSelectScene: (elementId: string) => void;
   /** Chọn một b-roll — mở bảng sửa b-roll cho nó. */
@@ -51,20 +58,26 @@ export function LayoutLane({
         .filter((scene) => scene.insert === undefined && scene.elementId)
         .map((scene) => {
           const label = findLayout(scene.layout).label;
-          const width = (scene.end - scene.start) * pxPerSecond;
+          const preview =
+            scenePreview?.elementId === scene.elementId ? scenePreview : null;
+          const start = preview?.start ?? scene.start;
+          const end = preview?.end ?? scene.end;
+          const width = (end - start) * pxPerSecond;
           return (
             <TimelineBlock
               key={scene.elementId}
               blockId={scene.elementId!}
-              start={scene.start}
-              end={scene.end}
+              start={start}
+              end={end}
               pxPerSecond={pxPerSecond}
               tone="layout"
               active={
                 selection?.kind === "scene" &&
                 selection.id === scene.elementId
               }
-              title={`Bố cục: ${label} · ${formatTimeFine(scene.start)}–${formatTimeFine(scene.end)}`}
+              // Kéo mép được — nới/thu rồi re-anchor sang từ khác, y hệt b-roll.
+              trimmable
+              title={`Bố cục: ${label} · ${formatTimeFine(start)}–${formatTimeFine(end)}`}
               className="px-1.5"
               onSelect={() => onSelectScene(scene.elementId!)}
             >

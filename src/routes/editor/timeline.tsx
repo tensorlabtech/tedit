@@ -114,8 +114,23 @@ export function Timeline({
     selection?.kind === "junction"
       ? editor.effects.find((item) => item.id === selection.id)
       : undefined;
+  // Ô NGƯỜI đọc từ lịch màn, không phải từ `editor.segments`/`inserts` — cùng
+  // nguồn với `LayoutLane`. Lọc thêm `insert === undefined` để không lẫn màn
+  // b-roll (nó cũng có `elementId` nhưng đã có tay nắm riêng ở trên).
+  const selectedScene =
+    selection?.kind === "scene"
+      ? editor.sceneLayout?.schedule.find(
+          (item) => item.elementId === selection.id && item.insert === undefined,
+        )
+      : undefined;
+  // Đang kéo đúng ô này thì vẽ theo mốc tạm, không thì vẽ mốc thật của lịch màn.
+  const scenePreviewForSelected =
+    editor.scenePreview?.elementId === selectedScene?.elementId
+      ? editor.scenePreview
+      : null;
   /** Có khối nào đang chọn không — vạch giữa mờ đi lúc đó (xem chú thích dưới). */
-  const selected = selectedClip ?? selectedMusic ?? selectedInsert;
+  const selected =
+    selectedClip ?? selectedMusic ?? selectedInsert ?? selectedScene;
 
   /** Khối vừa bị bấm chuột phải — bảng chọn đọc nó để biết bày mục gì. */
   const [nhamVao, setNhamVao] = useState<Selection>(null as Selection);
@@ -216,6 +231,7 @@ export function Timeline({
                         inserts={toVisible(editor.inserts)}
                         pxPerSecond={pxPerSecond}
                         selection={selection}
+                        scenePreview={editor.scenePreview}
                         onSelectScene={(elementId) =>
                           editor.setSelection({ kind: "scene", id: elementId })
                         }
@@ -232,6 +248,30 @@ export function Timeline({
                             setTrimming({
                               kind: "insert",
                               id: selectedInsert.id,
+                              edge,
+                            });
+                          }}
+                        />
+                      )}
+                      {/* Tay nắm gọt mép Ô NGƯỜI — cùng hàng, cùng cơ chế với
+                          b-roll ở trên. Mốc lấy từ lịch màn (đã là mốc XUẤT RA,
+                          không cần `toOutput` như insert — xem `use-scene-layout`),
+                          ưu tiên bản xem trước lúc đang chính nó bị kéo. */}
+                      {selectedScene && (
+                        <TrimHandles
+                          start={
+                            (scenePreviewForSelected?.start ??
+                              selectedScene.start) * pxPerSecond
+                          }
+                          end={
+                            (scenePreviewForSelected?.end ??
+                              selectedScene.end) * pxPerSecond
+                          }
+                          onGrab={(edge) => {
+                            drag.current.moved = true;
+                            setTrimming({
+                              kind: "scene",
+                              id: selectedScene.elementId!,
                               edge,
                             });
                           }}

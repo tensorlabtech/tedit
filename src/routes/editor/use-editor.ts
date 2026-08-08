@@ -20,6 +20,7 @@ import {
 } from "@/lib/api";
 
 
+import type { ScheduledScene } from "../../../server/timing";
 import type { StylePackId } from "../../../server/style-pack";
 import {
   DEFAULT_STYLE_PACK_ID,
@@ -154,6 +155,11 @@ export function useEditor(projectId: string | undefined) {
     toOutput: (at: number) => at,
     toSource: (at: number) => at,
   });
+  /**
+   * LỊCH MÀN mới nhất — cầu nối cho nhánh "scene" của gọt mép (`useTrimDrag`),
+   * khai TRƯỚC `sceneLayout` vì nó cần đến tận cuối mới nạp xong.
+   */
+  const sceneScheduleRef = useRef<readonly ScheduledScene[]>([]);
   const { pxPerSecond, zoomBy, resetZoom, canZoomIn, canZoomOut } =
     useTimelineZoom();
   const [selection, setSelection] = useState<Selection>(null);
@@ -341,6 +347,7 @@ export function useEditor(projectId: string | undefined) {
     applySegmentsRef,
     durationRef,
     onInsertTrimmed: bumpLayoutReload,
+    onSceneTrimmed: bumpLayoutReload,
   });
 
   /**
@@ -1170,13 +1177,17 @@ export function useEditor(projectId: string | undefined) {
    */
   const effectsRef = useRef<EffectRow[]>([]);
 
-  const { trim, commitTrim } = useTrimDrag({
+  const { trim, commitTrim, scenePreview } = useTrimDrag({
     projectId,
     setData,
     pushUndo,
     applySegmentsRef,
     effectsRef,
+    dataRef,
+    sceneScheduleRef,
+    timeMapRef,
     onInsertTrimmed: bumpLayoutReload,
+    onSceneTrimmed: bumpLayoutReload,
   });
 
   const cuts = useMemo(() => {
@@ -1593,6 +1604,9 @@ export function useEditor(projectId: string | undefined) {
    * gọt mép b-roll để lấy lịch mới.
    */
   const sceneLayout = useSceneLayout(projectId, stylePack, layoutReload);
+  // Cắm lịch màn mới nhất vào ref cho nhánh "scene" của `trim` đọc — nó chạy
+  // trong sự kiện chuột nên không thể phụ thuộc mảng `[]` của `useCallback`.
+  sceneScheduleRef.current = sceneLayout.data?.schedule ?? [];
   /**
    * DÒNG TIÊU ĐỀ của cả video.
    *
@@ -2394,6 +2408,8 @@ export function useEditor(projectId: string | undefined) {
     startTranscribe,
     trim,
     commitTrim,
+    /** Ô người ĐANG kéo mép — mốc tạm để dải/tay-nắm vẽ theo tay, xem `use-trim-drag.ts`. */
+    scenePreview,
     splitAtPlayhead,
     toggleSegment,
     updateWord,
