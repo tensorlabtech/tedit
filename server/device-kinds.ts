@@ -162,8 +162,8 @@ export const DEVICE_SPECS: DeviceSpec[] = [
     note: "Dải màu đặc bám một mép khung, chở chữ đảo màu", needs: "khong", chung: false },
   { id: "tri-net-tay", slot: "trang-tri", label: "Nét vẽ tay",
     note: "Ngoằn ngoèo, mặt cười, dấu tích, mây — rải vào chỗ trống", needs: "khong", chung: false },
-  { id: "tri-vien-nguoi", slot: "trang-tri", label: "Viền quanh người",
-    note: "Nét bám theo dáng người, nền giữ nguyên", needs: "mat-na-nguoi", chung: false },
+  { id: "tri-vien-nguoi", slot: "trang-tri", label: "Viền quanh tư liệu chèn",
+    note: "Nét vàng bám mép ảnh/video chèn (b-roll)", needs: "khong", chung: false },
 
   // ── NỐI ──────────────────────────────────────────────────────────────────
   { id: "noi-may-quay", slot: "noi", label: "Hiệu ứng máy quay",

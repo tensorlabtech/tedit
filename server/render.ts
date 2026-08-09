@@ -27,7 +27,6 @@ import {
   ffmpegColor,
   contentRect,
   subjectCutChain,
-  subjectEdgeSteps,
   HEADLINE_FADE,
   headlineHold,
   fontRoleFor,
@@ -1251,29 +1250,8 @@ export async function burnElements(
     }
   }
 
-  /*
-   * VIỀN QUANH NGƯỜI — trên hình dán, dưới vệt quét.
-   *
-   * Trên hình dán vì nó bám vào NGƯỜI, mà người thì nổi trên mọi thứ trang trí
-   * của khung. Dưới vệt quét vì vệt quét đậy vết cắt, và lúc đậy thì nó phải
-   * đậy cả cái viền.
-   */
-  /*
-   * Mạch viền bắt đầu SAU khi chữ-sau-người tắt hẳn, cộng một quãng nghỉ.
-   *
-   * Hai thiết bị dính liền nhau thì cái sau mất hết sức nặng — bảng Chalk chừa
-   * đúng một ô trống giữa hai mạch. Không có chữ-sau-người thì mạch viền vào
-   * ngay từ đầu, vì lúc ấy nó là thiết bị mở màn.
-   */
-  const vien = subjectEdgeSteps(
-    pack, subjectPath, OUT_WIDTH, OUT_HEIGHT, cutMarks, cutSeconds,
-    behind && behindLine ? behind.seconds + HEADLINE_FADE : 0,
-  );
-  if (vien) {
-    filters.push(vien.chain);
-    filters.push(`${stream}${vien.label}overlay=0:0:enable='${vien.enable}'[svienon]`);
-    stream = "[svienon]";
-  }
+  // VIỀN VÀNG giờ nướng quanh Ô B-ROLL trong `layout-render.ts` (đúng Chalk: viền
+  // tư liệu chèn, không viền người). Không còn lớp phủ bám mặt nạ người ở đây.
 
   /*
    * VỆT QUÉT — trên hình dán, dưới mảng màu và chữ.

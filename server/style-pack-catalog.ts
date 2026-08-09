@@ -239,12 +239,13 @@ const BASE = {
  * không làm được:
  *
  * · **Chữ chạy sau người** — khối chữ nằm giữa nền và người nói, bị đầu và vai
- *   che một phần. Không bộ nào khác có, vì không bộ nào khác đọc mặt nạ người.
- * · **Viền quanh người** — nét bám theo dáng, nền giữ nguyên.
- * · **Nét vẽ tay** — ngoằn ngoèo, mặt cười, mây rải vào chỗ trống.
+ *   che một phần. Đòi mặt nạ người (`work/subject.mp4`).
+ * · **Viền quanh tư liệu chèn** — nét vàng bám mép ảnh/video chèn (b-roll), đúng
+ *   bảng "Chalk" viền TƯ LIỆU chứ không viền người. Chỉ cần CÓ b-roll.
+ * · **Nét vẽ tay** — ngoằn ngoèo, mặt cười, mây rải vào chỗ trống (chưa dựng).
  *
- * Cả ba đều đòi `work/subject.mp4`. Dự án chưa tách nền thì chúng im lặng biến
- * mất và bộ này rơi về một bộ chữ viết tay bình thường — không hỏng, chỉ nhạt.
+ * Chữ-sau-người đòi `work/subject.mp4`; dự án chưa tách nền thì nó im, còn bộ vẫn
+ * ra chất nhờ nền bảng phấn + dấu góc + chữ viết tay + keyword vàng + viền b-roll.
  *
  * Chữ dùng Patrick Hand: nét bút rời từng chữ, chiều cao không đều. `voice` và
  * `accent` CÙNG một họ vì bộ này không nhấn bằng font mà nhấn bằng MÀU — vàng

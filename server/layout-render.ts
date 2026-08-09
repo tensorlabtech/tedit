@@ -220,7 +220,9 @@ function glide(entries: readonly SceneEntry[], target: number, from: (e: SceneEn
 }
 
 export function layoutPlan(
-  pack: Pick<StylePack, "page" | "layouts" | "scenePush">,
+  pack: Pick<StylePack, "page" | "layouts" | "scenePush"> & {
+    subjectEdge?: StylePack["subjectEdge"];
+  },
   schedule: readonly ScheduledScene[],
   /** Nhãn luồng hình nguồn — nơi gọi đã `split` sẵn cho đủ số bản. */
   sources: readonly string[],
@@ -409,10 +411,32 @@ export function layoutPlan(
       const tag = tagBase;
       const crop = cropExpr(box);
       const fit = `scale=${box.w}:${box.h}:force_original_aspect_ratio=increase,${crop}`;
+      /*
+       * VIỀN VÀNG QUANH Ô B-ROLL — nướng vào chính lớp cutout, không overlay riêng.
+       *
+       * Chalk viền nguệch ngoạc quanh TƯ LIỆU CHÈN (ảnh/video), không quanh người.
+       * Dựng viền từ CHÍNH mặt nạ ô: co mặt nạ vào trong rồi trừ đi → một vòng
+       * bám mép trong, tô màu viền. Vì viền dán lên `[tag]c` (cùng khổ ô) rồi mới
+       * qua bước phóng/đặt chung, nó tự đi theo ô lúc đổi bố cục — không phải dựng
+       * một lớp phủ thứ hai bám theo `glide`.
+       */
+      const edge = slot.role === "phu" && slot.mask ? pack.subjectEdge : null;
+      const bw = edge ? Math.max(4, Math.round(Math.min(box.w, box.h) * 0.02)) : 0;
+      const erode = Array.from({ length: bw }, () => "erosion").join(",");
       const masked = slot.mask
-        ? `movie=${pngDir}/${slot.mask}.png,alphaextract,scale=${box.w}:${box.h}[${tag}m];` +
-          `${from}${fit},format=rgba[${tag}v];` +
-          `[${tag}v][${tag}m]alphamerge[${tag}c]`
+        ? edge
+          ? `movie=${pngDir}/${slot.mask}.png,alphaextract,scale=${box.w}:${box.h},split[${tag}mc][${tag}me];` +
+            `${from}${fit},format=rgba[${tag}v];` +
+            `[${tag}v][${tag}mc]alphamerge[${tag}base];` +
+            `[${tag}me]split[${tag}mA][${tag}mB];` +
+            `[${tag}mB]${erode}[${tag}thin];` +
+            `[${tag}mA][${tag}thin]blend=all_mode=subtract,format=gray[${tag}ring];` +
+            `color=c=${edge.tone.color}:s=${box.w}x${box.h}[${tag}rc];` +
+            `[${tag}rc][${tag}ring]alphamerge,colorchannelmixer=aa=${edge.tone.alpha.toFixed(3)}[${tag}bd];` +
+            `[${tag}base][${tag}bd]overlay=0:0[${tag}c]`
+          : `movie=${pngDir}/${slot.mask}.png,alphaextract,scale=${box.w}:${box.h}[${tag}m];` +
+            `${from}${fit},format=rgba[${tag}v];` +
+            `[${tag}v][${tag}m]alphamerge[${tag}c]`
         : `${from}${fit}[${tag}c]`;
       /*
        * Phóng SAU khi ghép mặt nạ, không phải trước.

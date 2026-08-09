@@ -396,11 +396,12 @@ export type StylePack = {
    * có thể nói, và bộ êm thì không có gì để nói to.
    */
   /**
-   * VIỀN BÁM DÁNG NGƯỜI. `null` là không có.
+   * VIỀN VÀNG QUANH Ô B-ROLL. `null` là không có.
    *
-   * Cần `work/subject.mp4`. Dựng bằng cách NỞ mặt nạ rồi trừ đi chính nó — phần
-   * dôi ra là một vành ôm sát dáng. Không dùng `edgedetect` vì nó bắt mọi mép
-   * trong ảnh, mà ta chỉ cần đúng một đường bao.
+   * Dựng từ CHÍNH mặt nạ ô tư liệu chèn (co mặt nạ vào trong rồi trừ đi → một
+   * vành bám mép trong), tô bằng `tone`. Nướng thẳng vào lớp cutout ở
+   * `layout-render.ts` nên tự đi theo ô lúc đổi bố cục. KHÔNG cần mặt nạ người.
+   * `steps`/`share` là dấu tích bản cũ (viền bám dáng người) — nay không dùng.
    */
   subjectEdge: {
     tone: Tone;
