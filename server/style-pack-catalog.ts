@@ -263,16 +263,17 @@ export const PHAN: StylePack = {
   // Nét viền chữ dày hơn mặc định: chữ viết tay mảnh hơn hẳn chữ in ở cùng cỡ,
   // nên nó cần nhiều đường bao hơn để nổi khỏi nền video.
   /*
-   * Trang SÁNG — ngược hẳn "Nhịp đen".
+   * Trang BẢNG PHẤN tối — khác "Nhịp đen" ở nền ẤM có DẤU GÓC (kiểu khung ngắm)
+   * thay vì lưới một phần ba, và ở chữ viết tay + keyword vàng.
    *
-   * Hai bộ dùng chung hệ bố cục mà đọc ra khác hẳn nhau, và khác nhau ở NỀN
-   * chứ không ở font: nền phấn trắng ngà với bốn dấu góc kiểu khung ngắm, so
-   * với nền đen tuyền có lưới một phần ba. Đây đúng là điều "phong cách là sự
-   * kết hợp của nhiều thứ nhỏ" nói tới — cùng vốn từ, khác lựa chọn.
+   * TỐI chứ không giấy trắng: chữ lời (BASE #FFFFFF) và CHỮ-SAU-NGƯỜI đều trắng
+   * như phấn, nên nền phải tối thì chúng mới hiện — để giấy trắng là chữ-sau-
+   * người trắng-trên-trắng vô hình. Đây đúng bảng phấn thật của Captions "Chalk":
+   * charcoal ấm, dấu góc kẻ bằng phấn sáng để nổi trên nền tối.
    */
   page: {
-    tone: { color: "#F4F1E8", alpha: 1 },
-    grid: { id: "dau-goc", tone: { color: "#2A2622", alpha: 0.35 } },
+    tone: { color: "#34332D", alpha: 1 },
+    grid: { id: "dau-goc", tone: { color: "#E8E4D6", alpha: 0.3 } },
   },
   /*
    * Ba bố cục, KHÔNG có `toan-khung`.
