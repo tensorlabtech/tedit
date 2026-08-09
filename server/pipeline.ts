@@ -1,5 +1,3 @@
-import { levelAudio, measureAudio } from "./auto-audio";
-import { autoGradeOn, gradeImage, measureImage } from "./auto-grade";
 import { join } from "node:path";
 
 import { buildEnvelope, readEnvelope } from "./audio-envelope";
@@ -1066,26 +1064,6 @@ export async function runExport(projectId: string) {
     if (end > start) junctions.push({ start, end, kind: item.kind });
   }
 
-  /*
-   * ĐO TRÊN BẢN ĐÃ CẮT, không phải trên từng tệp gốc.
-   *
-   * Một dự án có thể ghép nhiều tệp quay ở nhiều chỗ; đo riêng từng tệp rồi
-   * chỉnh riêng thì đoạn nọ sáng hơn đoạn kia, và chỗ nối nào cũng thành một
-   * cú nhảy sáng. Đo bản đã ghép thì cả video đi theo một mức.
-   *
-   * Tốn hai giây quét — chấp nhận được ở chặng cuối, nơi ffmpeg vốn đã chạy
-   * hàng chục giây.
-   */
-  const autoGradeWanted = autoGradeOn(projectId);
-  // Đo MỘT lần, dùng cho hai việc: tự cân hình, và chọn độ đục cho hình dán.
-  const stats = await measureImage(cut);
-  const graded = autoGradeWanted ? gradeImage(stats) : null;
-  if (graded) console.log(`[render] tự cân hình: ${graded.lyDo.join(" · ")}`);
-
-  // Đo TIẾNG trên cùng bản đã cắt, cùng lý do với hình: nhiều tệp ghép lại thì
-  // mỗi tệp một mức, đo riêng rồi chỉnh riêng là đoạn nọ to hơn đoạn kia.
-  const gradedAudio = autoGradeWanted ? levelAudio(await measureAudio(cut)) : null;
-  if (gradedAudio) console.log(`[render] tự cân tiếng: ${gradedAudio.lyDo.join(" · ")}`);
 
   /*
    * Dải ít người nhất — đo một lần ở GIỮA phim.
@@ -1167,7 +1145,6 @@ export async function runExport(projectId: string) {
     // lượt sau — bản đang dựng dở không tự đổi dáng ở nửa sau video.
     readStylePack(projectId),
     junctions,
-    graded,
     // Đọc cùng lúc với bộ dáng, cùng lý do: bản đang dựng dở không đổi tiêu đề
     // ở nửa sau video khi người dùng sửa ô nhập giữa chừng.
     (
@@ -1175,7 +1152,8 @@ export async function runExport(projectId: string) {
         | { headline: string | null }
         | undefined
     )?.headline ?? null,
-    stats?.yAvg ?? null,
+    // Độ đục hình dán lấy điểm giữa xác định (không còn đo độ sáng khung hình).
+    null,
     maskCut,
     /*
      * Chữ chạy sau người dùng lại chính DÒNG TIÊU ĐỀ.
@@ -1210,12 +1188,9 @@ export async function runExport(projectId: string) {
     // Bài nằm trọn trong một quãng đã bỏ thì độ dài về 0 — bỏ luôn, giữ lại là
     // `atrim` ra luồng rỗng và cả lệnh trộn hỏng.
     .filter((cue) => cue.length > 0.2);
-  if (cues.length > 0 || gradedAudio) {
-    setJob(
-      projectId, "export", "running", 85,
-      cues.length > 0 ? "Đang trộn nhạc nền" : "Đang cân âm lượng",
-    );
-    await mixMusic(projectId, finalPath, cues, gradedAudio);
+  if (cues.length > 0) {
+    setJob(projectId, "export", "running", 85, "Đang trộn nhạc nền");
+    await mixMusic(projectId, finalPath, cues);
   }
 
   setJob(projectId, "export", "done", 100, "Xong", finalPath);

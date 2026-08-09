@@ -359,9 +359,30 @@ export function layoutPlan(
        * một phim hai phút). Không lặp thì ô tắt ngóm giữa chừng và để lộ nền —
        * mà `enable` vẫn đang bật, nên nhìn ra là lỗi vẽ chứ không ra là hết tư
        * liệu.
+       *
+       * ẢNH TĨNH đi đường riêng — KHÔNG qua `movie=...loop=0` (lặp vô hạn).
+       *
+       * `loop=0` của bộ lọc `movie` là "lặp vô hạn", không phải "không lặp" —
+       * và với một tệp CHỈ MỘT khung, mỗi vòng lặp là ffmpeg NẠP LẠI tệp từ đầu
+       * (mở lại, giải mã lại), không phải phát lại một khung đã có sẵn. Đo
+       * thật: một ô phụ mang một tệp JPG duy nhất, ghép cùng bốn ô người, biến
+       * một lượt lọc 5 giây từ 1,7 giây thành hơn 90 giây không xong — trong
+       * khi BA ô phụ mang MP4 (nhiều khung, một vòng lặp không phải nạp lại
+       * liên tục) vẫn chạy ở 2,6 giây. Ảnh tĩnh mới là thủ phạm, không phải số
+       * lượng ô hay độ phức tạp biểu thức.
+       *
+       * Sửa bằng đúng cách `buildBase` đã dùng để kéo dài một luồng ngắn
+       * (`tpad=stop_mode=clone`, dòng ~226): giải mã tệp ảnh MỘT LẦN
+       * (`loop=1`), rồi NHÂN BẢN khung đã giải mã cho đủ độ dài phim — không
+       * đọc lại tệp thêm lần nào.
        */
+      const isStillInsert = insertPath !== null && /\.(jpe?g|png|webp|heic)$/i.test(insertPath);
       const from = slot.role === "phu"
-        ? (insertPath ? `movie=${insertPath}:loop=0,setpts=N/FRAME_RATE/TB[${tagBase}src];[${tagBase}src]` : null)
+        ? (insertPath
+            ? isStillInsert
+              ? `movie=${insertPath}:loop=1,tpad=stop_mode=clone:stop_duration=${(seconds > 0 ? seconds : 60).toFixed(3)},setpts=N/FRAME_RATE/TB[${tagBase}src];[${tagBase}src]`
+              : `movie=${insertPath}:loop=0,setpts=N/FRAME_RATE/TB[${tagBase}src];[${tagBase}src]`
+            : null)
         : source;
       // Ô `phu` mà chưa có tư liệu thì BỎ, không dựng một ô đen: một khoảng
       // trống có viền đọc ra là lỗi vẽ, còn thiếu hẳn thì chỉ là bố cục gọn hơn.
@@ -413,9 +434,21 @@ export function layoutPlan(
         const w = glide(entries, box.w, (e) => box.w * e.k0);
         const h = glide(entries, box.h, (e) => box.h * e.k0);
         const push = pushFactor(entries, pack.scenePush?.ratePerSecond ?? 0);
+        /*
+         * TĨNH khi khổ không đổi theo `t` — `glide` trả về đúng một con số (không
+         * `between(...)`) khi mọi màn của ô này đã ở đúng khổ đích ngay từ đầu
+         * (không màn nào lệch quá 0,5px), và không có máy quay dồn vào. Lúc đó
+         * `eval=frame` chỉ là dựng lại đúng MỘT con số ấy ở từng khung — không
+         * sai, nhưng trả giá cho một việc không đổi.
+         *
+         * Không tự suy "hằng số" từ việc thiếu ramp nói chung: một ô len lỏi
+         * giữa nhiều màn có ô khác cỡ vẫn cần `eval=frame` thật, và đoán nhầm ở
+         * đây ra một ô đứng khựng đúng lúc cảnh đổi.
+         */
+        const isConstant = !w.includes("between(") && !h.includes("between(") && push === "";
         chains.push(
           `${masked};[${tag}c]scale=w='2*floor((${w})${push}/2)':` +
-            `h='2*floor((${h})${push}/2)':eval=frame[${tag}]`,
+            `h='2*floor((${h})${push}/2)':eval=${isConstant ? "init" : "frame"}[${tag}]`,
         );
         overlays.push({
           label: `[${tag}]`,

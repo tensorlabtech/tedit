@@ -44,10 +44,21 @@ export async function intakeMediaFile(options: {
   stagedPath: string;
   originalName: string;
   order?: number | null;
+  /**
+   * Vai người dùng ĐỊNH cho tệp. Chỉ chiều khi khả thi: video chính phải CÓ
+   * tiếng, nên "main" mà tệp câm (hoặc là ảnh) thì rơi về "insert". Bỏ trống thì
+   * để máy tự đoán theo "video có tiếng → cảnh chính".
+   *
+   * Có mặt vì đường thêm tư liệu Ở BÀN DỰNG luôn là chèn (b-roll), mà nếu để máy
+   * tự đoán thì một clip stock có tiếng lại thành cảnh chính — lặng lẽ phá bản
+   * chép lời và biến mất khỏi danh sách b-roll.
+   */
+  intendedRole?: "main" | "insert" | null;
   /** Cỡ thật đo được lúc nhận. Không suy từ `stat` để hai đường cùng một con số. */
   bytes: number;
 }): Promise<IntakeResult> {
-  const { projectId, stagedPath, order = null, bytes } = options;
+  const { projectId, stagedPath, order = null, intendedRole = null, bytes } =
+    options;
   const name = basename(options.originalName || "khong-ten");
   const isVideo = VIDEO.test(name);
   const isImage = IMAGE.test(name);
@@ -119,7 +130,20 @@ export async function intakeMediaFile(options: {
     thumb = null;
   }
 
-  const role = isVideo && info.hasAudio ? "main" : "insert";
+  // "video có tiếng → cảnh chính" là phỏng đoán khi không ai nói rõ. Video chính
+  // là phần CÓ lời nói (bản chép dựng từ đó), nên "main" luôn đòi có tiếng: ý
+  // định "main" cho tệp câm là bất khả thi, rơi về chèn.
+  const canBeMain = isVideo && info.hasAudio;
+  const role =
+    intendedRole === "insert"
+      ? "insert"
+      : intendedRole === "main"
+        ? canBeMain
+          ? "main"
+          : "insert"
+        : canBeMain
+          ? "main"
+          : "insert";
   // Số của người dùng dùng chung cho CẢ HAI vai, nên trong một vai nó có thể
   // nhảy cóc (0, 2, 5…). Không sao: mọi chỗ đọc đều `ORDER BY position` chứ
   // không đòi số liền nhau.

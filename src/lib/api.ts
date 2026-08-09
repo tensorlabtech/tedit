@@ -241,7 +241,6 @@ export type ApiSettings = {
   musicVolume: number;
   insertSource: "project" | "starred" | "library";
   wantCaptions: boolean;
-  autoGrade: boolean;
   wantMusic: boolean;
   /** Ô "Thêm" tuỳ chọn — hồ sơ chính đã tách thành các trường cấu trúc dưới. */
   profile: string;
@@ -292,8 +291,6 @@ export type ApiProject = {
      * CHƯA có ô nào ở giao diện bật tắt nó, nên thực tế luôn là mặc định (bật).
      */
     want_captions?: number | null;
-    /** Tự cân hình (sáng, màu, nhiễu) và tiếng (độ to). Rỗng = bật. */
-    auto_grade?: number | null;
     /** Như `want_captions`, cho chặng `music`. Cũng chưa có ô nào bật tắt. */
     want_music?: number | null;
     /** Máy được lấy tư liệu ở đâu: project | starred | library */
@@ -507,7 +504,6 @@ export const api = {
       profile?: string;
       minSilence?: number;
       wantCaptions?: boolean;
-      autoGrade?: boolean;
       wantMusic?: boolean;
       insertSource?: ApiSettings["insertSource"];
       /**
@@ -623,6 +619,12 @@ export const api = {
     order?: number,
     /** Gọi ngay khi lượt tải bắt đầu, để nơi gọi còn đường huỷ nửa chừng. */
     onStart?: (control: { abort: () => void }) => void,
+    /**
+     * Vai người dùng ĐỊNH cho tệp. Gửi kèm để máy chủ gán ĐÚNG ngay lúc ghi hàng,
+     * thay vì đoán "video có tiếng → cảnh chính" rồi mới sửa lại — cú sửa sau có
+     * thể trượt, để tệp b-roll kẹt làm cảnh chính. Bỏ trống thì để máy tự đoán.
+     */
+    role?: "main" | "insert",
   ) {
     return new Promise<{
       saved: ApiFile[];
@@ -677,6 +679,7 @@ export const api = {
           filename: file.name,
           filetype: file.type,
           ...(order === undefined ? {} : { order: String(order) }),
+          ...(role === undefined ? {} : { role }),
         },
         /**
          * Nhớ mốc dở dang qua cả lần TẢI LẠI TRANG.

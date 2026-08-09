@@ -538,9 +538,9 @@ export const graphicUrl = (id: string) =>
  *
  * ## Một chỗ hai đường vẽ KHÔNG khớp, và nó cố ý
  *
- * Độ đục ở bản xuất nội suy theo độ sáng khung hình mà `auto-grade.ts` đo được.
- * Trang xem không có con số ấy — đo độ sáng một video đang chạy ở trình duyệt là
- * việc nặng và kết quả đổi theo từng khung. Nên trang xem lấy ĐIỂM GIỮA hai mức.
+ * Độ đục ở bản xuất nội suy theo độ sáng khung hình (`sceneLuma`). Hiện bản xuất
+ * cũng chưa có con số ấy (đã bỏ bước đo) nên cả hai đường đều lấy ĐIỂM GIỮA hai
+ * mức — nên lúc này chúng khớp; giữ mô tả cho khi bước Chuẩn bị nối lại nguồn đo.
  *
  * Chênh lệch cao nhất là nửa khoảng cách giữa `onDark` và `onLight`. Ghi ra đây
  * vì nó là một khoản nợ có ý thức, không phải một chỗ ai đó quên.

@@ -476,9 +476,9 @@ export type StylePack = {
    * biến mất, trên tường trắng rõ mồn một. Một hằng số không sống được qua hai
    * loại cảnh.
    *
-   * `auto-grade.ts` **đã đo độ sáng trung bình khung hình** cho việc tự cân sáng.
-   * Hai mức dưới đây nội suy theo chính con số đó, nên đồ hoạ đậm lên ở cảnh tối
-   * và nhạt đi ở cảnh sáng mà không ai phải chỉnh tay.
+   * Hai mức dưới đây nội suy theo độ sáng khung hình (`sceneLuma`) để đồ hoạ đậm
+   * lên ở cảnh tối và nhạt đi ở cảnh sáng. Hiện chưa có nguồn đo (đã bỏ tự cân
+   * sáng) nên lấy điểm giữa; bước Chuẩn bị sau có thể nối lại con số đo.
    */
   graphics: Array<{
     /** Khoá trong `assets/graphics/manifest.json`. */
@@ -1159,9 +1159,8 @@ const SCENE_MID_LUMA = 128;
 /**
  * Độ đục của hình dán trên một cảnh có độ sáng cho trước.
  *
- * `luma` là `yAvg` mà `auto-grade.ts` đo. Không đo được (người dùng tắt tự cân
- * hình) thì lấy điểm giữa hai mức — một con số xác định, không phải một nhánh
- * lặng lẽ chọn hộ.
+ * `luma` là `yAvg` khung hình. Không có (hiện luôn `null` vì đã bỏ bước đo) thì
+ * lấy điểm giữa hai mức — một con số xác định, không phải một nhánh lặng lẽ.
  */
 export function graphicOpacity(
   opacity: { onDark: number; onLight: number },

@@ -183,11 +183,18 @@ const tus = new Server({
       ? Math.max(0, Math.trunc(rawOrder))
       : null;
 
+    // Vai người dùng định cho tệp ("insert" từ bàn dựng). Chỉ nhận hai giá trị
+    // hợp lệ; thứ khác coi như không nói gì, để máy tự đoán.
+    const rawRole = upload.metadata?.role;
+    const intendedRole =
+      rawRole === "main" || rawRole === "insert" ? rawRole : null;
+
     const result = await intakeMediaFile({
       projectId,
       stagedPath: staged,
       originalName: name,
       order,
+      intendedRole,
       bytes: upload.size ?? upload.offset,
     });
 

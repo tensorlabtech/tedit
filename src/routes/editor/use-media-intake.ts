@@ -85,7 +85,17 @@ export function useMediaIntake(
       if (!projectId || files.length === 0) return;
       setUploading(true);
       try {
-        const result = await api.uploadFiles(projectId, files, () => {});
+        // Ở BÀN DỰNG mọi tệp thêm vào đều là tư liệu CHÈN (b-roll) — video chính
+        // đã chốt từ bước trước. Nói rõ "insert" để một clip stock có tiếng không
+        // bị máy đoán nhầm thành cảnh chính (phá bản chép, biến mất khỏi b-roll).
+        const result = await api.uploadFiles(
+          projectId,
+          files,
+          () => {},
+          undefined,
+          undefined,
+          "insert",
+        );
         for (const item of result.rejected) {
           toast.add({
             title: item.name,

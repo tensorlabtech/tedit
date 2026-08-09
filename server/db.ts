@@ -497,18 +497,6 @@ for (const [table, column, type] of [
   // Phong cách chữ RIÊNG của một cụm — đè lên mặc định dự án. `NULL` = theo dự
   // án. Cùng loại cột-đè-mặc-định với `keyword_color`/`letter_case` của cụm.
   ["elements", "font_style", "TEXT"],
-  // TỰ CÂN HÌNH — bật sẵn.
-  //
-  // Người dùng quay bằng điện thoại trong phòng: đo 81 tệp thật trong
-  // `server/data` thì độ sáng trung bình quanh 40-50 trên thang 255 và bão hoà
-  // dưới 4. Để mặc thì bản xuất ra tối và bạc màu đúng như bản gốc, mà đó là
-  // thứ người không chuyên không biết cách sửa.
-  //
-  // Tắt được vì có người quay bằng máy tử tế và tự nắn màu rồi — với họ, chỉnh
-  // thêm một lần nữa là làm hỏng.
-  // Mặc định TẮT: nắn màu tự động là quyết định của người dùng, không phải
-  // của máy. Máy đoán sai một lần là cả video lệch màu mà không ai bảo nó làm.
-  ["projects", "auto_grade", "INTEGER DEFAULT 0"],
   // HAI TRỤC người dùng đè được cho RIÊNG một cụm. `NULL` = theo bộ dáng.
   //
   // Đây là cột ĐÈ, không phải cột giá trị: đổi bộ dáng KHÔNG BAO GIỜ ghi vào

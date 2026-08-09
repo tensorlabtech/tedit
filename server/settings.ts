@@ -25,14 +25,6 @@ export type Settings = {
   musicVolume: number;
   /** Có sinh chữ từ lời không. Đọc lúc tạo dự án. */
   wantCaptions: boolean;
-  /**
-   * Tự cân sáng/màu/nhiễu cho hình, và cân độ to cho giọng nói.
-   *
-   * Bật sẵn vì người dùng của công cụ này quay bằng điện thoại trong phòng —
-   * đo 81 tệp thật thì độ sáng trung bình quanh 40-50 trên thang 255. Ai quay
-   * bằng máy tử tế và đã tự nắn màu thì tắt đi, không thì chỉnh chồng lên nhau.
-   */
-  autoGrade: boolean;
   /** Có tự chọn nhạc nền không. Đọc ở chặng `music`. */
   wantMusic: boolean;
   /**
@@ -78,7 +70,6 @@ export const DEFAULTS: Settings = {
   musicVolume: 0.18,
   insertSource: "starred",
   wantCaptions: true,
-  autoGrade: true,
   wantMusic: true,
   profile: "",
   trade: "",
@@ -116,7 +107,6 @@ function normalize(raw: Partial<Settings>): Settings {
         ? raw.insertSource
         : DEFAULTS.insertSource,
     wantCaptions: raw.wantCaptions !== false,
-    autoGrade: raw.autoGrade !== false,
     wantMusic: raw.wantMusic !== false,
     profile: String(raw.profile ?? "").slice(0, 600),
     trade: String(raw.trade ?? "").slice(0, 300),

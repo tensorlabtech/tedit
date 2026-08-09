@@ -122,8 +122,8 @@ app.post("/api/projects", async (request) => {
     // `style_pack` set TƯỜNG MINH: cột này có `DEFAULT 'goc'` (bộ nay đã xoá), nên
     // không set thì dự án MỚI cũng dính bộ cũ không-bố-cục. Lấy bộ mặc định hiện
     // hành từ catalog để một chỗ đổi là mọi dự án mới theo.
-    `INSERT INTO projects (id, title, status, created_at, owner_id, profile, min_silence, want_captions, want_music, insert_source, auto_grade, style_pack)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO projects (id, title, status, created_at, owner_id, profile, min_silence, want_captions, want_music, insert_source, style_pack)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
   ).run(
     id,
     body.title?.trim() || "Dự án mới",
@@ -141,7 +141,6 @@ app.post("/api/projects", async (request) => {
     setting.wantCaptions ? 1 : 0,
     setting.wantMusic ? 1 : 0,
     setting.insertSource,
-    setting.autoGrade ? 1 : 0,
     DEFAULT_STYLE_PACK_ID,
   );
   return { id };
@@ -161,7 +160,6 @@ app.patch("/api/projects/:id", async (request, reply) => {
     profile?: string;
     minSilence?: number;
     wantCaptions?: boolean;
-    autoGrade?: boolean;
     wantMusic?: boolean;
     insertSource?: string;
     stylePack?: string;
@@ -216,15 +214,6 @@ app.patch("/api/projects/:id", async (request, reply) => {
     sets.push("insert_source=?");
     values.push(body.insertSource);
   }
-  // BỘ DÁNG CHỮ. Tên không có trong danh sách thì trả 400 chứ KHÔNG nhận rồi
-  // lặng lẽ rơi về mặc định: nhận rồi rơi thì màn chọn báo "đã lưu" trong khi
-  // CSDL giữ một thứ khác, và người dùng chỉ biết lúc xem video xuất ra.
-  //
-  // Đổi bộ dáng KHÔNG đụng bảng `elements`: cả bộ dáng nằm trong một cột ở đây.
-  if (body.autoGrade !== undefined) {
-    sets.push("auto_grade=?");
-    values.push(body.autoGrade ? 1 : 0);
-  }
   // DÒNG TIÊU ĐỀ. Chuỗi rỗng là XOÁ — khác `title` (tên dự án), nơi rỗng phải
   // rơi về một tên mặc định: một dự án luôn cần tên để gọi, còn tiêu đề thì
   // không có mới là mặc định.
@@ -278,7 +267,7 @@ app.patch("/api/projects/:id", async (request, reply) => {
   }
   return db
     .prepare(
-      "SELECT id, title, profile, min_silence, want_captions, want_music, insert_source, style_pack, font_style, auto_grade, headline FROM projects WHERE id=?",
+      "SELECT id, title, profile, min_silence, want_captions, want_music, insert_source, style_pack, font_style, headline FROM projects WHERE id=?",
     )
     .get(id);
 });

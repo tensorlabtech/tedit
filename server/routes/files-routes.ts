@@ -31,12 +31,19 @@ app.post("/api/projects/:id/files", async (request, reply) => {
    * cũ `MAX+1` — tải lên bằng công cụ khác vẫn chạy, chỉ là không giữ được thứ tự.
    */
   let order: number | null = null;
+  // Vai người dùng định cho tệp, do nơi thêm gửi kèm ("insert" từ bàn dựng). Chỉ
+  // nhận đúng hai giá trị hợp lệ; thứ khác coi như không nói gì.
+  let intendedRole: "main" | "insert" | null = null;
 
   for await (const part of request.parts()) {
     if (part.type !== "file") {
       if (part.fieldname === "order") {
         const value = Number((part as { value?: unknown }).value);
         if (Number.isFinite(value)) order = Math.max(0, Math.trunc(value));
+      }
+      if (part.fieldname === "role") {
+        const value = (part as { value?: unknown }).value;
+        if (value === "main" || value === "insert") intendedRole = value;
       }
       continue;
     }
@@ -78,6 +85,7 @@ app.post("/api/projects/:id/files", async (request, reply) => {
       stagedPath: staged,
       originalName: name,
       order,
+      intendedRole,
       bytes: part.file.bytesRead ?? 0,
     });
     // Cảnh báo đi kèm TỆP, không gộp vào lỗi chung: người dùng cần biết đúng tệp

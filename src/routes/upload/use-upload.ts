@@ -402,6 +402,10 @@ export function useUpload(openingProjectId?: string) {
           },
           order,
           ({ abort }) => aborts.current.set(item.id, abort),
+          // Nói rõ vai ngay khi tải: máy chủ gán đúng lúc ghi hàng thay vì đoán
+          // rồi mới sửa. Cú sửa `setFileRole` phía dưới thành vô hại (đã đúng),
+          // nhưng vẫn giữ làm lưới cho tệp câm thả nhầm vào cột cảnh chính.
+          forcedRole,
         );
       try {
         const id = await ensureProject();

@@ -171,22 +171,6 @@ export function SettingsPage() {
               </Field>
 
               <Field orientation="horizontal">
-                <FieldLabel htmlFor="auto-grade">Tự chỉnh hình và tiếng</FieldLabel>
-                <Switch
-                  id="auto-grade"
-                  checked={settings.autoGrade}
-                  onCheckedChange={(on) => doi({ autoGrade: Boolean(on) })}
-                />
-              </Field>
-              <FieldDescription>
-                Máy đo trước khi dựng: hình tối thì nâng sáng, bạc màu thì nâng
-                màu, thiếu sáng thì lọc bớt hạt nhiễu; tiếng nhỏ thì nâng lên
-                đúng mức các mạng xã hội dùng, kèm cắt tiếng ù của căn phòng.
-                Video vốn đã ổn thì nó không đụng gì. Tắt nếu bạn đã tự nắn ở
-                nơi khác.
-              </FieldDescription>
-
-              <Field orientation="horizontal">
                 <FieldLabel htmlFor="want-captions">
                   Tự sinh chữ từ lời
                 </FieldLabel>
