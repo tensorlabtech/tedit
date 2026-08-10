@@ -283,8 +283,12 @@ export const PHAN: StylePack = {
   // KHÔNG dấu góc / khung ngắm: đó là ngôn ngữ "Pulse" (Nhịp đen), không phải
   // Chalk. Chalk là bảng phấn TRƠN — chữ, ảnh dán, doodle nổi trực tiếp trên nền,
   // không có viền khung nào bao quanh khung hình.
+  // Nền TRANG GIẤY SÁNG (kem) — chỉ hiện ở cảnh CÓ khung (b-roll): lúc đó ra một
+  // TRANG SCRAPBOOK sáng với ảnh polaroid dán lên, đúng Chalk. Cảnh nói toàn-khung
+  // video phủ kín nên không thấy nền này. Caption có viền tối nên vẫn đọc được
+  // trên nền sáng; chữ-sau-người nằm trên video tối nên không đụng nền trang.
   page: {
-    tone: { color: "#34332D", alpha: 1 },
+    tone: { color: "#ECE4D0", alpha: 1 },
     grid: null,
   },
   /*
