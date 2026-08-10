@@ -55,7 +55,9 @@ export const BAND_ANCHOR: Record<
   top: { edge: "top", at: 0.12 },
   // Giữa neo bằng TÂM khối, nên nó tự căn giữa dù cao mấy dòng.
   middle: { edge: "center", at: 0.5 },
-  bottom: { edge: "bottom", at: 0.8 },
+  // Đáy khối chữ ở 73% (trước 80%): 80% rơi đúng vùng mic/bàn tay đang cử động,
+  // chữ đè lên đó đọc ra rối. Nâng lên cho chữ nằm trên vùng ngực/vai trống.
+  bottom: { edge: "bottom", at: 0.73 },
 };
 
 /**

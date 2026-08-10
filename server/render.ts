@@ -1566,9 +1566,18 @@ export async function burnElements(
       // MỘT tệp cho mỗi tiếng, dùng chung cho cả lượt vẽ thường lẫn lượt vẽ
       // sáng — hai lượt vẽ ĐÚNG một chữ, nên hai tệp là hai chỗ để lệch.
       const wordTextFile = textFileFor(projectId, String(textFileSeq++), word.text);
+      // RUNG TAY NHẸ (boiling) như Chalk: mỗi tiếng dao động vài px theo sin(t),
+      // lệch pha theo vị trí — đọc ra nét vẽ tay "sống" chứ không phải cả dòng rung
+      // đều. CHỈ bộ có chữ-nền (Phấn/viết tay); bộ in đậm (Nhịp đen) giữ chữ đứng.
+      const wig = pack.behindText
+        ? `+${Math.max(1, Math.round(word.fontSize * 0.013))}*sin(t*5.5+${flat})`
+        : "";
+      const wigY = pack.behindText
+        ? `+${Math.max(1, Math.round(word.fontSize * 0.011))}*sin(t*4.5+${(flat * 1.7).toFixed(2)})`
+        : "";
       const body =
         `fontfile='${fontPath}':textfile='${wordTextFile}':` +
-        `fontsize=${word.fontSize}:x='${spot.x}':y='${spot.y}':` +
+        `fontsize=${word.fontSize}:x='${spot.x}${wig}':y='${spot.y}${wigY}':` +
         edge +
         box;
       draws.push(
@@ -1611,7 +1620,7 @@ export async function burnElements(
           : box;
         const litBody =
           `fontfile='${fontPath}':textfile='${wordTextFile}':` +
-          `fontsize=${word.fontSize}:x='${spot.x}':y='${spot.y}':` +
+          `fontsize=${word.fontSize}:x='${spot.x}${wig}':y='${spot.y}${wigY}':` +
           edge +
           litBox;
         draws.push(

@@ -319,11 +319,11 @@ export const PHAN: StylePack = {
   },
   behindText: {
     font: "voice",
-    // LỚN như "YOUTH" của Chalk nhưng KHÔNG quá khổ: 0.42 thì từ dài như
-    // "TensorLab" tràn ra ngoài, cắt cụt giữa chữ đọc ra như lỗi. 0.26 vẫn là một
-    // MẢNG chữ lớn lấp nền mà từ dài vừa đủ trong khung.
-    sizeShare: 0.26,
-    tone: { color: "#FFFFFF", alpha: 0.925 },
+    // Chữ chìm SAU người — phải MỜ và VỪA, không tranh nét với mặt/nội dung. To
+    // quá (0.42) hoặc rõ quá (α0.925) thì nó át chủ thể, loãng tập trung. 0.20 +
+    // α0.5: vẫn là một mảng chữ nền có mặt, nhưng lùi hẳn về sau.
+    sizeShare: 0.2,
+    tone: { color: "#FFFFFF", alpha: 0.5 },
     repeats: 3,
     // 2,4 giây — con số chụm nhất trong cả bộ số đo: sáu bộ mẫu ra 2,1 · 2,5 ·
     // 2,65 · 2,4 · 2,4 · 2,1–3,5. Bản đầu tôi đặt 4,5 theo cảm giác, gần gấp đôi.
