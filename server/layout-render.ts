@@ -292,7 +292,15 @@ export function layoutPlan(
       );
       chains.push(`[pgcol][pggrid]overlay=0:0[pgbase]`);
     } else {
-      chains.push(`[pgcol]null[pgbase]`);
+      // HẠT GIẤY: đốm ấm mờ rải trên nền cho trang scrapbook đỡ phẳng lì — chỉ
+      // hiện rõ trên nền SÁNG (trang giấy Phấn); trên nền tối gần như vô hình.
+      // Dùng đúng cơ chế lưới (overlay đơn-khung) nên an toàn với độ dài phim.
+      chains.push(
+        `movie=${pngDir}/../../masks/paper-grain.png,alphaextract[ppm];` +
+          `color=c=#8A7A4E:s=${frameWidth}x${frameHeight}${span}[ppc];` +
+          `[ppc][ppm]alphamerge,colorchannelmixer=aa=0.28[pptex];` +
+          `[pgcol][pptex]overlay=0:0[pgbase]`,
+      );
     }
   }
 

@@ -33,7 +33,6 @@ import {
   frameFilter,
   graphicsSteps,
   doodleSteps,
-  subjectEdgeSteps,
   sweepSteps,
   wrapBox,
   wrapSteps,
@@ -1283,18 +1282,9 @@ export async function burnElements(
     stream = next;
   }
 
-  // VIỀN VÀNG QUANH NGƯỜI — Chalk viền cả người (nét bút mảnh bám dáng) LẪN ảnh
-  // b-roll. Viền b-roll nướng trong `layout-render.ts`; viền người dựng ở đây từ
-  // mặt nạ người. Trên hình dán, dưới vệt quét/chữ.
-  const vien = subjectEdgeSteps(
-    pack, subjectPath, OUT_WIDTH, OUT_HEIGHT, cutMarks, cutSeconds,
-    behind && behindLine ? behind.seconds + HEADLINE_FADE : 0,
-  );
-  if (vien) {
-    filters.push(vien.chain);
-    filters.push(`${stream}${vien.label}overlay=0:0:enable='${vien.enable}'[svienon]`);
-    stream = "[svienon]";
-  }
+  // Viền vàng CHỈ quanh ảnh b-roll (nướng trong `layout-render.ts`). KHÔNG viền
+  // quanh người: mặt nạ tách nền giật từng frame nên viền bám người bò/rung loạn
+  // khi chạy — đọc ra lỗi chứ không ra nét vẽ tay.
 
   /*
    * VỆT QUÉT — trên hình dán, dưới mảng màu và chữ.

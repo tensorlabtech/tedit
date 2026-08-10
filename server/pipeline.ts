@@ -879,6 +879,18 @@ export function buildCrossAt(
  * nhấn dùng, nếu không thì "layoff" với "Layoff," đếm thành hai từ khác nhau và
  * không từ nào đủ nhiều để thắng.
  */
+// Từ CHỨC NĂNG / đại từ / đệm — lặp nhiều mà KHÔNG mang chủ đề. Chữ-nền phải là
+// một từ CÓ NGHĨA ("YOUTH" của Chalk), không phải "mình"/"được" lặp ba lần. Đây
+// là lý do trước đây chữ-nền ra "Mình": nó là đại từ hay gặp nhất, thắng điểm.
+const BEHIND_STOPWORDS = new Set([
+  "mình", "tôi", "tui", "bạn", "mày", "tao", "chúng", "này", "kia", "đó", "ấy",
+  "được", "không", "những", "các", "cái", "người", "cũng", "nhưng", "nên", "cho",
+  "của", "với", "đã", "sẽ", "đang", "rồi", "lại", "rất", "quá", "hơn", "một",
+  "khi", "nếu", "hoặc", "còn", "chỉ", "đến", "từ", "về", "trong", "ngoài", "trên",
+  "dưới", "sau", "trước", "giờ", "bây", "thế", "vậy", "nào", "gì", "sao", "thì",
+  "luôn", "thôi", "đây", "đâu", "phải", "chưa", "vẫn", "hay", "hoặc", "nữa",
+]);
+
 function topKeyword(projectId: string): string | null {
   const rows = db
     .prepare(
@@ -891,8 +903,9 @@ function topKeyword(projectId: string): string | null {
   for (const row of rows) {
     for (const word of row.keywords.split("|")) {
       const key = norm(word);
-      // Bỏ tiếng một chữ cái và số trần: chúng lặp nhiều mà không mang chủ đề.
-      if (key.length < 3 || /^\d+$/.test(key)) continue;
+      // Bỏ tiếng một chữ cái, số trần, và từ chức năng/đại từ: lặp nhiều mà
+      // không mang chủ đề.
+      if (key.length < 3 || /^\d+$/.test(key) || BEHIND_STOPWORDS.has(key)) continue;
       const seen = count.get(key);
       if (seen) seen.n += 1;
       else count.set(key, { text: word.replace(/[^\p{L}\p{N}]+$/gu, ""), n: 1 });
@@ -903,7 +916,9 @@ function topKeyword(projectId: string): string | null {
   for (const item of count.values()) {
     if (!best || score(item) > score(best)) best = item;
   }
-  return best && best.n >= 2 ? best.text : null;
+  // Không đòi lặp ≥2 lần: sau khi lọc đại từ/từ đệm, chủ đề có thể chỉ hiện MỘT
+  // lần mà vẫn đáng làm chữ-nền. Còn từ có nghĩa nào là lấy; hết sạch mới bỏ.
+  return best ? best.text : null;
 }
 
 export async function runExport(projectId: string) {

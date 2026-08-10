@@ -308,7 +308,9 @@ export const PHAN: StylePack = {
   scenePush: { ratePerSecond: 0.04, share: 0.25 },
   edge: { share: 0.03, tone: { color: "#1A1A1A", alpha: 0.925 } },
   subjectEdge: {
-    tone: { color: "#F2FF3D", alpha: 0.95 },
+    // Vàng BÚT DẠ ẤM, không neon chói: viền neon #F2FF3D đọc ra "đèn LED" chứ
+    // không ra "bút dạ quang trên ảnh". Dịu lại cho hợp trang giấy + ảnh cắt dán.
+    tone: { color: "#E7C24A", alpha: 0.92 },
     // MẢNH (3 thay vì 6): Chalk viền người bằng một nét bút gọn, không phải dải
     // dày ôm cả tóc/tay thành mảng rối. Số này chỉ chi phối viền QUANH NGƯỜI;
     // viền quanh b-roll tự tính bề dày theo cỡ ô.
@@ -317,9 +319,10 @@ export const PHAN: StylePack = {
   },
   behindText: {
     font: "voice",
-    // KHỔNG LỒ như "YOUTH" của Chalk: chữ cao gần nửa bề rộng khung, phủ hẳn nền
-    // sau người — không phải một dòng chữ nhỏ mà là một MẢNG chữ lấp khung.
-    sizeShare: 0.42,
+    // LỚN như "YOUTH" của Chalk nhưng KHÔNG quá khổ: 0.42 thì từ dài như
+    // "TensorLab" tràn ra ngoài, cắt cụt giữa chữ đọc ra như lỗi. 0.26 vẫn là một
+    // MẢNG chữ lớn lấp nền mà từ dài vừa đủ trong khung.
+    sizeShare: 0.26,
     tone: { color: "#FFFFFF", alpha: 0.925 },
     repeats: 3,
     // 2,4 giây — con số chụm nhất trong cả bộ số đo: sáu bộ mẫu ra 2,1 · 2,5 ·
@@ -331,7 +334,7 @@ export const PHAN: StylePack = {
     tone: { color: "#F2FF3D", alpha: 0.9 },
     sizeShare: 0.16,
   },
-  density: { ...BASE.density, maxScale: 0.135, lineHeight: 1.3, wordGap: 0.16 },
+  density: { ...BASE.density, maxScale: 0.12, lineHeight: 1.3, wordGap: 0.16 },
   effectBias: {
     junction: ["cross-smooth", "zoom-out"],
     insertReveal: ["fade"],
