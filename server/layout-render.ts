@@ -423,6 +423,16 @@ export function layoutPlan(
       const edge = slot.role === "phu" && slot.mask ? pack.subjectEdge : null;
       const bw = edge ? Math.max(4, Math.round(Math.min(box.w, box.h) * 0.02)) : 0;
       const erode = Array.from({ length: bw }, () => "erosion").join(",");
+      // NGHIÊNG như ảnh polaroid DÁN LỆCH TAY — chỉ ô b-roll (có viền). Góc nhỏ,
+      // đổi theo thứ tự tư liệu cho mỗi ảnh một dáng riêng, đúng kiểu scrapbook
+      // của Chalk. Xoay với nền TRONG SUỐT và nở khung (`ow/oh`) để không xén góc.
+      const tiltRad = edge
+        ? (([-4, 3.2, -2.6, 3.8][which % 4] * Math.PI) / 180).toFixed(4)
+        : "0";
+      const tilt = edge
+        ? `;[${tag}flat]rotate=${tiltRad}:c=black@0:` +
+          `ow=rotw(${tiltRad}):oh=roth(${tiltRad})[${tag}c]`
+        : "";
       const masked = slot.mask
         ? edge
           ? `movie=${pngDir}/${slot.mask}.png,alphaextract,scale=${box.w}:${box.h},split[${tag}mc][${tag}me];` +
@@ -433,7 +443,8 @@ export function layoutPlan(
             `[${tag}mA][${tag}thin]blend=all_mode=subtract,format=gray[${tag}ring];` +
             `color=c=${edge.tone.color}:s=${box.w}x${box.h}[${tag}rc];` +
             `[${tag}rc][${tag}ring]alphamerge,colorchannelmixer=aa=${edge.tone.alpha.toFixed(3)}[${tag}bd];` +
-            `[${tag}base][${tag}bd]overlay=0:0[${tag}c]`
+            `[${tag}base][${tag}bd]overlay=0:0[${tag}flat]` +
+            tilt
           : `movie=${pngDir}/${slot.mask}.png,alphaextract,scale=${box.w}:${box.h}[${tag}m];` +
             `${from}${fit},format=rgba[${tag}v];` +
             `[${tag}v][${tag}m]alphamerge[${tag}c]`
