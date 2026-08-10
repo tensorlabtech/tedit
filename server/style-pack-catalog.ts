@@ -261,6 +261,14 @@ export const PHAN: StylePack = {
     ...BASE.color,
     key: { color: "#F5E663", alpha: 1 },
   },
+  // Ô SÁNG CHẠY THEO LỜI — caption "phong phú": mỗi tiếng đang nói được đè một ô
+  // bo tối, chữ hoá kem sáng. Đúng dáng Chalk (hộp tối sau tiếng nhấn), và cho
+  // phụ đề một nhịp sống thay vì đứng im. Hộp tối nổi trên video/ảnh chèn; trên
+  // nền bảng phấn nó chỉ khẽ đậm hơn nên không chọi với chữ vàng.
+  highlight: {
+    tone: { color: "#FFF4CE", alpha: 1 },
+    box: { color: "#20140A", alpha: 0.72 },
+  },
   // Nét viền chữ dày hơn mặc định: chữ viết tay mảnh hơn hẳn chữ in ở cùng cỡ,
   // nên nó cần nhiều đường bao hơn để nổi khỏi nền video.
   /*

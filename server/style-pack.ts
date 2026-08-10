@@ -1238,6 +1238,87 @@ export function graphicsSteps(
 }
 
 /**
+ * NÉT VẼ TAY (doodle) — hình rời tô vàng, đặt vào chỗ trống NỬA TRÊN, hiện lần
+ * lượt quanh vài vết cắt rồi tắt.
+ *
+ * Khác `graphicsSteps` (hình full-khung, dán 0:0): doodle được THU NHỎ về
+ * `sizeShare` rồi đặt ở một góc an toàn. PNG doodle là canvas 1080×1920 với hình
+ * neo góc trên-trái, nên thu cả canvas theo bề rộng là hình giữ đúng tỉ lệ và
+ * nằm ở góc trên-trái của ô đã thu — đặt ô đó vào `(x,y)` là đặt được hình.
+ *
+ * Chỉ bật quanh vết cắt (mắt bắt được thay đổi ở chỗ hình đổi), rải thưa và tránh
+ * dải phụ đề (đáy) lẫn chỗ người (giữa) — doodle là trang trí, không được chọi
+ * chữ hay che mặt.
+ */
+export function doodleSteps(
+  pack: Pick<StylePack, "doodles">,
+  /** Đường dẫn TUYỆT ĐỐI tới thư mục PNG. */
+  pngDir: string,
+  frameWidth: number,
+  frameHeight: number,
+  cuts: readonly number[],
+  total: number,
+): Array<{ chain: string; label: string; enable: string }> {
+  if (!pack.doodles || pack.doodles.ids.length === 0 || total <= 4) {
+    return [];
+  }
+  const { ids, tone, sizeShare } = pack.doodles;
+  const dw = Math.round(frameWidth * sizeShare);
+  // Thu CẢ canvas theo bề rộng: cao = rộng × tỉ lệ khung, nên hình giữ đúng dáng.
+  const dh = Math.round((dw * frameHeight) / frameWidth);
+  const margin = Math.round(frameWidth * 0.05);
+  // Bốn chỗ ở NỬA TRÊN, xoay vòng — tránh đáy (phụ đề) và giữa (người).
+  const spots = [
+    { x: margin, y: Math.round(frameHeight * 0.05) },
+    { x: frameWidth - dw - margin, y: Math.round(frameHeight * 0.07) },
+    { x: frameWidth - dw - margin, y: Math.round(frameHeight * 0.28) },
+    { x: margin, y: Math.round(frameHeight * 0.3) },
+  ];
+  const HOLD = 1.8;
+  // Rải ĐỀU theo độ dài phim (một cái mỗi ~16 giây, 3–5 cái), KHÔNG phụ thuộc có
+  // hay không hiệu ứng nối: bộ Phấn nhịp êm nên rất ít chỗ nối, bám vào đó thì
+  // doodle gần như không bao giờ hiện. Nếu có vết cắt gần thì nắn về đó cho khớp
+  // nhịp hình; không thì cứ đặt đúng chỗ đã rải.
+  const count = Math.min(5, Math.max(3, Math.round(total / 16)));
+  const snap = (t: number): number => {
+    let best = t;
+    let gap = 2.0;
+    for (const c of cuts) {
+      const d = Math.abs(c - t);
+      if (d < gap) {
+        gap = d;
+        best = c;
+      }
+    }
+    return best;
+  };
+  return Array.from({ length: count }, (_unused, k) => {
+    const id = ids[k % ids.length];
+    const spot = spots[k % spots.length];
+    const at = snap((total * (k + 1)) / (count + 1));
+    const label = `[ddl${k}]`;
+    const from = Math.max(0, at - 0.1);
+    const to = Math.min(total, from + HOLD);
+    // Tô màu Ở FULL-KHUNG (đúng pattern `graphicsSteps` đã chạy), rồi mới THU
+    // NHỎ và ĐỆM về full-khung tại `(x,y)` — thành một lớp full-khung trong suốt
+    // có doodle nhỏ ở đúng chỗ. Overlay lớp full-khung này ở `0:0` + `enable`
+    // (đúng pattern viền/vệt quét). Overlay một ảnh NHỎ tại toạ độ kèm `enable`
+    // làm ffmpeg tái dựng bộ lọc và cả lệnh xuất chết — đây là đường vòng an toàn.
+    return {
+      label,
+      chain:
+        `movie=${pngDir}/${id}.png,alphaextract[ddm${k}];` +
+        `color=c=${tone.color}:s=${frameWidth}x${frameHeight}[ddc${k}];` +
+        `[ddc${k}][ddm${k}]alphamerge,format=rgba,` +
+        `colorchannelmixer=aa=${tone.alpha.toFixed(3)},` +
+        `scale=${dw}:${dh},` +
+        `pad=${frameWidth}:${frameHeight}:${spot.x}:${spot.y}:color=black@0${label}`,
+      enable: `between(t\\,${from.toFixed(3)}\\,${to.toFixed(3)})`,
+    };
+  });
+}
+
+/**
  * NHỊP ĐẬP CỦA HÌNH DÁN — cùng một hình, tô ĐẶC, chỉ bật ở quanh mỗi vết cắt.
  *
  * Hình dán mờ dần vào trong sáu phần mười giây đầu rồi đứng im tới hết phim.

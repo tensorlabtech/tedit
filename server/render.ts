@@ -32,6 +32,7 @@ import {
   fontRoleFor,
   frameFilter,
   graphicsSteps,
+  doodleSteps,
   sweepSteps,
   wrapBox,
   wrapSteps,
@@ -1250,6 +1251,18 @@ export async function burnElements(
     }
   }
 
+  // NÉT VẼ TAY (doodle) — trang trí chỗ trống nửa trên, hiện quanh vài vết cắt.
+  for (const step of doodleSteps(
+    pack, GRAPHICS_DIR, OUT_WIDTH, OUT_HEIGHT, cutMarks, cutSeconds,
+  )) {
+    const next = `[ddlon${filters.length}]`;
+    filters.push(step.chain);
+    filters.push(
+      `${stream}${step.label}overlay=0:0:enable='${step.enable}'${next}`,
+    );
+    stream = next;
+  }
+
   // VIỀN VÀNG giờ nướng quanh Ô B-ROLL trong `layout-render.ts` (đúng Chalk: viền
   // tư liệu chèn, không viền người). Không còn lớp phủ bám mặt nạ người ở đây.
 
@@ -1565,9 +1578,14 @@ export async function burnElements(
         // Nền của tiếng đang nói: nếu bộ dáng khai `highlight.box` thì bản đè
         // mang nền riêng, đè lên cả nền thường. Đây là dáng "ô sáng chạy theo
         // lời" — khác hẳn dáng chỉ đổi màu chữ.
+        // Đệm RIÊNG cho hộp chạy-theo-lời, KHÔNG mượn `pack.box`: `pack.box` mà
+        // đặt thì MỌI chữ có hộp (dáng khác hẳn). Hộp karaoke cần đệm rộng rãi để
+        // đọc ra là một "ô đánh dấu" chứ không phải nền ôm sát nét chữ.
+        const litPadY = Math.max(2, Math.round(word.fontSize * 0.12));
+        const litPadX = Math.max(4, Math.round(word.fontSize * 0.22));
         const litBox = shown.highlight.box
           ? `box=1:boxcolor=${ffmpegColor(shown.highlight.box)}:` +
-            `boxborderw=${boxBorderW(word.fontSize, shown)}:`
+            `boxborderw=${litPadY}|${litPadX}|${litPadY}|${litPadX}:`
           : box;
         const litBody =
           `fontfile='${fontPath}':textfile='${wordTextFile}':` +
