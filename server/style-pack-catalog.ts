@@ -280,9 +280,12 @@ export const PHAN: StylePack = {
    * người trắng-trên-trắng vô hình. Đây đúng bảng phấn thật của Captions "Chalk":
    * charcoal ấm, dấu góc kẻ bằng phấn sáng để nổi trên nền tối.
    */
+  // KHÔNG dấu góc / khung ngắm: đó là ngôn ngữ "Pulse" (Nhịp đen), không phải
+  // Chalk. Chalk là bảng phấn TRƠN — chữ, ảnh dán, doodle nổi trực tiếp trên nền,
+  // không có viền khung nào bao quanh khung hình.
   page: {
     tone: { color: "#34332D", alpha: 1 },
-    grid: { id: "dau-goc", tone: { color: "#E8E4D6", alpha: 0.3 } },
+    grid: null,
   },
   /*
    * Ba bố cục, KHÔNG có `toan-khung`.
@@ -291,20 +294,28 @@ export const PHAN: StylePack = {
    * không phải "đang xem một video". Bỏ toàn khung là bỏ đúng cái phá cảm giác
    * ấy — nhưng cũng nghĩa là chữ luôn có dải riêng, nên chữ phải nhỏ hơn.
    */
-  layouts: ["o-don", "o-lech", "vuong-ngang"],
+  // TOÀN-KHUNG làm CHỦ ĐẠO — người nói phủ kín như Chalk, KHÔNG nhốt vào thẻ nhỏ.
+  // Bỏ ô-đơn/ô-lệch (thẻ người kiểu Nhịp đen): `placePersonLayouts` lọc ra layout
+  // ô-người (không cần tư liệu, khác toàn-khung) — rỗng thì không gieo thẻ người
+  // nào. Chỉ giữ layout CÓ tư liệu để b-roll vẫn lên như ảnh dán.
+  layouts: ["toan-khung", "vuong-ngang", "ngang-vuong"],
   // Dồn 4%/giây trên một phần tư số màn — mức của `ember`, bộ chậm nhất trong
   // kho mẫu mà vẫn có chuyển động.
   scenePush: { ratePerSecond: 0.04, share: 0.25 },
   edge: { share: 0.03, tone: { color: "#1A1A1A", alpha: 0.925 } },
   subjectEdge: {
     tone: { color: "#F2FF3D", alpha: 0.95 },
-    steps: 6,
+    // MẢNH (3 thay vì 6): Chalk viền người bằng một nét bút gọn, không phải dải
+    // dày ôm cả tóc/tay thành mảng rối. Số này chỉ chi phối viền QUANH NGƯỜI;
+    // viền quanh b-roll tự tính bề dày theo cỡ ô.
+    steps: 3,
     share: 0.3,
   },
   behindText: {
     font: "voice",
-    // 0,2 bề rộng khung: đủ lớn để đọc ra là một KHỐI chứ không ra một dòng chữ.
-    sizeShare: 0.2,
+    // KHỔNG LỒ như "YOUTH" của Chalk: chữ cao gần nửa bề rộng khung, phủ hẳn nền
+    // sau người — không phải một dòng chữ nhỏ mà là một MẢNG chữ lấp khung.
+    sizeShare: 0.42,
     tone: { color: "#FFFFFF", alpha: 0.925 },
     repeats: 3,
     // 2,4 giây — con số chụm nhất trong cả bộ số đo: sáu bộ mẫu ra 2,1 · 2,5 ·

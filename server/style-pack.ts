@@ -1639,9 +1639,12 @@ export function subjectEdgeSteps(
   return {
     label: "[svien]",
     chain:
-      `movie=${maskPath},scale=${frameWidth}:${frameHeight},format=gray,split[sm1][sm2];` +
+      // Làm MƯỢT mặt nạ trước khi lấy vành: mặt nạ người răng cưa ở tóc/tay, lấy
+      // vành thẳng thì ra một nét lởm chởm đọc như nhiễu. Mờ nhẹ rồi mới nở-trừ →
+      // nét bút gọn bám dáng, đúng kiểu Chalk.
+      `movie=${maskPath},scale=${frameWidth}:${frameHeight},format=gray,gblur=sigma=3,split[sm1][sm2];` +
       `[sm1]${grow}[smfat];` +
-      `[smfat][sm2]blend=all_mode=subtract,format=gray[smring];` +
+      `[smfat][sm2]blend=all_mode=subtract,format=gray,gblur=sigma=1[smring];` +
       `color=c=${tone.color}:s=${frameWidth}x${frameHeight}[smcol];` +
       `[smcol][smring]alphamerge,colorchannelmixer=aa=${tone.alpha.toFixed(3)}[svien]`,
     enable: edgeWindows(pack.subjectEdge.share, cuts, total, after),
