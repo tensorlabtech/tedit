@@ -1647,7 +1647,22 @@ export async function burnElements(
     // nạp input chèn (b-roll vào ô qua `movie=`), nên lúc ấy lớp chữ tụt về ngay
     // sau base. Thiếu phép trừ này thì nhãn `[N:v]` trỏ vào một input không có.
     const layer = `[${1 + (layoutActive ? 0 : inserts.length)}:v]`;
-    filters.push(`${layer}${draws.join(",")}[txt]`);
+    filters.push(`${layer}${draws.join(",")}[txtraw]`);
+    // TEXTURE PHẤN cho chữ caption (chỉ bộ CÓ chữ-nền = Phấn): xén hạt phấn NHẸ
+    // vào KÊNH TRONG, GIỮ NGUYÊN màu (vàng/trắng/hộp) — nét chữ ra "bụi phấn" thay
+    // vì nét máy sạch bong. Grain nhẹ (mostly sáng) nên chữ vẫn đọc tốt.
+    if (pack.behindText) {
+      const capGrain = `${GRAPHICS_DIR}/../../masks/caption-grain.png`;
+      filters.push(`[txtraw]split[capa][capb]`);
+      filters.push(`[capa]alphaextract[capal]`);
+      filters.push(`movie=${capGrain},format=gray,scale=${OUT_WIDTH}:${OUT_HEIGHT}[capgr]`);
+      filters.push(`[capal][capgr]blend=all_mode=multiply[capal2]`);
+      // Nhòe RẤT NHẸ để mép chữ "lem nhem" như phấn — Chalk thật không có viền sắc
+      // như dao. Sigma nhỏ nên chỉ mềm mép, không xoá hạt phấn ở lòng chữ.
+      filters.push(`[capb][capal2]alphamerge,gblur=sigma=0.6[txt]`);
+    } else {
+      filters.push(`[txtraw]null[txt]`);
+    }
     if (pack.glow) {
       filters.push(`[txt]split[glowsrc][txtmain]`);
       // Bóp hết màu về đen nhưng GIỮ hình dạng (kênh trong), rồi làm mờ ở NỬA CỠ
