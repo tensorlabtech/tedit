@@ -423,6 +423,13 @@ export function layoutPlan(
       const edge = slot.role === "phu" && slot.mask ? pack.subjectEdge : null;
       const bw = edge ? Math.max(4, Math.round(Math.min(box.w, box.h) * 0.02)) : 0;
       const erode = Array.from({ length: bw }, () => "erosion").join(",");
+      // MÉP RÁCH cho ảnh b-roll: dùng mặt nạ mép hạt/xé `o-rach` (thay bo tròn
+      // gọn), nên cả ảnh LẪN viền vàng (dựng từ chính mặt nạ này) đều rách như
+      // ảnh cắt dán tay của Chalk. Ô người giữ bo tròn thường. `o-rach` để ngoài
+      // `assets/graphics` (không dựng từ svg) nên `check:graphics` không soi.
+      const maskFile = edge
+        ? `${pngDir}/../../masks/o-rach.png`
+        : `${pngDir}/${slot.mask}.png`;
       // NGHIÊNG như ảnh polaroid DÁN LỆCH TAY — MỌI ô có mặt nạ trong bố cục NHIỀU
       // ô (cả người lẫn b-roll) đều nghiêng, hai ô lệch NGƯỢC nhau như hai tấm ảnh
       // dán tay. Góc theo VỊ TRÍ ô. Toàn-khung (một ô) KHÔNG nghiêng. Xoay với nền
@@ -438,7 +445,7 @@ export function layoutPlan(
         : "";
       const masked = slot.mask
         ? edge
-          ? `movie=${pngDir}/${slot.mask}.png,alphaextract,scale=${box.w}:${box.h},split[${tag}mc][${tag}me];` +
+          ? `movie=${maskFile},alphaextract,scale=${box.w}:${box.h},split[${tag}mc][${tag}me];` +
             `${from}${fit},format=rgba[${tag}v];` +
             `[${tag}v][${tag}mc]alphamerge[${tag}base];` +
             `[${tag}me]split[${tag}mA][${tag}mB];` +
