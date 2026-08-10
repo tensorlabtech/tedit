@@ -423,13 +423,16 @@ export function layoutPlan(
       const edge = slot.role === "phu" && slot.mask ? pack.subjectEdge : null;
       const bw = edge ? Math.max(4, Math.round(Math.min(box.w, box.h) * 0.02)) : 0;
       const erode = Array.from({ length: bw }, () => "erosion").join(",");
-      // NGHIÊNG như ảnh polaroid DÁN LỆCH TAY — chỉ ô b-roll (có viền). Góc nhỏ,
-      // đổi theo thứ tự tư liệu cho mỗi ảnh một dáng riêng, đúng kiểu scrapbook
-      // của Chalk. Xoay với nền TRONG SUỐT và nở khung (`ow/oh`) để không xén góc.
-      const tiltRad = edge
-        ? (([-4, 3.2, -2.6, 3.8][which % 4] * Math.PI) / 180).toFixed(4)
+      // NGHIÊNG như ảnh polaroid DÁN LỆCH TAY — MỌI ô có mặt nạ trong bố cục NHIỀU
+      // ô (cả người lẫn b-roll) đều nghiêng, hai ô lệch NGƯỢC nhau như hai tấm ảnh
+      // dán tay. Góc theo VỊ TRÍ ô. Toàn-khung (một ô) KHÔNG nghiêng. Xoay với nền
+      // TRONG SUỐT + nở khung (`ow/oh`) để không xén góc.
+      const wantTilt = !!slot.mask && page !== null && spec.slots.length > 1;
+      const tiltRad = wantTilt
+        ? (([-4, 3.5, -2.5, 3][at % 4] * Math.PI) / 180).toFixed(4)
         : "0";
-      const tilt = edge
+      const endTag = wantTilt ? `[${tag}flat]` : `[${tag}c]`;
+      const tilt = wantTilt
         ? `;[${tag}flat]rotate=${tiltRad}:c=black@0:` +
           `ow=rotw(${tiltRad}):oh=roth(${tiltRad})[${tag}c]`
         : "";
@@ -443,11 +446,12 @@ export function layoutPlan(
             `[${tag}mA][${tag}thin]blend=all_mode=subtract,format=gray[${tag}ring];` +
             `color=c=${edge.tone.color}:s=${box.w}x${box.h}[${tag}rc];` +
             `[${tag}rc][${tag}ring]alphamerge,colorchannelmixer=aa=${edge.tone.alpha.toFixed(3)}[${tag}bd];` +
-            `[${tag}base][${tag}bd]overlay=0:0[${tag}flat]` +
+            `[${tag}base][${tag}bd]overlay=0:0${endTag}` +
             tilt
           : `movie=${pngDir}/${slot.mask}.png,alphaextract,scale=${box.w}:${box.h}[${tag}m];` +
             `${from}${fit},format=rgba[${tag}v];` +
-            `[${tag}v][${tag}m]alphamerge[${tag}c]`
+            `[${tag}v][${tag}m]alphamerge${endTag}` +
+            tilt
         : `${from}${fit}[${tag}c]`;
       /*
        * Phóng SAU khi ghép mặt nạ, không phải trước.
