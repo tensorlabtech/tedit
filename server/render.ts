@@ -1174,7 +1174,26 @@ export async function burnElements(
     }
     const cut = subjectCutChain("[bhfg]", subjectPath, OUT_WIDTH, OUT_HEIGHT, "bh");
     filters.push(`${stream}split[bhbg][bhfg]`);
-    filters.push(`[bhbg]${draws.join(",")}[bhtext]`);
+    /*
+     * NÉT PHẤN SẦN cho chữ-nền — như "YOUTH" của Chalk.
+     *
+     * Vẽ chữ lên lớp TRONG SUỐT rồi xén hạt phấn vào KÊNH TRONG (nhân grain vào
+     * alpha), sau đó mới dán lên video. Xén vào alpha chứ không nhân thẳng lên
+     * hình: nhân lên hình thì hạt phấn phủ CẢ KHUNG (nền đen đè mất video); xén
+     * vào alpha thì hạt chỉ ăn vào NÉT chữ, ngoài nét vẫn trong suốt.
+     */
+    const bhDur = (behind.seconds + HEADLINE_FADE + 1).toFixed(3);
+    const grainFile = `${GRAPHICS_DIR}/../../masks/chalk-grain.png`;
+    filters.push(
+      `color=c=black@0:s=${OUT_WIDTH}x${OUT_HEIGHT}:d=${bhDur}:r=${FPS},` +
+        `format=rgba,${draws.join(",")}[bhraw]`,
+    );
+    filters.push(`[bhraw]alphaextract[bhta]`);
+    filters.push(`movie=${grainFile},format=gray,scale=${OUT_WIDTH}:${OUT_HEIGHT}[bhgr]`);
+    filters.push(`[bhta][bhgr]blend=all_mode=multiply[bhta2]`);
+    filters.push(`color=c=${behind.tone.color}:s=${OUT_WIDTH}x${OUT_HEIGHT}:d=${bhDur}[bhwht]`);
+    filters.push(`[bhwht][bhta2]alphamerge[bhtxt]`);
+    filters.push(`[bhbg][bhtxt]overlay=0:0[bhtext]`);
     filters.push(cut.chain);
     filters.push(`[bhtext]${cut.label}overlay=0:0[bhon]`);
     stream = "[bhon]";
