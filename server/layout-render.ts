@@ -504,12 +504,19 @@ export function layoutPlan(
           `${masked};[${tag}c]scale=w='2*floor((${w})${push}/2)':` +
             `h='2*floor((${h})${push}/2)':eval=${isConstant ? "init" : "frame"}[${tag}]`,
         );
+        // RUNG STOP-MOTION cho ảnh scrapbook: ảnh dán tay không đứng ĐƠ — nó khẽ
+        // GIẬT theo BẬC thời gian (`floor(t*8)` ≈ 8fps) như phim tĩnh vật, hai ảnh
+        // lệch pha nên rung độc lập. Chỉ ảnh NGHIÊNG (wantTilt = ô có mặt nạ trong
+        // bố cục nhiều ô). Biên độ nhỏ, đủ "sống" mà không nhìn ra lỗi.
+        const jit = wantTilt ? Math.max(2, Math.round(Math.min(box.w, box.h) * 0.011)) : 0;
+        const jx = wantTilt ? `+${jit}*sin(floor(t*8)*1.7+${at})` : "";
+        const jy = wantTilt ? `+${jit}*sin(floor(t*7)*2.3+${(at * 1.9).toFixed(1)})` : "";
         overlays.push({
           label: `[${tag}]`,
           // Tâm cũng lướt: đổi bố cục là ô vừa đổi khổ vừa đổi CHỖ, và chỉ nắn
           // khổ mà để chỗ nhảy thì cú nhảy vẫn còn nguyên, chỉ nhỏ hơn.
-          x: `${glide(entries, cx, (e) => e.cx0)}-w/2`,
-          y: `${glide(entries, cy, (e) => e.cy0)}-h/2`,
+          x: `${glide(entries, cx, (e) => e.cx0)}${jx}-w/2`,
+          y: `${glide(entries, cy, (e) => e.cy0)}${jy}-h/2`,
           enable: windows(scenes),
         });
       } else {
