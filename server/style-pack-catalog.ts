@@ -329,12 +329,9 @@ export const PHAN: StylePack = {
     // 2,65 · 2,4 · 2,4 · 2,1–3,5. Bản đầu tôi đặt 4,5 theo cảm giác, gần gấp đôi.
     seconds: 2.4,
   },
-  doodles: {
-    ids: ["net-ngoan-ngoeo", "net-mat-cuoi", "net-may"],
-    tone: { color: "#F2FF3D", alpha: 0.9 },
-    sizeShare: 0.16,
-  },
-  density: { ...BASE.density, maxScale: 0.12, lineHeight: 1.3, wordGap: 0.16 },
+  // Doodle TẮT (inherit BASE null): nét ngoằn ngoèo/mặt cười/mây tự-chế đặt ngẫu
+  // nhiên đọc ra "đồ hoạ lạ" chứ chưa ra nét vẽ tay thật. Chờ asset doodle THẬT.
+  density: { ...BASE.density, maxScale: 0.1, lineHeight: 1.3, wordGap: 0.16 },
   effectBias: {
     junction: ["cross-smooth", "zoom-out"],
     insertReveal: ["fade"],

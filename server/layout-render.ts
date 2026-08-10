@@ -429,7 +429,7 @@ export function layoutPlan(
        * một lớp phủ thứ hai bám theo `glide`.
        */
       const edge = slot.role === "phu" && slot.mask ? pack.subjectEdge : null;
-      const bw = edge ? Math.max(4, Math.round(Math.min(box.w, box.h) * 0.02)) : 0;
+      const bw = edge ? Math.max(3, Math.round(Math.min(box.w, box.h) * 0.012)) : 0;
       const erode = Array.from({ length: bw }, () => "erosion").join(",");
       // MÉP RÁCH cho ảnh b-roll: dùng mặt nạ mép hạt/xé `o-rach` (thay bo tròn
       // gọn), nên cả ảnh LẪN viền vàng (dựng từ chính mặt nạ này) đều rách như

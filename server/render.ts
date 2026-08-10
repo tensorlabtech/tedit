@@ -1601,8 +1601,10 @@ export async function burnElements(
         // Đệm RIÊNG cho hộp chạy-theo-lời, KHÔNG mượn `pack.box`: `pack.box` mà
         // đặt thì MỌI chữ có hộp (dáng khác hẳn). Hộp karaoke cần đệm rộng rãi để
         // đọc ra là một "ô đánh dấu" chứ không phải nền ôm sát nét chữ.
-        const litPadY = Math.max(2, Math.round(word.fontSize * 0.12));
-        const litPadX = Math.max(4, Math.round(word.fontSize * 0.22));
+        // Đệm NGANG hẹp: hộp rộng quá thì tiếng đang nói đè lên tiếng bên cạnh
+        // (đã hiện). Ôm sát chữ để mỗi hộp chỉ phủ đúng tiếng của nó.
+        const litPadY = Math.max(2, Math.round(word.fontSize * 0.1));
+        const litPadX = Math.max(3, Math.round(word.fontSize * 0.08));
         const litBox = shown.highlight.box
           ? `box=1:boxcolor=${ffmpegColor(shown.highlight.box)}:` +
             `boxborderw=${litPadY}|${litPadX}|${litPadY}|${litPadX}:`
