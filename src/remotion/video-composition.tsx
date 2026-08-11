@@ -12,7 +12,7 @@ import { OverlayTextBlock } from "@/dev/overlays/overlay-render";
 import type { BandId } from "@/dev/overlays/overlay-model";
 import { BehindTextPreview } from "@/routes/editor/behind-text-preview";
 import { findLayout, slotPixels } from "../../server/layout-kinds";
-import { cssColor, packForElement, type StylePack } from "../../server/style-pack";
+import { packForElement } from "../../server/style-pack";
 import type {
   RemotionCaption,
   RemotionPayload,
@@ -30,8 +30,9 @@ const TILT = [-4, 3.5, -2.5, 3];
 const torn = () => `url(${staticFile("spike/o-rach.png")})`;
 
 function boil(frame: number, seed: number) {
-  const s = Math.floor(frame / 5);
-  return { x: Math.sin(s * 1.7 + seed) * 4, y: Math.sin(s * 2.3 + seed * 1.9) * 4 };
+  const s = Math.floor(frame / 6);
+  // Biên độ nhỏ (2px) — chỉ "thở" nhẹ, không giật.
+  return { x: Math.sin(s * 1.7 + seed) * 2, y: Math.sin(s * 2.3 + seed * 1.9) * 2 };
 }
 
 function Cells({
@@ -58,7 +59,9 @@ function Cells({
               ? payload.inserts[scene.insert]?.aspect ?? 1
               : (payload.sourceAspect ?? width / height);
           const rect = slotPixels(slot, width, height, aspect);
-          const jit = boil(frame, i);
+          // Rung CHỈ cho ảnh b-roll (như ảnh dán tay); ô NGƯỜI đứng yên — người
+          // wobble đọc ra giật, mất tự nhiên.
+          const jit = isBroll ? boil(frame, i) : { x: 0, y: 0 };
           const src =
             isBroll && scene.insert != null
               ? payload.inserts[scene.insert]?.url
@@ -80,8 +83,10 @@ function Cells({
               {showTorn && (
                 <div
                   style={{
+                    // Viền MỎNG (ló 1% thay vì 3%) — mép xé bớt lắt léo, đọc ra
+                    // "gợi mép" chứ không phải khung răng cưa to.
                     position: "absolute",
-                    inset: "-3%",
+                    inset: "-1%",
                     background: edge!.tone.color,
                     opacity: edge!.tone.alpha,
                     WebkitMaskImage: torn(),
@@ -161,66 +166,19 @@ function CaptionSeq({
   );
 }
 
-/**
- * DOODLE vàng quanh b-roll solo — HAI nét ở góc đối nhau, xoay cặp góc + id theo
- * thứ tự cảnh broll-don (khớp `doodleSteps` export + preview). Tô bằng
- * `mask-image` + màu (đúng `alphamerge` server). `k` = cảnh broll-don thứ mấy.
- */
-function Doodles({ pack, k }: { pack: StylePack; k: number }) {
-  const doodles = pack.doodles;
-  if (!doodles) return null;
-  const cornerPairs = [
-    [
-      { x: 0.74, y: 0.04 },
-      { x: 0.05, y: 0.6 },
-    ],
-    [
-      { x: 0.05, y: 0.05 },
-      { x: 0.74, y: 0.58 },
-    ],
-  ];
-  const pair = cornerPairs[k % cornerPairs.length];
-  return (
-    <>
-      {pair.map((spot, j) => {
-        const id = doodles.ids[(k * 2 + j) % doodles.ids.length];
-        // staticFile = cách Remotion phục vụ asset public (graphicUrl/Vite-glob
-        // rỗng ở đây). PNG doodle đã copy vào public/graphics.
-        const url = staticFile(`graphics/${id}.png`);
-        return (
-          <div
-            key={j}
-            style={{
-              position: "absolute",
-              left: `${spot.x * 100}%`,
-              top: `${spot.y * 100}%`,
-              width: `${doodles.sizeShare * 100}%`,
-              height: `${doodles.sizeShare * 100}%`,
-              WebkitMaskImage: `url(${url})`,
-              maskImage: `url(${url})`,
-              WebkitMaskSize: "contain",
-              maskSize: "contain",
-              WebkitMaskRepeat: "no-repeat",
-              maskRepeat: "no-repeat",
-              backgroundColor: cssColor(doodles.tone),
-              zIndex: 2,
-            }}
-          />
-        );
-      })}
-    </>
-  );
-}
-
 export function VideoComposition(payload: RemotionPayload) {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const t = frame / fps;
   const scene = payload.scenes.find((s) => t >= s.start && t < s.end) ?? null;
   const page = scene?.frameBlock?.page ?? payload.basePage;
-  // Mở màn CHỮ-SAU-NGƯỜI: chữ chìm, người-đã-tách (webm alpha) đè lên.
+  // Mở màn CHỮ-SAU-NGƯỜI đã TẮT theo yêu cầu: đoạn đầu giữ NGUYÊN footage gốc,
+  // không đổi nền + không tách người (mép tách chưa sạch, đọc ra lỗi).
+  const SHOW_BEHIND = false;
   const opening =
-    payload.behind && t < payload.behind.seconds ? payload.behind : null;
+    SHOW_BEHIND && payload.behind && t < payload.behind.seconds
+      ? payload.behind
+      : null;
 
   return (
     <AbsoluteFill style={{ backgroundColor: page?.tone.color ?? "#08090C" }}>
@@ -271,13 +229,7 @@ export function VideoComposition(payload: RemotionPayload) {
         />
       )}
 
-      {/* DOODLE vàng — chỉ cảnh b-roll solo, xoay theo thứ tự cảnh broll-don. */}
-      {scene?.layout === "broll-don" &&
-        (() => {
-          const brollScenes = payload.scenes.filter((s) => s.layout === "broll-don");
-          const k = brollScenes.findIndex((s) => s.start === scene.start);
-          return k >= 0 ? <Doodles pack={payload.pack} k={k} /> : null;
-        })()}
+      {/* Doodle vàng đã BỎ theo yêu cầu (hoạ tiết random không cần). */}
 
       {/* PHỤ ĐỀ — mỗi cụm một Sequence đúng cửa sổ, reuse OverlayTextBlock preview. */}
       {payload.captions.map((c, i) => (
