@@ -53,3 +53,8 @@ server/seg/pylibs/
 # Video dựng thử trong plans — tái tạo được từ mã, mỗi tệp vài megabyte.
 # Ảnh thì GIỮ: chúng là bằng chứng của quyết định thiết kế, và nhẹ.
 plans/**/video/
+
+# Remotion single-engine artifacts (media + render output)
+out/
+public/spike/
+public/remotion/

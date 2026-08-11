@@ -523,11 +523,22 @@ export function OverlayTextBlock({
  * ở máy phát triển, còn bản dựng băm tên tệp — và lúc đó hình biến mất trên máy
  * chủ mà không lỗi nào báo.
  */
-const GRAPHIC_URLS = import.meta.glob("../../../assets/graphics/png/*.png", {
-  eager: true,
-  query: "?url",
-  import: "default",
-}) as Record<string, string>;
+// `import.meta.glob` là API riêng của Vite (biên dịch tĩnh thành bản đồ URL đã
+// băm). Bundler khác (webpack của Remotion) không có nó → `import.meta` thành `{}`
+// và gọi `.glob(...)` ném lỗi lúc nạp module, làm HỎNG cả file dù export khác
+// không đụng graphic. Bọc try/catch để module NẠP ĐƯỢC ở cả hai bundler: Vite vẫn
+// băm URL như cũ (lời gọi literal giữ nguyên để Vite biến đổi), còn ở Remotion thì
+// bản đồ rỗng và lớp tải asset trung lập lo phần graphic riêng.
+let GRAPHIC_URLS: Record<string, string> = {};
+try {
+  GRAPHIC_URLS = import.meta.glob("../../../assets/graphics/png/*.png", {
+    eager: true,
+    query: "?url",
+    import: "default",
+  }) as Record<string, string>;
+} catch {
+  GRAPHIC_URLS = {};
+}
 
 /**
  * Bề rộng hai đầu của từng hình bám chữ, chép từ `assets/graphics/manifest.json`.
