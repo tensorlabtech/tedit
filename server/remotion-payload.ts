@@ -92,6 +92,11 @@ const HEIGHT = 1920;
 
 export async function buildRemotionPayload(
   projectId: string,
+  /**
+   * Video NGƯỜI dùng cho ô (mặc định `base.mp4`). Bản tích hợp export truyền video
+   * ĐÃ CẮT (`cut`) → hình + lịch màn + tiếng cùng dải cắt, hết lệch ~0.5s.
+   */
+  personVideo?: string,
 ): Promise<RemotionPayload | null> {
   const pack = readStylePack(projectId);
   if (pack.layouts.length === 0) return null;
@@ -123,7 +128,8 @@ export async function buildRemotionPayload(
 
   // Người: dùng base.mp4 (cắt tối thiểu ở dự án thử; bản production sẽ cắt đúng
   // theo `kept`). Mặt nạ: cut-mask nếu có, không thì subject gốc.
-  copyFileSync(base, join(outDir, "person.mp4"));
+  const personSrc = personVideo && existsSync(personVideo) ? personVideo : base;
+  copyFileSync(personSrc, join(outDir, "person.mp4"));
   const personUrl = rel("person.mp4");
 
   const cutMask = join(workDir(projectId), "cut-mask.mp4");

@@ -5,7 +5,8 @@ import { commitCut } from "./commit-cut";
 import { db, newId } from "./db";
 import { filterHallucinations } from "./hallucination-filter";
 import { makeFilmstrip, probe } from "./media-tools";
-import { thumbDir, workDir } from "./paths";
+import { outDir, thumbDir, workDir } from "./paths";
+import { renderViaRemotion } from "./remotion-render";
 import { existsSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 
@@ -1219,7 +1220,20 @@ export async function runExport(projectId: string) {
     }),
   );
 
-  const finalPath = await burnElements(
+  // CỜ ENGINE: `TEDDIT_ENGINE=remotion` dựng hình bằng máy vẽ Remotion (một-engine)
+  // thay `burnElements` (ffmpeg). Mặc định vẫn ffmpeg — đổi dần, có đường lùi.
+  const engine =
+    process.env.TEDDIT_ENGINE === "remotion" ? "remotion" : "ffmpeg";
+  if (engine === "remotion")
+    setJob(projectId, "export", "running", 40, "Đang dựng hình (Remotion)");
+  const finalPath =
+    engine === "remotion"
+      ? await renderViaRemotion(
+          projectId,
+          cut,
+          join(outDir(projectId), "final.mp4"),
+        )
+      : await burnElements(
     projectId,
     cut,
     elements,
