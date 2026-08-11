@@ -1494,8 +1494,8 @@ export async function burnElements(
      * cho phép, nên khoanh theo nó là khoanh một hình chữ nhật trống hai bên.
      */
     const inScope =
-      pack.wrap &&
-      (pack.wrap.scope === "all" || fontRoleFor(text.keywords) === "accent");
+      shown.wrap &&
+      (shown.wrap.scope === "all" || fontRoleFor(text.keywords) === "accent");
     if (inScope && placed.length > 0) {
       let left = Infinity;
       let right = -Infinity;
@@ -1508,12 +1508,12 @@ export async function burnElements(
         top = Math.min(top, word.y);
         bottom = Math.max(bottom, word.y + word.fontSize);
       }
-      const meta = wrapMeta(pack.wrap!.id);
+      const meta = wrapMeta(shown.wrap!.id);
       const box = wrapBox(
         meta.fit,
         { left, right, top, bottom },
         Math.max(...placed.map((word) => word.fontSize)),
-        pack.wrap!.padShare,
+        shown.wrap!.padShare,
         rect,
       );
       /*
