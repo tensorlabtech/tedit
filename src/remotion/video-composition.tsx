@@ -10,7 +10,7 @@ import {
 import { OverlayTextBlock } from "@/dev/overlays/overlay-render";
 import type { BandId } from "@/dev/overlays/overlay-model";
 import { findLayout, slotPixels } from "../../server/layout-kinds";
-import { packForElement } from "../../server/style-pack";
+import { cssColor, packForElement, type StylePack } from "../../server/style-pack";
 import type {
   RemotionCaption,
   RemotionPayload,
@@ -159,6 +159,57 @@ function CaptionSeq({
   );
 }
 
+/**
+ * DOODLE vàng quanh b-roll solo — HAI nét ở góc đối nhau, xoay cặp góc + id theo
+ * thứ tự cảnh broll-don (khớp `doodleSteps` export + preview). Tô bằng
+ * `mask-image` + màu (đúng `alphamerge` server). `k` = cảnh broll-don thứ mấy.
+ */
+function Doodles({ pack, k }: { pack: StylePack; k: number }) {
+  const doodles = pack.doodles;
+  if (!doodles) return null;
+  const cornerPairs = [
+    [
+      { x: 0.74, y: 0.04 },
+      { x: 0.05, y: 0.6 },
+    ],
+    [
+      { x: 0.05, y: 0.05 },
+      { x: 0.74, y: 0.58 },
+    ],
+  ];
+  const pair = cornerPairs[k % cornerPairs.length];
+  return (
+    <>
+      {pair.map((spot, j) => {
+        const id = doodles.ids[(k * 2 + j) % doodles.ids.length];
+        // staticFile = cách Remotion phục vụ asset public (graphicUrl/Vite-glob
+        // rỗng ở đây). PNG doodle đã copy vào public/graphics.
+        const url = staticFile(`graphics/${id}.png`);
+        return (
+          <div
+            key={j}
+            style={{
+              position: "absolute",
+              left: `${spot.x * 100}%`,
+              top: `${spot.y * 100}%`,
+              width: `${doodles.sizeShare * 100}%`,
+              height: `${doodles.sizeShare * 100}%`,
+              WebkitMaskImage: `url(${url})`,
+              maskImage: `url(${url})`,
+              WebkitMaskSize: "contain",
+              maskSize: "contain",
+              WebkitMaskRepeat: "no-repeat",
+              maskRepeat: "no-repeat",
+              backgroundColor: cssColor(doodles.tone),
+              zIndex: 2,
+            }}
+          />
+        );
+      })}
+    </>
+  );
+}
+
 export function VideoComposition(payload: RemotionPayload) {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -194,6 +245,14 @@ export function VideoComposition(payload: RemotionPayload) {
           style={{ width: "100%", height: "100%", objectFit: "cover" }}
         />
       )}
+
+      {/* DOODLE vàng — chỉ cảnh b-roll solo, xoay theo thứ tự cảnh broll-don. */}
+      {scene?.layout === "broll-don" &&
+        (() => {
+          const brollScenes = payload.scenes.filter((s) => s.layout === "broll-don");
+          const k = brollScenes.findIndex((s) => s.start === scene.start);
+          return k >= 0 ? <Doodles pack={payload.pack} k={k} /> : null;
+        })()}
 
       {/* PHỤ ĐỀ — mỗi cụm một Sequence đúng cửa sổ, reuse OverlayTextBlock preview. */}
       {payload.captions.map((c, i) => (
