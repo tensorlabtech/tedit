@@ -722,7 +722,7 @@ export type CaptionBlock = Pick<
 >;
 
 /** Look của cảnh (người/mở màn): chữ-sau-người, nắn màu. */
-export type SceneBlock = Pick<StylePack, "behindText" | "grade">;
+export type SceneBlock = Pick<StylePack, "behindText" | "grade" | "title">;
 
 /** Look của chỗ nối: vệt quét (hiệu ứng nối khác nằm ở `junction-kinds`). */
 export type JunctionBlock = Pick<StylePack, "sweep">;
@@ -754,7 +754,7 @@ export function blocksFromPack(pack: StylePack): StyleBlocks {
       plate: pack.plate,
       wrap: pack.wrap,
     },
-    scene: { behindText: pack.behindText, grade: pack.grade },
+    scene: { behindText: pack.behindText, grade: pack.grade, title: pack.title },
     junction: { sweep: pack.sweep },
   };
 }

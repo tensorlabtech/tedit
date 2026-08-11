@@ -1071,6 +1071,10 @@ export async function burnElements(
   // bộ cho cả video; thành block per-element/độc-lập là bước cấu trúc sau.
   const sceneBlock: SceneBlock = blocksFromPack(pack).scene;
   const junctionBlock: JunctionBlock = blocksFromPack(pack).junction;
+  // Quầng chữ (`glow`) áp cho LỚP chữ GỘP của cả video (một layer, không tách
+  // theo cụm) → đọc qua seam preset thay vì `captionLook.glow` trực tiếp, cùng lối các
+  // block khác. Là hiệu ứng toàn-cục, không per-cụm (khác `caption_block` per-cụm).
+  const captionLook = blocksFromPack(pack).caption;
   const grade = gradeFilter(sceneBlock.grade);
   if (grade) {
     filters.push(`${stream}${grade}[graded]`);
@@ -1354,11 +1358,11 @@ export async function burnElements(
    * Xếp chữ tiêu đề SỚM hơn chỗ vẽ nó, vì mảng màu cần biết tiêu đề sống bao
    * lâu — mảng màu nào chở tiêu đề thì nó tắt cùng lúc.
    */
-  const headline = pack.title
+  const headline = sceneBlock.title
     ? await layoutHeadline(
         headlineText,
         // Tiêu đề dùng lại cặp font của chính bộ dáng, không khai họ mới.
-        withFontRole(pack, pack.title.font),
+        withFontRole(pack, sceneBlock.title.font),
         rect.w,
         rect.h,
       )
@@ -1390,7 +1394,7 @@ export async function burnElements(
    *
    * Chỉ hiện ĐẦU video rồi mờ dần — xem `headlineHold`.
    */
-  if (pack.title && headline && headlineUntil !== null) {
+  if (sceneBlock.title && headline && headlineUntil !== null) {
     {
       // Chữ đi qua một TỆP, không qua tham số `text` — cùng đường thoát ký tự
       // với phụ đề. Đây là chữ người dùng gõ vào, và `drawtext` đọc `:` `'` `%`
@@ -1406,7 +1410,7 @@ export async function burnElements(
       const hold = headlineUntil;
       const alpha = headline.tone.alpha;
       filters.push(
-        `${stream}drawtext=fontfile='${resolvePackFont(pack.fonts[pack.title.font].file)}':` +
+        `${stream}drawtext=fontfile='${resolvePackFont(pack.fonts[sceneBlock.title.font].file)}':` +
           `textfile='${file}':fontsize=${headline.fontSize}:` +
           `x=${rect.x + headline.x}:y=${rect.y + headline.y}:` +
           `fontcolor=${headline.tone.color}:` +
@@ -1688,15 +1692,15 @@ export async function burnElements(
     } else {
       filters.push(`[txtraw]null[txt]`);
     }
-    if (pack.glow) {
+    if (captionLook.glow) {
       filters.push(`[txt]split[glowsrc][txtmain]`);
       // Bóp hết màu về đen nhưng GIỮ hình dạng (kênh trong), rồi làm mờ ở NỬA CỠ
       // và phóng lại: kết quả vốn là một vệt mờ nên thu nhỏ trước không thấy khác,
       // mà làm mờ thẳng ở cỡ đầy đủ tốn gấp đôi thời gian xuất.
-      const blur = pack.glow.radiusPx / 2;
+      const blur = captionLook.glow.radiusPx / 2;
       filters.push(
         `[glowsrc]colorchannelmixer=rr=0:rg=0:rb=0:gr=0:gg=0:gb=0:br=0:bg=0:bb=0:` +
-          `aa=${pack.glow.opacity},scale=${OUT_WIDTH / 2}:${OUT_HEIGHT / 2},` +
+          `aa=${captionLook.glow.opacity},scale=${OUT_WIDTH / 2}:${OUT_HEIGHT / 2},` +
           `boxblur=luma_radius=${blur}:alpha_radius=${blur},` +
           `scale=${OUT_WIDTH}:${OUT_HEIGHT}[glow]`,
       );
