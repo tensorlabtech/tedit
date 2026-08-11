@@ -203,15 +203,21 @@ export function entryOf(
  */
 export const PUSH_MAX = 0.12;
 
-function pushFactor(entries: readonly SceneEntry[], rate: number): string {
-  if (rate <= 0) return "";
+function pushFactor(entries: readonly SceneEntry[], defaultRate: number): string {
+  // Nhịp dồn máy quay đọc theo TỪNG cảnh: mỗi cảnh mang look Ô riêng nên tốc độ
+  // dồn cũng của chính nó (`scene.frameBlock.scenePush`), không phải một tốc độ
+  // chung. Cảnh chưa có block → `defaultRate`. Mọi block bằng nhau thì biểu thức
+  // ra y hệt bản một-tốc-độ cũ.
   const terms = entries
     .filter((e) => e.scene.push)
     .map((e) => {
+      const rate = e.scene.frameBlock?.scenePush?.ratePerSecond ?? defaultRate;
+      if (rate <= 0) return null;
       const win = `between(t\\,${e.scene.start.toFixed(3)}\\,${e.scene.end.toFixed(3)})`;
       const grown = `min(${PUSH_MAX}\\,${rate}*(t-${e.scene.start.toFixed(3)}))`;
       return `${win}*${grown}`;
-    });
+    })
+    .filter((term): term is string => term !== null);
   return terms.length === 0 ? "" : `*(1+${terms.join("+")})`;
 }
 
