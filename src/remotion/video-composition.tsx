@@ -27,8 +27,6 @@ import type {
  */
 
 const TILT = [-4, 3.5, -2.5, 3];
-const torn = () => `url(${staticFile("spike/o-rach.png")})`;
-
 function boil(frame: number, seed: number) {
   const s = Math.floor(frame / 6);
   // Biên độ nhỏ (2px) — chỉ "thở" nhẹ, không giật.
@@ -67,7 +65,7 @@ function Cells({
               ? payload.inserts[scene.insert]?.url
               : payload.personUrl;
           if (!src) return null;
-          const showTorn = isBroll && !!edge;
+          const borderW = Math.max(4, Math.round(Math.min(rect.w, rect.h) * 0.018));
           return (
             <div
               key={i}
@@ -80,43 +78,35 @@ function Cells({
                 transform: `rotate(${TILT[i % 4]}deg) translate(${jit.x}px, ${jit.y}px)`,
               }}
             >
-              {showTorn && (
-                <div
-                  style={{
-                    // Viền MỎNG (ló 1% thay vì 3%) — mép xé bớt lắt léo, đọc ra
-                    // "gợi mép" chứ không phải khung răng cưa to.
-                    position: "absolute",
-                    inset: "-1%",
-                    background: edge!.tone.color,
-                    opacity: edge!.tone.alpha,
-                    WebkitMaskImage: torn(),
-                    maskImage: torn(),
-                    WebkitMaskSize: "100% 100%",
-                    maskSize: "100% 100%",
-                  }}
-                />
-              )}
               <div
                 style={{
                   position: "absolute",
                   inset: 0,
                   overflow: "hidden",
-                  ...(showTorn
-                    ? {
-                        WebkitMaskImage: torn(),
-                        maskImage: torn(),
-                        WebkitMaskSize: "100% 100%",
-                        maskSize: "100% 100%",
-                      }
-                    : { borderRadius: width * 0.03 }),
+                  borderRadius: width * 0.03,
+                  // Viền vàng LIỀN + bo tròn — thấy rõ mà không răng cưa. (Mép xé
+                  // cũ: dày thì lắt léo, mỏng thì mất hẳn — không có điểm vừa.)
+                  ...(isBroll && edge
+                    ? { border: `${borderW}px solid ${edge.tone.color}` }
+                    : {}),
                 }}
               >
-                <Video
-                  src={staticFile(src)}
-                  muted
-                  loop
-                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                />
+                {isBroll ? (
+                  // B-roll = clip NGẮN → cần lặp; Video hỗ trợ loop.
+                  <Video
+                    src={staticFile(src)}
+                    muted
+                    loop
+                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                  />
+                ) : (
+                  // NGƯỜI = OffthreadVideo: trích frame chính xác → HẾT giật.
+                  <OffthreadVideo
+                    src={staticFile(src)}
+                    muted
+                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                  />
+                )}
               </div>
             </div>
           );
@@ -221,8 +211,8 @@ export function VideoComposition(payload: RemotionPayload) {
       ) : scene ? (
         <Cells scene={scene} payload={payload} frame={frame} />
       ) : (
-        // Khoảng trống = toàn-khung phủ kín người.
-        <Video
+        // Khoảng trống = toàn-khung phủ kín người (OffthreadVideo — hết giật).
+        <OffthreadVideo
           src={staticFile(payload.personUrl)}
           muted
           style={{ width: "100%", height: "100%", objectFit: "cover" }}
