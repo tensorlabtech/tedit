@@ -33,6 +33,7 @@ import { pickMusic } from "./ai-music";
 import { createCaptionElements } from "./caption-elements";
 import { hasModel } from "./llm";
 import { readStylePack } from "./style-pack-store";
+import { stampBlocksFromPack } from "./stamp-blocks";
 import { behindPhrase } from "./style-pack";
 import { fromLegacyLayout, type Band } from "./text-layout";
 import { failStrandedSteps, resetSteps, setStep } from "./pipeline-steps";
@@ -926,6 +927,11 @@ export async function runExport(projectId: string) {
   setJob(projectId, "export", "running", 5, "Đang chuẩn bị");
   const sources = mainSources(projectId);
   if (sources.length === 0) throw new Error("Chưa có video chính");
+
+  // Bảo đảm mọi element có block look của nó trước khi dựng — nguồn đọc là block
+  // trên element, không phải bộ dáng toàn-cục. Fill-NULL nên phủ cả element cũ
+  // lẫn mới, chạy lại vô hại.
+  stampBlocksFromPack(projectId);
 
   /*
    * `base.mp4` thường đã có sẵn — việc nền dựng nó xong từ lúc người dùng còn

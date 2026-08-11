@@ -14,6 +14,7 @@ import { VIDEO } from "./routes/media-formats";
 import { keptRanges, topKeyword } from "./pipeline";
 import { behindPhrase } from "./style-pack";
 import { readStylePack } from "./style-pack-store";
+import { stampBlocksFromPack } from "./stamp-blocks";
 import { emptiestBand, subjectPath } from "./subject-mask";
 import type { ScheduledScene } from "./timing";
 
@@ -78,6 +79,10 @@ export async function buildSceneSchedule(
   const pack = readStylePack(projectId);
   // Bộ dáng không khai bố cục thì không có lịch — màn hình giữ nguyên video phủ kín.
   if (pack.layouts.length === 0) return EMPTY;
+
+  // Element mang block look của chính nó — bảo đảm đã đóng dấu trước khi khung xem
+  // đọc (fill-NULL, phủ cả element cũ lẫn vừa thêm tay).
+  stampBlocksFromPack(projectId);
 
   const base = join(workDir(projectId), "base.mp4");
   if (!existsSync(base)) return EMPTY;
