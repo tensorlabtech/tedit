@@ -43,7 +43,13 @@ import {
   blocksFromPack,
   type StylePack,
 } from "./style-pack";
-import type { CaptionBlock, FrameBlock, RevealId } from "./style-pack";
+import type {
+  CaptionBlock,
+  FrameBlock,
+  JunctionBlock,
+  RevealId,
+  SceneBlock,
+} from "./style-pack";
 import {
   textWidth,
   type AlignId,
@@ -753,7 +759,7 @@ function insertFilter(
   const box = shapeBox(shape);
   // Tư liệu chèn nắn màu ĐÚNG như dải chính. Không nắn thì mỗi lần chèn là một
   // lần màu nhảy: nền ấm, tư liệu lạnh — người xem đọc ra ngay là "dán vào".
-  const grade = gradeFilter(pack.grade);
+  const grade = gradeFilter(blocksFromPack(pack).scene.grade);
   const base =
     `[${index + 1}:v]scale=${box.w}:${box.h}:force_original_aspect_ratio=increase,` +
     `crop=${box.w}:${box.h},setsar=1,fps=${FPS}` +
@@ -1060,7 +1066,12 @@ export async function burnElements(
    * Đặt sau thì nó nắn luôn cả chữ và tư liệu chèn: màu nhấn vàng của bộ dáng ra
    * một màu vàng khác, và cả bảng màu đã cân công phu thành vô nghĩa.
    */
-  const grade = gradeFilter(pack.grade);
+  // Chữ-nền / nắn-màu / vệt-quét đọc từ block (xẻ từ preset qua `blocksFromPack`),
+  // không đọc `pack.*` trực tiếp — cùng seam với frame/caption. Còn TOÀN CỤC một
+  // bộ cho cả video; thành block per-element/độc-lập là bước cấu trúc sau.
+  const sceneBlock: SceneBlock = blocksFromPack(pack).scene;
+  const junctionBlock: JunctionBlock = blocksFromPack(pack).junction;
+  const grade = gradeFilter(sceneBlock.grade);
   if (grade) {
     filters.push(`${stream}${grade}[graded]`);
     stream = "[graded]";
@@ -1145,7 +1156,7 @@ export async function burnElements(
    * Đặt muộn hơn thì chữ chui ra sau cả những lớp ấy, và một cái viền khung
    * cũng che mất nó.
    */
-  const behind = pack.behindText;
+  const behind = sceneBlock.behindText;
   if (behind && subjectPath && behindLine) {
     const size = Math.round(OUT_WIDTH * behind.sizeShare);
     // VIẾT HOA như "YOUTH" của Chalk — chữ-nền đậm đặc hẹp đọc mạnh nhất khi hoa.
@@ -1313,7 +1324,7 @@ export async function burnElements(
    * gì tới nhau.
    */
   for (const step of sweepSteps(
-    pack,
+    junctionBlock,
     cutMarks,
     OUT_WIDTH,
     OUT_HEIGHT,
@@ -1583,10 +1594,10 @@ export async function burnElements(
       // RUNG TAY NHẸ (boiling) như Chalk: mỗi tiếng dao động vài px theo sin(t),
       // lệch pha theo vị trí — đọc ra nét vẽ tay "sống" chứ không phải cả dòng rung
       // đều. CHỈ bộ có chữ-nền (Phấn/viết tay); bộ in đậm (Nhịp đen) giữ chữ đứng.
-      const wig = pack.behindText
+      const wig = sceneBlock.behindText
         ? `+${Math.max(1, Math.round(word.fontSize * 0.013))}*sin(t*5.5+${flat})`
         : "";
-      const wigY = pack.behindText
+      const wigY = sceneBlock.behindText
         ? `+${Math.max(1, Math.round(word.fontSize * 0.011))}*sin(t*4.5+${(flat * 1.7).toFixed(2)})`
         : "";
       const body =
@@ -1665,7 +1676,7 @@ export async function burnElements(
     // TEXTURE PHẤN cho chữ caption (chỉ bộ CÓ chữ-nền = Phấn): xén hạt phấn NHẸ
     // vào KÊNH TRONG, GIỮ NGUYÊN màu (vàng/trắng/hộp) — nét chữ ra "bụi phấn" thay
     // vì nét máy sạch bong. Grain nhẹ (mostly sáng) nên chữ vẫn đọc tốt.
-    if (pack.behindText) {
+    if (sceneBlock.behindText) {
       const capGrain = `${GRAPHICS_DIR}/../../masks/caption-grain.png`;
       filters.push(`[txtraw]split[capa][capb]`);
       filters.push(`[capa]alphaextract[capal]`);
