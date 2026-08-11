@@ -146,6 +146,8 @@ export function shape(data: ApiProject) {
       captionBlock: element.caption_block
         ? (JSON.parse(element.caption_block) as CaptionBlock)
         : null,
+      // Preset đã đóng dấu — để picker tô đúng phong cách chữ khi đã trộn.
+      captionPreset: element.caption_preset ?? null,
     }));
 
   // B-ROLL = phần tử CÓ tư liệu, KHÔNG phân biệt `kind`. B-roll và ô người giờ là
@@ -180,6 +182,7 @@ export function shape(data: ApiProject) {
             : "none") as RevealId,
         shape: (element.shape ?? "full") as ShapeId,
         insertLayout: element.insert_layout ?? undefined,
+        framePreset: element.frame_preset ?? null,
         // Xem trước phải là TỆP THẬT, không phải ô màu có tên: ô màu không cho
         // biết tư liệu có che mặt người nói hay không.
         url: file ? api.mediaUrl(file.id) : undefined,

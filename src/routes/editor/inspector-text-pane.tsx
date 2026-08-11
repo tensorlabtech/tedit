@@ -120,17 +120,23 @@ export function TextPane({
   // font tiếng nói (đủ để phân biệt preset). Chọn đúng preset dự án = trả `null`
   // (kế thừa mặc định, generate/migration stamp lại) thay vì ghim cứng.
   const currentCaptionBlock = element.captionBlock
-    ? (captionBlocks.find(
+    ? // Đã đặt riêng → tô ĐÚNG theo preset LOOK đã đóng dấu (`captionPreset`); thiếu
+      // dấu (cụm cũ) thì lùi về so khớp font tiếng nói cho gần đúng.
+      (element.captionPreset ??
+      captionBlocks.find(
         (b) =>
           b.captionLook.fonts.voice.file ===
           element.captionBlock?.fonts.voice.file,
-      )?.id ?? null)
+      )?.id ??
+      null)
     : editor.stylePack;
   const pickCaptionBlock = (id: string) => {
     const block = captionBlocks.find((b) => b.id === id);
     if (!block) return;
+    const inherit = id === editor.stylePack; // chọn đúng preset dự án = kế thừa mặc định.
     editor.updateTextElement(element.id, {
-      captionBlock: id === editor.stylePack ? null : block.captionLook,
+      captionBlock: inherit ? null : block.captionLook,
+      captionPreset: inherit ? null : id, // đóng dấu preset LOOK để tô ĐÚNG khi trộn.
     });
     playPreview();
   };

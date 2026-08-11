@@ -602,6 +602,7 @@ export function useEditor(projectId: string | undefined) {
                   ? null
                   : JSON.stringify(patch.captionBlock)
                 : undefined,
+            captionPreset: patch.captionPreset,
           })
           .catch(boQuaLoi());
         return {
@@ -1641,6 +1642,8 @@ export function useEditor(projectId: string | undefined) {
         insertLayout?: string | null;
         /** Look Ô đóng dấu (JSON `FrameBlock`) khi nhặt khung từ pool. */
         frameBlock?: string | null;
+        /** Mã preset của khung đã nhặt — để picker tô đúng khi trộn. */
+        framePreset?: string | null;
       },
     ) => {
       setData((current) =>
@@ -1800,9 +1803,14 @@ export function useEditor(projectId: string | undefined) {
 
   /** Đổi bố cục của một segment (ô người) — PATCH + nạp lại lịch. */
   const setSegmentLayout = useCallback(
-    (elementId: string, layout: string, frameBlock?: string | null) => {
+    (
+      elementId: string,
+      layout: string,
+      frameBlock?: string | null,
+      framePreset?: string | null,
+    ) => {
       void api
-        .updateElement(elementId, { insertLayout: layout, frameBlock })
+        .updateElement(elementId, { insertLayout: layout, frameBlock, framePreset })
         .catch(boQuaLoi());
       setLayoutReload((n) => n + 1);
     },

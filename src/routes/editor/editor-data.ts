@@ -69,6 +69,8 @@ export type Insert = {
   shape: ShapeId;
   /** Bố cục hiện b-roll — `undefined` là để máy tự chọn (xoay vòng họ hai-ô). */
   insertLayout?: string;
+  /** Mã preset đã đóng dấu look Ô — để picker tô đúng khung khi trộn. */
+  framePreset?: string | null;
   /** Tên tệp đầy đủ — chỉ để hiện khi trỏ chuột vào, nhãn trên dải đã rút ngắn */
   fullName?: string;
   id: string;
@@ -138,6 +140,8 @@ export type TextElement = {
   fontStyle?: string | null;
   /** Look chữ ĐÃ ĐÓNG DẤU của cụm (`element.caption_block`) — cụm tự mang look. */
   captionBlock?: CaptionBlock | null;
+  /** Mã preset đã đóng dấu look chữ — để picker tô đúng phong cách chữ khi trộn. */
+  captionPreset?: string | null;
   pinned?: boolean;
 };
 

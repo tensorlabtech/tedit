@@ -192,6 +192,7 @@ export function InspectorPanel({
       editor={editor}
       elementId={item.id}
       layout={item.insertLayout ?? firstBroll ?? "hai-o"}
+      framePreset={item.framePreset}
       media={{
         thumbUrl: item.thumbUrl ?? item.url,
         isVideo: item.isVideo,

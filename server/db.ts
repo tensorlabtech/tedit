@@ -513,6 +513,11 @@ for (const [table, column, type] of [
   ["elements", "caption_block", "TEXT"],
   ["elements", "scene_block", "TEXT"],
   ["elements", "junction_block", "TEXT"],
+  // Mã PRESET đã đóng dấu block (id bộ dáng nguồn) — CHỈ để picker tô đúng khung/
+  // chữ đang chọn khi cụm/cảnh đã TRỘN look khác preset dự án. Không ai đọc để
+  // dựng; look thật nằm trong `*_block`. `NULL` = chưa stamp (rơi về preset dự án).
+  ["elements", "frame_preset", "TEXT"],
+  ["elements", "caption_preset", "TEXT"],
   ["library_tracks", "energy", "TEXT"],
   ["library_tracks", "density", "TEXT"],
   ["library_tracks", "vocal", "TEXT"],

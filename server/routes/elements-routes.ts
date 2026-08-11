@@ -145,8 +145,12 @@ app.patch("/api/elements/:elementId", async (request, reply) => {
     insertLayout?: string | null;
     /** Look Ô đóng dấu (JSON `FrameBlock`) khi nhặt khung từ pool; `null` = xoá. */
     frameBlock?: string | null;
+    /** Mã preset của khung đã nhặt — để picker tô đúng khi trộn. */
+    framePreset?: string | null;
     /** Look CHỮ đóng dấu (JSON `CaptionBlock`) khi nhặt phong cách chữ từ pool; `null` = xoá. */
     captionBlock?: string | null;
+    /** Mã preset của phong cách chữ đã nhặt — để picker tô đúng khi trộn. */
+    captionPreset?: string | null;
     /** Đổi tệp media của b-roll (element kind='insert'). */
     mediaFileId?: string;
     keywords?: string[];
@@ -235,18 +239,20 @@ app.patch("/api/elements/:elementId", async (request, reply) => {
   // Look Ô đóng dấu: nhặt khung từ pool thì ghi luôn nền/viền của khung vào cảnh.
   // Nhận cả `null` (xoá đè → migration/generate stamp lại theo preset dự án).
   if (body.frameBlock !== undefined) {
-    db.prepare("UPDATE elements SET frame_block=? WHERE id=?").run(
+    // Ghi kèm mã PRESET của khung đã nhặt → picker tô đúng dù đã trộn look khác
+    // preset dự án. `null` khi xoá đè (stamp lại theo preset dự án sau).
+    db.prepare("UPDATE elements SET frame_block=?, frame_preset=? WHERE id=?").run(
       body.frameBlock,
+      body.framePreset ?? null,
       elementId,
     );
   }
   // Look CHỮ đóng dấu: nhặt phong cách chữ từ pool thì ghi look chữ vào cụm.
   // Nhận cả `null` (xoá đè → generate/migration stamp lại theo preset dự án).
   if (body.captionBlock !== undefined) {
-    db.prepare("UPDATE elements SET caption_block=? WHERE id=?").run(
-      body.captionBlock,
-      elementId,
-    );
+    db.prepare(
+      "UPDATE elements SET caption_block=?, caption_preset=? WHERE id=?",
+    ).run(body.captionBlock, body.captionPreset ?? null, elementId);
   }
   // Đổi tệp b-roll: tệp phải thuộc CHÍNH dự án của phần tử — cổng chặn đã xác nhận
   // phần tử thuộc người gọi, nên chỉ còn buộc tệp cùng dự án với nó.

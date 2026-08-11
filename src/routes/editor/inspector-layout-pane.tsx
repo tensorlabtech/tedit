@@ -54,6 +54,7 @@ export function LayoutKhungPane({
   editor,
   elementId,
   layout,
+  framePreset,
   /** Có tư liệu → khung 2 ô (b-roll). `null` → khung 1 ô (người). */
   media,
   srcStart,
@@ -65,6 +66,8 @@ export function LayoutKhungPane({
   editor: EditorState;
   elementId: string;
   layout: string;
+  /** Preset đã đóng dấu look Ô của cảnh này — để tô ĐÚNG khung khi đã trộn. */
+  framePreset?: string | null;
   media: { thumbUrl?: string; isVideo?: boolean; label?: string } | null;
   srcStart: number;
   srcEnd: number;
@@ -93,10 +96,12 @@ export function LayoutKhungPane({
     return [...by.values()];
   })();
   // Khung ĐANG chọn của cảnh này — tô sáng đúng block đang mang look ấy: khớp cấu
-  // trúc + đúng preset của look đã đóng dấu (xấp xỉ bằng preset dự án khi chưa trộn).
+  // trúc + đúng preset LOOK đã đóng dấu vào cảnh. Khi cảnh chưa trộn (chưa có
+  // `framePreset`) thì lùi về preset dự án cho khớp.
+  const lookPreset = framePreset ?? editor.stylePack;
   const currentBlockId =
-    blocks.find((b) => b.layout === layout && b.presetId === editor.stylePack)
-      ?.id ?? null;
+    blocks.find((b) => b.layout === layout && b.presetId === lookPreset)?.id ??
+    null;
 
   const [frameOpen, setFrameOpen] = useState(false);
   const [mediaOpen, setMediaOpen] = useState(false);
@@ -115,15 +120,20 @@ export function LayoutKhungPane({
     if (!block) return;
     const nextLayout = block.layout;
     const frameBlock = JSON.stringify(block.frameLook);
+    const framePreset = block.presetId; // đóng dấu preset LOOK để picker tô ĐÚNG khi trộn.
     if (findLayout(nextLayout).needsInsert) {
       if (media)
-        editor.setInsertStyle(elementId, { insertLayout: nextLayout, frameBlock });
-      else editor.setSegmentLayout(elementId, nextLayout, frameBlock);
+        editor.setInsertStyle(elementId, {
+          insertLayout: nextLayout,
+          frameBlock,
+          framePreset,
+        });
+      else editor.setSegmentLayout(elementId, nextLayout, frameBlock, framePreset);
       replay();
     } else if (media) {
       void editor.convertBrollToPerson(elementId, nextLayout); // 2 ô → 1 ô: gỡ tư liệu.
     } else {
-      editor.setSegmentLayout(elementId, nextLayout, frameBlock);
+      editor.setSegmentLayout(elementId, nextLayout, frameBlock, framePreset);
       replay();
     }
   };

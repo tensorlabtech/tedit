@@ -18,11 +18,14 @@ import { readStylePack } from "./style-pack-store";
  * không cần cờ seed-once (cờ sẽ bỏ sót element thêm SAU khi cờ đã cắm).
  */
 export function stampBlocksFromPack(projectId: string): void {
-  const blocks = blocksFromPack(readStylePack(projectId));
+  const pack = readStylePack(projectId);
+  const blocks = blocksFromPack(pack);
+  // Kèm mã PRESET nguồn để picker tô đúng khi cụm/cảnh đã trộn look khác preset.
+  // `pack.id` giữ id bộ dáng dự án (đổi phong-cách-chữ không đổi `id`).
   db.prepare(
-    "UPDATE elements SET frame_block=? WHERE project_id=? AND kind='layout' AND frame_block IS NULL",
-  ).run(JSON.stringify(blocks.frame), projectId);
+    "UPDATE elements SET frame_block=?, frame_preset=? WHERE project_id=? AND kind='layout' AND frame_block IS NULL",
+  ).run(JSON.stringify(blocks.frame), pack.id, projectId);
   db.prepare(
-    "UPDATE elements SET caption_block=? WHERE project_id=? AND kind='text' AND caption_block IS NULL",
-  ).run(JSON.stringify(blocks.caption), projectId);
+    "UPDATE elements SET caption_block=?, caption_preset=? WHERE project_id=? AND kind='text' AND caption_block IS NULL",
+  ).run(JSON.stringify(blocks.caption), pack.id, projectId);
 }

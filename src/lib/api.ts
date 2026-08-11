@@ -79,6 +79,12 @@ export type ApiElement = {
   font_style?: string | null;
   /** Look chữ ĐÃ ĐÓNG DẤU của cụm (JSON) — cụm tự mang look, không đọc bộ dáng. */
   caption_block?: string | null;
+  /** Look Ô ĐÃ ĐÓNG DẤU của cảnh (JSON `FrameBlock`). */
+  frame_block?: string | null;
+  /** Mã preset đã đóng dấu look Ô — để picker tô đúng khung khi trộn. */
+  frame_preset?: string | null;
+  /** Mã preset đã đóng dấu look chữ — để picker tô đúng phong cách chữ khi trộn. */
+  caption_preset?: string | null;
   id: string;
   kind: "text" | "insert";
   /** Rỗng với chữ tự do — nó neo theo `start_sec`/`end_sec` */
@@ -867,11 +873,15 @@ export const api = {
        * kèm để nền/viền của khung đi theo cảnh này. `null` = xoá đè (về mặc định).
        */
       frameBlock?: string | null;
+      /** Mã preset của khung đã nhặt — để picker tô đúng khi trộn. */
+      framePreset?: string | null;
       /**
        * Look CHỮ đóng dấu lên cụm (JSON `CaptionBlock`) — nhặt phong cách chữ từ
        * pool thì gửi kèm để font/màu của cụm đi theo cụm này. `null` = xoá đè.
        */
       captionBlock?: string | null;
+      /** Mã preset của phong cách chữ đã nhặt — để picker tô đúng khi trộn. */
+      captionPreset?: string | null;
       /** Đổi tệp media của b-roll */
       mediaFileId?: string;
       /** Kéo hai đầu khối chữ tự do trên dải */
