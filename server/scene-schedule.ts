@@ -13,8 +13,8 @@ import { captionBlockPool, type CaptionBlockChoice } from "./caption-blocks";
 import { probe } from "./media-tools";
 import { workDir } from "./paths";
 import { VIDEO } from "./routes/media-formats";
-import { keptRanges, topKeyword } from "./pipeline";
-import { behindPhrase } from "./style-pack";
+import { keptRanges, behindElement } from "./pipeline";
+import { STYLE_PACKS } from "./style-pack-catalog";
 import { readStylePack } from "./style-pack-store";
 import { stampBlocksFromPack } from "./stamp-blocks";
 import { emptiestBand, subjectPath } from "./subject-mask";
@@ -75,6 +75,16 @@ export type SceneScheduleResult = {
   behindLine: string | null;
   /** Dải (chỉ số) ít người nhất để đặt chữ-nền — khớp `emptiestBand` ở bản xuất. */
   behindBand: number;
+  /**
+   * Mã element chữ-sau-người — để bàn dựng SỬA đúng element (ô trống = tắt). `null`
+   * khi bộ dáng không khai chữ-nền.
+   */
+  behindTextId: string | null;
+  /**
+   * Preset nào CÓ khung "Chữ sau người" — để pool khung bày nó thành một LOẠI khung
+   * (như "Phấn · Chữ sau người"). Chỉ preset khai `behindText` (Phấn) mới góp mặt.
+   */
+  behindPresets: { id: string; label: string }[];
 };
 
 const EMPTY: SceneScheduleResult = {
@@ -87,6 +97,8 @@ const EMPTY: SceneScheduleResult = {
   captionBlocks: [],
   behindLine: null,
   behindBand: 0,
+  behindTextId: null,
+  behindPresets: [],
 };
 
 export async function buildSceneSchedule(
@@ -150,11 +162,11 @@ export async function buildSceneSchedule(
   const sourceAspect =
     baseInfo.width && baseInfo.height ? baseInfo.width / baseInfo.height : null;
 
-  // Chữ-nền: chỉ bộ dáng có `behindText` (Phấn). Dải đặt lấy từ mặt nạ như bản
-  // xuất; thiếu mặt nạ thì về dải 0 (vẫn hiện được, chỉ không né người tối ưu).
-  const behindLine = pack.behindText
-    ? behindPhrase(topKeyword(projectId))
-    : null;
+  // Chữ-nền: đọc TỪ element (gieo một lần nếu chưa có) — CÙNG nguồn với bản xuất,
+  // nên khung xem trước phản ánh đúng chữ người dùng đã sửa. Ô trống = tắt. Dải đặt
+  // lấy từ mặt nạ như bản xuất; thiếu mặt nạ thì về dải 0.
+  const behindEl = behindElement(projectId);
+  const behindLine = behindEl?.content.trim() ? behindEl.content : null;
   const behindBand = behindLine
     ? ((await emptiestBand(projectId, baseInfo.duration / 2).catch(() => null))
         ?.index ?? 0)
@@ -170,5 +182,10 @@ export async function buildSceneSchedule(
     captionBlocks: captionBlockPool(),
     behindLine,
     behindBand,
+    behindTextId: behindEl?.id ?? null,
+    behindPresets: STYLE_PACKS.filter((p) => p.behindText).map((p) => ({
+      id: p.id,
+      label: p.label,
+    })),
   };
 }

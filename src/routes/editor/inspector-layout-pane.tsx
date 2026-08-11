@@ -83,6 +83,7 @@ export function LayoutKhungPane({
   // khung đi theo cảnh. Nhóm theo preset (cái RỔ) chỉ để dễ ngắm — tiêu đề nhóm là
   // tên preset, nhãn khung để gọn; cả hai gộp lại đọc ra "Phấn · 2-ô".
   const blocks = editor.sceneLayout?.frameBlocks ?? [];
+  const behindPresets = editor.sceneLayout?.behindPresets ?? [];
   const presetGroups = (() => {
     const by = new Map<
       string,
@@ -92,6 +93,14 @@ export function LayoutKhungPane({
       const g = by.get(b.presetId) ?? { label: b.presetLabel, options: [] };
       g.options.push({ id: b.id, label: khungLabel(b.layout) });
       by.set(b.presetId, g);
+    }
+    // "Chữ sau người" là một LOẠI khung của preset khai chữ-nền (Phấn) — bày chung
+    // pool để thấy ĐỦ loại. Như b-roll có ô ẢNH, khung này có ô CHỮ. Nhặt nó không
+    // đổi cấu trúc cảnh mà mở ô nhập chữ-nền (chữ mở màn của cả video).
+    for (const p of behindPresets) {
+      const g = by.get(p.id) ?? { label: p.label, options: [] };
+      g.options.push({ id: `behindtext:${p.id}`, label: "Chữ sau người" });
+      by.set(p.id, g);
     }
     return [...by.values()];
   })();
@@ -116,6 +125,11 @@ export function LayoutKhungPane({
   // với Nhịp-đen trong cùng video.
   const onPick = (blockId: string) => {
     setFrameOpen(false);
+    // Khung "Chữ sau người": không đổi cấu trúc cảnh — đưa tới ô nhập chữ-nền.
+    if (blockId.startsWith("behindtext:")) {
+      editor.pickBehindText();
+      return;
+    }
     const block = blocks.find((b) => b.id === blockId);
     if (!block) return;
     const nextLayout = block.layout;
@@ -128,7 +142,8 @@ export function LayoutKhungPane({
           frameBlock,
           framePreset,
         });
-      else editor.setSegmentLayout(elementId, nextLayout, frameBlock, framePreset);
+      else
+        editor.setSegmentLayout(elementId, nextLayout, frameBlock, framePreset);
       replay();
     } else if (media) {
       void editor.convertBrollToPerson(elementId, nextLayout); // 2 ô → 1 ô: gỡ tư liệu.
@@ -149,7 +164,9 @@ export function LayoutKhungPane({
       <CardContent className="min-h-0 flex-1 overflow-y-auto no-scrollbar">
         <div className="grid gap-4">
           <Field>
-            <FieldLabel>Kiểu khung · {findStylePack(editor.stylePack).label}</FieldLabel>
+            <FieldLabel>
+              Kiểu khung · {findStylePack(editor.stylePack).label}
+            </FieldLabel>
             {/* Thumbnail 9:16 TO, tên ở TRÊN, nút ở DƯỚI. Bấm Đổi mở modal cả danh
                 sách — sau trăm kiểu thì vẫn gọn ở đây. */}
             <div className="flex items-stretch gap-3">
@@ -159,7 +176,9 @@ export function LayoutKhungPane({
                 </span>
               </div>
               <div className="flex min-w-0 flex-1 flex-col justify-center gap-2">
-                <p className="truncate text-sm font-medium">{khungLabel(layout)}</p>
+                <p className="truncate text-sm font-medium">
+                  {khungLabel(layout)}
+                </p>
                 <Button
                   variant="secondary"
                   size="sm"

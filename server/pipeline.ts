@@ -959,6 +959,28 @@ export function seedBehindText(projectId: string): void {
   ).run(newId("e"), projectId, "behindtext", line, 0, end);
 }
 
+/**
+ * ĐỌC element chữ-sau-người (gieo nếu chưa có) — MỘT nguồn dùng chung cho bản xuất
+ * và khung xem trước. Trả `id` để bàn dựng sửa được, `content` để vẽ.
+ *
+ * Bộ dáng không khai chữ-nền → `null`. Content RỖNG vẫn trả element (id còn đó): ô
+ * trống là cách người dùng TẮT chữ-nền mà không xoá khung — phía vẽ tự bỏ khi câu
+ * rỗng, và vì element còn tồn tại nên `seedBehindText` không mọc lại chữ cũ.
+ */
+export function behindElement(
+  projectId: string,
+): { id: string; content: string } | null {
+  const pack = readStylePack(projectId);
+  if (!pack.behindText) return null;
+  seedBehindText(projectId);
+  const row = db
+    .prepare(
+      "SELECT id, content FROM elements WHERE project_id=? AND kind='behindtext' ORDER BY start_sec LIMIT 1",
+    )
+    .get(projectId) as { id: string; content: string | null } | undefined;
+  return row ? { id: row.id, content: row.content ?? "" } : null;
+}
+
 export async function runExport(projectId: string) {
   setJob(projectId, "export", "running", 5, "Đang chuẩn bị");
   const sources = mainSources(projectId);
@@ -1142,14 +1164,9 @@ export async function runExport(projectId: string) {
    * nhất: lặp lại là dấu hiệu rõ nhất rằng cả video xoay quanh nó.
    */
   // Chữ-nền giờ SỐNG trong một element (gieo một lần nếu chưa có). Đọc chữ từ
-  // element thay vì tính chớp — element là nơi người dùng sẽ sửa/thêm sau này.
-  seedBehindText(projectId);
-  const behindEl = db
-    .prepare(
-      "SELECT content FROM elements WHERE project_id=? AND kind='behindtext' ORDER BY start_sec LIMIT 1",
-    )
-    .get(projectId) as { content: string | null } | undefined;
-  const behindLine = behindPack.behindText ? (behindEl?.content ?? null) : null;
+  // element thay vì tính chớp — element là nơi người dùng sửa/tắt (ô trống = tắt).
+  const behindEl = behindPack.behindText ? behindElement(projectId) : null;
+  const behindLine = behindEl?.content.trim() ? behindEl.content : null;
   const behindBand = behindLine
     ? ((await emptiestBand(projectId, baseInfo.duration / 2))?.index ?? 0)
     : 0;

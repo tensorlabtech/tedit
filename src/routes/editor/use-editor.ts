@@ -19,7 +19,6 @@ import {
   type ApiSegment,
 } from "@/lib/api";
 
-
 import type { ScheduledScene } from "../../../server/timing";
 import type { StylePackId } from "../../../server/style-pack";
 import {
@@ -46,7 +45,6 @@ import {
   junctionHalves,
   type JunctionId,
 } from "@/dev/overlays/overlay-model";
-
 
 export type Selection =
   | { kind: "clip"; id: string }
@@ -79,15 +77,11 @@ import { useSceneLayout } from "./use-scene-layout";
  */
 export { MIN_SEGMENT } from "./editor-limits";
 
-
-
-
 /** Một khung hình ở 30 khung/giây — bước lùi nhỏ nhất còn có nghĩa trên dải. */
 const FRAME = 1 / 30;
 
 /** Khối chữ tự do mới đặt dài bao lâu — đủ đọc một dòng tiêu đề. */
 const TEXT_DEFAULT_LENGTH = 2;
-
 
 /** Dựng dữ liệu màn Editor từ dữ liệu máy chủ trả về. */
 /**
@@ -1599,8 +1593,9 @@ export function useEditor(projectId: string | undefined) {
    * không đụng một hàng dữ liệu nào. Vì thế nó ở đây chứ không ở Inspector —
    * Inspector là nơi sửa VẬT ĐANG CHỌN.
    */
-  const [stylePack, setStylePackState] =
-    useState<StylePackId>(DEFAULT_STYLE_PACK_ID);
+  const [stylePack, setStylePackState] = useState<StylePackId>(
+    DEFAULT_STYLE_PACK_ID,
+  );
   // PHONG CÁCH CHỮ mặc định cả video — `null` là theo font của `stylePack`. Trục
   // đổi được AN TOÀN: chỉ đổi dáng chữ, không đụng nhịp/bố cục nên không cần nạp
   // lại lịch màn như `setStylePack`.
@@ -1810,12 +1805,35 @@ export function useEditor(projectId: string | undefined) {
       framePreset?: string | null,
     ) => {
       void api
-        .updateElement(elementId, { insertLayout: layout, frameBlock, framePreset })
+        .updateElement(elementId, {
+          insertLayout: layout,
+          frameBlock,
+          framePreset,
+        })
         .catch(boQuaLoi());
       setLayoutReload((n) => n + 1);
     },
     [],
   );
+
+  /**
+   * Sửa chữ-sau-người (element chữ-nền của đoạn mở đầu).
+   *
+   * Ô TRỐNG = TẮT: phía vẽ tự bỏ khi câu rỗng, mà element vẫn còn nên chữ cũ không
+   * mọc lại. Nạp lại lịch màn để khung xem cập nhật ngay câu mới.
+   */
+  const setBehindText = useCallback((elementId: string, content: string) => {
+    void api.updateElement(elementId, { content }).catch(boQuaLoi());
+    setLayoutReload((n) => n + 1);
+  }, []);
+
+  /**
+   * Nhặt khung "Chữ sau người" từ pool → mở khung sửa DỰ ÁN (nơi có ô nhập chữ-nền).
+   *
+   * Chữ-nền là chữ mở màn của cả video (không thuộc một cảnh), nên nó sống cùng chỗ
+   * với dòng tiêu đề ở nhánh "Chưa chọn gì" — nhặt khung này là đưa người dùng tới đó.
+   */
+  const pickBehindText = useCallback(() => setSelection(null), []);
 
   /**
    * Gắn TƯ LIỆU cho một khung — khung 2 ô placeholder thành b-roll.
@@ -1826,9 +1844,7 @@ export function useEditor(projectId: string | undefined) {
   const setSegmentMedia = useCallback(
     async (elementId: string, mediaFileId: string) => {
       if (!projectId) return;
-      await api
-        .updateElement(elementId, { mediaFileId })
-        .catch(boQuaLoi());
+      await api.updateElement(elementId, { mediaFileId }).catch(boQuaLoi());
       const fresh = await api.getProject(projectId).catch(() => null);
       if (fresh) setData(shape(fresh));
       setSelection({ kind: "insert", id: elementId });
@@ -1838,14 +1854,11 @@ export function useEditor(projectId: string | undefined) {
   );
 
   /** Xoá một segment bố cục → chỗ ấy về TOÀN-KHUNG (mặc định). */
-  const deleteSegment = useCallback(
-    async (elementId: string) => {
-      await api.deleteElement(elementId).catch(boQuaLoi());
-      setSelection(null);
-      setLayoutReload((n) => n + 1);
-    },
-    [],
-  );
+  const deleteSegment = useCallback(async (elementId: string) => {
+    await api.deleteElement(elementId).catch(boQuaLoi());
+    setSelection(null);
+    setLayoutReload((n) => n + 1);
+  }, []);
 
   const setZoomPunch = useCallback(
     async (punch: JunctionId) => {
@@ -1901,9 +1914,7 @@ export function useEditor(projectId: string | undefined) {
     async (next: StylePackId) => {
       if (!projectId) return;
       setStylePackState(next);
-      await api
-        .updateProject(projectId, { stylePack: next })
-        .catch(boQuaLoi());
+      await api.updateProject(projectId, { stylePack: next }).catch(boQuaLoi());
       // Lấy lại lịch màn theo bộ dáng MỚI — sau khi PATCH xong, không thì server
       // đọc cột cũ và trả lịch của bộ trước.
       setLayoutReload((n) => n + 1);
@@ -2047,7 +2058,9 @@ export function useEditor(projectId: string | undefined) {
         .addSentence(projectId, { start, end, text })
         .catch(() => null);
       if (added?.sentence?.id) {
-        await api.createCaptions(projectId, added.sentence.id).catch(() => null);
+        await api
+          .createCaptions(projectId, added.sentence.id)
+          .catch(() => null);
       }
       const fresh = await api.getProject(projectId).catch(() => null);
       if (fresh) {
@@ -2406,6 +2419,8 @@ export function useEditor(projectId: string | undefined) {
     /** Đặt/xoá bố cục chọn tay cho một màn. */
     addLayoutAtPlayhead,
     setSegmentLayout,
+    setBehindText,
+    pickBehindText,
     setSegmentMedia,
     deleteSegment,
     convertBrollToPerson,
