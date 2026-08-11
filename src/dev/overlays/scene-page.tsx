@@ -10,9 +10,12 @@ import { graphicUrl } from "./overlay-render";
  * CSS, cùng lối `StyleGraphics`.
  *
  * Đứng DƯỚI mọi lớp khác: nó là cái video-vào-ô để lộ ra quanh mép.
+ *
+ * Nhận thẳng `page` (không phải cả bộ dáng): nền là look Ô của CHÍNH cảnh tại
+ * vạch — mỗi cảnh/b-roll mang nền riêng — nên nơi gọi truyền `frameBlock.page`
+ * của cảnh đó, không phải một nền chung.
  */
-export function ScenePage({ pack }: { pack: Pick<StylePack, "page"> }) {
-  const page = pack.page;
+export function ScenePage({ page }: { page: StylePack["page"] }) {
   if (!page) return null;
   const gridUrl = page.grid ? graphicUrl(page.grid.id) : undefined;
   return (

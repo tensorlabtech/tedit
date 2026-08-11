@@ -242,6 +242,15 @@ export function PreviewPanel({
   // các màn (không ô nào) thì `pageScene` false → khung phủ kín như cũ.
   const pageScene =
     pageOn && cells != null && (cells.main != null || cells.inserts.length > 0);
+  // Look Ô của CẢNH tại vạch — nền + viền theo CHÍNH cảnh đó (mỗi b-roll nền/viền
+  // riêng), không phải một nền chung của bộ dáng. Khớp bản xuất dựng nền per-scene
+  // (`layout-render.ts`). Thiếu block (dữ liệu cũ) → về look bộ dáng.
+  const frameNow =
+    (pageScene && sceneLayout
+      ? activeScene(sceneLayout.schedule, sweepAt)?.frameBlock
+      : null) ?? null;
+  const pageNow = frameNow?.page ?? projectPack.page;
+  const edgeNow = frameNow?.subjectEdge ?? projectPack.subjectEdge;
   // CẢNH B-ROLL SOLO tại vạch — để vẽ DOODLE vàng quanh ảnh như bản xuất. Xoay
   // vòng cặp góc + id theo THỨ TỰ cảnh b-roll (khớp `k` của `doodleSteps`).
   const brollDon =
@@ -407,7 +416,7 @@ export function PreviewPanel({
               {/* NỀN TRANG đứng dưới cùng — video-vào-ô để lộ nó ra quanh mép. CHỈ
                 vẽ khi đang có MÀN (`cell`): lịch thưa để trống chỗ mặc định, mà ở
                 chỗ ấy khung phải là video phủ kín, không phải nền trang trơ. */}
-              {pageScene && <ScenePage pack={projectPack} />}
+              {pageScene && <ScenePage page={pageNow} />}
               {/* Tiêu đề đứng ở tầng KHUNG, vẽ một lần — không đi theo từng cụm
                 phụ đề như `OverlayTextBlock`. */}
               <Headline text={editor.headline} pack={projectPack} />
@@ -495,9 +504,9 @@ export function PreviewPanel({
                     // của bản xuất. CSS không dựng được mép xé thật, viền vàng bo
                     // nhẹ là mức parity hình-học+xấp-xỉ của cả hệ. CHỈ ô b-roll;
                     // ô người (`main`) không có.
-                    ...(projectPack.subjectEdge
+                    ...(edgeNow
                       ? {
-                          border: `0.8cqw solid ${cssColor(projectPack.subjectEdge.tone)}`,
+                          border: `0.8cqw solid ${cssColor(edgeNow.tone)}`,
                         }
                       : null),
                   }}
