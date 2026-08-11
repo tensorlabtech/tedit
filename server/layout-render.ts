@@ -386,29 +386,53 @@ export function layoutPlan(
        * những màn dùng tệp ấy. Đây cũng là lối đã dùng cho bố cục: bật/tắt bằng
        * `enable` rẻ hơn mọi cách chuyển nguồn giữa chừng.
        */
-      const groups: Array<{ scenes: ScheduledScene[]; path: string | null; suffix: string; which: number }> =
+      type EdgeCfg = FrameBlock["subjectEdge"];
+      const edgeKey = (e: EdgeCfg): string =>
+        e ? `${e.tone.color}/${e.tone.alpha}/${e.steps}` : "none";
+      const groups: Array<{
+        scenes: ScheduledScene[];
+        path: string | null;
+        suffix: string;
+        which: number;
+        edge: EdgeCfg;
+      }> =
         slot.role === "phu"
-          ? // CHỈ màn CÓ tư liệu (`insert` xác định) mới dựng ô phụ. Màn 2 ô CHƯA
-            // gắn tư liệu (placeholder) thì bỏ ô phụ — người đứng ở ô chính, chỗ
-            // ô phụ để trống (nền trang), không lấy nhầm tệp của màn khác.
-            [
-              ...new Set(
-                scenes
-                  .filter((s) => s.insert !== undefined)
-                  .map((s) => s.insert as number),
-              ),
-            ]
-              .sort((a, b) => a - b)
-              .map((which) => ({
-                scenes: scenes.filter((s) => s.insert === which),
-                // Chỉ số ngoài mảng thì QUAY VÒNG về 0, không ra ô trống lặng lẽ.
-                path: insertPaths[which % Math.max(1, insertPaths.length)] ?? null,
-                suffix: `i${which}`,
-                which,
-              }))
-          : [{ scenes, path: null, suffix: "", which: 0 }];
+          ? // CHỈ màn CÓ tư liệu (`insert` xác định) mới dựng ô phụ. Gom theo (TƯ
+            // LIỆU × VIỀN): hai cảnh cùng tệp NHƯNG khác màu viền (look ô riêng của
+            // từng cảnh) phải ra HAI lớp cell — viền nướng trong cell nên phải bấy
+            // nhiêu cell mới có bấy nhiêu màu. Cảnh trùng cả hai → chung một cell.
+            (() => {
+              const combos = new Map<
+                string,
+                { which: number; edge: EdgeCfg; scenes: ScheduledScene[] }
+              >();
+              for (const s of scenes) {
+                if (s.insert === undefined) continue;
+                const which = s.insert as number;
+                const edge = s.frameBlock?.subjectEdge ?? frame.subjectEdge;
+                const key = `${which}|${edgeKey(edge)}`;
+                const g = combos.get(key);
+                if (g) g.scenes.push(s);
+                else combos.set(key, { which, edge, scenes: [s] });
+              }
+              // Xếp theo `which` (rồi thứ tự gặp) — cùng thứ tự lớp với bản một-viền
+              // cũ khi mọi viền BẰNG NHAU, nên đầu ra không đổi ở ca phổ biến.
+              return [...combos.values()]
+                .sort((a, b) => a.which - b.which)
+                .map((g, eIdx) => ({
+                  scenes: g.scenes,
+                  // Chỉ số ngoài mảng thì QUAY VÒNG về 0, không ra ô trống lặng lẽ.
+                  path: insertPaths[g.which % Math.max(1, insertPaths.length)] ?? null,
+                  suffix: `i${g.which}e${eIdx}`,
+                  which: g.which,
+                  edge: g.edge,
+                }));
+            })()
+          : [{ scenes, path: null, suffix: "", which: 0, edge: frame.subjectEdge }];
 
-      groups.forEach((group) => buildSlot(slot, at, group.scenes, group.path, group.suffix, group.which));
+      groups.forEach((group) =>
+        buildSlot(slot, at, group.scenes, group.path, group.suffix, group.which, group.edge),
+      );
     });
 
     function buildSlot(
@@ -418,6 +442,8 @@ export function layoutPlan(
       insertPath: string | null,
       suffix: string,
       which: number,
+      /** Viền của CHÍNH nhóm cảnh này — look ô đi theo block từng cảnh, không chung. */
+      edgeCfg: FrameBlock["subjectEdge"],
     ) {
       const tagBase = `ly${index}s${at}${suffix}`;
       /*
@@ -486,7 +512,7 @@ export function layoutPlan(
        * qua bước phóng/đặt chung, nó tự đi theo ô lúc đổi bố cục — không phải dựng
        * một lớp phủ thứ hai bám theo `glide`.
        */
-      const edge = slot.role === "phu" && slot.mask ? frame.subjectEdge : null;
+      const edge = slot.role === "phu" && slot.mask ? edgeCfg : null;
       const bw = edge ? Math.max(6, Math.round(Math.min(box.w, box.h) * 0.022)) : 0;
       const erode = Array.from({ length: bw }, () => "erosion").join(",");
       // MÉP RÁCH cho ảnh b-roll: dùng mặt nạ mép hạt/xé `o-rach` (thay bo tròn
