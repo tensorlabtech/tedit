@@ -4,7 +4,7 @@
  * Ra: out/video-<id>.mp4 + out/payload-<id>.json
  */
 import { execSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 
 import { buildRemotionPayload } from "../../server/remotion-payload";
 
@@ -35,8 +35,24 @@ if (stillFrame != null) {
     { stdio: "inherit" },
   );
 } else {
+  const silent = `out/video-${projectId}.mp4`;
   execSync(
-    `npx remotion render src/remotion/index.ts Video out/video-${projectId}.mp4 --props=${propsPath}`,
+    `npx remotion render src/remotion/index.ts Video ${silent} --props=${propsPath}`,
     { stdio: "inherit" },
   );
+
+  // AUDIO: Remotion vẽ hình CÂM (roadmap: tầng tiếng ở ffmpeg). Ghép giọng-đã-cắt
+  // + nhạc từ export ffmpeg hiện tại. (Proper Phase B sau: gọi cutRanges+mixMusic
+  // trực tiếp, không phụ thuộc final.mp4 có sẵn.)
+  const finalMp4 = `server/data/projects/${projectId}/out/final.mp4`;
+  if (existsSync(finalMp4)) {
+    const av = `out/video-${projectId}-av.mp4`;
+    execSync(
+      `ffmpeg -y -v error -i ${silent} -i ${finalMp4} -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -shortest ${av}`,
+      { stdio: "inherit" },
+    );
+    console.log(`AV (có tiếng): ${av}`);
+  } else {
+    console.log("Không có final.mp4 → video câm (chạy fresh export để có tiếng).");
+  }
 }
