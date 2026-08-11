@@ -22,7 +22,7 @@ import { Field, FieldLabel } from "@/components/ui/field";
 import { findLayout } from "../../../server/layout-kinds";
 import { findStylePack } from "../../../server/style-pack-catalog";
 import { formatTimeFine } from "./editor-data";
-import { OptionPicker } from "./option-picker";
+import { OptionPicker, type PickOption, swatchTextColor } from "./option-picker";
 import type { EditorState } from "./use-editor";
 
 /** Chạy thêm một nhịp mỗi đầu để thấy khung vào/ra thế nào. */
@@ -84,22 +84,36 @@ export function LayoutKhungPane({
   // tên preset, nhãn khung để gọn; cả hai gộp lại đọc ra "Phấn · 2-ô".
   const blocks = editor.sceneLayout?.frameBlocks ?? [];
   const behindPresets = editor.sceneLayout?.behindPresets ?? [];
+  // Look của một block → swatch (nền + viền). Đây là cái làm Phấn (kem/vàng) nhìn
+  // KHÁC HẲN Nhịp-đen (tối) ngay trên thẻ — không chỉ khác nhãn chữ.
+  // Khung không khai `page` (nền) thì lùi về nền thẻ mặc định — vẫn hiện được viền.
+  const swatchOf = (b: (typeof blocks)[number]) => ({
+    bg: b.frameLook.page?.tone.color ?? "transparent",
+    border: b.frameLook.subjectEdge?.tone.color ?? null,
+  });
   const presetGroups = (() => {
-    const by = new Map<
-      string,
-      { label: string; options: { id: string; label: string }[] }
-    >();
+    const by = new Map<string, { label: string; options: PickOption[] }>();
     for (const b of blocks) {
       const g = by.get(b.presetId) ?? { label: b.presetLabel, options: [] };
-      g.options.push({ id: b.id, label: khungLabel(b.layout) });
+      g.options.push({
+        id: b.id,
+        label: khungLabel(b.layout),
+        swatch: swatchOf(b),
+      });
       by.set(b.presetId, g);
     }
     // "Chữ sau người" là một LOẠI khung của preset khai chữ-nền (Phấn) — bày chung
     // pool để thấy ĐỦ loại. Như b-roll có ô ẢNH, khung này có ô CHỮ. Nhặt nó không
-    // đổi cấu trúc cảnh mà mở ô nhập chữ-nền (chữ mở màn của cả video).
+    // đổi cấu trúc cảnh mà mở ô nhập chữ-nền (chữ mở màn của cả video). Swatch mượn
+    // nền của preset ấy (từ một block cùng rổ) để thẻ ăn màu với các khung anh em.
     for (const p of behindPresets) {
       const g = by.get(p.id) ?? { label: p.label, options: [] };
-      g.options.push({ id: `behindtext:${p.id}`, label: "Chữ sau người" });
+      const kin = blocks.find((b) => b.presetId === p.id);
+      g.options.push({
+        id: `behindtext:${p.id}`,
+        label: "Chữ sau người",
+        swatch: kin ? swatchOf(kin) : undefined,
+      });
       by.set(p.id, g);
     }
     return [...by.values()];
@@ -108,9 +122,11 @@ export function LayoutKhungPane({
   // trúc + đúng preset LOOK đã đóng dấu vào cảnh. Khi cảnh chưa trộn (chưa có
   // `framePreset`) thì lùi về preset dự án cho khớp.
   const lookPreset = framePreset ?? editor.stylePack;
-  const currentBlockId =
-    blocks.find((b) => b.layout === layout && b.presetId === lookPreset)?.id ??
-    null;
+  const currentBlock =
+    blocks.find((b) => b.layout === layout && b.presetId === lookPreset) ?? null;
+  const currentBlockId = currentBlock?.id ?? null;
+  // Look cảnh đang mang — để thẻ "Kiểu khung" hiện đúng nền/viền của cảnh này.
+  const currentSwatch = currentBlock ? swatchOf(currentBlock) : null;
 
   const [frameOpen, setFrameOpen] = useState(false);
   const [mediaOpen, setMediaOpen] = useState(false);
@@ -170,8 +186,31 @@ export function LayoutKhungPane({
             {/* Thumbnail 9:16 TO, tên ở TRÊN, nút ở DƯỚI. Bấm Đổi mở modal cả danh
                 sách — sau trăm kiểu thì vẫn gọn ở đây. */}
             <div className="flex items-stretch gap-3">
-              <div className="grid aspect-[9/16] w-24 shrink-0 place-items-center overflow-hidden rounded-lg inset-ring-1 inset-ring-border p-2 text-center">
-                <span className="line-clamp-3 text-xs leading-tight">
+              <div className="relative grid aspect-[9/16] w-24 shrink-0 place-items-center overflow-hidden rounded-lg inset-ring-1 inset-ring-border p-2 text-center">
+                {/* Nền + viền look của CHÍNH cảnh này (kem/vàng cho Phấn, tối cho
+                    Nhịp-đen) — thấy ngay cảnh đang mang look nào. */}
+                {currentSwatch && (
+                  <span
+                    aria-hidden
+                    className="absolute inset-0"
+                    style={{ backgroundColor: currentSwatch.bg }}
+                  />
+                )}
+                {currentSwatch?.border && (
+                  <span
+                    aria-hidden
+                    className="absolute inset-[3px] rounded-md border-2"
+                    style={{ borderColor: currentSwatch.border }}
+                  />
+                )}
+                <span
+                  className="relative line-clamp-3 text-xs leading-tight"
+                  style={
+                    currentSwatch
+                      ? { color: swatchTextColor(currentSwatch.bg) }
+                      : undefined
+                  }
+                >
                   {khungLabel(layout)}
                 </span>
               </div>

@@ -1,7 +1,32 @@
 import { cn } from "@/lib/utils";
 
-/** Một lựa chọn: mã + tên. `imageUrl` để sau thay bằng ảnh xem trước. */
-export type PickOption = { id: string; label: string; imageUrl?: string };
+/**
+ * Một lựa chọn: mã + tên. `imageUrl` để sau thay bằng ảnh xem trước.
+ *
+ * `swatch` = xem trước LOOK THẬT của lựa chọn (nền + viền). Màu là DỮ LIỆU của
+ * block (nền kem/viền vàng của Phấn, nền tối của Nhịp đen), nên vẽ thẳng vào thẻ
+ * để nhìn PHÂN BIỆT được ngay — không phải style bừa mà là nội dung.
+ */
+export type PickOption = {
+  id: string;
+  label: string;
+  imageUrl?: string;
+  swatch?: { bg: string; border?: string | null };
+};
+
+/**
+ * Màu chữ đọc rõ trên nền swatch — nền sáng (kem) thì chữ tối, nền tối thì chữ
+ * sáng. Dùng chung cho thẻ trong picker và thẻ "đang chọn" ở pane.
+ */
+export function swatchTextColor(hex: string): string {
+  const h = hex.replace("#", "");
+  if (h.length < 6) return "inherit";
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return lum > 0.6 ? "#1a1a1a" : "#f5f5f5";
+}
 
 /**
  * PICKER CHUẨN cho khung "Đang sửa" — mọi thứ chọn được đều là thẻ 9:16, TÊN Ở
@@ -59,11 +84,32 @@ export function OptionPicker({
               className="absolute inset-0 size-full object-cover"
             />
           )}
+          {/* Xem trước look: nền phủ kín + viền vẽ vào trong (gợi mép khung, vd
+              viền vàng của Phấn). Đặt DƯỚI chữ nhờ `relative` của span. */}
+          {option.swatch && (
+            <span
+              aria-hidden
+              className="absolute inset-0"
+              style={{ backgroundColor: option.swatch.bg }}
+            />
+          )}
+          {option.swatch?.border && (
+            <span
+              aria-hidden
+              className="absolute inset-[3px] rounded-md border-2"
+              style={{ borderColor: option.swatch.border }}
+            />
+          )}
           <span
             className={cn(
               "relative line-clamp-3 leading-tight",
               variant === "grid" || size === "lg" ? "text-xs" : "text-[10px]",
             )}
+            style={
+              option.swatch
+                ? { color: swatchTextColor(option.swatch.bg) }
+                : undefined
+            }
           >
             {option.label}
           </span>
