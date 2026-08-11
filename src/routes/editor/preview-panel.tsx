@@ -49,6 +49,13 @@ import { activeScene, sceneCells } from "./scene-layout-geometry";
  */
 const SHOW_STYLE_SWITCH = false;
 
+/**
+ * Góc NGHIÊNG ô như ảnh dán tay lệch — cùng chuỗi góc bản xuất (`layout-render.ts`
+ * `tiltRad = [-4,3.5,-2.5,3][at%4]`). Xoay vòng theo thứ tự z của ô để hai ô cạnh
+ * nhau lệch ngược chiều, ra cảm giác dán tay chứ không thẳng hàng máy.
+ */
+const TILT_DEG = [-4, 3.5, -2.5, 3];
+
 export function PreviewPanel({
   editor,
   playing,
@@ -430,12 +437,12 @@ export function PreviewPanel({
                 // `!(pageScene && !cell)` bỏ nó đi, chỉ còn nền + ô b-roll.
                 // Bo góc bằng `rounded-[3cqw]` như tư liệu chèn — cùng lối làm tròn
                 // ở màn hình, phép kiểm parity soi hình học ô chứ không soi góc.
+                // Ô người trong bố cục NHIỀU ô cũng nghiêng+rung như bản xuất (ô
+                // người ở z thấp nhất → at=0 → góc TILT_DEG[0]). Phủ kín (không mask)
+                // thì KHÔNG nghiêng. Nghiêng ở thẻ ngoài, rung ở thẻ trong (animation
+                // ghi đè transform).
                 <div
-                  className={
-                    cell?.masked
-                      ? "absolute overflow-hidden rounded-[3cqw]"
-                      : "absolute inset-0"
-                  }
+                  className={cell?.masked ? "absolute" : "absolute inset-0"}
                   style={
                     cell
                       ? {
@@ -443,8 +450,21 @@ export function PreviewPanel({
                           top: `${cell.top}%`,
                           width: `${cell.width}%`,
                           height: `${cell.height}%`,
+                          transform:
+                            cell.masked && pageScene
+                              ? `rotate(${TILT_DEG[0]}deg)`
+                              : undefined,
                         }
                       : undefined
+                  }
+                >
+                <div
+                  className={
+                    cell?.masked
+                      ? `size-full overflow-hidden rounded-[3cqw]${
+                          pageScene && playing ? " broll-boil" : ""
+                        }`
+                      : "size-full"
                   }
                 >
                   <video
@@ -461,6 +481,7 @@ export function PreviewPanel({
                     playsInline
                     preload="auto"
                   />
+                </div>
                 </div>
               )}
               {/* CHỮ-NỀN sau người + TÁCH NGƯỜI. Chỉ bộ dáng có `behindText` (Phấn),
@@ -491,20 +512,33 @@ export function PreviewPanel({
                 phải mặt; b-roll nguyên vẹn, không bị người cắt. Cùng thứ tự z bản
                 xuất (`phu` khai z cao hơn `chinh`). */}
               {cells?.inserts.map(({ box, media }, index) => (
+                // NGHIÊNG như ảnh dán tay: thẻ NGOÀI chỉ định vị + xoay (khớp góc
+                // bản xuất `[-4,3.5,-2.5,3]` theo thứ tự z — ô người ở z thấp nên
+                // đứng at=0, b-roll đứng sau). Thẻ TRONG lo mask/viền/rung: nghiêng
+                // + rung phải TÁCH thẻ vì animation ghi đè `transform` của nghiêng.
                 <div
                   key={index}
-                  className={
-                    box.masked
-                      ? `absolute overflow-hidden rounded-[3cqw]${
-                          pageScene && playing ? " broll-boil" : ""
-                        }`
-                      : "absolute overflow-hidden"
-                  }
+                  className="absolute"
                   style={{
                     left: `${box.left}%`,
                     top: `${box.top}%`,
                     width: `${box.width}%`,
                     height: `${box.height}%`,
+                    transform:
+                      box.masked && pageScene
+                        ? `rotate(${TILT_DEG[(index + (cell ? 1 : 0)) % 4]}deg)`
+                        : undefined,
+                  }}
+                >
+                <div
+                  className={
+                    box.masked
+                      ? `size-full overflow-hidden rounded-[3cqw]${
+                          pageScene && playing ? " broll-boil" : ""
+                        }`
+                      : "size-full overflow-hidden"
+                  }
+                  style={{
                     // Mỗi ô lệch pha rung để không giật ĐỒNG BỘ (khớp `at` của bản
                     // xuất). Delay ÂM nên ô vào giữa chu kỳ ngay, không đợi.
                     animationDelay: `-${(index * 0.37).toFixed(2)}s`,
@@ -548,6 +582,7 @@ export function PreviewPanel({
                       style={gradeStyle(projectPack)}
                     />
                   )}
+                </div>
                 </div>
               ))}
 
