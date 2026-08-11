@@ -75,16 +75,28 @@ export function LayoutKhungPane({
   // KHÔNG tự chạy khi vừa CHỌN khung — chỉ chạy khi ĐỔI (kiểu khung, tư liệu).
   const replay = () => onPreview(Math.max(0, srcStart - PAD), srcEnd + PAD);
 
-  // MỌI khung chọn được (kiểu khung phổ quát, không khoá theo style). Style chỉ
-  // ĐÁNH DẤU `suggested` để xếp NHÓM gợi ý lên đầu — dẫn từ style mà không cấm.
-  const choices = editor.sceneLayout?.allowedLayouts ?? [];
-  const toOption = (choice: (typeof choices)[number]) => ({
-    id: choice.id,
-    label: khungLabel(choice.id),
-  });
-  const suggestedOptions = choices.filter((c) => c.suggested).map(toOption);
-  const otherOptions = choices.filter((c) => !c.suggested).map(toOption);
-  const styleLabel = findStylePack(editor.stylePack).label;
+  // POOL KHUNG — mọi khung của MỌI preset, phẳng. Ở màn dựng không còn "video
+  // thuộc preset nào": khung là block độc lập, nhặt cái nào cũng được, look của
+  // khung đi theo cảnh. Nhóm theo preset (cái RỔ) chỉ để dễ ngắm — tiêu đề nhóm là
+  // tên preset, nhãn khung để gọn; cả hai gộp lại đọc ra "Phấn · 2-ô".
+  const blocks = editor.sceneLayout?.frameBlocks ?? [];
+  const presetGroups = (() => {
+    const by = new Map<
+      string,
+      { label: string; options: { id: string; label: string }[] }
+    >();
+    for (const b of blocks) {
+      const g = by.get(b.presetId) ?? { label: b.presetLabel, options: [] };
+      g.options.push({ id: b.id, label: khungLabel(b.layout) });
+      by.set(b.presetId, g);
+    }
+    return [...by.values()];
+  })();
+  // Khung ĐANG chọn của cảnh này — tô sáng đúng block đang mang look ấy: khớp cấu
+  // trúc + đúng preset của look đã đóng dấu (xấp xỉ bằng preset dự án khi chưa trộn).
+  const currentBlockId =
+    blocks.find((b) => b.layout === layout && b.presetId === editor.stylePack)
+      ?.id ?? null;
 
   const [frameOpen, setFrameOpen] = useState(false);
   const [mediaOpen, setMediaOpen] = useState(false);
@@ -94,19 +106,24 @@ export function LayoutKhungPane({
   // KHÔNG bắt chọn tư liệu trước.
   const is2o = findLayout(layout).needsInsert;
 
-  const onPick = (next: string) => {
+  // Nhặt một khung từ pool: đổi CẤU TRÚC (`insertLayout`) VÀ đóng dấu LOOK của khung
+  // (`frameBlock`) vào cảnh — nền/viền của khung đi theo cảnh, nên trộn được Phấn
+  // với Nhịp-đen trong cùng video.
+  const onPick = (blockId: string) => {
     setFrameOpen(false);
-    if (next === layout) return;
-    if (findLayout(next).needsInsert) {
-      // Đổi CẤU TRÚC sang 2 ô. Đang là b-roll thì giữ tư liệu (đổi tỉ lệ ô); chưa
-      // có thì thành placeholder, tư liệu chọn sau ở hàng "Tư liệu".
-      if (media) editor.setInsertStyle(elementId, { insertLayout: next });
-      else editor.setSegmentLayout(elementId, next);
+    const block = blocks.find((b) => b.id === blockId);
+    if (!block) return;
+    const nextLayout = block.layout;
+    const frameBlock = JSON.stringify(block.frameLook);
+    if (findLayout(nextLayout).needsInsert) {
+      if (media)
+        editor.setInsertStyle(elementId, { insertLayout: nextLayout, frameBlock });
+      else editor.setSegmentLayout(elementId, nextLayout, frameBlock);
       replay();
     } else if (media) {
-      void editor.convertBrollToPerson(elementId, next); // 2 ô → 1 ô: gỡ tư liệu.
+      void editor.convertBrollToPerson(elementId, nextLayout); // 2 ô → 1 ô: gỡ tư liệu.
     } else {
-      editor.setSegmentLayout(elementId, next);
+      editor.setSegmentLayout(elementId, nextLayout, frameBlock);
       replay();
     }
   };
@@ -203,33 +220,23 @@ export function LayoutKhungPane({
           <DialogHeader>
             <DialogTitle>Chọn kiểu khung</DialogTitle>
           </DialogHeader>
-          {/* Hai nhóm: GỢI Ý của style trước, rồi Khác. Kiểu khung bình đẳng —
-              nhóm chỉ để dễ ngắm, chọn nhóm nào cũng được. */}
+          {/* MỌI khung của MỌI preset, phẳng — nhóm theo preset (cái rổ) chỉ để dễ
+              ngắm; tiêu đề nhóm là tên preset, nên nhãn khung đọc ra "Phấn · 2-ô".
+              Nhặt khung nào cũng được, look của nó đi theo cảnh. */}
           <div className="grid gap-4 pt-1">
-            {suggestedOptions.length > 0 && (
-              <div className="grid gap-2">
+            {presetGroups.map((group) => (
+              <div key={group.label} className="grid gap-2">
                 <p className="text-xs font-medium text-muted-foreground">
-                  Gợi ý cho {styleLabel}
+                  {group.label}
                 </p>
                 <OptionPicker
                   variant="grid"
-                  options={suggestedOptions}
-                  value={layout}
+                  options={group.options}
+                  value={currentBlockId}
                   onSelect={onPick}
                 />
               </div>
-            )}
-            {otherOptions.length > 0 && (
-              <div className="grid gap-2">
-                <p className="text-xs font-medium text-muted-foreground">Khác</p>
-                <OptionPicker
-                  variant="grid"
-                  options={otherOptions}
-                  value={layout}
-                  onSelect={onPick}
-                />
-              </div>
-            )}
+            ))}
           </div>
         </DialogContent>
       </Dialog>

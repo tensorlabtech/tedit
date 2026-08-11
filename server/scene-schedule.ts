@@ -8,6 +8,7 @@ import {
   PICKABLE_LAYOUTS,
   findLayout,
 } from "./layout-kinds";
+import { frameBlockPool, type FrameBlockChoice } from "./frame-blocks";
 import { probe } from "./media-tools";
 import { workDir } from "./paths";
 import { VIDEO } from "./routes/media-formats";
@@ -54,6 +55,12 @@ export type SceneScheduleResult = {
   /** MỌI bố cục bộ dáng khai (cả b-roll) — modal chọn hiện đủ, b-roll thì đòi tư liệu. */
   allowedLayouts: LayoutChoice[];
   /**
+   * POOL KHUNG — mọi khung của MỌI preset (cấu trúc + look ô), phẳng. Picker hiện
+   * đủ, prefix tên preset; nhặt khung nào thì look của nó đóng dấu vào cảnh. Đây
+   * là thứ cho phép trộn khung Phấn với khung Nhịp-đen trong cùng video.
+   */
+  frameBlocks: FrameBlockChoice[];
+  /**
    * Câu chữ-NỀN (sau người) — chỉ bộ dáng có `behindText` (Phấn) mới có. Đưa ra
    * frontend để khung xem VẼ ĐƯỢC (trước đây chỉ hiện ở bản xuất vì content tính
    * server-side). `null` khi bộ dáng không khai chữ-nền.
@@ -69,6 +76,7 @@ const EMPTY: SceneScheduleResult = {
   inserts: [],
   hasSubject: false,
   allowedLayouts: [],
+  frameBlocks: [],
   behindLine: null,
   behindBand: 0,
 };
@@ -150,6 +158,7 @@ export async function buildSceneSchedule(
     inserts,
     hasSubject: existsSync(subjectPath(projectId)),
     allowedLayouts,
+    frameBlocks: frameBlockPool(),
     behindLine,
     behindBand,
   };

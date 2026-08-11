@@ -862,6 +862,11 @@ export const api = {
       shape?: string;
       /** Bố cục hiện b-roll (element kind='insert'). `null` = để máy tự chọn. */
       insertLayout?: string | null;
+      /**
+       * Look Ô đóng dấu lên cảnh (JSON `FrameBlock`) — nhặt khung từ pool thì gửi
+       * kèm để nền/viền của khung đi theo cảnh này. `null` = xoá đè (về mặc định).
+       */
+      frameBlock?: string | null;
       /** Đổi tệp media của b-roll */
       mediaFileId?: string;
       /** Kéo hai đầu khối chữ tự do trên dải */

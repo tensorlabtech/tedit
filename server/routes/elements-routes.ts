@@ -143,6 +143,8 @@ app.patch("/api/elements/:elementId", async (request, reply) => {
     shape?: string;
     /** Bố cục hiện b-roll (element kind='insert'). `null` = để máy tự chọn. */
     insertLayout?: string | null;
+    /** Look Ô đóng dấu (JSON `FrameBlock`) khi nhặt khung từ pool; `null` = xoá. */
+    frameBlock?: string | null;
     /** Đổi tệp media của b-roll (element kind='insert'). */
     mediaFileId?: string;
     keywords?: string[];
@@ -225,6 +227,14 @@ app.patch("/api/elements/:elementId", async (request, reply) => {
   if (body.insertLayout !== undefined) {
     db.prepare("UPDATE elements SET insert_layout=? WHERE id=?").run(
       body.insertLayout,
+      elementId,
+    );
+  }
+  // Look Ô đóng dấu: nhặt khung từ pool thì ghi luôn nền/viền của khung vào cảnh.
+  // Nhận cả `null` (xoá đè → migration/generate stamp lại theo preset dự án).
+  if (body.frameBlock !== undefined) {
+    db.prepare("UPDATE elements SET frame_block=? WHERE id=?").run(
+      body.frameBlock,
       elementId,
     );
   }

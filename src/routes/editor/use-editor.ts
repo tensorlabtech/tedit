@@ -1632,6 +1632,8 @@ export function useEditor(projectId: string | undefined) {
         reveal?: RevealId;
         shape?: ShapeId;
         insertLayout?: string | null;
+        /** Look Ô đóng dấu (JSON `FrameBlock`) khi nhặt khung từ pool. */
+        frameBlock?: string | null;
       },
     ) => {
       setData((current) =>
@@ -1654,8 +1656,9 @@ export function useEditor(projectId: string | undefined) {
           : current,
       );
       void api.updateElement(id, patch).catch(boQuaLoi());
-      // Đổi bố cục b-roll → lịch màn đổi theo, nạp lại.
-      if (patch.insertLayout !== undefined) setLayoutReload((n) => n + 1);
+      // Đổi bố cục HOẶC look Ô → lịch màn/nền đổi theo, nạp lại.
+      if (patch.insertLayout !== undefined || patch.frameBlock !== undefined)
+        setLayoutReload((n) => n + 1);
     },
     [],
   );
@@ -1790,8 +1793,10 @@ export function useEditor(projectId: string | undefined) {
 
   /** Đổi bố cục của một segment (ô người) — PATCH + nạp lại lịch. */
   const setSegmentLayout = useCallback(
-    (elementId: string, layout: string) => {
-      void api.updateElement(elementId, { insertLayout: layout }).catch(boQuaLoi());
+    (elementId: string, layout: string, frameBlock?: string | null) => {
+      void api
+        .updateElement(elementId, { insertLayout: layout, frameBlock })
+        .catch(boQuaLoi());
       setLayoutReload((n) => n + 1);
     },
     [],
