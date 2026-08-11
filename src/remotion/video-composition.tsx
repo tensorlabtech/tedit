@@ -1,13 +1,21 @@
 import {
   AbsoluteFill,
+  Sequence,
   Video,
   staticFile,
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
 
+import { OverlayTextBlock } from "@/dev/overlays/overlay-render";
+import type { BandId } from "@/dev/overlays/overlay-model";
 import { findLayout, slotPixels } from "../../server/layout-kinds";
-import type { RemotionPayload, RemotionScene } from "../../server/remotion-payload";
+import { packForElement } from "../../server/style-pack";
+import type {
+  RemotionCaption,
+  RemotionPayload,
+  RemotionScene,
+} from "../../server/remotion-payload";
 
 /**
  * MÁY VẼ DUY NHẤT — dựng video từ CHÍNH lịch màn của export (`buildRemotionPayload`).
@@ -110,6 +118,47 @@ function Cells({
   );
 }
 
+/**
+ * Một cụm phụ đề trong cửa sổ thời gian của nó — `<Sequence>` cấp lại frame=0 ở
+ * đầu cụm, nên `seconds = frame/fps` chính là "giây tính từ đầu cụm" mà
+ * `OverlayTextBlock` cần (khớp cách preview truyền). `container-type: size` để đơn
+ * vị `cqw` của chữ đo theo bề rộng khung (bắt buộc, như `@container` ở preview).
+ */
+function CaptionSeq({
+  c,
+  pack,
+  fps,
+}: {
+  c: RemotionCaption;
+  pack: RemotionPayload["pack"];
+  fps: number;
+}) {
+  const frame = useCurrentFrame();
+  return (
+    <div style={{ position: "absolute", inset: 0, containerType: "size" }}>
+      <OverlayTextBlock
+        config={{
+          text: c.content,
+          align: c.align ?? "left",
+          emphasis: c.emphasis ?? "even",
+          band: (c.band ?? "bottom") as BandId,
+          keywords: c.keywords ?? [],
+          insert: { kind: "none", shape: "wide" },
+        }}
+        pack={packForElement(
+          pack,
+          { letterCase: c.letterCase, keyColor: c.keyColor, fontStyle: c.fontStyle },
+          c.keywords,
+          c.captionBlock,
+        )}
+        seconds={frame / fps}
+        wordStarts={c.wordStarts}
+        span={c.span}
+      />
+    </div>
+  );
+}
+
 export function VideoComposition(payload: RemotionPayload) {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -129,6 +178,18 @@ export function VideoComposition(payload: RemotionPayload) {
           style={{ width: "100%", height: "100%", objectFit: "cover" }}
         />
       )}
+
+      {/* PHỤ ĐỀ — mỗi cụm một Sequence đúng cửa sổ, reuse OverlayTextBlock preview. */}
+      {payload.captions.map((c, i) => (
+        <Sequence
+          key={i}
+          from={Math.round(c.start * fps)}
+          durationInFrames={Math.max(1, Math.round(c.span * fps))}
+          layout="none"
+        >
+          <CaptionSeq c={c} pack={payload.pack} fps={fps} />
+        </Sequence>
+      ))}
     </AbsoluteFill>
   );
 }

@@ -5,6 +5,7 @@ import { SpikeReuseComposition } from "./spike-reuse-composition";
 import { SpikeHardFxComposition } from "./spike-hardfx-composition";
 import { SpikeRealSceneComposition } from "./spike-real-scene-composition";
 import { VideoComposition } from "./video-composition";
+import { NHIP_DEN } from "../../server/style-pack-catalog";
 import type { RemotionPayload } from "../../server/remotion-payload";
 
 const EMPTY_PAYLOAD: RemotionPayload = {
@@ -16,8 +17,10 @@ const EMPTY_PAYLOAD: RemotionPayload = {
   personUrl: "",
   maskUrl: null,
   basePage: null,
+  pack: NHIP_DEN,
   scenes: [],
   inserts: [],
+  captions: [],
 };
 
 /**

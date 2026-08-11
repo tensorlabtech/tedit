@@ -1303,7 +1303,7 @@ async function dropExportScratch(projectId: string) {
 }
 
 /** Đổi phần tử gắn-vào-TỪ thành mốc thời gian trên dải ĐÃ CẮT. */
-function resolveElements(
+export function resolveElements(
   projectId: string,
   kept: KeptRange[],
 ): RenderElement[] {

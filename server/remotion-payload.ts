@@ -6,8 +6,16 @@ import { scheduleScenes } from "./layout-schedule";
 import { PICKABLE_LAYOUTS } from "./layout-kinds";
 import { probe } from "./media-tools";
 import { workDir } from "./paths";
-import { keptRanges } from "./pipeline";
-import { blocksFromPack, type FrameBlock } from "./style-pack";
+import { keptRanges, resolveElements } from "./pipeline";
+import {
+  blocksFromPack,
+  type AlignId,
+  type Band,
+  type CaptionBlock,
+  type EmphasisId,
+  type FrameBlock,
+  type StylePack,
+} from "./style-pack";
 import { readStylePack } from "./style-pack-store";
 import { stampBlocksFromPack } from "./stamp-blocks";
 import { subjectPath } from "./subject-mask";
@@ -31,6 +39,25 @@ export type RemotionScene = {
   frameBlock: FrameBlock | null;
 };
 
+/** Một cụm phụ đề — đủ để dựng `OverlayTextBlock` (cùng cấu hình preview). */
+export type RemotionCaption = {
+  start: number;
+  end: number;
+  content: string;
+  align?: AlignId;
+  emphasis?: EmphasisId;
+  band?: Band;
+  keywords?: string[];
+  captionBlock: CaptionBlock | null;
+  /** Đè trục chữ của riêng cụm (packForElement dùng). */
+  letterCase?: StylePack["letterCase"] | null;
+  keyColor?: string | null;
+  fontStyle?: string | null;
+  /** Mốc từng tiếng, ĐÃ trừ đầu cụm (OverlayTextBlock đếm giây từ đầu cụm). */
+  wordStarts?: number[];
+  span: number;
+};
+
 export type RemotionPayload = {
   fps: number;
   width: number;
@@ -43,8 +70,11 @@ export type RemotionPayload = {
   maskUrl: string | null;
   /** Nền trang gốc của bộ dáng (mỗi cảnh có thể đè bằng `frameBlock.page`). */
   basePage: FrameBlock["page"];
+  /** Bộ dáng dự án — để composition gọi `packForElement` cho từng cụm chữ. */
+  pack: StylePack;
   scenes: RemotionScene[];
   inserts: Array<{ url: string; aspect: number }>;
+  captions: RemotionCaption[];
 };
 
 const FPS = 30;
@@ -110,6 +140,26 @@ export async function buildRemotionPayload(
     }),
   );
 
+  // Phụ đề — CÙNG nguồn với export (`resolveElements`), mốc từng tiếng đã quy dải
+  // cắt. Trừ đầu cụm để `OverlayTextBlock` đếm giây từ đầu cụm (như preview).
+  const captions: RemotionCaption[] = resolveElements(projectId, kept)
+    .filter((e) => e.kind === "text" && !!e.content)
+    .map((e) => ({
+      start: e.start,
+      end: e.end,
+      content: e.content as string,
+      align: e.align,
+      emphasis: e.emphasis,
+      band: e.band,
+      keywords: e.keywords,
+      captionBlock: e.captionBlock ?? null,
+      letterCase: e.letterCase,
+      keyColor: e.keyColor,
+      fontStyle: e.fontStyle,
+      wordStarts: e.wordStarts?.map((at) => at - e.start),
+      span: e.end - e.start,
+    }));
+
   return {
     fps: FPS,
     width: WIDTH,
@@ -120,6 +170,7 @@ export async function buildRemotionPayload(
     personUrl,
     maskUrl,
     basePage: blocksFromPack(pack).frame.page,
+    pack,
     scenes: schedule.map((s) => ({
       start: s.start,
       end: s.end,
@@ -128,5 +179,6 @@ export async function buildRemotionPayload(
       frameBlock: s.frameBlock ?? null,
     })),
     inserts,
+    captions,
   };
 }
