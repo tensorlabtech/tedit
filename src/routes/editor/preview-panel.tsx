@@ -249,8 +249,11 @@ export function PreviewPanel({
     (pageScene && sceneLayout
       ? activeScene(sceneLayout.schedule, sweepAt)?.frameBlock
       : null) ?? null;
-  const pageNow = frameNow?.page ?? projectPack.page;
-  const edgeNow = frameNow?.subjectEdge ?? projectPack.subjectEdge;
+  // Look đi THEO block: cảnh có `frameNow` thì đọc thẳng field của nó — viền `null`
+  // (Nhịp đen) phải ra KHÔNG viền, không mượn lại viền vàng của preset gốc dự án.
+  // Chỉ cảnh THIẾU block (dữ liệu cũ) mới về look bộ dáng.
+  const pageNow = frameNow ? frameNow.page : projectPack.page;
+  const edgeNow = frameNow ? frameNow.subjectEdge : projectPack.subjectEdge;
   // CẢNH B-ROLL SOLO tại vạch — để vẽ DOODLE vàng quanh ảnh như bản xuất. Xoay
   // vòng cặp góc + id theo THỨ TỰ cảnh b-roll (khớp `k` của `doodleSteps`).
   const brollDon =
@@ -492,7 +495,9 @@ export function PreviewPanel({
                   key={index}
                   className={
                     box.masked
-                      ? "absolute overflow-hidden rounded-[3cqw]"
+                      ? `absolute overflow-hidden rounded-[3cqw]${
+                          pageScene && playing ? " broll-boil" : ""
+                        }`
                       : "absolute overflow-hidden"
                   }
                   style={{
@@ -500,6 +505,9 @@ export function PreviewPanel({
                     top: `${box.top}%`,
                     width: `${box.width}%`,
                     height: `${box.height}%`,
+                    // Mỗi ô lệch pha rung để không giật ĐỒNG BỘ (khớp `at` của bản
+                    // xuất). Delay ÂM nên ô vào giữa chu kỳ ngay, không đợi.
+                    animationDelay: `-${(index * 0.37).toFixed(2)}s`,
                     // Viền vàng quanh ô b-roll (`phu`) — xấp xỉ viền GIẤY XÉ vàng
                     // của bản xuất. CSS không dựng được mép xé thật, viền vàng bo
                     // nhẹ là mức parity hình-học+xấp-xỉ của cả hệ. CHỈ ô b-roll;

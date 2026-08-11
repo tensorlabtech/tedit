@@ -211,7 +211,12 @@ function pushFactor(entries: readonly SceneEntry[], defaultRate: number): string
   const terms = entries
     .filter((e) => e.scene.push)
     .map((e) => {
-      const rate = e.scene.frameBlock?.scenePush?.ratePerSecond ?? defaultRate;
+      // Cùng lẽ với viền: cảnh có block thì tốc độ dồn là của CHÍNH block (null =
+      // 0 = không dồn), không mượn tốc độ preset dự án; chỉ cảnh chưa có block mới
+      // dùng `defaultRate`.
+      const rate = e.scene.frameBlock
+        ? (e.scene.frameBlock.scenePush?.ratePerSecond ?? 0)
+        : defaultRate;
       if (rate <= 0) return null;
       const win = `between(t\\,${e.scene.start.toFixed(3)}\\,${e.scene.end.toFixed(3)})`;
       const grown = `min(${PUSH_MAX}\\,${rate}*(t-${e.scene.start.toFixed(3)}))`;
@@ -409,7 +414,11 @@ export function layoutPlan(
               for (const s of scenes) {
                 if (s.insert === undefined) continue;
                 const which = s.insert as number;
-                const edge = s.frameBlock?.subjectEdge ?? frame.subjectEdge;
+                // Look ô đi THEO block: cảnh đã có `frameBlock` thì đọc thẳng
+                // `subjectEdge` của nó — kể cả `null` (khung không viền, vd Nhịp
+                // đen) phải ra KHÔNG viền, KHÔNG được mượn lại viền của preset gốc
+                // dự án. Chỉ cảnh CHƯA đóng dấu block mới rơi về `frame` nền.
+                const edge = (s.frameBlock ?? frame).subjectEdge;
                 const key = `${which}|${edgeKey(edge)}`;
                 const g = combos.get(key);
                 if (g) g.scenes.push(s);
@@ -522,11 +531,12 @@ export function layoutPlan(
       const maskFile = edge
         ? `${pngDir}/../../masks/o-rach.png`
         : `${pngDir}/${slot.mask}.png`;
-      // NGHIÊNG như ảnh polaroid DÁN LỆCH TAY — MỌI ô có mặt nạ trong bố cục NHIỀU
-      // ô (cả người lẫn b-roll) đều nghiêng, hai ô lệch NGƯỢC nhau như hai tấm ảnh
-      // dán tay. Góc theo VỊ TRÍ ô. Toàn-khung (một ô) KHÔNG nghiêng. Xoay với nền
-      // TRONG SUỐT + nở khung (`ow/oh`) để không xén góc.
-      const wantTilt = !!slot.mask && page !== null && spec.slots.length > 1;
+      // NGHIÊNG như ảnh polaroid DÁN LỆCH TAY — MỌI ô có mặt nạ nổi TRÊN NỀN TRANG
+      // đều nghiêng + rung, kể cả khung MỘT ô b-roll nổi (`broll-don`): nó là một
+      // tấm ảnh dán tay nên phải "thở" như các ô khác. Toàn-khung KHÔNG nghiêng vì
+      // phủ kín (mask null, không nổi trên nền). Xoay với nền TRONG SUỐT + nở khung
+      // (`ow/oh`) để không xén góc.
+      const wantTilt = !!slot.mask && page !== null;
       const tiltRad = wantTilt
         ? (([-4, 3.5, -2.5, 3][at % 4] * Math.PI) / 180).toFixed(4)
         : "0";
@@ -590,8 +600,8 @@ export function layoutPlan(
         );
         // RUNG STOP-MOTION cho ảnh scrapbook: ảnh dán tay không đứng ĐƠ — nó khẽ
         // GIẬT theo BẬC thời gian (`floor(t*6)`/`floor(t*5)` ≈ 5-6 bậc/s) như phim
-        // tĩnh vật, hai ảnh lệch pha nên rung độc lập. Chỉ ảnh NGHIÊNG (wantTilt = ô
-        // có mặt nạ trong bố cục nhiều ô). Biên độ CỰC nhỏ (~0.16% cạnh, ~1px) —
+        // tĩnh vật, các ảnh lệch pha nên rung độc lập. Chỉ ô NGHIÊNG (wantTilt = ô
+        // có mặt nạ nổi trên nền, kể cả b-roll đơn). Biên độ CỰC nhỏ (~0.16% cạnh) —
         // chỉ khẽ "thở" chứ không rung thấy rõ.
         const jit = wantTilt ? Math.max(1, Math.round(Math.min(box.w, box.h) * 0.0016)) : 0;
         const jx = wantTilt ? `+${jit}*sin(floor(t*6)*1.7+${at})` : "";
