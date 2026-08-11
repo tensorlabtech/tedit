@@ -689,6 +689,76 @@ export type StylePack = {
   defaults: { align: AlignId; emphasis: EmphasisId; reveal: RevealId };
 };
 
+/*
+ * BLOCK — một cục "look" ATOMIC, tách khỏi bộ dáng TOÀN CỤC để STAMP (bản sao)
+ * lên từng `element`. Mô hình: bộ dáng chỉ là khuôn chạy lúc SINH, đóng dấu block
+ * vào element rồi thôi; về sau render/editor đọc block TRÊN element, không đọc bộ
+ * dáng. Một element mang đúng những block hợp loại nó (b-roll → frame; cụm chữ →
+ * caption; ...), phần thừa để trống.
+ *
+ * Định nghĩa bằng `Pick<StylePack, ...>` để kiểu block LUÔN khớp đúng trục tương
+ * ứng của bộ dáng — sửa một chỗ, không lệch hai nơi. `blocksFromPack` là nguồn
+ * DUY NHẤT xẻ bộ dáng ra block, dùng cho cả sinh mới lẫn chuyển dữ liệu cũ.
+ */
+
+/** Look của khung/ô: nền, viền-ô, dồn máy quay, nét vẽ tay. */
+export type FrameBlock = Pick<
+  StylePack,
+  "page" | "subjectEdge" | "scenePush" | "doodles"
+>;
+
+/** Look của cụm chữ: font, hoa/thường, màu, viền, quầng, hộp, tô sáng, mảng, khoanh. */
+export type CaptionBlock = Pick<
+  StylePack,
+  | "fonts"
+  | "letterCase"
+  | "color"
+  | "edge"
+  | "glow"
+  | "box"
+  | "highlight"
+  | "plate"
+  | "wrap"
+>;
+
+/** Look của cảnh (người/mở màn): chữ-sau-người, nắn màu. */
+export type SceneBlock = Pick<StylePack, "behindText" | "grade">;
+
+/** Look của chỗ nối: vệt quét (hiệu ứng nối khác nằm ở `junction-kinds`). */
+export type JunctionBlock = Pick<StylePack, "sweep">;
+
+export type StyleBlocks = {
+  frame: FrameBlock;
+  caption: CaptionBlock;
+  scene: SceneBlock;
+  junction: JunctionBlock;
+};
+
+/** Xẻ bộ dáng thành các cục block để đóng dấu lên element. Bản sao thuần. */
+export function blocksFromPack(pack: StylePack): StyleBlocks {
+  return {
+    frame: {
+      page: pack.page,
+      subjectEdge: pack.subjectEdge,
+      scenePush: pack.scenePush,
+      doodles: pack.doodles,
+    },
+    caption: {
+      fonts: pack.fonts,
+      letterCase: pack.letterCase,
+      color: pack.color,
+      edge: pack.edge,
+      glow: pack.glow,
+      box: pack.box,
+      highlight: pack.highlight,
+      plate: pack.plate,
+      wrap: pack.wrap,
+    },
+    scene: { behindText: pack.behindText, grade: pack.grade },
+    junction: { sweep: pack.sweep },
+  };
+}
+
 /**
  * Cách TƯ LIỆU CHÈN hiện ra — trục của từng `element`, không phải của chữ.
  *

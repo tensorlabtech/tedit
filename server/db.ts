@@ -507,6 +507,12 @@ for (const [table, column, type] of [
   // đều thành "đã đặt tay" và đổi bộ dáng không còn tác dụng gì.
   ["elements", "letter_case", "TEXT"],
   ["elements", "key_color", "TEXT"],
+  // BLOCK look đã STAMP (JSON) — element đọc trực tiếp thay vì tra bộ dáng toàn
+  // cục. Block nào không hợp loại element thì để NULL. Xem `blocksFromPack`.
+  ["elements", "frame_block", "TEXT"],
+  ["elements", "caption_block", "TEXT"],
+  ["elements", "scene_block", "TEXT"],
+  ["elements", "junction_block", "TEXT"],
   ["library_tracks", "energy", "TEXT"],
   ["library_tracks", "density", "TEXT"],
   ["library_tracks", "vocal", "TEXT"],
