@@ -9,6 +9,7 @@ import {
   findLayout,
 } from "./layout-kinds";
 import { frameBlockPool, type FrameBlockChoice } from "./frame-blocks";
+import { captionBlockPool, type CaptionBlockChoice } from "./caption-blocks";
 import { probe } from "./media-tools";
 import { workDir } from "./paths";
 import { VIDEO } from "./routes/media-formats";
@@ -61,6 +62,12 @@ export type SceneScheduleResult = {
    */
   frameBlocks: FrameBlockChoice[];
   /**
+   * POOL LOOK CHỮ — look chữ của mọi preset, phẳng. Picker "phong cách chữ" hiện
+   * đủ; nhặt cái nào thì look đóng dấu vào cụm (`caption_block`), trộn được chữ
+   * Phấn với chữ Nhịp-đen trong cùng video.
+   */
+  captionBlocks: CaptionBlockChoice[];
+  /**
    * Câu chữ-NỀN (sau người) — chỉ bộ dáng có `behindText` (Phấn) mới có. Đưa ra
    * frontend để khung xem VẼ ĐƯỢC (trước đây chỉ hiện ở bản xuất vì content tính
    * server-side). `null` khi bộ dáng không khai chữ-nền.
@@ -77,6 +84,7 @@ const EMPTY: SceneScheduleResult = {
   hasSubject: false,
   allowedLayouts: [],
   frameBlocks: [],
+  captionBlocks: [],
   behindLine: null,
   behindBand: 0,
 };
@@ -159,6 +167,7 @@ export async function buildSceneSchedule(
     hasSubject: existsSync(subjectPath(projectId)),
     allowedLayouts,
     frameBlocks: frameBlockPool(),
+    captionBlocks: captionBlockPool(),
     behindLine,
     behindBand,
   };

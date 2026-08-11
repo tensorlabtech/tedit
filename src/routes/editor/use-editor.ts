@@ -595,6 +595,13 @@ export function useEditor(projectId: string | undefined) {
             letterCase: patch.letterCase,
             keyColor: patch.keyColor,
             fontStyle: patch.fontStyle,
+            // Look chữ đóng dấu: cụm giữ OBJECT, API nhận JSON. `null` = bỏ đè.
+            captionBlock:
+              patch.captionBlock !== undefined
+                ? patch.captionBlock === null
+                  ? null
+                  : JSON.stringify(patch.captionBlock)
+                : undefined,
           })
           .catch(boQuaLoi());
         return {

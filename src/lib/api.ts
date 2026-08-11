@@ -867,6 +867,11 @@ export const api = {
        * kèm để nền/viền của khung đi theo cảnh này. `null` = xoá đè (về mặc định).
        */
       frameBlock?: string | null;
+      /**
+       * Look CHỮ đóng dấu lên cụm (JSON `CaptionBlock`) — nhặt phong cách chữ từ
+       * pool thì gửi kèm để font/màu của cụm đi theo cụm này. `null` = xoá đè.
+       */
+      captionBlock?: string | null;
       /** Đổi tệp media của b-roll */
       mediaFileId?: string;
       /** Kéo hai đầu khối chữ tự do trên dải */

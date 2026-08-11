@@ -145,6 +145,8 @@ app.patch("/api/elements/:elementId", async (request, reply) => {
     insertLayout?: string | null;
     /** Look Ô đóng dấu (JSON `FrameBlock`) khi nhặt khung từ pool; `null` = xoá. */
     frameBlock?: string | null;
+    /** Look CHỮ đóng dấu (JSON `CaptionBlock`) khi nhặt phong cách chữ từ pool; `null` = xoá. */
+    captionBlock?: string | null;
     /** Đổi tệp media của b-roll (element kind='insert'). */
     mediaFileId?: string;
     keywords?: string[];
@@ -235,6 +237,14 @@ app.patch("/api/elements/:elementId", async (request, reply) => {
   if (body.frameBlock !== undefined) {
     db.prepare("UPDATE elements SET frame_block=? WHERE id=?").run(
       body.frameBlock,
+      elementId,
+    );
+  }
+  // Look CHỮ đóng dấu: nhặt phong cách chữ từ pool thì ghi look chữ vào cụm.
+  // Nhận cả `null` (xoá đè → generate/migration stamp lại theo preset dự án).
+  if (body.captionBlock !== undefined) {
+    db.prepare("UPDATE elements SET caption_block=? WHERE id=?").run(
+      body.captionBlock,
       elementId,
     );
   }

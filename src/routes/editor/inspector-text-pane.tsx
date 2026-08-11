@@ -36,7 +36,6 @@ import { BANDS, type BandId, type EmphasisId } from "@/dev/overlays/overlay-mode
 import {
   applyFontStyle,
   findStylePack,
-  STYLE_PACKS,
 } from "../../../server/style-pack-catalog";
 
 import { formatTime, type TextElement } from "./editor-data";
@@ -113,18 +112,25 @@ export function TextPane({
   // án chỉ là GỢI Ý mặc định (nhóm lên đầu). Cụm chưa đặt riêng thì theo style dự
   // án — nên "đang chọn" rơi về `editor.stylePack`, và chọn đúng nó = trả về `null`
   // (kế thừa mặc định) thay vì ghim cứng.
-  const fontStyleOptions = STYLE_PACKS.map((p) => ({ id: p.id, label: p.label }));
-  const suggestedFontStyles = fontStyleOptions.filter(
-    (o) => o.id === editor.stylePack,
-  );
-  const otherFontStyles = fontStyleOptions.filter(
-    (o) => o.id !== editor.stylePack,
-  );
-  const currentFontStyle = element.fontStyle ?? editor.stylePack;
-  const styleVideoLabel = findStylePack(editor.stylePack).label;
-  const pickFontStyle = (id: string) => {
+  // POOL LOOK CHỮ — mọi preset, phẳng và bình đẳng. Nhặt block nào thì look chữ
+  // (font/HOA/màu/glow/hộp) ĐÓNG DẤU vào cụm (`caption_block`), nên một video trộn
+  // được chữ Phấn (nét tay) với chữ Nhịp-đen (đậm đặc) tuỳ cụm. Không đọc bộ dáng.
+  const captionBlocks = editor.sceneLayout?.captionBlocks ?? [];
+  // "Đang chọn": cụm chưa đặt riêng → theo preset dự án; đã đặt → khớp block theo
+  // font tiếng nói (đủ để phân biệt preset). Chọn đúng preset dự án = trả `null`
+  // (kế thừa mặc định, generate/migration stamp lại) thay vì ghim cứng.
+  const currentCaptionBlock = element.captionBlock
+    ? (captionBlocks.find(
+        (b) =>
+          b.captionLook.fonts.voice.file ===
+          element.captionBlock?.fonts.voice.file,
+      )?.id ?? null)
+    : editor.stylePack;
+  const pickCaptionBlock = (id: string) => {
+    const block = captionBlocks.find((b) => b.id === id);
+    if (!block) return;
     editor.updateTextElement(element.id, {
-      fontStyle: id === editor.stylePack ? null : id,
+      captionBlock: id === editor.stylePack ? null : block.captionLook,
     });
     playPreview();
   };
@@ -304,34 +310,18 @@ export function TextPane({
                 sau — dẫn từ style mà không cấm, y như picker khung. */}
             <Field>
               <FieldLabel>Phong cách chữ</FieldLabel>
-              <div className="grid gap-3">
-                {suggestedFontStyles.length > 0 && (
-                  <div className="grid gap-2">
-                    <p className="text-xs font-medium text-muted-foreground">
-                      Gợi ý cho {styleVideoLabel}
-                    </p>
-                    <OptionPicker
-                      variant="grid"
-                      options={suggestedFontStyles}
-                      value={currentFontStyle}
-                      onSelect={pickFontStyle}
-                    />
-                  </div>
-                )}
-                {otherFontStyles.length > 0 && (
-                  <div className="grid gap-2">
-                    <p className="text-xs font-medium text-muted-foreground">
-                      Khác
-                    </p>
-                    <OptionPicker
-                      variant="grid"
-                      options={otherFontStyles}
-                      value={currentFontStyle}
-                      onSelect={pickFontStyle}
-                    />
-                  </div>
-                )}
-              </div>
+              {/* POOL phẳng: mọi look chữ của mọi preset, nhãn là tên preset. Nhặt
+                  cái nào thì look chữ của nó đóng dấu vào cụm — trộn được chữ Phấn
+                  với chữ Nhịp-đen trong cùng video. */}
+              <OptionPicker
+                variant="grid"
+                options={captionBlocks.map((b) => ({
+                  id: b.id,
+                  label: b.presetLabel,
+                }))}
+                value={currentCaptionBlock}
+                onSelect={pickCaptionBlock}
+              />
             </Field>
 
             <TextOverrideRows
