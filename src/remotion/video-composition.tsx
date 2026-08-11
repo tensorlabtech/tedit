@@ -168,6 +168,22 @@ export function VideoComposition(payload: RemotionPayload) {
 
   return (
     <AbsoluteFill style={{ backgroundColor: page?.tone.color ?? "#08090C" }}>
+      {/* HẠT GIẤY: đốm ấm mờ (#8A7A4E, 28%) qua mặt nạ paper-grain — chỉ rõ trên
+          nền sáng (trang Phấn), gần vô hình trên nền tối. Khớp export. */}
+      {page && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background: "#8A7A4E",
+            opacity: 0.28,
+            WebkitMaskImage: `url(${staticFile("spike/paper-grain.png")})`,
+            maskImage: `url(${staticFile("spike/paper-grain.png")})`,
+            WebkitMaskSize: "cover",
+            maskSize: "cover",
+          }}
+        />
+      )}
       {scene ? (
         <Cells scene={scene} payload={payload} frame={frame} />
       ) : (
