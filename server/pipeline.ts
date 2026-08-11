@@ -34,7 +34,7 @@ import { createCaptionElements } from "./caption-elements";
 import { hasModel } from "./llm";
 import { readStylePack } from "./style-pack-store";
 import { stampBlocksFromPack } from "./stamp-blocks";
-import { behindPhrase } from "./style-pack";
+import { behindPhrase, HEADLINE_FADE } from "./style-pack";
 import type { CaptionBlock } from "./style-pack";
 import { fromLegacyLayout, type Band } from "./text-layout";
 import { failStrandedSteps, resetSteps, setStep } from "./pipeline-steps";
@@ -924,6 +924,41 @@ export function topKeyword(projectId: string): string | null {
   return best ? best.text : null;
 }
 
+/**
+ * GIEO chữ-sau-người thành một ELEMENT — thiết bị độc lập, không phải giá trị
+ * tính chớp lúc vẽ.
+ *
+ * Trước đây chữ-nền là một chuỗi tính ngay lúc xuất (`behindPhrase(topKeyword)`),
+ * gắn cứng ở mở màn. Nhưng nó là một BLOCK như b-roll (b-roll có input ảnh, chữ-
+ * nền có input chữ) — nên nó phải là một element MANG chữ + mốc riêng, để sau này
+ * người dùng thêm/sửa/nhặt vào bất kỳ đâu. Bước này mới chỉ dựng element ở mở màn
+ * (bằng đúng chữ + cửa sổ như bản cũ) — nên bản xuất KHÔNG đổi; UX thêm/sửa và vẽ
+ * per-element ở mốc bất kỳ là bước sau.
+ *
+ * Gieo MỘT LẦN: đã có element chữ-nền thì thôi (xoá đi không tự mọc lại). Chỉ bộ
+ * dáng KHAI chữ-nền (Phấn) mới gieo.
+ */
+export function seedBehindText(projectId: string): void {
+  const pack = readStylePack(projectId);
+  if (!pack.behindText) return;
+  const existing = (
+    db
+      .prepare(
+        "SELECT COUNT(*) AS n FROM elements WHERE project_id=? AND kind='behindtext'",
+      )
+      .get(projectId) as { n: number }
+  ).n;
+  if (existing > 0) return;
+  const line = behindPhrase(topKeyword(projectId));
+  if (!line) return;
+  // Cửa sổ mở màn = đúng khoảng chữ-nền hiện suốt: `seconds` trôi + `HEADLINE_FADE`
+  // tắt dần — khớp `enable='lt(t, seconds+fade)'` của tầng vẽ.
+  const end = pack.behindText.seconds + HEADLINE_FADE;
+  db.prepare(
+    "INSERT INTO elements (id, project_id, kind, content, start_sec, end_sec) VALUES (?,?,?,?,?,?)",
+  ).run(newId("e"), projectId, "behindtext", line, 0, end);
+}
+
 export async function runExport(projectId: string) {
   setJob(projectId, "export", "running", 5, "Đang chuẩn bị");
   const sources = mainSources(projectId);
@@ -1106,9 +1141,15 @@ export async function runExport(projectId: string) {
    * Chặng `keywords` đã chọn sẵn những từ ấy rồi. Lấy từ được nhấn NHIỀU LẦN
    * nhất: lặp lại là dấu hiệu rõ nhất rằng cả video xoay quanh nó.
    */
-  const behindLine = behindPack.behindText
-    ? behindPhrase(topKeyword(projectId))
-    : null;
+  // Chữ-nền giờ SỐNG trong một element (gieo một lần nếu chưa có). Đọc chữ từ
+  // element thay vì tính chớp — element là nơi người dùng sẽ sửa/thêm sau này.
+  seedBehindText(projectId);
+  const behindEl = db
+    .prepare(
+      "SELECT content FROM elements WHERE project_id=? AND kind='behindtext' ORDER BY start_sec LIMIT 1",
+    )
+    .get(projectId) as { content: string | null } | undefined;
+  const behindLine = behindPack.behindText ? (behindEl?.content ?? null) : null;
   const behindBand = behindLine
     ? ((await emptiestBand(projectId, baseInfo.duration / 2))?.index ?? 0)
     : 0;
