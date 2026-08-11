@@ -1,12 +1,13 @@
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, statSync } from "node:fs";
 import { extname, join } from "node:path";
 
 import { buildPlacedSegments } from "./layout-segments";
 import { scheduleScenes } from "./layout-schedule";
 import { PICKABLE_LAYOUTS } from "./layout-kinds";
-import { probe } from "./media-tools";
+import { ffmpeg, probe } from "./media-tools";
 import { workDir } from "./paths";
-import { keptRanges, resolveElements } from "./pipeline";
+import { behindElement, keptRanges, resolveElements } from "./pipeline";
+import { emptiestBand } from "./subject-mask";
 import {
   blocksFromPack,
   type AlignId,
@@ -75,6 +76,14 @@ export type RemotionPayload = {
   scenes: RemotionScene[];
   inserts: Array<{ url: string; aspect: number }>;
   captions: RemotionCaption[];
+  /** Chữ-sau-người mở màn (null nếu bộ dáng không có / ô trống). */
+  behind: {
+    line: string;
+    band: number;
+    seconds: number;
+    /** webm ALPHA của người (đã cắt nền) cho cửa sổ mở màn — layer đè lên chữ. */
+    personCutUrl: string | null;
+  } | null;
 };
 
 const FPS = 30;
@@ -160,6 +169,54 @@ export async function buildRemotionPayload(
       span: e.end - e.start,
     }));
 
+  // CHỮ-SAU-NGƯỜI mở màn: chữ chìm, người tách nền đè lên (chữ hở quanh người).
+  // Người-đã-tách dựng SẴN thành webm ALPHA bằng ffmpeg (tiền xử lý — mask video
+  // không dùng thẳng làm alpha trong Chromium được), rồi Remotion chỉ việc layer.
+  let behind: RemotionPayload["behind"] = null;
+  if (pack.behindText) {
+    const behindEl = behindElement(projectId);
+    const line = behindEl?.content.trim() ? behindEl.content : null;
+    if (line) {
+      const band =
+        (await emptiestBand(projectId, baseInfo.duration / 2).catch(() => null))
+          ?.index ?? 0;
+      const secs = pack.behindText.seconds;
+      const maskFile = existsSync(cutMask) ? cutMask : rawMask;
+      let personCutUrl: string | null = null;
+      if (existsSync(maskFile)) {
+        const cut = join(outDir, "behind-person.webm");
+        // Mask cắt nền có thể khác cỡ base → scale cả hai về khung. `alphamerge`
+        // đòi hai đầu cùng cỡ. `-auto-alt-ref 0` để libvpx-vp9 GIỮ kênh alpha.
+        await ffmpeg([
+          "-y",
+          "-i",
+          base,
+          "-i",
+          maskFile,
+          "-filter_complex",
+          `[0:v]trim=0:${secs},setpts=PTS-STARTPTS,scale=${WIDTH}:${HEIGHT}[p];` +
+            `[1:v]trim=0:${secs},setpts=PTS-STARTPTS,scale=${WIDTH}:${HEIGHT},format=gray[m];` +
+            `[p][m]alphamerge[out]`,
+          "-map",
+          "[out]",
+          "-c:v",
+          "libvpx-vp9",
+          "-pix_fmt",
+          "yuva420p",
+          "-auto-alt-ref",
+          "0",
+          "-t",
+          String(secs),
+          cut,
+        ]).catch(() => undefined);
+        // File RỖNG (encode fail) ≠ có cutout — chỉ nhận khi thật sự có byte.
+        if (existsSync(cut) && statSync(cut).size > 0)
+          personCutUrl = rel("behind-person.webm");
+      }
+      behind = { line, band, seconds: secs, personCutUrl };
+    }
+  }
+
   return {
     fps: FPS,
     width: WIDTH,
@@ -180,5 +237,6 @@ export async function buildRemotionPayload(
     })),
     inserts,
     captions,
+    behind,
   };
 }

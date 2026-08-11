@@ -1,5 +1,6 @@
 import {
   AbsoluteFill,
+  OffthreadVideo,
   Sequence,
   Video,
   staticFile,
@@ -9,6 +10,7 @@ import {
 
 import { OverlayTextBlock } from "@/dev/overlays/overlay-render";
 import type { BandId } from "@/dev/overlays/overlay-model";
+import { BehindTextPreview } from "@/routes/editor/behind-text-preview";
 import { findLayout, slotPixels } from "../../server/layout-kinds";
 import { cssColor, packForElement, type StylePack } from "../../server/style-pack";
 import type {
@@ -216,6 +218,9 @@ export function VideoComposition(payload: RemotionPayload) {
   const t = frame / fps;
   const scene = payload.scenes.find((s) => t >= s.start && t < s.end) ?? null;
   const page = scene?.frameBlock?.page ?? payload.basePage;
+  // Mở màn CHỮ-SAU-NGƯỜI: chữ chìm, người-đã-tách (webm alpha) đè lên.
+  const opening =
+    payload.behind && t < payload.behind.seconds ? payload.behind : null;
 
   return (
     <AbsoluteFill style={{ backgroundColor: page?.tone.color ?? "#08090C" }}>
@@ -235,7 +240,27 @@ export function VideoComposition(payload: RemotionPayload) {
           }}
         />
       )}
-      {scene ? (
+      {opening ? (
+        // Chữ chìm SAU, người-cắt (webm alpha) đè LÊN → chữ hở quanh người.
+        <div style={{ position: "absolute", inset: 0, containerType: "size" }}>
+          <BehindTextPreview
+            pack={payload.pack}
+            line={opening.line}
+            band={opening.band}
+            seconds={t}
+          />
+          {opening.personCutUrl && (
+            // `transparent` để alpha webm sống qua render (OffthreadVideo dùng
+            // ffmpeg trích khung — mặc định bỏ alpha).
+            <OffthreadVideo
+              src={staticFile(opening.personCutUrl)}
+              transparent
+              muted
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            />
+          )}
+        </div>
+      ) : scene ? (
         <Cells scene={scene} payload={payload} frame={frame} />
       ) : (
         // Khoảng trống = toàn-khung phủ kín người.
