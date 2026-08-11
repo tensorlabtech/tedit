@@ -31,11 +31,13 @@ import {
 import { layoutPlan } from "../../server/layout-render";
 import type { ScheduledScene } from "../../server/timing";
 
-/** Bộ dáng tối thiểu cho phép kiểm — chỉ ba trục `layoutPlan` thật sự đọc. */
+/** Block Ô tối thiểu cho phép kiểm — các trục look mà `layoutPlan` đọc. */
 const PACK = {
   page: { tone: { color: "#000", alpha: 1 }, grid: null },
   layouts: [] as LayoutKindId[],
   scenePush: null,
+  subjectEdge: null,
+  doodles: null,
 };
 
 const W = 1080;

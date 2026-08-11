@@ -1,5 +1,5 @@
 import { findLayout, settleAspect, slotPixels, type LayoutKindId } from "./layout-kinds";
-import { ffmpegColor, type StylePack } from "./style-pack";
+import { ffmpegColor, type FrameBlock } from "./style-pack";
 import type { ScheduledScene } from "./timing";
 
 /**
@@ -230,9 +230,12 @@ function glide(entries: readonly SceneEntry[], target: number, from: (e: SceneEn
 }
 
 export function layoutPlan(
-  pack: Pick<StylePack, "page" | "layouts" | "scenePush"> & {
-    subjectEdge?: StylePack["subjectEdge"];
-  },
+  /**
+   * Look Ô đã đóng dấu trên element (nền/viền/dồn) — đọc thẳng từ block, không
+   * còn tra bộ dáng toàn-cục. Sau khi mọi element mang block riêng, mỗi cảnh dùng
+   * đúng look của nó.
+   */
+  frame: FrameBlock,
   schedule: readonly ScheduledScene[],
   /** Nhãn luồng hình nguồn — nơi gọi đã `split` sẵn cho đủ số bản. */
   sources: readonly string[],
@@ -287,14 +290,14 @@ export function layoutPlan(
    * chính phải BẮT ĐẦU từ nền, còn `drawbox` thì vẽ lên một thứ đã có.
    */
   let page: string | null = null;
-  if (pack.page) {
+  if (frame.page) {
     page = "[pgbase]";
     const span = seconds > 0 ? `:d=${seconds.toFixed(3)}` : "";
     chains.push(
-      `color=c=${ffmpegColor(pack.page.tone)}:s=${frameWidth}x${frameHeight}${span}[pgcol]`,
+      `color=c=${ffmpegColor(frame.page.tone)}:s=${frameWidth}x${frameHeight}${span}[pgcol]`,
     );
-    if (pack.page.grid) {
-      const g = pack.page.grid;
+    if (frame.page.grid) {
+      const g = frame.page.grid;
       chains.push(
         `movie=${pngDir}/${g.id}.png,alphaextract[pgm];` +
           `color=c=${g.tone.color}:s=${frameWidth}x${frameHeight}${span}[pgc];` +
@@ -444,7 +447,7 @@ export function layoutPlan(
        * qua bước phóng/đặt chung, nó tự đi theo ô lúc đổi bố cục — không phải dựng
        * một lớp phủ thứ hai bám theo `glide`.
        */
-      const edge = slot.role === "phu" && slot.mask ? pack.subjectEdge : null;
+      const edge = slot.role === "phu" && slot.mask ? frame.subjectEdge : null;
       const bw = edge ? Math.max(6, Math.round(Math.min(box.w, box.h) * 0.022)) : 0;
       const erode = Array.from({ length: bw }, () => "erosion").join(",");
       // MÉP RÁCH cho ảnh b-roll: dùng mặt nạ mép hạt/xé `o-rach` (thay bo tròn
@@ -503,7 +506,7 @@ export function layoutPlan(
         const entries = scenes.map((scene) => entryOf(scene, schedule, box, frameWidth, frameHeight, sourceAspect));
         const w = glide(entries, box.w, (e) => box.w * e.k0);
         const h = glide(entries, box.h, (e) => box.h * e.k0);
-        const push = pushFactor(entries, pack.scenePush?.ratePerSecond ?? 0);
+        const push = pushFactor(entries, frame.scenePush?.ratePerSecond ?? 0);
         /*
          * TĨNH khi khổ không đổi theo `t` — `glide` trả về đúng một con số (không
          * `between(...)`) khi mọi màn của ô này đã ở đúng khổ đích ngay từ đầu

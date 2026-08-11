@@ -40,9 +40,10 @@ import {
   packForElement,
   plateFilter,
   withFontRole,
+  blocksFromPack,
   type StylePack,
 } from "./style-pack";
-import type { CaptionBlock, RevealId } from "./style-pack";
+import type { CaptionBlock, FrameBlock, RevealId } from "./style-pack";
 import {
   textWidth,
   type AlignId,
@@ -1099,7 +1100,11 @@ export async function burnElements(
    * b-roll ấy đã hiện trong Ô PHỤ của màn nó đè lên (`layoutPlan` dưới) — vẽ thêm
    * một lớp đè nữa là hiện đôi. "Chèn tư liệu" và "bố cục hai ô" là một việc.
    */
-  const layoutActive = schedule.length > 0 && pack.page !== null;
+  // Look Ô đọc từ BLOCK, không tra bộ dáng toàn-cục. Sau khi mọi element mang
+  // block riêng, chỗ này lấy theo từng cảnh; nay các block đã đóng dấu đều bằng
+  // nhau nên một cục là đủ, và đường dựng bố cục hết đọc `pack.*`.
+  const frame: FrameBlock = blocksFromPack(pack).frame;
+  const layoutActive = schedule.length > 0 && frame.page !== null;
   if (!layoutActive) {
     inserts.forEach((insert, index) => {
       const label = `[ins${index}]`;
@@ -1231,11 +1236,11 @@ export async function burnElements(
    * Không có lịch màn thì bỏ qua hẳn, và dòng chính vẫn là khung hình như cũ.
    * Bộ dáng nào không khai `layouts` thì không trả giá gì.
    */
-  if (schedule.length > 0 && pack.page) {
+  if (schedule.length > 0 && frame.page) {
     const copies = sourceCount(schedule);
     const labels = Array.from({ length: copies }, (_, i) => `[lysrc${i}]`);
     const plan = layoutPlan(
-      pack, schedule, labels, GRAPHICS_DIR, OUT_WIDTH, OUT_HEIGHT,
+      frame, schedule, labels, GRAPHICS_DIR, OUT_WIDTH, OUT_HEIGHT,
       layoutInserts, layoutInsertAspects, cutSeconds, sourceAspect,
     );
     if (plan.page) {
@@ -1278,7 +1283,7 @@ export async function burnElements(
     .filter((s) => s.layout === "broll-don")
     .map((s) => ({ start: s.start, end: s.end }));
   for (const step of doodleSteps(
-    pack, GRAPHICS_DIR, OUT_WIDTH, OUT_HEIGHT, cutMarks, cutSeconds, brollWindows,
+    frame, GRAPHICS_DIR, OUT_WIDTH, OUT_HEIGHT, cutMarks, cutSeconds, brollWindows,
   )) {
     const next = `[ddlon${filters.length}]`;
     filters.push(step.chain);
