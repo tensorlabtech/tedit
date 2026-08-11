@@ -45,13 +45,17 @@ export function activeScene(
 }
 
 /**
- * Đường cong CHẬM DẦN của một màn: 0 lúc màn mở, 1 sau `RAMP` giây.
+ * Đường cong của một màn: 0 lúc màn mở, 1 sau `RAMP` giây.
  *
- * `1-(1-p)³` — cùng hình dạng với `ease` ở `layout-render.ts`, tái dựng bằng số
- * (server viết dạng biểu thức ffmpeg cho cùng công thức).
+ * Thường là CHẬM DẦN `1-(1-p)³`. Riêng `broll-don` dùng easeOutBack (vọt QUÁ 1 rồi
+ * dội về) để ảnh b-roll POP NẢY "thả xuống trang" — khớp `ease()` ở
+ * `layout-render.ts` (server viết dạng biểu thức ffmpeg cho cùng công thức).
  */
 function ease(scene: ScheduledScene, seconds: number): number {
   const p = Math.min(1, Math.max(0, (seconds - scene.start) / RAMP));
+  if (scene.layout === "broll-don") {
+    return 1 + 2.70158 * Math.pow(p - 1, 3) + 1.70158 * Math.pow(p - 1, 2);
+  }
   return 1 - Math.pow(1 - p, 3);
 }
 

@@ -261,6 +261,20 @@ function Syllable({
    */
   onPick?: (text: string) => void;
 }) {
+  // ĐỔ CHÉO (Chalk) — khớp `word-layout.ts` bên máy chủ: mỗi tiếng trong hàng tụt
+  // dần theo cột (`0,14 cỡ chữ/cột`) + dao động nhẹ, thành cascade chéo thay vì
+  // hàng thẳng. Chỉ Phấn (`behindText` là dấu nhận bộ, cùng cách server gate).
+  // Đơn vị `cqw` = phần trăm bề rộng khung, khớp offset điểm ảnh (theo cỡ khung)
+  // của máy chủ. Cộng VÀO transform của hiệu ứng hiện chữ, không đè lên nó.
+  const reveal = revealStyle(pack, seconds, order, word.size, index, startAt);
+  const diagCqw = pack.behindText
+    ? word.size * (0.14 * index + 0.05 * Math.sin(index * 2.1 + order)) * 100
+    : 0;
+  const base =
+    reveal.transform && reveal.transform !== "none" ? reveal.transform : "";
+  const revealWithDiag: React.CSSProperties = diagCqw
+    ? { ...reveal, transform: `${base} translateY(${diagCqw.toFixed(2)}cqw)`.trim() }
+    : reveal;
   return (
     <span
       onPointerDown={
@@ -353,7 +367,7 @@ function Syllable({
               paintOrder: "stroke fill",
             }
           : null),
-        ...revealStyle(pack, seconds, order, word.size, index, startAt),
+        ...revealWithDiag,
       }}
     >
       {word.text}

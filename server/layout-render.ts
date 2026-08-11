@@ -133,6 +133,12 @@ export type SceneEntry = {
  */
 function ease(s: ScheduledScene): string {
   const p = `min(1\\,(t-${s.start.toFixed(3)})/${RAMP})`;
+  if (s.layout === "broll-don") {
+    // POP NẢY (easeOutBack): ảnh b-roll solo "thả" xuống trang — vọt QUÁ khổ đích
+    // rồi dội về, như dán ảnh tay. Chỉ cảnh b-roll một mình; ô người vẫn chậm dần
+    // êm (không nảy). 2.70158/1.70158 là hằng chuẩn của easeOutBack (~9% overshoot).
+    return `(1+2.70158*pow(${p}-1\\,3)+1.70158*pow(${p}-1\\,2))`;
+  }
   return `(1-pow(1-${p}\\,3))`;
 }
 
@@ -169,6 +175,10 @@ export function entryOf(
 ): SceneEntry {
   const cx = box.x + box.w / 2;
   const cy = box.y + box.h / 2;
+  // B-ROLL SOLO POP: xuất phát NHỎ ngay tại chỗ nó (không morph từ ô người), để
+  // cùng đường cong nảy (`ease`) thành cú "thả ảnh xuống trang" — lớn bật ra rồi
+  // dội về. Không lướt vị trí (tâm = đích) nên chỉ phóng, không trượt.
+  if (scene.layout === "broll-don") return { scene, k0: 0.55, cx0: cx, cy0: cy };
   const index = schedule.indexOf(scene);
   const prev = index > 0 ? schedule[index - 1] : null;
   if (!prev) return { scene, k0: FIRST_SCENE_K, cx0: cx, cy0: cy };
@@ -304,11 +314,17 @@ export function layoutPlan(
     }
   }
 
+  let sourceIdx = 0;
   used.forEach((id, index) => {
     const spec = findLayout(id);
     const scenes = schedule.filter((s) => s.layout === id);
-    const source = sources[index];
-    if (!source) return;
+    // CHỈ layout có ô NGƯỜI (`chinh`) mới tiêu thụ một luồng video gốc (`lysrc`);
+    // layout chỉ b-roll (`broll-don`) dùng tệp CHÈN nên KHÔNG lấy `lysrc`. Cấp
+    // nhầm thì `split` thừa một nhánh không nối và ffmpeg từ chối cả graph. Đếm
+    // theo bộ đếm RIÊNG (không phải `index`) để khớp đúng số nhánh `split`.
+    const hasChinh = spec.slots.some((sl) => sl.role === "chinh");
+    const source = hasChinh ? (sources[sourceIdx++] ?? null) : null;
+    if (hasChinh && !source) return;
 
     if (spec.slots.length === 0) {
       // `trang-chu` — không có ô nào, nền trang tự nó là cả khung. Không phủ gì.
@@ -429,7 +445,7 @@ export function layoutPlan(
        * một lớp phủ thứ hai bám theo `glide`.
        */
       const edge = slot.role === "phu" && slot.mask ? pack.subjectEdge : null;
-      const bw = edge ? Math.max(3, Math.round(Math.min(box.w, box.h) * 0.012)) : 0;
+      const bw = edge ? Math.max(6, Math.round(Math.min(box.w, box.h) * 0.022)) : 0;
       const erode = Array.from({ length: bw }, () => "erosion").join(",");
       // MÉP RÁCH cho ảnh b-roll: dùng mặt nạ mép hạt/xé `o-rach` (thay bo tròn
       // gọn), nên cả ảnh LẪN viền vàng (dựng từ chính mặt nạ này) đều rách như
@@ -505,12 +521,13 @@ export function layoutPlan(
             `h='2*floor((${h})${push}/2)':eval=${isConstant ? "init" : "frame"}[${tag}]`,
         );
         // RUNG STOP-MOTION cho ảnh scrapbook: ảnh dán tay không đứng ĐƠ — nó khẽ
-        // GIẬT theo BẬC thời gian (`floor(t*8)` ≈ 8fps) như phim tĩnh vật, hai ảnh
-        // lệch pha nên rung độc lập. Chỉ ảnh NGHIÊNG (wantTilt = ô có mặt nạ trong
-        // bố cục nhiều ô). Biên độ nhỏ, đủ "sống" mà không nhìn ra lỗi.
-        const jit = wantTilt ? Math.max(2, Math.round(Math.min(box.w, box.h) * 0.011)) : 0;
-        const jx = wantTilt ? `+${jit}*sin(floor(t*8)*1.7+${at})` : "";
-        const jy = wantTilt ? `+${jit}*sin(floor(t*7)*2.3+${(at * 1.9).toFixed(1)})` : "";
+        // GIẬT theo BẬC thời gian (`floor(t*6)`/`floor(t*5)` ≈ 5-6 bậc/s) như phim
+        // tĩnh vật, hai ảnh lệch pha nên rung độc lập. Chỉ ảnh NGHIÊNG (wantTilt = ô
+        // có mặt nạ trong bố cục nhiều ô). Biên độ CỰC nhỏ (~0.16% cạnh, ~1px) —
+        // chỉ khẽ "thở" chứ không rung thấy rõ.
+        const jit = wantTilt ? Math.max(1, Math.round(Math.min(box.w, box.h) * 0.0016)) : 0;
+        const jx = wantTilt ? `+${jit}*sin(floor(t*6)*1.7+${at})` : "";
+        const jy = wantTilt ? `+${jit}*sin(floor(t*5)*2.3+${(at * 1.9).toFixed(1)})` : "";
         overlays.push({
           label: `[${tag}]`,
           // Tâm cũng lướt: đổi bố cục là ô vừa đổi khổ vừa đổi CHỖ, và chỉ nắn
@@ -531,5 +548,12 @@ export function layoutPlan(
 
 /** Bao nhiêu bản sao luồng hình cần `split` — đúng số bố cục có trong lịch. */
 export function sourceCount(schedule: readonly ScheduledScene[]): number {
-  return new Set(schedule.map((s) => s.layout)).size;
+  // Đếm số layout KHÁC NHAU CÓ ô người — chỉ chúng cần một luồng video gốc. Layout
+  // chỉ b-roll (`broll-don`) dùng tệp chèn, không lấy luồng gốc; đếm cả nó thì
+  // `split` thừa nhánh không nối.
+  return new Set(
+    schedule
+      .filter((s) => findLayout(s.layout).slots.some((sl) => sl.role === "chinh"))
+      .map((s) => s.layout),
+  ).size;
 }

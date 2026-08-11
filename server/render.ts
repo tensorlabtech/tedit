@@ -1141,8 +1141,9 @@ export async function burnElements(
   const behind = pack.behindText;
   if (behind && subjectPath && behindLine) {
     const size = Math.round(OUT_WIDTH * behind.sizeShare);
-    const file = textFileFor(projectId, "behind", behindLine);
-    const font = resolvePackFont(pack.fonts[behind.font].file);
+    // VIẾT HOA như "YOUTH" của Chalk — chữ-nền đậm đặc hẹp đọc mạnh nhất khi hoa.
+    const file = textFileFor(projectId, "behind", behindLine.toUpperCase());
+    const font = resolvePackFont(behind.font.file);
     // Dải ít người nhất, đo từ chính mặt nạ — xem `emptiestBand`.
     const bandTop = Math.round((OUT_HEIGHT * behindBand) / BEHIND_BANDS);
     const draws: string[] = [];
@@ -1270,9 +1271,12 @@ export async function burnElements(
     }
   }
 
-  // NÉT VẼ TAY (doodle) — trang trí chỗ trống nửa trên, hiện quanh vài vết cắt.
+  // NÉT VẼ TAY (doodle) — với Phấn, bám CẢNH B-ROLL SOLO: vẽ vào lề quanh ảnh.
+  const brollWindows = schedule
+    .filter((s) => s.layout === "broll-don")
+    .map((s) => ({ start: s.start, end: s.end }));
   for (const step of doodleSteps(
-    pack, GRAPHICS_DIR, OUT_WIDTH, OUT_HEIGHT, cutMarks, cutSeconds,
+    pack, GRAPHICS_DIR, OUT_WIDTH, OUT_HEIGHT, cutMarks, cutSeconds, brollWindows,
   )) {
     const next = `[ddlon${filters.length}]`;
     filters.push(step.chain);
@@ -1283,8 +1287,9 @@ export async function burnElements(
   }
 
   // Viền vàng CHỈ quanh ảnh b-roll (nướng trong `layout-render.ts`). KHÔNG viền
-  // quanh người: mặt nạ tách nền giật từng frame nên viền bám người bò/rung loạn
-  // khi chạy — đọc ra lỗi chứ không ra nét vẽ tay.
+  // quanh người: trên footage tối/áo lẫn nền, mặt nạ tách nền phình ra nền và
+  // giật từng frame — nét sắc thì bò/rung, nét lỏng thì thành quầng trôi ngoài
+  // người, cả hai đọc ra lỗi. Chỉ dựng lại khi có mặt nạ tách người sạch.
 
   /*
    * VỆT QUÉT — trên hình dán, dưới mảng màu và chữ.

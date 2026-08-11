@@ -431,7 +431,13 @@ export type StylePack = {
    * bản quay, không phải của bộ dáng.
    */
   behindText: {
-    font: FontRole;
+    /**
+     * Font riêng cho chữ-nền, KHÔNG dùng vai `voice`/`accent` của phụ đề: chữ
+     * "YOUTH" của Chalk là một font ĐẬM ĐẶC HẸP (grotesque, kiểu Impact/Anton)
+     * viết HOA, khác hẳn nét tay của phụ đề. Mang thẳng `FontSpec` để không kéo
+     * theo cả phụ đề.
+     */
+    font: FontSpec;
     sizeShare: number;
     tone: Tone;
     /** Số tầng chồng lên nhau, mỗi tầng nhạt dần. */
@@ -1258,6 +1264,12 @@ export function doodleSteps(
   frameHeight: number,
   cuts: readonly number[],
   total: number,
+  /**
+   * Cửa sổ các cảnh b-roll SOLO. Có = đặt doodle vào LỀ hai bên ảnh trong đúng
+   * cảnh ấy (như Chalk vẽ quanh ảnh), KHÔNG rải khắp phim. Rỗng = lối cũ (rải nửa
+   * trên theo vết cắt) cho bộ dáng khác.
+   */
+  brollWindows: ReadonlyArray<{ start: number; end: number }> = [],
 ): Array<{ chain: string; label: string; enable: string }> {
   if (!pack.doodles || pack.doodles.ids.length === 0 || total <= 4) {
     return [];
@@ -1266,6 +1278,46 @@ export function doodleSteps(
   const dw = Math.round(frameWidth * sizeShare);
   // Thu CẢ canvas theo bề rộng: cao = rộng × tỉ lệ khung, nên hình giữ đúng dáng.
   const dh = Math.round((dw * frameHeight) / frameWidth);
+
+  // ── DOODLE BÁM CẢNH B-ROLL ──
+  // Ảnh b-roll nằm GIỮA (~65% bề rộng) nên hai LỀ trống. Đặt MỘT nét vẽ tay vào
+  // lề trong đúng cửa sổ b-roll, xoay vòng trái/phải + xoay vòng id. Chỉ ở cảnh
+  // cắt, không rải khắp phim — tránh "doodle vô duyên" đã bị chê.
+  if (brollWindows.length > 0) {
+    // Ảnh b-roll LỚN nằm giữa (~0,71 cạnh, tâm y≈0,42) → ÔM GÓC ảnh: mỗi cảnh dán
+    // HAI nét ở hai góc ĐỐI nhau (trên-phải + dưới-trái, hoặc trên-trái + dưới-
+    // phải), sát mép ảnh chứ không trôi ngoài lề. Đối nhau để cân, không dồn một
+    // bên. Xoay vòng id + cặp góc theo cảnh.
+    const cornerPairs = [
+      [
+        { x: Math.round(frameWidth * 0.74), y: Math.round(frameHeight * 0.04) },
+        { x: Math.round(frameWidth * 0.05), y: Math.round(frameHeight * 0.6) },
+      ],
+      [
+        { x: Math.round(frameWidth * 0.05), y: Math.round(frameHeight * 0.05) },
+        { x: Math.round(frameWidth * 0.74), y: Math.round(frameHeight * 0.58) },
+      ],
+    ];
+    return brollWindows.flatMap((win, k) => {
+      const pair = cornerPairs[k % cornerPairs.length];
+      const enable = `between(t\\,${win.start.toFixed(3)}\\,${win.end.toFixed(3)})`;
+      return pair.map((spot, j) => {
+        const id = ids[(k * 2 + j) % ids.length];
+        const label = `[ddl${k}_${j}]`;
+        return {
+          label,
+          chain:
+            `movie=${pngDir}/${id}.png,alphaextract[ddm${k}_${j}];` +
+            `color=c=${tone.color}:s=${frameWidth}x${frameHeight}[ddc${k}_${j}];` +
+            `[ddc${k}_${j}][ddm${k}_${j}]alphamerge,format=rgba,` +
+            `colorchannelmixer=aa=${tone.alpha.toFixed(3)},` +
+            `scale=${dw}:${dh},` +
+            `pad=${frameWidth}:${frameHeight}:${spot.x}:${spot.y}:color=black@0${label}`,
+          enable,
+        };
+      });
+    });
+  }
   const margin = Math.round(frameWidth * 0.05);
   // Bốn chỗ ở NỬA TRÊN, xoay vòng — tránh đáy (phụ đề) và giữa (người).
   const spots = [

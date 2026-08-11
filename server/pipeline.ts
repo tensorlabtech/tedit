@@ -19,6 +19,7 @@ import { pickCaptionBand } from "./caption-band";
 import { buildSubjectMask, emptiestBand, hasSubject, subjectPath } from "./subject-mask";
 import { fillFullFrame, scheduleScenes } from "./layout-schedule";
 import { buildPlacedSegments } from "./layout-segments";
+import { PICKABLE_LAYOUTS } from "./layout-kinds";
 import { proposeCuts } from "./ai-cuts";
 import { fixTranscript } from "./ai-fix-transcript";
 import { trimSilence } from "./auto-trim-silence";
@@ -891,7 +892,7 @@ const BEHIND_STOPWORDS = new Set([
   "luôn", "thôi", "đây", "đâu", "phải", "chưa", "vẫn", "hay", "hoặc", "nữa",
 ]);
 
-function topKeyword(projectId: string): string | null {
+export function topKeyword(projectId: string): string | null {
   const rows = db
     .prepare(
       "SELECT keywords FROM elements WHERE project_id=? AND kind='text' AND keywords IS NOT NULL AND keywords<>''",
@@ -1121,6 +1122,7 @@ export async function runExport(projectId: string) {
   const { segments: placedSegments, media: placedMedia } = buildPlacedSegments(
     projectId,
     kept,
+    PICKABLE_LAYOUTS,
     layoutPack.layouts,
   );
   const insertPaths = placedMedia.map((item) => item.path);

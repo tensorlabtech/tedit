@@ -46,7 +46,7 @@ def main() -> int:
         project_id = project["id"]
         print(f"dự án {project_id}")
 
-        page.goto(f"{base}/editor/{project_id}")
+        page.goto(f"{base}/flow/{project_id}")
         page.wait_for_timeout(5_000)
 
         # Đưa vạch tới đúng mốc rồi chụp KHUNG XEM.

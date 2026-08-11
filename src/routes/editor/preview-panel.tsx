@@ -11,6 +11,7 @@ import {
 import { revealCss, shapeBox, type BandId } from "@/dev/overlays/overlay-model";
 import {
   ContentRect,
+  graphicUrl,
   Headline,
   OverlayTextBlock,
 } from "@/dev/overlays/overlay-render";
@@ -21,12 +22,14 @@ import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
-import { packForElement } from "../../../server/style-pack";
+import { cssColor, packForElement } from "../../../server/style-pack";
 import { applyFontStyle, findStylePack } from "../../../server/style-pack-catalog";
 
 import { formatTime } from "./editor-data";
 import { findJunction } from "../../../server/junction-kinds";
+import { BehindTextPreview } from "./behind-text-preview";
 import { PreviewMusic } from "./preview-music";
+import { SubjectCutout } from "./subject-cutout";
 import { StyleSwitchDialog } from "./style-switch-dialog";
 import type { EditorState } from "./use-editor";
 import { activeScene, sceneCells } from "./scene-layout-geometry";
@@ -101,7 +104,7 @@ export function PreviewPanel({
    * Tua video chỉ khi NGƯỜI DÙNG nhảy chỗ, không phải để bám theo đồng hồ.
    *
    * Lúc đang phát thì `editor.time` giờ ĐI RA TỪ chính `video.currentTime`
-   * (`editor-page.tsx`), nên hai bên lệch nhau nhiều nhất là một nhịp đẩy state —
+   * (`use-preview-playback.ts`), nên hai bên lệch nhau nhiều nhất là một nhịp đẩy state —
    * dưới 0,05 giây. Chạm ngưỡng dưới đây nghĩa là có người kéo vạch hoặc bấm vào
    * dải, tức một cú nhảy có chủ ý.
    *
@@ -233,6 +236,25 @@ export function PreviewPanel({
         )
       : null;
   const cell = cells?.main ?? null;
+  // CẢNH CÓ NỀN TRANG đang chạy tại vạch: có ít nhất một ô (người HOẶC b-roll).
+  // Cảnh `broll-don` KHÔNG có ô người (`main` null) nhưng vẫn là cảnh nền trang —
+  // phải vẽ nền + ô b-roll, và KHÔNG để video người phủ kín phía sau. Khe giữa
+  // các màn (không ô nào) thì `pageScene` false → khung phủ kín như cũ.
+  const pageScene =
+    pageOn && cells != null && (cells.main != null || cells.inserts.length > 0);
+  // CẢNH B-ROLL SOLO tại vạch — để vẽ DOODLE vàng quanh ảnh như bản xuất. Xoay
+  // vòng cặp góc + id theo THỨ TỰ cảnh b-roll (khớp `k` của `doodleSteps`).
+  const brollDon =
+    pageScene && !cell && sceneLayout
+      ? (activeScene(sceneLayout.schedule, sweepAt)?.layout === "broll-don"
+          ? activeScene(sceneLayout.schedule, sweepAt)
+          : null)
+      : null;
+  const brollDoodleK = brollDon
+    ? (sceneLayout?.schedule.filter((s) => s.layout === "broll-don") ?? []).indexOf(
+        brollDon,
+      )
+    : -1;
 
   /*
    * Thiết bị dựa vào TÁCH NỀN NGƯỜI (chữ sau người, viền người) chưa vẽ ở màn
@@ -385,13 +407,15 @@ export function PreviewPanel({
               {/* NỀN TRANG đứng dưới cùng — video-vào-ô để lộ nó ra quanh mép. CHỈ
                 vẽ khi đang có MÀN (`cell`): lịch thưa để trống chỗ mặc định, mà ở
                 chỗ ấy khung phải là video phủ kín, không phải nền trang trơ. */}
-              {pageOn && cell && <ScenePage pack={projectPack} />}
+              {pageScene && <ScenePage pack={projectPack} />}
               {/* Tiêu đề đứng ở tầng KHUNG, vẽ một lần — không đi theo từng cụm
                 phụ đề như `OverlayTextBlock`. */}
               <Headline text={editor.headline} pack={projectPack} />
-              {editor.projectId && editor.duration > 0 && (
+              {editor.projectId && editor.duration > 0 && !(pageScene && !cell) && (
                 // Ô video: phủ kín khung khi không có màn (`cell` rỗng — khoảng
-                // trống hoặc bộ phủ kín); thu vào ô khi đang có màn.
+                // trống hoặc bộ phủ kín); thu vào ô khi đang có màn. CẢNH b-roll
+                // solo (nền trang, không ô người) thì KHÔNG vẽ video người —
+                // `!(pageScene && !cell)` bỏ nó đi, chỉ còn nền + ô b-roll.
                 // Bo góc bằng `rounded-[3cqw]` như tư liệu chèn — cùng lối làm tròn
                 // ở màn hình, phép kiểm parity soi hình học ô chứ không soi góc.
                 <div
@@ -427,6 +451,30 @@ export function PreviewPanel({
                   />
                 </div>
               )}
+              {/* CHỮ-NỀN sau người + TÁCH NGƯỜI. Chỉ bộ dáng có `behindText` (Phấn),
+                  đúng cửa sổ mở màn. Thứ tự khớp bản xuất: chữ ĐÈ lên video, rồi
+                  người-CẮT đè lên chữ → chữ hở ra quanh người. Thiếu mặt nạ thì bỏ
+                  người-cắt (chữ vẫn hiện dưới video, chấp nhận). */}
+              {projectPack.behindText &&
+                sceneLayout?.behindLine &&
+                editor.time < projectPack.behindText.seconds + 0.35 && (
+                  <>
+                    <BehindTextPreview
+                      pack={projectPack}
+                      line={sceneLayout.behindLine}
+                      band={sceneLayout.behindBand ?? 0}
+                      seconds={editor.time}
+                    />
+                    {sceneLayout.hasSubject && editor.projectId && (
+                      <SubjectCutout
+                        projectId={editor.projectId}
+                        time={editor.time}
+                        playing={playing}
+                        className="absolute inset-0 size-full object-cover"
+                      />
+                    )}
+                  </>
+                )}
               {/* Ô B-ROLL vẽ SAU ô người → ĐÈ LÊN người. Chỗ đè là thân/vai, không
                 phải mặt; b-roll nguyên vẹn, không bị người cắt. Cùng thứ tự z bản
                 xuất (`phu` khai z cao hơn `chinh`). */}
@@ -443,6 +491,15 @@ export function PreviewPanel({
                     top: `${box.top}%`,
                     width: `${box.width}%`,
                     height: `${box.height}%`,
+                    // Viền vàng quanh ô b-roll (`phu`) — xấp xỉ viền GIẤY XÉ vàng
+                    // của bản xuất. CSS không dựng được mép xé thật, viền vàng bo
+                    // nhẹ là mức parity hình-học+xấp-xỉ của cả hệ. CHỈ ô b-roll;
+                    // ô người (`main`) không có.
+                    ...(projectPack.subjectEdge
+                      ? {
+                          border: `0.8cqw solid ${cssColor(projectPack.subjectEdge.tone)}`,
+                        }
+                      : null),
                   }}
                 >
                   {media === null ? (
@@ -476,6 +533,56 @@ export function PreviewPanel({
                   )}
                 </div>
               ))}
+
+              {/* DOODLE vàng quanh ảnh b-roll solo — HAI nét ở góc đối nhau, xoay
+                  vòng cặp góc + id theo thứ tự cảnh, khớp `doodleSteps` bản xuất.
+                  Tô màu bằng `mask-image` + `background-color` (đúng `alphamerge`
+                  của server). Hộp 0,14 khung; `contain` để nét không méo. */}
+              {projectPack.doodles &&
+                brollDon &&
+                brollDoodleK >= 0 &&
+                (() => {
+                  const doodles = projectPack.doodles!;
+                  // Cặp góc: [trên-phải, dưới-trái] / [trên-trái, dưới-phải].
+                  const cornerPairs = [
+                    [
+                      { x: 0.74, y: 0.04 },
+                      { x: 0.05, y: 0.6 },
+                    ],
+                    [
+                      { x: 0.05, y: 0.05 },
+                      { x: 0.74, y: 0.58 },
+                    ],
+                  ];
+                  const pair = cornerPairs[brollDoodleK % cornerPairs.length];
+                  return pair.map((spot, j) => {
+                    const id =
+                      doodles.ids[(brollDoodleK * 2 + j) % doodles.ids.length];
+                    const url = graphicUrl(id);
+                    if (!url) return null;
+                    return (
+                      <div
+                        key={`doodle-${j}`}
+                        className="pointer-events-none absolute"
+                        style={{
+                          left: `${spot.x * 100}%`,
+                          top: `${spot.y * 100}%`,
+                          // Hộp 0,14W × 0,14H như bản xuất (`dh = dw·H/W`).
+                          width: `${doodles.sizeShare * 100}%`,
+                          height: `${doodles.sizeShare * 100}%`,
+                          maskImage: `url(${url})`,
+                          WebkitMaskImage: `url(${url})`,
+                          maskSize: "contain",
+                          WebkitMaskSize: "contain",
+                          maskRepeat: "no-repeat",
+                          WebkitMaskRepeat: "no-repeat",
+                          backgroundColor: cssColor(doodles.tone),
+                          zIndex: 2,
+                        }}
+                      />
+                    );
+                  });
+                })()}
               <div className="absolute inset-x-[5%] top-[10%] bottom-[20%] rounded-md border border-dashed border-muted-foreground/25" />
 
               {/* B-roll vẽ đè CHỈ khi không có bố cục ô. Bộ có bố cục thì b-roll đã

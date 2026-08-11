@@ -447,6 +447,16 @@ export async function placeWords(
      */
     let cursor = x;
     for (const [col, word] of row.entries()) {
+      // ĐỔ CHÉO (Chalk): thay vì một hàng chữ THẲNG, mỗi tiếng trong hàng tụt dần
+      // xuống theo cột (cascade chéo) + một chút dao động cho ra dáng đặt tay,
+      // "hài hoà" chứ không cứng như phụ đề giữa. Chỉ bật cho Phấn (`behindText`
+      // là dấu nhận bộ Phấn, cùng cách các trục caption khác đang gate). Biên độ
+      // vừa (0,14 cỡ chữ/cột) — nghiêng thấy rõ mà chưa đè hàng dưới.
+      const diagOff = pack.behindText
+        ? Math.round(
+            word.fontSize * (0.14 * col + 0.05 * Math.sin(col * 2.1 + index)),
+          )
+        : 0;
       out.push({
         text: word.text,
         // `x` của lệnh vẽ là chỗ CHỮ bắt đầu, còn nền khối chìa ra trước nó một
@@ -456,7 +466,10 @@ export async function placeWords(
         // nên tiếng có dấu chồng dấu phải dịch xuống đúng bằng khoảng trống mà
         // tiếng không dấu để lại phía trên. Không bù thì cả hàng có chân chữ
         // nhấp nhô, và trang xem không có lỗi đó vì CSS xếp theo chân chữ.
-        y: y + Math.round(await inkTopOffset(word.text, word.fontSize, pack)),
+        y:
+          y +
+          Math.round(await inkTopOffset(word.text, word.fontSize, pack)) +
+          diagOff,
         fontSize: word.fontSize,
         row: index,
         col,

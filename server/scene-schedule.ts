@@ -3,13 +3,18 @@ import { join } from "node:path";
 
 import { scheduleScenes } from "./layout-schedule";
 import { buildPlacedSegments } from "./layout-segments";
-import { type LayoutKindId, findLayout } from "./layout-kinds";
+import {
+  type LayoutKindId,
+  PICKABLE_LAYOUTS,
+  findLayout,
+} from "./layout-kinds";
 import { probe } from "./media-tools";
 import { workDir } from "./paths";
 import { VIDEO } from "./routes/media-formats";
-import { keptRanges } from "./pipeline";
+import { keptRanges, topKeyword } from "./pipeline";
+import { behindPhrase } from "./style-pack";
 import { readStylePack } from "./style-pack-store";
-import { subjectPath } from "./subject-mask";
+import { emptiestBand, subjectPath } from "./subject-mask";
 import type { ScheduledScene } from "./timing";
 
 /**
@@ -30,7 +35,12 @@ export type SceneInsert = {
 };
 
 /** Một bố cục chọn được ở picker — mã + nhãn tiếng Việt. */
-export type LayoutChoice = { id: LayoutKindId; label: string };
+export type LayoutChoice = {
+  id: LayoutKindId;
+  label: string;
+  /** Khung GỢI Ý của style hiện tại (để picker nhóm lên đầu). Không phải giới hạn. */
+  suggested: boolean;
+};
 
 export type SceneScheduleResult = {
   schedule: ScheduledScene[];
@@ -42,6 +52,14 @@ export type SceneScheduleResult = {
   hasSubject: boolean;
   /** MỌI bố cục bộ dáng khai (cả b-roll) — modal chọn hiện đủ, b-roll thì đòi tư liệu. */
   allowedLayouts: LayoutChoice[];
+  /**
+   * Câu chữ-NỀN (sau người) — chỉ bộ dáng có `behindText` (Phấn) mới có. Đưa ra
+   * frontend để khung xem VẼ ĐƯỢC (trước đây chỉ hiện ở bản xuất vì content tính
+   * server-side). `null` khi bộ dáng không khai chữ-nền.
+   */
+  behindLine: string | null;
+  /** Dải (chỉ số) ít người nhất để đặt chữ-nền — khớp `emptiestBand` ở bản xuất. */
+  behindBand: number;
 };
 
 const EMPTY: SceneScheduleResult = {
@@ -50,6 +68,8 @@ const EMPTY: SceneScheduleResult = {
   inserts: [],
   hasSubject: false,
   allowedLayouts: [],
+  behindLine: null,
+  behindBand: 0,
 };
 
 export async function buildSceneSchedule(
@@ -70,7 +90,13 @@ export async function buildSceneSchedule(
     0,
   );
 
-  const { segments, media } = buildPlacedSegments(projectId, kept, pack.layouts);
+  // Dựng theo MỌI khung (tôn trọng lựa chọn tay), mặc định theo GỢI Ý của style.
+  const { segments, media } = buildPlacedSegments(
+    projectId,
+    kept,
+    PICKABLE_LAYOUTS,
+    pack.layouts,
+  );
 
   const inserts: SceneInsert[] = await Promise.all(
     media.map(async (item) => {
@@ -92,12 +118,26 @@ export async function buildSceneSchedule(
   // gắn "Nhịp đen ·" thì phần phân biệt bị đẩy ra ngoài, đọc không ra cái nào khác
   // cái nào). Cùng một "Ô lệch" khác look giữa hai bộ dáng, nhưng picker chỉ đứng
   // trong MỘT bộ, nên tên bộ ở đây là thừa lặp.
-  const allowedLayouts: LayoutChoice[] = pack.layouts
-    .filter((id) => id !== "toan-khung")
-    .map((id) => ({ id, label: findLayout(id).label }));
+  // MỌI khung chọn được (không lọc theo style) — style chỉ ĐÁNH DẤU gợi ý để
+  // picker nhóm lên đầu, không cấm. `toan-khung` là mặc định (nút "Bỏ khung").
+  const allowedLayouts: LayoutChoice[] = PICKABLE_LAYOUTS.map((id) => ({
+    id,
+    label: findLayout(id).label,
+    suggested: pack.layouts.includes(id),
+  }));
 
   const sourceAspect =
     baseInfo.width && baseInfo.height ? baseInfo.width / baseInfo.height : null;
+
+  // Chữ-nền: chỉ bộ dáng có `behindText` (Phấn). Dải đặt lấy từ mặt nạ như bản
+  // xuất; thiếu mặt nạ thì về dải 0 (vẫn hiện được, chỉ không né người tối ưu).
+  const behindLine = pack.behindText
+    ? behindPhrase(topKeyword(projectId))
+    : null;
+  const behindBand = behindLine
+    ? ((await emptiestBand(projectId, baseInfo.duration / 2).catch(() => null))
+        ?.index ?? 0)
+    : 0;
 
   return {
     schedule,
@@ -105,5 +145,7 @@ export async function buildSceneSchedule(
     inserts,
     hasSubject: existsSync(subjectPath(projectId)),
     allowedLayouts,
+    behindLine,
+    behindBand,
   };
 }

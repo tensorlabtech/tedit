@@ -33,11 +33,16 @@ import { toast } from "@/components/ui/toast";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 import { BANDS, type BandId, type EmphasisId } from "@/dev/overlays/overlay-model";
-import { applyFontStyle, findStylePack } from "../../../server/style-pack-catalog";
+import {
+  applyFontStyle,
+  findStylePack,
+  STYLE_PACKS,
+} from "../../../server/style-pack-catalog";
 
 import { formatTime, type TextElement } from "./editor-data";
 import { BandRow } from "./inspector-text-axis-rows";
 import { TextOverrideRows } from "./inspector-text-override-rows";
+import { OptionPicker } from "./option-picker";
 import type { EditorState } from "./use-editor";
 
 /**
@@ -90,10 +95,8 @@ export function TextPane({
     onPreview(element.start - LEAD_IN, element.end + TAIL);
 
   // Bộ dáng của dự án ĐÃ áp phong cách chữ mặc định — nền để tính dáng chữ hiệu
-  // lực cho cụm này. Trục "phong cách chữ" đã gỡ khỏi UI (xem ghi chú ở
-  // `applyFontStyle`), nên hai lệnh gọi dưới đây chỉ còn tác dụng với dự án cũ
-  // vẫn giữ giá trị đã đặt trước đó — không có chỗ nào trong bảng này cho người
-  // dùng SỬA phong cách chữ nữa.
+  // lực cho cụm này. Phong cách chữ per-cụm (`element.fontStyle`) đè tiếp lên nền
+  // này; trục chọn nó bày ở dưới ("Phong cách chữ").
   const projectPack = applyFontStyle(
     findStylePack(editor.stylePack),
     editor.fontStyle,
@@ -104,6 +107,27 @@ export function TextPane({
   const effectiveFontLabel = effectiveFont
     ? findStylePack(effectiveFont).label
     : "bộ chính";
+
+  // PHONG CÁCH CHỮ per-cụm — text-look (font/HOA-thường/màu/viền/quầng) là trục
+  // BÌNH ĐẲNG: mượn được của MỌI style, không khoá theo style video. Style của dự
+  // án chỉ là GỢI Ý mặc định (nhóm lên đầu). Cụm chưa đặt riêng thì theo style dự
+  // án — nên "đang chọn" rơi về `editor.stylePack`, và chọn đúng nó = trả về `null`
+  // (kế thừa mặc định) thay vì ghim cứng.
+  const fontStyleOptions = STYLE_PACKS.map((p) => ({ id: p.id, label: p.label }));
+  const suggestedFontStyles = fontStyleOptions.filter(
+    (o) => o.id === editor.stylePack,
+  );
+  const otherFontStyles = fontStyleOptions.filter(
+    (o) => o.id !== editor.stylePack,
+  );
+  const currentFontStyle = element.fontStyle ?? editor.stylePack;
+  const styleVideoLabel = findStylePack(editor.stylePack).label;
+  const pickFontStyle = (id: string) => {
+    editor.updateTextElement(element.id, {
+      fontStyle: id === editor.stylePack ? null : id,
+    });
+    playPreview();
+  };
 
   const from = editor.wordsById.get(element.fromWordId);
   const deChong = editor.deLenNhau(element);
@@ -229,9 +253,9 @@ export function TextPane({
               </p>
             )}
 
-            {/* Hai trục người dùng đổi PER-CỤM: CHỖ ĐẶT và MÀU TỪ NHẤN. Cỡ chữ,
-                căn ngang, kiểu chữ đều do PHONG CÁCH quyết (chọn ở màn "Đổi
-                khung"), nên bảng này không còn trục chọn phong cách chữ riêng. */}
+            {/* Các trục đổi PER-CỤM: CHỖ ĐẶT, MÀU TỪ NHẤN, và PHONG CÁCH CHỮ.
+                Cỡ chữ/căn ngang do phong cách quyết; còn text-look thì bình đẳng —
+                cụm mượn được của style bất kỳ (trục "Phong cách chữ" dưới). */}
             <Field>
               <FieldLabel>Chỗ đặt</FieldLabel>
               <BandRow
@@ -273,6 +297,41 @@ export function TextPane({
                   </ToggleGroupItem>
                 ))}
               </ToggleGroup>
+            </Field>
+
+            {/* PHONG CÁCH CHỮ — text-look bình đẳng: mượn của MỌI style, không
+                khoá theo style video. Hai nhóm: gợi ý (style dự án) trước, Khác
+                sau — dẫn từ style mà không cấm, y như picker khung. */}
+            <Field>
+              <FieldLabel>Phong cách chữ</FieldLabel>
+              <div className="grid gap-3">
+                {suggestedFontStyles.length > 0 && (
+                  <div className="grid gap-2">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      Gợi ý cho {styleVideoLabel}
+                    </p>
+                    <OptionPicker
+                      variant="grid"
+                      options={suggestedFontStyles}
+                      value={currentFontStyle}
+                      onSelect={pickFontStyle}
+                    />
+                  </div>
+                )}
+                {otherFontStyles.length > 0 && (
+                  <div className="grid gap-2">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      Khác
+                    </p>
+                    <OptionPicker
+                      variant="grid"
+                      options={otherFontStyles}
+                      value={currentFontStyle}
+                      onSelect={pickFontStyle}
+                    />
+                  </div>
+                )}
+              </div>
             </Field>
 
             <TextOverrideRows

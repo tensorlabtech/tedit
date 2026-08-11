@@ -197,7 +197,7 @@ export function PipelinePage() {
   // Giữ chúng lại đây là nhốt người dùng trước một danh sách rỗng vĩnh viễn.
   useEffect(() => {
     if (!view.loading && !view.error && steps.length === 0 && projectId) {
-      navigate(`/editor/${projectId}`, { replace: true });
+      navigate(`/flow/${projectId}`, { replace: true });
     }
   }, [view.loading, view.error, steps.length, projectId, navigate]);
 
@@ -234,14 +234,14 @@ export function PipelinePage() {
                 tooltip: nút `disabled` có `pointer-events: none` nên tooltip
                 không bao giờ nổ — đo được là rê chuột vào chẳng ra gì. */}
             {awaiting ? (
-              <Button onClick={() => navigate(`/editor/${projectId}`)}>
+              <Button onClick={() => navigate(`/flow/${projectId}`)}>
                 {awaiting === "review-cut" ? "Soát chỗ cắt" : "Soát chính tả"}
                 <ArrowRightIcon data-icon="inline-end" />
               </Button>
             ) : (
               <Button
                 disabled={!canOpen}
-                onClick={() => navigate(`/editor/${projectId}`)}
+                onClick={() => navigate(`/flow/${projectId}`)}
               >
                 Mở trình sửa
                 <ArrowRightIcon data-icon="inline-end" />

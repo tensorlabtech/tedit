@@ -301,8 +301,10 @@ export const PHAN: StylePack = {
   // TOÀN-KHUNG làm CHỦ ĐẠO — người nói phủ kín như Chalk, KHÔNG nhốt vào thẻ nhỏ.
   // Bỏ ô-đơn/ô-lệch (thẻ người kiểu Nhịp đen): `placePersonLayouts` lọc ra layout
   // ô-người (không cần tư liệu, khác toàn-khung) — rỗng thì không gieo thẻ người
-  // nào. Chỉ giữ layout CÓ tư liệu để b-roll vẫn lên như ảnh dán.
-  layouts: ["toan-khung", "vuong-ngang", "ngang-vuong"],
+  // nào. Chỉ giữ layout CÓ tư liệu để b-roll vẫn lên.
+  // `broll-don` ĐỨNG ĐẦU họ b-roll → b-roll mặc định thành CẢNH RIÊNG (ảnh trên
+  // nền phủ kín, như Chalk), collage 2 ô là biến thể.
+  layouts: ["toan-khung", "broll-don", "vuong-ngang", "ngang-vuong"],
   // Dồn 4%/giây trên một phần tư số màn — mức của `ember`, bộ chậm nhất trong
   // kho mẫu mà vẫn có chuyển động.
   scenePush: { ratePerSecond: 0.04, share: 0.25 },
@@ -318,19 +320,27 @@ export const PHAN: StylePack = {
     share: 0.3,
   },
   behindText: {
-    font: "voice",
-    // Chữ chìm SAU người — phải MỜ và VỪA, không tranh nét với mặt/nội dung. To
-    // quá (0.42) hoặc rõ quá (α0.925) thì nó át chủ thể, loãng tập trung. 0.20 +
-    // α0.5: vẫn là một mảng chữ nền có mặt, nhưng lùi hẳn về sau.
-    sizeShare: 0.2,
+    // ANTON — grotesque ĐẬM ĐẶC HẸP kiểu Impact, viết HOA + phủ hạt phấn = đúng
+    // chữ "YOUTH" khổng lồ sau người của Chalk. Nét tay PatrickHand cũ đọc ra
+    // yếu, không phải "biển chữ nền".
+    font: FONT.anton,
+    // Chữ chìm SAU người (người được che đè lên) nên to được mà không át chủ thể.
+    // 0.28: đủ lớn để thành mảng chữ nền có sức nặng như Chalk, chưa tràn khung.
+    sizeShare: 0.28,
     tone: { color: "#FFFFFF", alpha: 0.5 },
     repeats: 3,
     // 2,4 giây — con số chụm nhất trong cả bộ số đo: sáu bộ mẫu ra 2,1 · 2,5 ·
     // 2,65 · 2,4 · 2,4 · 2,1–3,5. Bản đầu tôi đặt 4,5 theo cảm giác, gần gấp đôi.
     seconds: 2.4,
   },
-  // Doodle TẮT (inherit BASE null): nét ngoằn ngoèo/mặt cười/mây tự-chế đặt ngẫu
-  // nhiên đọc ra "đồ hoạ lạ" chứ chưa ra nét vẽ tay thật. Chờ asset doodle THẬT.
+  // Doodle CHỈ ở cảnh b-roll solo (xem `doodleSteps` + `brollWindows`): nét vẽ
+  // tay vàng vào LỀ quanh ảnh như Chalk, KHÔNG rải khắp phim (lối rải cũ mới là
+  // "đồ hoạ lạ" đã bị chê). Xoay vòng ngoằn ngoèo/mặt cười/mây/dấu tích.
+  doodles: {
+    ids: ["net-ngoan-ngoeo", "net-mat-cuoi", "net-may", "net-dau-tich"],
+    tone: { color: "#E7C24A", alpha: 0.9 },
+    sizeShare: 0.14,
+  },
   density: { ...BASE.density, maxScale: 0.1, lineHeight: 1.3, wordGap: 0.16 },
   effectBias: {
     junction: ["cross-smooth", "zoom-out"],

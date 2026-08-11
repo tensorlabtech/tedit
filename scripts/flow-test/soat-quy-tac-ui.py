@@ -150,7 +150,7 @@ def main() -> int:
             ("cài đặt", "/library/settings"),
         ]
         if prj:
-            man.append(("bàn dựng", f"/editor/{prj}"))
+            man.append(("bàn dựng", f"/flow/{prj}"))
             man.append(("tiến trình", f"/pipeline/{prj}"))
 
         for kho, ten_kho in ((VIEWPORT, "rộng"), (KHO_HEP, "hẹp")):

@@ -279,7 +279,7 @@ export function shape(data: ApiProject) {
     title: data.project.title,
     /** Mã những lời nhắc đã bỏ qua — hàng soát lọc theo danh sách này */
     dismissed: data.dismissed ?? [],
-    /** Tiến trình dựng — bàn dựng dùng nó làm CỔNG, xem `editor-page.tsx` */
+    /** Tiến trình dựng — màn dựng (studio ở /flow) dùng nó làm CỔNG */
     pipeline: data.pipeline ?? null,
     /** Hiệu ứng người dùng đặt tay — quãng theo giây bản gốc */
     manualEffects: (data.effects ?? []).map((row) => ({

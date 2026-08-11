@@ -146,6 +146,7 @@ export type Slot = {
 export type LayoutKindId =
   | "toan-khung"
   | "o-don"
+  | "broll-don"
   | "hai-o"
   | "vuong-ngang"
   | "ngang-vuong"
@@ -180,6 +181,21 @@ export const LAYOUT_SPECS: LayoutSpec[] = [
       { role: "chinh", areaShare: 0.42, anchor: { x: 0.5, y: 0.42 }, mask: "o-bo-goc", z: 0 },
     ],
     needsInsert: false,
+  },
+  {
+    id: "broll-don",
+    label: "B-roll đơn",
+    // Tư liệu MỘT MÌNH trên nền trang — cảnh cắt (voiceover), KHÔNG có người. Như
+    // Chalk: ảnh b-roll cỡ vừa nằm trên nền phủ kín, mép xé + viền vàng (vì `phu`
+    // + có mặt nạ), doodle rải quanh. Ô lớn (0,42 diện tích ~0,65 cạnh), hơi cao
+    // để chừa đáy cho phụ đề.
+    note: "Tư liệu b-roll một mình trên nền trang — cảnh cắt, không có người",
+    slots: [
+      // 0,5 diện tích (~0,71 cạnh) — LỚN như Chalk (ảnh chiếm 60-75% màn), chừa
+      // nền vừa đủ cho doodle ôm góc, không để trống loãng.
+      { role: "phu", areaShare: 0.5, anchor: { x: 0.5, y: 0.42 }, mask: "o-bo-goc", z: 0 },
+    ],
+    needsInsert: true,
   },
   {
     id: "hai-o",
@@ -232,6 +248,21 @@ export const LAYOUT_SPECS: LayoutSpec[] = [
     needsInsert: false,
   },
 ];
+
+/**
+ * MỌI kiểu khung CHỌN ĐƯỢC — dùng chung cho picker và cho phép hợp lệ khi dựng.
+ *
+ * Kiểu khung là CẤU TRÚC, KHÔNG thuộc về một bộ dáng: `pack.layouts` chỉ là tập
+ * GỢI Ý mặc định của style (để tự đặt), không phải giới hạn. Người dùng chọn được
+ * mọi khung ở mọi style — treatment (viền/nền/mask) do style áp lên bất kỳ khung
+ * nào. Trừ `toan-khung` (là MẶC ĐỊNH khi vắng segment, chọn qua nút "Bỏ khung").
+ */
+export const PICKABLE_LAYOUTS: LayoutKindId[] = LAYOUT_SPECS.filter(
+  // `toan-khung` (mặc định khi vắng segment) và `trang-chu` (khung KHÔNG video,
+  // chỉ chữ) là hai ca đặc biệt, không phải khung người/b-roll thường — không bày
+  // trong picker chọn-khung-cho-một-khoảnh-khắc-video.
+  (spec) => spec.id !== "toan-khung" && spec.id !== "trang-chu",
+).map((spec) => spec.id);
 
 const BY_ID = new Map(LAYOUT_SPECS.map((spec) => [spec.id, spec]));
 

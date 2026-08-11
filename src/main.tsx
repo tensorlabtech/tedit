@@ -43,9 +43,6 @@ const PipelinePage = lazy(() =>
     default: m.PipelinePage,
   })),
 );
-const EditorPage = lazy(() =>
-  import("@/routes/editor/editor-page").then((m) => ({ default: m.EditorPage })),
-);
 const UploadPage = lazy(() =>
   import("@/routes/upload/upload-page").then((m) => ({ default: m.UploadPage })),
 );
@@ -164,7 +161,6 @@ createRoot(document.getElementById("root")!).render(
                     `/upload`) — tránh đẻ dự án rỗng khi bấm rồi bỏ ngang. */}
                 <Route path="/flow/:projectId?" element={<FlowPage />} />
                 <Route path="/pipeline/:projectId" element={<PipelinePage />} />
-                <Route path="/editor/:projectId" element={<EditorPage />} />
                 {/* Màn quản trị — sau cổng đăng nhập; chốt quyền admin ở máy chủ
                     (403) và trang tự hiện "không có quyền" nếu không phải admin. */}
                 <Route path="/admin" element={<AdminPage />} />

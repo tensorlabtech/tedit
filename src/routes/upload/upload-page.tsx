@@ -235,7 +235,7 @@ export function UploadPage() {
                     // Chép lời trước rồi mới sang bàn dựng: mở bàn dựng khi chưa có
                     // lời thì màn đó rỗng và người dùng không hiểu phải đợi gì.
                     if (upload.transcribe?.status === "done") {
-                      navigate(`/editor/${upload.projectId}`);
+                      navigate(`/flow/${upload.projectId}`);
                       return;
                     }
                     await upload.startTranscribe();

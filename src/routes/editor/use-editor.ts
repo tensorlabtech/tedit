@@ -294,7 +294,7 @@ export function useEditor(projectId: string | undefined) {
   /**
    * Thẻ `<video>` của khung xem trước — lên tới đây để VÒNG PHÁT đọc được nó.
    *
-   * Khung xem trước tự giữ thẻ này thì vòng phát ở `editor-page.tsx` không với
+   * Khung xem trước tự giữ thẻ này thì vòng phát ở `use-preview-playback.ts` không với
    * tới, và nó buộc phải tính mốc thời gian bằng đồng hồ tường rồi TUA video cho
    * khớp. Đo trên máy người dùng thật: **38 lượt tua trong 15 giây** — mạng khựng
    * làm video tụt lại, app tua, video nạp lại từ chỗ mới rồi tụt tiếp. Một vòng

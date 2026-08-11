@@ -40,6 +40,26 @@ app.get("/api/projects/:id/preview", async (request, reply) => {
 });
 
 /**
+ * Mặt nạ TÁCH NGƯỜI cho khung xem trước — trắng = người, đen = nền.
+ *
+ * Cho preview dựng được các hiệu ứng DỰA TÁCH NỀN (chữ sau người, viền người)
+ * bằng canvas: cắt người theo mặt nạ này rồi đè lên lớp chữ/nền phía dưới. Trước
+ * đây preview đành gắn nhãn "hiện ở bản xuất" vì không có mặt nạ ở trình duyệt.
+ *
+ * Cùng trục thời gian với `/preview` (đều bám video gốc), nên tua chung một đồng
+ * hồ. Thiếu tệp (dự án chưa dựng mặt nạ) thì 404 — preview tự lùi về hiện người
+ * phủ kín, không dựng hiệu ứng, thay vì vỡ.
+ */
+app.get("/api/projects/:id/subject", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const mask = join(workDir(id), "subject.mp4");
+  if (!existsSync(mask)) {
+    return reply.code(404).send({ error: "Chưa dựng mặt nạ tách người" });
+  }
+  return reply.sendFile(relative(DATA_ROOT, mask));
+});
+
+/**
  * Đường bao âm lượng để vẽ dải sóng trên bàn dựng.
  *
  * Dựng lại tại chỗ nếu chưa có: dự án chép lời bằng bản cũ không có tệp này, mà

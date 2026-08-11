@@ -35,6 +35,7 @@ const PAD = 0.2;
 const KHUNG_LABEL: Record<string, string> = {
   "o-don": "1 ô · Trên",
   "o-lech": "1 ô · Dưới",
+  "broll-don": "B-roll · Riêng",
   "hai-o": "2 ô · Đều",
   "vuong-ngang": "2 ô · Vuông trên",
   "ngang-vuong": "2 ô · Ngang trên",
@@ -74,10 +75,16 @@ export function LayoutKhungPane({
   // KHÔNG tự chạy khi vừa CHỌN khung — chỉ chạy khi ĐỔI (kiểu khung, tư liệu).
   const replay = () => onPreview(Math.max(0, srcStart - PAD), srcEnd + PAD);
 
-  const options = (editor.sceneLayout?.allowedLayouts ?? []).map((choice) => ({
+  // MỌI khung chọn được (kiểu khung phổ quát, không khoá theo style). Style chỉ
+  // ĐÁNH DẤU `suggested` để xếp NHÓM gợi ý lên đầu — dẫn từ style mà không cấm.
+  const choices = editor.sceneLayout?.allowedLayouts ?? [];
+  const toOption = (choice: (typeof choices)[number]) => ({
     id: choice.id,
     label: khungLabel(choice.id),
-  }));
+  });
+  const suggestedOptions = choices.filter((c) => c.suggested).map(toOption);
+  const otherOptions = choices.filter((c) => !c.suggested).map(toOption);
+  const styleLabel = findStylePack(editor.stylePack).label;
 
   const [frameOpen, setFrameOpen] = useState(false);
   const [mediaOpen, setMediaOpen] = useState(false);
@@ -196,13 +203,33 @@ export function LayoutKhungPane({
           <DialogHeader>
             <DialogTitle>Chọn kiểu khung</DialogTitle>
           </DialogHeader>
-          <div className="pt-1">
-            <OptionPicker
-              variant="grid"
-              options={options}
-              value={layout}
-              onSelect={onPick}
-            />
+          {/* Hai nhóm: GỢI Ý của style trước, rồi Khác. Kiểu khung bình đẳng —
+              nhóm chỉ để dễ ngắm, chọn nhóm nào cũng được. */}
+          <div className="grid gap-4 pt-1">
+            {suggestedOptions.length > 0 && (
+              <div className="grid gap-2">
+                <p className="text-xs font-medium text-muted-foreground">
+                  Gợi ý cho {styleLabel}
+                </p>
+                <OptionPicker
+                  variant="grid"
+                  options={suggestedOptions}
+                  value={layout}
+                  onSelect={onPick}
+                />
+              </div>
+            )}
+            {otherOptions.length > 0 && (
+              <div className="grid gap-2">
+                <p className="text-xs font-medium text-muted-foreground">Khác</p>
+                <OptionPicker
+                  variant="grid"
+                  options={otherOptions}
+                  value={layout}
+                  onSelect={onPick}
+                />
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>

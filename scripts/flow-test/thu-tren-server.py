@@ -90,7 +90,7 @@ def main() -> int:
 
         print("6 · vào bàn dựng")
         page.get_by_role("button", name="Mở trình sửa").click()
-        page.wait_for_url("**/editor/**", timeout=60_000)
+        page.wait_for_url("**/flow/**", timeout=60_000)
         page.wait_for_load_state("networkidle")
         page.wait_for_timeout(4_000)
         shot(page, "05-ban-dung")

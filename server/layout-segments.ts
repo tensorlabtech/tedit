@@ -38,10 +38,21 @@ type Row = {
 export function buildPlacedSegments(
   projectId: string,
   kept: KeptRange[],
+  /** MỌI khung HỢP LỆ — để tôn trọng mọi lựa chọn tay, kể cả khung "lạ" với style. */
   allowedLayouts: readonly LayoutKindId[],
+  /**
+   * Khung GỢI Ý của style — dùng làm MẶC ĐỊNH khi segment chưa chọn khung. Tách
+   * khỏi `allowedLayouts`: kiểu khung phổ quát (chọn được hết), nhưng style vẫn
+   * "dẫn" cái mặc định. Mặc định trùng `allowedLayouts` để tương thích chỗ gọi cũ.
+   */
+  defaultLayouts: readonly LayoutKindId[] = allowedLayouts,
 ): { segments: PlacedSegment[]; media: PlacedMedia[] } {
   const brollLayouts = allowedLayouts.filter((id) => findLayout(id).needsInsert);
   const personLayouts = allowedLayouts.filter(
+    (id) => !findLayout(id).needsInsert,
+  );
+  const defaultBroll = defaultLayouts.filter((id) => findLayout(id).needsInsert);
+  const defaultPerson = defaultLayouts.filter(
     (id) => !findLayout(id).needsInsert,
   );
 
@@ -77,8 +88,12 @@ export function buildPlacedSegments(
 
     if (wantsBroll) {
       if (brollLayouts.length === 0) continue;
+      // Chọn tay (`stored`) hợp lệ thì GIỮ — kể cả khung "lạ" với style. Chưa chọn
+      // thì rơi về GỢI Ý của style (`defaultBroll`), không phải khung đầu bảng chung.
       const layout =
-        stored && brollLayouts.includes(stored) ? stored : brollLayouts[0];
+        stored && brollLayouts.includes(stored)
+          ? stored
+          : (defaultBroll[0] ?? brollLayouts[0]);
       if (row.mediaId && row.path) {
         const index = media.length;
         media.push({
@@ -95,7 +110,7 @@ export function buildPlacedSegments(
       const layout =
         stored && personLayouts.includes(stored)
           ? stored
-          : (personLayouts[0] ?? null);
+          : (defaultPerson[0] ?? personLayouts[0] ?? null);
       if (!layout) continue;
       segments.push({ start, end, layout, elementId: row.id });
     }

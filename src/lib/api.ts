@@ -1250,6 +1250,14 @@ export const api = {
   baseVideoUrl: (projectId: string) =>
     `${BASE}/api/projects/${projectId}/preview`,
 
+  /**
+   * Mặt nạ TÁCH NGƯỜI (trắng = người, đen = nền) — cùng trục thời gian với
+   * `baseVideoUrl`. Preview cắt người theo mặt nạ này (canvas) để dựng hiệu ứng
+   * chữ-sau-người / viền-người. 404 nếu dự án chưa dựng mặt nạ.
+   */
+  subjectMaskUrl: (projectId: string) =>
+    `${BASE}/api/projects/${projectId}/subject`,
+
   exportUrl: (projectId: string) =>
     `${BASE}/files/projects/${projectId}/out/final.mp4`,
 
