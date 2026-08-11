@@ -30,14 +30,21 @@ Hiện tại SAI: `StylePack` là **túi treatment TOÀN CỤC**; render/editor 
 - **Preset = hàm generation-only.** Sau generate, `style_pack` chỉ còn NHÃN "sinh từ preset nào".
 - **Migration:** dự án cũ → chạy MỘT lượt stamp đầy block vào mọi element từ pack cũ; xong không ai đọc pack để render nữa.
 
-## Loại block (theo loại element)
+## Block = THIẾT BỊ độc lập, mỗi cái có INPUT riêng, nhặt vào đâu cũng được
 
-| Element | Block nó mang (đã stamp, bản sao) |
-|---|---|
-| **b-roll** | frame block (cấu trúc+nền+viền+mask+rung/tilt) · doodle |
-| **caption** (cụm chữ) | caption-style block (font+màu+HOA+glow+box) · align/emphasis |
-| **cảnh người / mở màn** | chữ-nền block · viền-người · grade màu |
-| **chỗ nối** (ranh giới cảnh) | junction block (hiệu ứng nối) |
+**Không có "video Phấn".** Chỉ có video + block; preset chỉ bốc sẵn block cho AI. Mỗi block tự chứa + có input của nó, KHÔNG thuộc phong cách nào:
+
+| Block (thiết bị) | Input riêng | Ghi chú |
+|---|---|---|
+| **khung b-roll** | chọn ảnh/video | cấu trúc+nền+viền+mask+rung gói trong block |
+| **khung chữ-sau-người** (behindText) | **nhập chữ** | block RIÊNG, không bó vào cảnh; nhặt vào bất kỳ đâu |
+| **caption** (cụm chữ) | chữ + style | font+màu+HOA+glow+box |
+| **doodle** | (chọn nét) | nhặt vào chỗ trống |
+| **viền-người** | — | block treatment người |
+| **grade màu** | — | block treatment cảnh, nhặt vào cảnh nào cảnh đó nắn |
+| **chỗ nối** (junction) | — | ở bảng `effects`, mỗi nối mang block |
+
+→ Editor: mỗi element/block bày đúng INPUT của nó (b-roll → media picker; chữ-sau-người → ô nhập chữ; ...). Preset = hàm bốc block + điền input mặc định lúc generate.
 
 ## Các phase
 

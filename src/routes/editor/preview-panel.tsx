@@ -684,6 +684,8 @@ export function PreviewPanel({
                       projectPack,
                       element,
                       element.keywords,
+                      // Look chữ của cụm — khung xem đọc thẳng block của cụm.
+                      element.captionBlock,
                     )}
                     // Đang CHỌN cụm này mà không phát: hiện chữ ĐỦ, không theo
                     // nhịp từng tiếng.

@@ -812,13 +812,25 @@ export function packForElement(
    * cũng vẫn biên dịch, và cụm cảm xúc lặng lẽ vẽ bằng font phụ đề.
    */
   keywords: readonly string[] | null | undefined,
+  /**
+   * Look chữ ĐÃ ĐÓNG DẤU trên chính cụm này (`element.caption_block`). Cụm mang
+   * look của nó — không đọc ngược bộ dáng dự án. Thiếu (cụm chưa stamp / chỗ gọi
+   * không có element) thì lấy phần chữ của `pack` làm nền, giữ nguyên hành vi cũ.
+   */
+  captionBlock?: CaptionBlock | null,
 ): ShownPack {
+  // Look chữ của cụm thay phần chữ của bộ dáng; các trục KHÁC (mật độ, nhịp...)
+  // vẫn của `pack`. Sau khi stamp, `captionBlock` === `pack.caption` nên gộp vào
+  // ra đúng `pack` — đầu ra không đổi; về sau mỗi cụm có look khác thì tự tách.
+  const withBlock: StylePack = captionBlock
+    ? { ...pack, ...captionBlock }
+    : pack;
   // Phong cách chữ RIÊNG của cụm đè TRƯỚC: mọi trục chữ (font, HOA/thường, màu,
   // viền, quầng) đọc theo bản đã đè, rồi `letterCase`/`keyColor` của cụm mới đè
   // tiếp lên trên — nên đổi màu từ nhấn của cụm vẫn thắng màu của phong cách chữ.
   const base = override?.fontStyle
-    ? applyFontStyle(pack, override.fontStyle)
-    : pack;
+    ? applyFontStyle(withBlock, override.fontStyle)
+    : withBlock;
   const font = base.fonts[fontRoleFor(keywords)];
   if (!override?.letterCase && !override?.keyColor) return { ...base, font };
   return {

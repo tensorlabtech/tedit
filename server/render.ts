@@ -42,7 +42,7 @@ import {
   withFontRole,
   type StylePack,
 } from "./style-pack";
-import type { RevealId } from "./style-pack";
+import type { CaptionBlock, RevealId } from "./style-pack";
 import {
   textWidth,
   type AlignId,
@@ -104,6 +104,8 @@ export type RenderElement = {
   keyColor?: string | null;
   /** Cụm này tự đè phong cách chữ; rỗng thì theo mặc định của dự án */
   fontStyle?: string | null;
+  /** Look chữ ĐÃ ĐÓNG DẤU của cụm (`element.caption_block`) — cụm tự mang look. */
+  captionBlock?: CaptionBlock | null;
   /** Hình dáng khung tư liệu */
   shape?: InsertShape;
   /**
@@ -1431,6 +1433,8 @@ export async function burnElements(
       // Đọc `elements.keywords` — dữ liệu `ai-keywords.ts` đã ghi sẵn, không mở
       // thêm trục nào.
       text.keywords,
+      // Look chữ của CHÍNH cụm này — cụm tự mang, không đọc ngược bộ dáng dự án.
+      text.captionBlock,
     );
     // Tệp font nằm TRONG vòng lặp vì mỗi cụm chọn vai riêng. Để ngoài vòng như
     // trước là mọi cụm in bằng một font trong khi phép đo đã tính theo font

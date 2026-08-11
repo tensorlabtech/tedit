@@ -6,7 +6,7 @@
 
 Dự án này thiết kế với giao diện đồng bộ vả nhất quán, chấp nhận sự đơn điệu nếu cần để bảo về quan điểm này
 
-- Sử dụng tối đa design system component tử Shadcn (đã được custom), kiểm tra tại /\_dev/design-system#button
+- Sử dụng tối đa design system component tử Shadcn (đã được custom), kiểm tra tại /_dev/design-system
 - Hạn chế tối thiểu inline class hay inline style truyền vào các component
 - Khi có update gì, mà người yêu cầu có ý đồ update tất cả mọi chỗ thì cần update vào file design system
 - Không sử dụng HTML chay nếu có design system đó, ví dụ không dùng thẻ select html mà dùng design system

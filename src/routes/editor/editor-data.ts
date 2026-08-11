@@ -1,4 +1,5 @@
 import type { JunctionId } from "@/dev/overlays/overlay-model";
+import type { CaptionBlock } from "../../../server/style-pack";
 /**
  * Dữ liệu mẫu cho màn Editor — nội dung lấy từ video sinh nhật thật.
  *
@@ -135,6 +136,8 @@ export type TextElement = {
   keyColor?: string | null;
   /** Phong cách chữ riêng cụm này; `null` là theo mặc định của dự án. */
   fontStyle?: string | null;
+  /** Look chữ ĐÃ ĐÓNG DẤU của cụm (`element.caption_block`) — cụm tự mang look. */
+  captionBlock?: CaptionBlock | null;
   pinned?: boolean;
 };
 

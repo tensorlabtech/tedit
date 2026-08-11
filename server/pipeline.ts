@@ -35,6 +35,7 @@ import { hasModel } from "./llm";
 import { readStylePack } from "./style-pack-store";
 import { stampBlocksFromPack } from "./stamp-blocks";
 import { behindPhrase } from "./style-pack";
+import type { CaptionBlock } from "./style-pack";
 import { fromLegacyLayout, type Band } from "./text-layout";
 import { failStrandedSteps, resetSteps, setStep } from "./pipeline-steps";
 import { transcribeAudio } from "./transcribe";
@@ -1352,6 +1353,10 @@ function resolveElements(
           : null,
       keyColor: (row.key_color as string | null) ?? null,
       fontStyle: (row.font_style as string | null) ?? null,
+      // Look chữ ĐÃ ĐÓNG DẤU trên cụm — cụm tự mang, không đọc ngược bộ dáng.
+      captionBlock: row.caption_block
+        ? (JSON.parse(row.caption_block as string) as CaptionBlock)
+        : null,
       reveal: normalizeReveal(row.reveal as string | null),
       shape: (row.shape as RenderElement["shape"]) ?? "full",
       mediaPath: (row.media_path as string) ?? undefined,

@@ -11,7 +11,7 @@ import {
   type ApiProject,
 } from "@/lib/api";
 import { fromLegacyLayout } from "@/dev/overlays/overlay-legacy";
-import type {} from "../../../server/style-pack";
+import type { CaptionBlock } from "../../../server/style-pack";
 import { silenceLabel, shortMediaLabel } from "./editor-data";
 import type {} from "./timeline-audio-lane";
 import type {
@@ -142,6 +142,10 @@ export function shape(data: ApiProject) {
           : null,
       keyColor: element.key_color ?? null,
       fontStyle: element.font_style ?? null,
+      // Look chữ ĐÃ ĐÓNG DẤU của cụm — cụm tự mang, khung xem đọc thẳng từ đây.
+      captionBlock: element.caption_block
+        ? (JSON.parse(element.caption_block) as CaptionBlock)
+        : null,
     }));
 
   // B-ROLL = phần tử CÓ tư liệu, KHÔNG phân biệt `kind`. B-roll và ô người giờ là

@@ -77,6 +77,8 @@ export type ApiElement = {
   key_color?: string | null;
   /** Cụm này tự đè phong cách chữ; rỗng là theo mặc định dự án */
   font_style?: string | null;
+  /** Look chữ ĐÃ ĐÓNG DẤU của cụm (JSON) — cụm tự mang look, không đọc bộ dáng. */
+  caption_block?: string | null;
   id: string;
   kind: "text" | "insert";
   /** Rỗng với chữ tự do — nó neo theo `start_sec`/`end_sec` */

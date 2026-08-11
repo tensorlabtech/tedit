@@ -28,6 +28,26 @@ Liệt kê chính xác 28 file lúc code (đã có lệnh grep trong plan gốc)
 ## Migration (một lượt, idempotent)
 Với mọi project cũ: đọc `style_pack` → dựng pack → **stamp block đầy đủ vào mọi element** (frame/caption/junction) từ pack đó. Cột nào element chưa có thì lấy giá trị pack tương ứng. Chạy MỘT LẦN (có cờ `blocks_stamped`), không tự mọc lại.
 
+## Bản đồ trường StylePack → block (chốt để code cơ học)
+
+| Trường StylePack hiện tại | Về đâu |
+|---|---|
+| `page`, `subjectEdge`, `scenePush`, jitter/tilt (wantTilt), `doodles` | **frame block** (b-roll/cảnh có bố cục) |
+| `fonts`, `letterCase`, `color`, `edge`, `glow`, `box`, `highlight`, `plate`, `wrap` | **caption-style block** (cụm chữ) |
+| `behindText`, `grade` | **scene block** (cảnh người / mở màn) |
+| `sweep` + hiệu ứng nối (junction-kinds) | **junction block** (ranh giới) |
+| `graphics` (catalog plate/wrap/mask/doodle) | định nghĩa asset của block — đi kèm block |
+| `intensity`, `grouping`, `rhythm`, `musicBias` | **GENERATION params** — ở lại hàm preset, KHÔNG thành block |
+| `id`, `label`, `theme`, `layouts` | metadata preset (`layouts` = tập frame-block preset nhặt) |
+
+> `intensity`/`grouping`/`rhythm` = "cách AI cắt/nhấn/rải b-roll" → chỉ sống lúc generate, editor không cần.
+
+## Map LOẠI element → block (đã soi schema thật)
+- **frame_block** → `elements.kind='layout'` (có `media_file_id` = b-roll; NULL = ô người). Look ô = nền/viền/mask/rung.
+- **caption_block** → `elements.kind='text'` (cụm chữ).
+- **scene_block** (`behindText`, `grade`): CHƯA có element tự nhiên mang. `behindText` = mở màn (tính 1 lần từ topKeyword); `grade` = nắn màu video. **Quyết định cần chốt:** gắn `scene_block` vào ô-người (`kind='layout'` media NULL) hay một element "cảnh gốc" riêng? (đề xuất: grade + behindText nằm trên element ô-người / hoặc một dòng project-scene phẳng — KHÔNG phải tầng config).
+- **junction_block** → **bảng `effects` RIÊNG** (junction cũ), KHÔNG phải `elements`. → **Sửa:** cột `junction_block` fork thêm vào `elements` nên chuyển sang `effects` (mỗi effect = một chỗ nối mang block của nó).
+
 ## Việc theo thứ tự
 1. Thêm cột JSON block + kiểu TS `FrameBlock`/`CaptionBlock`.
 2. Hàm `stampBlocksFromPack(projectId, pack)` — dùng cho cả generate mới lẫn migration.
