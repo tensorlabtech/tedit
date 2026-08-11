@@ -2,6 +2,7 @@ import { db } from "./db";
 import { findLayout, type LayoutKindId } from "./layout-kinds";
 import type { PlacedSegment } from "./layout-schedule";
 import { type KeptRange, mapToOutput } from "./render";
+import type { FrameBlock } from "./style-pack";
 
 /**
  * NGUỒN SỰ THẬT của các segment bố cục ĐÃ ĐẶT — một khái niệm, một bảng.
@@ -26,6 +27,8 @@ type Row = {
   name: string | null;
   srcStart: number;
   srcEnd: number;
+  /** Look Ô đã đóng dấu trên element (JSON `FrameBlock`) — nền/viền của CHÍNH cảnh này. */
+  frameBlockJson: string | null;
 };
 
 /**
@@ -59,7 +62,7 @@ export function buildPlacedSegments(
   const rows = db
     .prepare(
       `SELECT e.id AS id, e.insert_layout AS layout, e.media_file_id AS mediaId,
-              m.stored_path AS path, m.name AS name,
+              m.stored_path AS path, m.name AS name, e.frame_block AS frameBlockJson,
               w1.start_sec AS srcStart, w2.end_sec AS srcEnd
          FROM elements e
          JOIN words w1 ON w1.id = e.from_word_id
@@ -77,6 +80,11 @@ export function buildPlacedSegments(
     const start = mapToOutput(kept, row.srcStart);
     const end = mapToOutput(kept, row.srcEnd);
     if (start === null || end === null || end <= start) continue;
+
+    // Look Ô của CHÍNH element này — cảnh mang nền/viền riêng, không đọc bộ dáng.
+    const frameBlock: FrameBlock | undefined = row.frameBlockJson
+      ? (JSON.parse(row.frameBlockJson) as FrameBlock)
+      : undefined;
 
     // CẤU TRÚC lấy từ `insert_layout`, KHÔNG từ media. Tư liệu chỉ LẤP ô phụ của
     // khung 2 ô — thiếu tư liệu thì ô phụ để TRỐNG (placeholder), không phải là
@@ -101,10 +109,10 @@ export function buildPlacedSegments(
           path: row.path,
           name: row.name ?? "",
         });
-        segments.push({ start, end, layout, insert: index, elementId: row.id });
+        segments.push({ start, end, layout, insert: index, elementId: row.id, frameBlock });
       } else {
         // Khung 2 ô CHƯA có tư liệu → placeholder (ô phụ trống, không `insert`).
-        segments.push({ start, end, layout, elementId: row.id });
+        segments.push({ start, end, layout, elementId: row.id, frameBlock });
       }
     } else {
       const layout =
@@ -112,7 +120,7 @@ export function buildPlacedSegments(
           ? stored
           : (defaultPerson[0] ?? personLayouts[0] ?? null);
       if (!layout) continue;
-      segments.push({ start, end, layout, elementId: row.id });
+      segments.push({ start, end, layout, elementId: row.id, frameBlock });
     }
   }
 

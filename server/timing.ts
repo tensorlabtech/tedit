@@ -172,6 +172,8 @@ export const OPENING_SECONDS = 3.0;
 
 /* ── KIỂM ────────────────────────────────────────────────────────────────── */
 
+import type { FrameBlock } from "./style-pack";
+
 /** Một màn trong lịch: khoảng thời gian, bố cục, và có thiết bị nổi hay không. */
 export type ScheduledScene = {
   start: number;
@@ -208,6 +210,11 @@ export type ScheduledScene = {
    * phần tử người dùng đặt).
    */
   elementId?: string;
+  /**
+   * Look Ô (nền/viền/dồn) đã đóng dấu trên element — cảnh MANG look riêng, không
+   * đọc bộ dáng toàn-cục. Bỏ trống ở màn toàn-khung lấp trống (không có nền).
+   */
+  frameBlock?: FrameBlock;
 };
 
 export type Violation = { rule: string; detail: string };

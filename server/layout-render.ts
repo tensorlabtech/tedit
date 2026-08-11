@@ -288,33 +288,66 @@ export function layoutPlan(
   /*
    * Nền trang dựng bằng `color` chứ không bằng `drawbox` trên khung hình: dòng
    * chính phải BẮT ĐẦU từ nền, còn `drawbox` thì vẽ lên một thứ đã có.
+   *
+   * NỀN THEO TỪNG CẢNH: mỗi element mang look ô riêng (`frameBlock`), nên nền có
+   * thể KHÁC nhau giữa các cảnh (b-roll nền vàng cạnh b-roll nền đen trong cùng
+   * phim). Dựng một nền NỀN (base) rồi ĐÈ nền của cảnh nào KHÁC base lên đúng cửa
+   * sổ cảnh ấy. Mọi cảnh trùng base (ca phổ biến) → không đè lớp nào → y hệt nền
+   * đơn cũ.
    */
-  let page: string | null = null;
-  if (frame.page) {
-    page = "[pgbase]";
-    const span = seconds > 0 ? `:d=${seconds.toFixed(3)}` : "";
+  const span = seconds > 0 ? `:d=${seconds.toFixed(3)}` : "";
+  type PageCfg = NonNullable<FrameBlock["page"]>;
+  /** Dựng một lớp NỀN đầy khung (màu + lưới/hạt-giấy). Trả nhãn luồng. */
+  const buildPageFill = (pg: PageCfg, sfx: string): string => {
+    const out = `[pgfill_${sfx}]`;
     chains.push(
-      `color=c=${ffmpegColor(frame.page.tone)}:s=${frameWidth}x${frameHeight}${span}[pgcol]`,
+      `color=c=${ffmpegColor(pg.tone)}:s=${frameWidth}x${frameHeight}${span}[pgcol_${sfx}]`,
     );
-    if (frame.page.grid) {
-      const g = frame.page.grid;
+    if (pg.grid) {
+      const g = pg.grid;
       chains.push(
-        `movie=${pngDir}/${g.id}.png,alphaextract[pgm];` +
-          `color=c=${g.tone.color}:s=${frameWidth}x${frameHeight}${span}[pgc];` +
-          `[pgc][pgm]alphamerge,colorchannelmixer=aa=${g.tone.alpha.toFixed(3)}[pggrid]`,
+        `movie=${pngDir}/${g.id}.png,alphaextract[pgm_${sfx}];` +
+          `color=c=${g.tone.color}:s=${frameWidth}x${frameHeight}${span}[pgc_${sfx}];` +
+          `[pgc_${sfx}][pgm_${sfx}]alphamerge,colorchannelmixer=aa=${g.tone.alpha.toFixed(3)}[pggrid_${sfx}]`,
       );
-      chains.push(`[pgcol][pggrid]overlay=0:0[pgbase]`);
+      chains.push(`[pgcol_${sfx}][pggrid_${sfx}]overlay=0:0${out}`);
     } else {
       // HẠT GIẤY: đốm ấm mờ rải trên nền cho trang scrapbook đỡ phẳng lì — chỉ
       // hiện rõ trên nền SÁNG (trang giấy Phấn); trên nền tối gần như vô hình.
       // Dùng đúng cơ chế lưới (overlay đơn-khung) nên an toàn với độ dài phim.
       chains.push(
-        `movie=${pngDir}/../../masks/paper-grain.png,alphaextract[ppm];` +
-          `color=c=#8A7A4E:s=${frameWidth}x${frameHeight}${span}[ppc];` +
-          `[ppc][ppm]alphamerge,colorchannelmixer=aa=0.28[pptex];` +
-          `[pgcol][pptex]overlay=0:0[pgbase]`,
+        `movie=${pngDir}/../../masks/paper-grain.png,alphaextract[ppm_${sfx}];` +
+          `color=c=#8A7A4E:s=${frameWidth}x${frameHeight}${span}[ppc_${sfx}];` +
+          `[ppc_${sfx}][ppm_${sfx}]alphamerge,colorchannelmixer=aa=0.28[pptex_${sfx}];` +
+          `[pgcol_${sfx}][pptex_${sfx}]overlay=0:0${out}`,
       );
     }
+    return out;
+  };
+  /** Hai nền GIỐNG nhau (màu + lưới) → không cần đè lớp riêng. */
+  const samePage = (a: PageCfg, b: PageCfg): boolean =>
+    a.tone.color === b.tone.color &&
+    a.tone.alpha === b.tone.alpha &&
+    ((!a.grid && !b.grid) ||
+      (!!a.grid &&
+        !!b.grid &&
+        a.grid.id === b.grid.id &&
+        a.grid.tone.color === b.grid.tone.color &&
+        a.grid.tone.alpha === b.grid.tone.alpha));
+
+  let page: string | null = null;
+  if (frame.page) {
+    const basePage = frame.page;
+    page = buildPageFill(basePage, "base");
+    // Đè nền RIÊNG cho cảnh nào có look ô khác base — bật đúng cửa sổ cảnh.
+    schedule.forEach((scene, i) => {
+      const sp = scene.frameBlock?.page;
+      if (!sp || samePage(sp, basePage)) return;
+      const fill = buildPageFill(sp, `ov${i}`);
+      const next = `[pgov${i}]`;
+      chains.push(`${page}${fill}overlay=0:0:enable='${windows([scene])}'${next}`);
+      page = next;
+    });
   }
 
   let sourceIdx = 0;

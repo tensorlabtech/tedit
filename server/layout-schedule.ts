@@ -1,4 +1,5 @@
 import type { LayoutKindId } from "./layout-kinds";
+import type { FrameBlock } from "./style-pack";
 import type { ScheduledScene } from "./timing";
 
 /**
@@ -32,6 +33,8 @@ export type PlacedSegment = {
   insert?: number;
   /** Mã element của segment — để màn hình sửa/xoá. */
   elementId?: string;
+  /** Look Ô (nền/viền/dồn) đã đóng dấu — cảnh mang look riêng của nó. */
+  frameBlock?: FrameBlock;
 };
 
 /**
@@ -52,6 +55,7 @@ export function scheduleScenes(
       layout: seg.layout,
       insert: seg.insert,
       elementId: seg.elementId,
+      frameBlock: seg.frameBlock,
     }))
     .filter((seg) => seg.end > seg.start)
     .sort((a, b) => a.start - b.start)
@@ -65,6 +69,7 @@ export function scheduleScenes(
         insert: seg.insert,
         push: false,
         elementId: seg.elementId,
+        frameBlock: seg.frameBlock,
       }),
     );
 }
