@@ -59,7 +59,10 @@ CHUYỂN sang Remotion (toàn bộ ~700 dòng burnElements):
 | P1 | De-risk 3 hệ khó | ✅ XONG |
 | P2a | Cầu dữ liệu `buildRemotionPayload` + cells khớp geometry từ schedule THẬT | ✅ XONG (commit 52b0b93) |
 | P2b | Phụ đề qua `OverlayTextBlock` (cùng component preview) | ✅ XONG (commit 87eff29) |
-| P2c | Nắn màu (grade), junction, doodle/graphics/sweep/plate, behindText, grid/paper | ⬜ |
+| P2c-1 | Hạt giấy (paper-grain) trên nền | ✅ XONG (8b4a97d) |
+| P2c-2 | Doodle vàng quanh b-roll + asset public (staticFile) | ✅ XONG (d120234) |
+| P2c-3 | Junction/sweep, behindText, plate/graphics/wrap, grid (Nhịp đen) | ⬜ |
+| Ghi chú | Grade: Phấn `grade:null` → không cần; chênh màu A/B là color-range encode (P4) | — |
 | P3 | Audio + nhạc | ⬜ |
 | P4 | Harness so khớp ffmpeg, tinh chỉnh fidelity | ⬜ |
 | P5 | Đổi mặc định + ffmpeg fallback sau cờ | ⬜ |
