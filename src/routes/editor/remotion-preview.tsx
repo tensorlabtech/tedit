@@ -1,25 +1,33 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 
-import { Player } from "@remotion/player";
+import { Player, type PlayerRef } from "@remotion/player";
 
 import { api } from "@/lib/api";
 import { VideoComposition } from "@/remotion/video-composition";
+import type { EditorState } from "./use-editor";
 import type { RemotionPayload } from "../../../server/remotion-payload";
 
 /**
  * KHUNG XEM = MÁY VẼ REMOTION. Chạy CHÍNH `VideoComposition` (thứ export dùng) qua
  * `@remotion/player`, ăn payload thật từ server → preview = export TỪNG PIXEL, do
- * bản chất. Hết cảnh "xem một đằng xuất một nẻo": bỏ doodle / bo tròn viền / đổi
- * bất cứ gì trong composition → preview tự đổi theo, không phải sửa hai nơi.
+ * bản chất. Đổi composition (bỏ doodle / bo tròn viền…) → preview tự đổi theo.
  *
- * `reloadKey` đổi → dựng lại payload (khi lịch màn / phần tử đổi).
+ * ĐỒNG BỘ với dải thời gian: Player là ĐỒNG HỒ (thay thẻ <video> cũ). Hai chiều:
+ *  - Player chạy → `frameupdate` đẩy `editor.time` (vạch trên dải chạy theo).
+ *  - Bấm dải / chọn cụm đổi `editor.time` → tua Player tới đó.
+ * Ngưỡng nhỏ (0.05s / 2 frame) chặn dội qua lại. Player ở giờ ĐÃ CẮT (output),
+ * `editor.time` ở giờ GỐC (source) — quy đổi bằng `toSource`/`toOutput`.
  */
 export function RemotionPreview({
   projectId,
   reloadKey,
+  editor,
+  playerRef,
 }: {
   projectId: string;
   reloadKey?: number | string;
+  editor: EditorState;
+  playerRef: RefObject<PlayerRef | null>;
 }) {
   const [state, setState] = useState<{
     payload: RemotionPayload | null;
@@ -35,13 +43,42 @@ export function RemotionPreview({
       .then((p) => alive && setState({ payload: p, loaded: true, error: null }))
       .catch(
         (e) =>
-          alive &&
-          setState({ payload: null, loaded: true, error: String(e) }),
+          alive && setState({ payload: null, loaded: true, error: String(e) }),
       );
     return () => {
       alive = false;
     };
   }, [projectId, reloadKey]);
+
+  // Bản đồ thời gian + mốc hiện tại đọc qua ref để listener không "chốt" bản cũ.
+  const timeRef = useRef(editor.time);
+  timeRef.current = editor.time;
+  const toSourceRef = useRef(editor.toSource);
+  toSourceRef.current = editor.toSource;
+  const seekRef = useRef(editor.seek);
+  seekRef.current = editor.seek;
+
+  const fps = state.payload?.fps ?? 30;
+
+  // Player → editor: mỗi frame, quy giờ output về source rồi đẩy vạch (nếu lệch đủ).
+  useEffect(() => {
+    const player = playerRef.current;
+    if (!player) return;
+    const onFrame = (e: { detail: { frame: number } }) => {
+      const src = toSourceRef.current(e.detail.frame / fps);
+      if (Math.abs(src - timeRef.current) > 0.05) seekRef.current(src);
+    };
+    player.addEventListener("frameupdate", onFrame);
+    return () => player.removeEventListener("frameupdate", onFrame);
+  }, [playerRef, fps, state.payload]);
+
+  // editor.time → Player: bấm dải / chọn cụm tua Player tới đúng frame.
+  useEffect(() => {
+    const player = playerRef.current;
+    if (!player || !state.payload) return;
+    const target = Math.round(editor.toOutput(editor.time) * fps);
+    if (Math.abs(target - player.getCurrentFrame()) > 2) player.seekTo(target);
+  }, [editor, editor.time, fps, state.payload, playerRef]);
 
   if (state.error)
     return (
@@ -65,6 +102,7 @@ export function RemotionPreview({
 
   return (
     <Player
+      ref={playerRef}
       component={VideoComposition}
       inputProps={payload}
       durationInFrames={Math.max(1, Math.round(payload.seconds * payload.fps))}

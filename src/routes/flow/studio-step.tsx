@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import type { PlayerRef } from "@remotion/player";
 
 import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { Button } from "@/components/ui/button";
@@ -13,7 +14,6 @@ import { RightPanel } from "@/routes/editor/right-panel";
 import { Timeline } from "@/routes/editor/timeline";
 import { useEditor, type EditorState } from "@/routes/editor/use-editor";
 import { useEditorGuards } from "@/routes/editor/use-editor-guards";
-import { usePreviewPlayback } from "@/routes/editor/use-preview-playback";
 
 /** Ô trong hàng tiêu đề /flow mà bước Bàn dựng nhét nút xuất video vào. */
 export const STUDIO_ACTION_SLOT = "flow-studio-action";
@@ -36,8 +36,14 @@ export const STUDIO_ACTION_SLOT = "flow-studio-action";
  */
 export function StudioStep({ projectId }: { projectId: string | undefined }) {
   const editor = useEditor(projectId);
-  const { setPlaying, togglePlay, onPreview, onAudit } =
-    usePreviewPlayback(editor);
+  // Player LÀ đồng hồ (thay thẻ <video> cũ). SPACE bật/tắt phát; kéo dải thì dừng.
+  const playerRef = useRef<PlayerRef>(null);
+  const togglePlay = () => playerRef.current?.toggle();
+  // Chọn cụm / nghe thử quãng = TUA (Player + vạch tự đồng bộ qua RemotionPreview).
+  // Nghe-thử-CHẠY-quãng tạm lược về tua-đầu-quãng (bàn dựng ít dùng, sẽ thêm sau).
+  const onPreview = (at: number) => editor.seek(at);
+  const onAudit = (span: { start: number; end: number }) =>
+    editor.seek(span.start);
   useEditorGuards({ editor, onTogglePlay: togglePlay });
 
   // Ô nút ở header do flow-page dựng cùng lượt; tìm sau khi gắn là thấy.
@@ -78,6 +84,8 @@ export function StudioStep({ projectId }: { projectId: string | undefined }) {
                 <RemotionPreview
                   projectId={editor.projectId}
                   reloadKey={editor.sceneReloadKey}
+                  editor={editor}
+                  playerRef={playerRef}
                 />
               )}
             </AspectRatio>
@@ -90,7 +98,7 @@ export function StudioStep({ projectId }: { projectId: string | undefined }) {
       <div
         onPointerDown={(event) => {
           if (!event.currentTarget.contains(event.target as Node)) return;
-          setPlaying(false);
+          playerRef.current?.pause();
         }}
       >
         <Timeline editor={editor} onAudit={onAudit} studio />
