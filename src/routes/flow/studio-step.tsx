@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Empty, EmptyDescription, EmptyTitle } from "@/components/ui/empty";
 import { Spinner } from "@/components/ui/spinner";
 import { api } from "@/lib/api";
 
-import { PreviewPanel } from "@/routes/editor/preview-panel";
+import { RemotionPreview } from "@/routes/editor/remotion-preview";
 import { RightPanel } from "@/routes/editor/right-panel";
 import { Timeline } from "@/routes/editor/timeline";
 import { useEditor, type EditorState } from "@/routes/editor/use-editor";
@@ -35,7 +36,7 @@ export const STUDIO_ACTION_SLOT = "flow-studio-action";
  */
 export function StudioStep({ projectId }: { projectId: string | undefined }) {
   const editor = useEditor(projectId);
-  const { playing, setPlaying, togglePlay, onPreview, onAudit } =
+  const { setPlaying, togglePlay, onPreview, onAudit } =
     usePreviewPlayback(editor);
   useEditorGuards({ editor, onTogglePlay: togglePlay });
 
@@ -68,11 +69,20 @@ export function StudioStep({ projectId }: { projectId: string | undefined }) {
       {actionSlot && createPortal(<ExportAction editor={editor} />, actionSlot)}
 
       <div className="grid gap-2 lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_34rem]">
-        <PreviewPanel
-          editor={editor}
-          playing={playing}
-          onTogglePlay={togglePlay}
-        />
+        {/* KHUNG XEM = Remotion Player (chính VideoComposition của export) → preview
+            khớp export từng pixel. Rebuild payload khi lịch màn đổi. */}
+        <Card className="min-h-80 min-w-0 lg:min-h-0">
+          <CardContent className="flex min-h-0 flex-1 flex-col">
+            <AspectRatio ratio={9 / 16} className="mx-auto min-h-0 flex-1">
+              {editor.projectId && (
+                <RemotionPreview
+                  projectId={editor.projectId}
+                  reloadKey={editor.sceneReloadKey}
+                />
+              )}
+            </AspectRatio>
+          </CardContent>
+        </Card>
         <RightPanel editor={editor} onPreview={onPreview} studio />
       </div>
 

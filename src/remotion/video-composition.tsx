@@ -181,8 +181,8 @@ export function VideoComposition(payload: RemotionPayload) {
             inset: 0,
             background: "#8A7A4E",
             opacity: 0.28,
-            WebkitMaskImage: `url(${staticFile("spike/paper-grain.png")})`,
-            maskImage: `url(${staticFile("spike/paper-grain.png")})`,
+            WebkitMaskImage: `url(${staticFile("masks/paper-grain.png")})`,
+            maskImage: `url(${staticFile("masks/paper-grain.png")})`,
             WebkitMaskSize: "cover",
             maskSize: "cover",
           }}

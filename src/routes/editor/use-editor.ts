@@ -2416,6 +2416,8 @@ export function useEditor(projectId: string | undefined) {
     setFontStyle,
     /** Lịch màn (khung xem + lane bố cục dùng chung). `null` khi bộ dáng không có bố cục. */
     sceneLayout: sceneLayout.data,
+    /** Bộ đếm bơm mỗi khi lịch màn/phần tử đổi — Remotion Player rebuild payload theo. */
+    sceneReloadKey: layoutReload,
     /** Đặt/xoá bố cục chọn tay cho một màn. */
     addLayoutAtPlayhead,
     setSegmentLayout,

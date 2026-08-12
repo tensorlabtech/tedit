@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 
 import { assertOwnerIs } from "../ownership";
 import { buildSceneSchedule } from "../scene-schedule";
+import { buildRemotionPayload } from "../remotion-payload";
 
 /**
  * LỊCH MÀN cho khung xem trước — server xếp MỘT lần, màn hình vẽ theo.
@@ -15,5 +16,13 @@ export default async function sceneScheduleRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string };
     assertOwnerIs(request.viewer!, "project", id);
     return buildSceneSchedule(id);
+  });
+
+  // Payload cho Remotion <Player> — MỘT nguồn với export (`buildRemotionPayload`),
+  // nên preview = export. Copy media vào `public/` để trình duyệt đọc bằng URL.
+  app.get("/api/projects/:id/remotion-payload", async (request) => {
+    const { id } = request.params as { id: string };
+    assertOwnerIs(request.viewer!, "project", id);
+    return buildRemotionPayload(id);
   });
 }

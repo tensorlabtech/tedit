@@ -1,10 +1,10 @@
-import { copyFileSync, existsSync, mkdirSync, statSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { extname, join } from "node:path";
 
 import { buildPlacedSegments } from "./layout-segments";
 import { scheduleScenes } from "./layout-schedule";
 import { PICKABLE_LAYOUTS } from "./layout-kinds";
-import { ffmpeg, probe } from "./media-tools";
+import { probe } from "./media-tools";
 import { workDir } from "./paths";
 import { behindElement, keptRanges, resolveElements } from "./pipeline";
 import { emptiestBand } from "./subject-mask";
@@ -128,7 +128,15 @@ export async function buildRemotionPayload(
 
   // Người: dùng base.mp4 (cắt tối thiểu ở dự án thử; bản production sẽ cắt đúng
   // theo `kept`). Mặt nạ: cut-mask nếu có, không thì subject gốc.
-  const personSrc = personVideo && existsSync(personVideo) ? personVideo : base;
+  // Người: ưu tiên video ĐÃ CẮT (export truyền `cut`; preview rơi về `preview.mp4`
+  // đã cắt) để khớp dải cắt của lịch màn + phụ đề. Cùng lắm mới về base (chưa cắt).
+  const previewCut = join(workDir(projectId), "preview.mp4");
+  const personSrc =
+    personVideo && existsSync(personVideo)
+      ? personVideo
+      : existsSync(previewCut)
+        ? previewCut
+        : base;
   copyFileSync(personSrc, join(outDir, "person.mp4"));
   const personUrl = rel("person.mp4");
 
@@ -187,39 +195,10 @@ export async function buildRemotionPayload(
         (await emptiestBand(projectId, baseInfo.duration / 2).catch(() => null))
           ?.index ?? 0;
       const secs = pack.behindText.seconds;
-      const maskFile = existsSync(cutMask) ? cutMask : rawMask;
-      let personCutUrl: string | null = null;
-      if (existsSync(maskFile)) {
-        const cut = join(outDir, "behind-person.webm");
-        // Mask cắt nền có thể khác cỡ base → scale cả hai về khung. `alphamerge`
-        // đòi hai đầu cùng cỡ. `-auto-alt-ref 0` để libvpx-vp9 GIỮ kênh alpha.
-        await ffmpeg([
-          "-y",
-          "-i",
-          base,
-          "-i",
-          maskFile,
-          "-filter_complex",
-          `[0:v]trim=0:${secs},setpts=PTS-STARTPTS,scale=${WIDTH}:${HEIGHT}[p];` +
-            `[1:v]trim=0:${secs},setpts=PTS-STARTPTS,scale=${WIDTH}:${HEIGHT},format=gray[m];` +
-            `[p][m]alphamerge[out]`,
-          "-map",
-          "[out]",
-          "-c:v",
-          "libvpx-vp9",
-          "-pix_fmt",
-          "yuva420p",
-          "-auto-alt-ref",
-          "0",
-          "-t",
-          String(secs),
-          cut,
-        ]).catch(() => undefined);
-        // File RỖNG (encode fail) ≠ có cutout — chỉ nhận khi thật sự có byte.
-        if (existsSync(cut) && statSync(cut).size > 0)
-          personCutUrl = rel("behind-person.webm");
-      }
-      behind = { line, band, seconds: secs, personCutUrl };
+      // behindText mở màn đang TẮT (SHOW_BEHIND=false ở composition) → KHÔNG encode
+      // webm alpha (nặng, mỗi lần dựng payload sẽ chậm). Giữ line/band phòng khi
+      // bật lại; lúc đó thêm lại bước tách người (xem lịch sử `behind-person.webm`).
+      behind = { line, band, seconds: secs, personCutUrl: null };
     }
   }
 

@@ -12,6 +12,7 @@ import { Upload as TusUpload } from "tus-js-client";
 import type { StylePackId } from "../../server/style-pack";
 import type { MusicTags } from "../../server/music-tags";
 import type { SceneScheduleResult } from "../../server/scene-schedule";
+import type { RemotionPayload } from "../../server/remotion-payload";
 
 const BASE = import.meta.env.VITE_API ?? "";
 
@@ -1290,5 +1291,9 @@ export const api = {
    */
   sceneSchedule: (projectId: string) =>
     request<SceneScheduleResult>(`/api/projects/${projectId}/scene-schedule`),
+  remotionPayload: (projectId: string) =>
+    request<RemotionPayload | null>(
+      `/api/projects/${projectId}/remotion-payload`,
+    ),
 
 };
