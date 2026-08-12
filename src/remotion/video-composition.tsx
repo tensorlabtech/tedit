@@ -37,6 +37,10 @@ function boil(frame: number, seed: number) {
  * VIỀN VẼ TAY quanh ô b-roll — nét kẻ chữ nhật bị NHIỄU displacement thành nguệch
  * ngoạc như vẽ bút (chất Chalk/scrapbook), KHÔNG loạn như mép giấy xé cũ. Wobble
  * gọn (`scale` ~ độ dày viền), tần số vừa. Nét đóng góc tròn cho mềm tay.
+ *
+ * !! KHOÁ THIẾT KẾ — đây là BẢN SẮC ô b-roll Phấn, đã bị làm mất 3+ lần. Chê "quá"
+ * thì GIẢM LIỀU (`scale`/`w`), TUYỆT ĐỐI không đổi về viền phẳng/bo-tròn/không-viền.
+ * Ảnh mốc: plans/260811-remotion-single-engine/phan-broll-reference.png
  */
 function HandDrawnBorder({
   color,
