@@ -164,6 +164,9 @@ function Cells({
         .sort((a, b) => a.z - b.z)
         .map((slot, i) => {
           const isBroll = slot.role === "phu";
+          // Ô b-roll KHÔNG có tư liệu → KHÔNG vẽ (khớp export). Không lấp bằng
+          // video người — lấp thế thì ra "hai ô người", sai (bug user bắt được).
+          if (isBroll && scene.insert == null) return null;
           const aspect =
             isBroll && scene.insert != null
               ? payload.inserts[scene.insert]?.aspect ?? 1
