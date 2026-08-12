@@ -39,11 +39,14 @@ export function StudioStep({ projectId }: { projectId: string | undefined }) {
   // Player LÀ đồng hồ (thay thẻ <video> cũ). SPACE bật/tắt phát; kéo dải thì dừng.
   const playerRef = useRef<PlayerRef>(null);
   const togglePlay = () => playerRef.current?.toggle();
-  // Chọn cụm / nghe thử quãng = TUA (Player + vạch tự đồng bộ qua RemotionPreview).
-  // Nghe-thử-CHẠY-quãng tạm lược về tua-đầu-quãng (bàn dựng ít dùng, sẽ thêm sau).
+  // Chọn cụm = tua tới đó. Nghe thử quãng = tua đầu quãng RỒI PHÁT (Player + vạch
+  // đồng bộ qua RemotionPreview). Chưa tự dừng ở cuối quãng (phát tiếp tới hết) —
+  // đủ để nghe thử, thêm auto-stop sau nếu cần.
   const onPreview = (at: number) => editor.seek(at);
-  const onAudit = (span: { start: number; end: number }) =>
+  const onAudit = (span: { start: number; end: number }) => {
     editor.seek(span.start);
+    playerRef.current?.play();
+  };
   useEditorGuards({ editor, onTogglePlay: togglePlay });
 
   // Ô nút ở header do flow-page dựng cùng lượt; tìm sau khi gắn là thấy.
