@@ -33,6 +33,61 @@ function boil(frame: number, seed: number) {
   return { x: Math.sin(s * 1.7 + seed) * 2, y: Math.sin(s * 2.3 + seed * 1.9) * 2 };
 }
 
+/**
+ * VIỀN VẼ TAY quanh ô b-roll — nét kẻ chữ nhật bị NHIỄU displacement thành nguệch
+ * ngoạc như vẽ bút (chất Chalk/scrapbook), KHÔNG loạn như mép giấy xé cũ. Wobble
+ * gọn (`scale` ~ độ dày viền), tần số vừa. Nét đóng góc tròn cho mềm tay.
+ */
+function HandDrawnBorder({
+  color,
+  w,
+  seed,
+  cw,
+  ch,
+}: {
+  color: string;
+  w: number;
+  seed: number;
+  cw: number;
+  ch: number;
+}) {
+  const id = `hd-${seed}`;
+  const pad = w * 1.2;
+  return (
+    <svg
+      width={cw}
+      height={ch}
+      style={{ position: "absolute", inset: 0, overflow: "visible", pointerEvents: "none" }}
+    >
+      <defs>
+        <filter id={id} x="-15%" y="-15%" width="130%" height="130%">
+          <feTurbulence
+            type="fractalNoise"
+            baseFrequency="0.018"
+            numOctaves={2}
+            seed={seed * 11 + 5}
+            result="n"
+          />
+          <feDisplacementMap in="SourceGraphic" in2="n" scale={w * 2.4} />
+        </filter>
+      </defs>
+      <rect
+        x={pad}
+        y={pad}
+        width={cw - 2 * pad}
+        height={ch - 2 * pad}
+        rx={w * 2}
+        fill="none"
+        stroke={color}
+        strokeWidth={w}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+        filter={`url(#${id})`}
+      />
+    </svg>
+  );
+}
+
 function Cells({
   scene,
   payload,
@@ -84,11 +139,6 @@ function Cells({
                   inset: 0,
                   overflow: "hidden",
                   borderRadius: width * 0.03,
-                  // Viền vàng LIỀN + bo tròn — thấy rõ mà không răng cưa. (Mép xé
-                  // cũ: dày thì lắt léo, mỏng thì mất hẳn — không có điểm vừa.)
-                  ...(isBroll && edge
-                    ? { border: `${borderW}px solid ${edge.tone.color}` }
-                    : {}),
                 }}
               >
                 {isBroll ? (
@@ -108,6 +158,17 @@ function Cells({
                   />
                 )}
               </div>
+              {/* Viền VẼ TAY (nguệch ngoạc) quanh ô b-roll — chất Chalk. Nằm NGOÀI
+                  lớp cắt (overflow-hidden) để nét tay ló ra được. */}
+              {isBroll && edge && (
+                <HandDrawnBorder
+                  color={edge.tone.color}
+                  w={borderW}
+                  seed={i}
+                  cw={rect.w}
+                  ch={rect.h}
+                />
+              )}
             </div>
           );
         })}
