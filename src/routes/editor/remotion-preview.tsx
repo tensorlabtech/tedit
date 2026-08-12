@@ -55,8 +55,11 @@ export function RemotionPreview({
   timeRef.current = editor.time;
   const toSourceRef = useRef(editor.toSource);
   toSourceRef.current = editor.toSource;
+  const toOutputRef = useRef(editor.toOutput);
+  toOutputRef.current = editor.toOutput;
   const seekRef = useRef(editor.seek);
   seekRef.current = editor.seek;
+  const seekRafRef = useRef<number | null>(null);
 
   const fps = state.payload?.fps ?? 30;
 
@@ -72,13 +75,21 @@ export function RemotionPreview({
     return () => player.removeEventListener("frameupdate", onFrame);
   }, [playerRef, fps, state.payload]);
 
-  // editor.time → Player: bấm dải / chọn cụm tua Player tới đúng frame.
+  // editor.time → Player: bấm/kéo dải tua Player. GỘP bằng rAF — kéo nhanh đổi mốc
+  // hàng chục lần/giây, seek MỖI lần thì Player giải mã dồn = lag. Gộp về tua tới
+  // mốc CUỐI mỗi khung hình (bỏ mốc giữa). Đọc `editor` qua ref để deps chỉ là
+  // `editor.time` (số) — tránh effect chạy mọi render.
   useEffect(() => {
     const player = playerRef.current;
     if (!player || !state.payload) return;
-    const target = Math.round(editor.toOutput(editor.time) * fps);
-    if (Math.abs(target - player.getCurrentFrame()) > 2) player.seekTo(target);
-  }, [editor, editor.time, fps, state.payload, playerRef]);
+    const target = Math.round(toOutputRef.current(timeRef.current) * fps);
+    if (Math.abs(target - player.getCurrentFrame()) <= 2) return;
+    if (seekRafRef.current != null) cancelAnimationFrame(seekRafRef.current);
+    seekRafRef.current = requestAnimationFrame(() => {
+      playerRef.current?.seekTo(target);
+      seekRafRef.current = null;
+    });
+  }, [editor.time, fps, state.payload, playerRef]);
 
   if (state.error)
     return (
