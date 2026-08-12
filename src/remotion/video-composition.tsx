@@ -1,5 +1,6 @@
 import {
   AbsoluteFill,
+  Img,
   OffthreadVideo,
   Sequence,
   Video,
@@ -12,6 +13,7 @@ import { OverlayTextBlock } from "@/dev/overlays/overlay-render";
 import type { BandId } from "@/dev/overlays/overlay-model";
 import { BehindTextPreview } from "@/routes/editor/behind-text-preview";
 import { findLayout, slotPixels } from "../../server/layout-kinds";
+import { findJunction } from "../../server/junction-kinds";
 import { packForElement } from "../../server/style-pack";
 import type {
   RemotionCaption,
@@ -31,6 +33,57 @@ function boil(frame: number, seed: number) {
   const s = Math.floor(frame / 6);
   // Biên độ nhỏ (2px) — chỉ "thở" nhẹ, không giật.
   return { x: Math.sin(s * 1.7 + seed) * 2, y: Math.sin(s * 2.3 + seed * 1.9) * 2 };
+}
+
+/**
+ * CHỖ NỐI: cộng dồn XUNG tam giác của từng hiệu ứng quanh vết cắt (khớp preview
+ * `junctionStyle` + chuỗi lọc ffmpeg) → `transform`/`filter` áp lên cảnh. Cường độ
+ * lấy từ `intensity` của bộ dáng (`punchScale`/`flashAmount`).
+ */
+function junctionCss(
+  t: number,
+  junctions: RemotionPayload["junctions"],
+  pack: RemotionPayload["pack"],
+): { transform: string; filter: string } {
+  const acc: Record<string, number> = {
+    zoom: 0,
+    sang: 0,
+    xoay: 0,
+    dichX: 0,
+    dichY: 0,
+    nhoe: 0,
+    sac: 0,
+    tuongPhan: 0,
+  };
+  for (const j of junctions) {
+    const da = t - j.peak;
+    const before = Math.max(0.04, j.peak - j.start);
+    const after = Math.max(0.04, j.end - j.peak);
+    const value =
+      da < 0
+        ? da >= -before
+          ? 1 - -da / before
+          : 0
+        : da <= after
+          ? 1 - da / after
+          : 0;
+    if (value <= 0) continue;
+    const drive = findJunction(j.kind).drive as Record<string, number>;
+    for (const k of Object.keys(acc)) acc[k] += (drive[k] ?? 0) * value;
+  }
+  const punch = pack.intensity.punchScale;
+  const flash = pack.intensity.flashAmount;
+  return {
+    transform:
+      `scale(${(1 + punch * acc.zoom).toFixed(4)}) ` +
+      `translate(${acc.dichX.toFixed(2)}%, ${acc.dichY.toFixed(2)}%) ` +
+      `rotate(${acc.xoay.toFixed(2)}deg)`,
+    filter:
+      `brightness(${(1 + flash * acc.sang).toFixed(3)}) ` +
+      `contrast(${(1 + acc.tuongPhan * 0.6).toFixed(3)}) ` +
+      `blur(${Math.max(0, acc.nhoe).toFixed(2)}px) ` +
+      `hue-rotate(${acc.sac.toFixed(1)}deg)`,
+  };
 }
 
 /**
@@ -146,13 +199,30 @@ function Cells({
                 }}
               >
                 {isBroll ? (
-                  // B-roll = clip NGẮN → cần lặp; Video hỗ trợ loop.
-                  <Video
-                    src={staticFile(src)}
-                    muted
-                    loop
-                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                  />
+                  scene.insert != null &&
+                  payload.inserts[scene.insert]?.isVideo === false ? (
+                    // B-roll là ẢNH tĩnh → Img (Video sẽ vỡ).
+                    <Img
+                      src={staticFile(src)}
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "cover",
+                      }}
+                    />
+                  ) : (
+                    // B-roll VIDEO = clip NGẮN → cần lặp; Video hỗ trợ loop.
+                    <Video
+                      src={staticFile(src)}
+                      muted
+                      loop
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "cover",
+                      }}
+                    />
+                  )
                 ) : (
                   // NGƯỜI = OffthreadVideo: trích frame chính xác → HẾT giật.
                   <OffthreadVideo
@@ -234,6 +304,8 @@ export function VideoComposition(payload: RemotionPayload) {
     SHOW_BEHIND && payload.behind && t < payload.behind.seconds
       ? payload.behind
       : null;
+  // Chỗ nối áp lên HÌNH cảnh (không lên chữ/nền) — zoom/nháy/nghiêng quanh vết cắt.
+  const jStyle = junctionCss(t, payload.junctions, payload.pack);
 
   return (
     <AbsoluteFill style={{ backgroundColor: page?.tone.color ?? "#08090C" }}>
@@ -248,6 +320,21 @@ export function VideoComposition(payload: RemotionPayload) {
             opacity: 0.28,
             WebkitMaskImage: `url(${staticFile("masks/paper-grain.png")})`,
             maskImage: `url(${staticFile("masks/paper-grain.png")})`,
+            WebkitMaskSize: "cover",
+            maskSize: "cover",
+          }}
+        />
+      )}
+      {/* LƯỚI NỀN (Nhịp-đen `luoi-ba`): mask PNG + màu lưới. Rõ trên nền tối. */}
+      {page?.grid && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            backgroundColor: page.grid.tone.color,
+            opacity: page.grid.tone.alpha,
+            WebkitMaskImage: `url(${staticFile(`graphics/${page.grid.id}.png`)})`,
+            maskImage: `url(${staticFile(`graphics/${page.grid.id}.png`)})`,
             WebkitMaskSize: "cover",
             maskSize: "cover",
           }}
@@ -273,15 +360,26 @@ export function VideoComposition(payload: RemotionPayload) {
             />
           )}
         </div>
-      ) : scene ? (
-        <Cells scene={scene} payload={payload} frame={frame} />
       ) : (
-        // Khoảng trống = toàn-khung phủ kín người (OffthreadVideo — hết giật).
-        <OffthreadVideo
-          src={staticFile(payload.personUrl)}
-          muted
-          style={{ width: "100%", height: "100%", objectFit: "cover" }}
-        />
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            transform: jStyle.transform,
+            filter: jStyle.filter,
+          }}
+        >
+          {scene ? (
+            <Cells scene={scene} payload={payload} frame={frame} />
+          ) : (
+            // Khoảng trống = toàn-khung phủ kín người (OffthreadVideo — hết giật).
+            <OffthreadVideo
+              src={staticFile(payload.personUrl)}
+              muted
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            />
+          )}
+        </div>
       )}
 
       {/* Doodle vàng đã BỎ theo yêu cầu (hoạ tiết random không cần). */}

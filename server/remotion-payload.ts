@@ -4,6 +4,9 @@ import { extname, join } from "node:path";
 import { buildPlacedSegments } from "./layout-segments";
 import { scheduleScenes } from "./layout-schedule";
 import { PICKABLE_LAYOUTS } from "./layout-kinds";
+import { db } from "./db";
+import { effectPeak, mapToOutput } from "./render";
+import { normalizeJunction } from "./junction-kinds";
 import { ffmpeg, probe } from "./media-tools";
 import { VIDEO } from "./routes/media-formats";
 import { workDir } from "./paths";
@@ -75,8 +78,10 @@ export type RemotionPayload = {
   /** Bộ dáng dự án — để composition gọi `packForElement` cho từng cụm chữ. */
   pack: StylePack;
   scenes: RemotionScene[];
-  inserts: Array<{ url: string; aspect: number }>;
+  inserts: Array<{ url: string; aspect: number; isVideo: boolean }>;
   captions: RemotionCaption[];
+  /** Chỗ nối (zoom/nháy/nghiêng) — xung tam giác quanh mỗi vết cắt, dải ĐÃ CẮT. */
+  junctions: Array<{ start: number; end: number; peak: number; kind: string }>;
   /** Chữ-sau-người mở màn (null nếu bộ dáng không có / ô trống). */
   behind: {
     line: string;
@@ -212,7 +217,7 @@ export async function buildRemotionPayload(
       const info = await probe(item.path).catch(() => null);
       const aspect =
         info?.width && info?.height ? info.width / info.height : 1;
-      return { url: rel(name), aspect };
+      return { url: rel(name), aspect, isVideo: isVid };
     }),
   );
 
@@ -259,6 +264,27 @@ export async function buildRemotionPayload(
   // hệt (Player phóng lại vừa khung). Export giữ 1080×1920.
   const width = opts?.scrubProxy ? 540 : WIDTH;
   const height = opts?.scrubProxy ? 960 : HEIGHT;
+  // Chỗ nối: đọc bảng `effects`, quy mốc sang dải ĐÃ CẮT + tính đỉnh xung
+  // (`effectPeak`) — cùng nguồn với bản xuất/khung xem.
+  const junctions = (
+    db
+      .prepare(
+        "SELECT start_sec, end_sec, kind FROM effects WHERE project_id=? ORDER BY start_sec",
+      )
+      .all(projectId) as Array<{
+      start_sec: number;
+      end_sec: number;
+      kind: string;
+    }>
+  )
+    .map((r) => {
+      const kind = normalizeJunction(r.kind);
+      const start = mapToOutput(kept, r.start_sec) ?? 0;
+      const end = mapToOutput(kept, r.end_sec) ?? 0;
+      return { start, end, peak: effectPeak(start, end, kind), kind };
+    })
+    .filter((j) => j.end > j.start);
+
   return {
     fps: FPS,
     width,
@@ -279,6 +305,7 @@ export async function buildRemotionPayload(
     })),
     inserts,
     captions,
+    junctions,
     behind,
   };
 }

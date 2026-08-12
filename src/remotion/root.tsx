@@ -21,6 +21,7 @@ const EMPTY_PAYLOAD: RemotionPayload = {
   scenes: [],
   inserts: [],
   captions: [],
+  junctions: [],
   behind: null,
 };
 
