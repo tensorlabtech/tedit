@@ -5,6 +5,7 @@ import { buildPlacedSegments } from "./layout-segments";
 import { scheduleScenes } from "./layout-schedule";
 import { PICKABLE_LAYOUTS } from "./layout-kinds";
 import { ffmpeg, probe } from "./media-tools";
+import { VIDEO } from "./routes/media-formats";
 import { workDir } from "./paths";
 import { behindElement, keptRanges, resolveElements } from "./pipeline";
 import { emptiestBand } from "./subject-mask";
@@ -90,6 +91,36 @@ const FPS = 30;
 const WIDTH = 1080;
 const HEIGHT = 1920;
 
+/**
+ * Bản PROXY tua-tức-thì: 480p TOÀN KEYFRAME (`-g 1`) — mọi frame giải mã độc lập
+ * nên seek không phải giải mã lại từ xa. Cache `dest`, dựng lại chỉ khi nguồn mới
+ * hơn. Encode fail → trả nguồn (vẫn chạy, chỉ lag). ~1s cho một clip.
+ */
+async function makeScrubProxy(src: string, dest: string): Promise<string> {
+  const fresh =
+    existsSync(dest) &&
+    statSync(dest).size > 0 &&
+    statSync(dest).mtimeMs >= statSync(src).mtimeMs;
+  if (!fresh) {
+    await ffmpeg([
+      "-y",
+      "-i",
+      src,
+      "-vf",
+      "scale=480:-2",
+      "-c:v",
+      "libx264",
+      "-preset",
+      "ultrafast",
+      "-g",
+      "1",
+      "-an",
+      dest,
+    ]).catch(() => undefined);
+  }
+  return existsSync(dest) && statSync(dest).size > 0 ? dest : src;
+}
+
 export async function buildRemotionPayload(
   projectId: string,
   /**
@@ -145,34 +176,10 @@ export async function buildRemotionPayload(
         ? previewCut
         : base;
 
-  // KHUNG XEM: proxy 480p TOÀN KEYFRAME (`-g 1`) → tua tức thì. Cache ở `work/`,
-  // dựng lại chỉ khi nguồn mới hơn. Encode fail → rơi về nguồn (vẫn chạy, chỉ lag).
-  let personFinal = personSrc;
-  if (opts?.scrubProxy) {
-    const proxy = join(workDir(projectId), "scrub-person.mp4");
-    const fresh =
-      existsSync(proxy) &&
-      statSync(proxy).size > 0 &&
-      statSync(proxy).mtimeMs >= statSync(personSrc).mtimeMs;
-    if (!fresh) {
-      await ffmpeg([
-        "-y",
-        "-i",
-        personSrc,
-        "-vf",
-        "scale=480:-2",
-        "-c:v",
-        "libx264",
-        "-preset",
-        "ultrafast",
-        "-g",
-        "1",
-        "-an",
-        proxy,
-      ]).catch(() => undefined);
-    }
-    if (existsSync(proxy) && statSync(proxy).size > 0) personFinal = proxy;
-  }
+  // KHUNG XEM: proxy tua-tức-thì cho người (nguồn tua chính).
+  const personFinal = opts?.scrubProxy
+    ? await makeScrubProxy(personSrc, join(workDir(projectId), "scrub-person.mp4"))
+    : personSrc;
   copyFileSync(personFinal, join(outDir, "person.mp4"));
   const personUrl = rel("person.mp4");
 
@@ -189,9 +196,19 @@ export async function buildRemotionPayload(
 
   const inserts = await Promise.all(
     media.map(async (item, i) => {
-      const ext = extname(item.path) || ".mp4";
+      const isVid = VIDEO.test(item.name);
+      // Khung xem: proxy tua-tức-thì cho b-roll VIDEO (ảnh tĩnh không cần).
+      const src =
+        opts?.scrubProxy && isVid
+          ? await makeScrubProxy(
+              item.path,
+              join(workDir(projectId), `scrub-insert-${i}.mp4`),
+            )
+          : item.path;
+      const ext = isVid ? ".mp4" : extname(item.path) || ".jpg";
       const name = `insert-${i}${ext}`;
-      copyFileSync(item.path, join(outDir, name));
+      copyFileSync(src, join(outDir, name));
+      // Tỉ lệ đo từ NGUỒN gốc (proxy giữ tỉ lệ) — chính xác hơn.
       const info = await probe(item.path).catch(() => null);
       const aspect =
         info?.width && info?.height ? info.width / info.height : 1;

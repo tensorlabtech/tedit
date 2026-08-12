@@ -89,7 +89,8 @@ export function RemotionPreview({
   toOutputRef.current = editor.toOutput;
   const seekRef = useRef(editor.seek);
   seekRef.current = editor.seek;
-  const seekRafRef = useRef<number | null>(null);
+  const lastSeekMsRef = useRef(0);
+  const seekTimerRef = useRef<number | null>(null);
 
   const fps = state.payload?.fps ?? 30;
 
@@ -105,20 +106,24 @@ export function RemotionPreview({
     return () => player.removeEventListener("frameupdate", onFrame);
   }, [playerRef, fps, state.payload]);
 
-  // editor.time → Player: bấm/kéo dải tua Player. GỘP bằng rAF — kéo nhanh đổi mốc
-  // hàng chục lần/giây, seek MỖI lần thì Player giải mã dồn = lag. Gộp về tua tới
-  // mốc CUỐI mỗi khung hình (bỏ mốc giữa). Đọc `editor` qua ref để deps chỉ là
-  // `editor.time` (số) — tránh effect chạy mọi render.
+  // editor.time → Player: bấm/kéo dải tua Player. THROTTLE ~16 lần/giây (60ms) —
+  // kéo nhanh đổi mốc mấy chục lần/giây, seek Player mỗi lần thì giải mã dồn = lag.
+  // 16 lần/giây đủ cho mắt lúc kéo nhanh, mà nhẹ decode hẳn. Leading + trailing để
+  // mốc CUỐI luôn tới đúng. Đọc `editor` qua ref → deps chỉ `editor.time`.
   useEffect(() => {
-    const player = playerRef.current;
-    if (!player || !state.payload) return;
-    const target = Math.round(toOutputRef.current(timeRef.current) * fps);
-    if (Math.abs(target - player.getCurrentFrame()) <= 2) return;
-    if (seekRafRef.current != null) cancelAnimationFrame(seekRafRef.current);
-    seekRafRef.current = requestAnimationFrame(() => {
-      playerRef.current?.seekTo(target);
-      seekRafRef.current = null;
-    });
+    if (!state.payload) return;
+    const doSeek = () => {
+      seekTimerRef.current = null;
+      lastSeekMsRef.current = performance.now();
+      const player = playerRef.current;
+      if (!player) return;
+      const target = Math.round(toOutputRef.current(timeRef.current) * fps);
+      if (Math.abs(target - player.getCurrentFrame()) > 2) player.seekTo(target);
+    };
+    const since = performance.now() - lastSeekMsRef.current;
+    if (since >= 60) doSeek();
+    else if (seekTimerRef.current == null)
+      seekTimerRef.current = window.setTimeout(doSeek, 60 - since);
   }, [editor.time, fps, state.payload, playerRef]);
 
   if (state.error)
