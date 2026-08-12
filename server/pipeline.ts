@@ -1220,10 +1220,10 @@ export async function runExport(projectId: string) {
     }),
   );
 
-  // CỜ ENGINE: `TEDDIT_ENGINE=remotion` dựng hình bằng máy vẽ Remotion (một-engine)
-  // thay `burnElements` (ffmpeg). Mặc định vẫn ffmpeg — đổi dần, có đường lùi.
+  // CỜ ENGINE: Remotion là MÁY VẼ MẶC ĐỊNH (một-engine). Đặt `TEDDIT_ENGINE=ffmpeg`
+  // để quay lại `burnElements` (ffmpeg) làm ĐƯỜNG LÙI nếu Remotion hỏng ca nào đó.
   const engine =
-    process.env.TEDDIT_ENGINE === "remotion" ? "remotion" : "ffmpeg";
+    process.env.TEDDIT_ENGINE === "ffmpeg" ? "ffmpeg" : "remotion";
   if (engine === "remotion")
     setJob(projectId, "export", "running", 40, "Đang dựng hình (Remotion)");
   const finalPath =
