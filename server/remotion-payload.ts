@@ -1,10 +1,10 @@
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, statSync } from "node:fs";
 import { extname, join } from "node:path";
 
 import { buildPlacedSegments } from "./layout-segments";
 import { scheduleScenes } from "./layout-schedule";
 import { PICKABLE_LAYOUTS } from "./layout-kinds";
-import { probe } from "./media-tools";
+import { ffmpeg, probe } from "./media-tools";
 import { workDir } from "./paths";
 import { behindElement, keptRanges, resolveElements } from "./pipeline";
 import { emptiestBand } from "./subject-mask";
@@ -97,6 +97,13 @@ export async function buildRemotionPayload(
    * ĐÃ CẮT (`cut`) → hình + lịch màn + tiếng cùng dải cắt, hết lệch ~0.5s.
    */
   personVideo?: string,
+  /**
+   * `scrubProxy`: dựng bản người ĐỘ PHÂN GIẢI THẤP + TOÀN KEYFRAME (all-intra) cho
+   * KHUNG XEM — tua tức thì (không giải mã lại từ keyframe). Kèm hạ khổ preview.
+   * Export KHÔNG bật (giữ full-res). Proxy cache ở `work/`, chỉ dựng lại khi nguồn
+   * mới hơn.
+   */
+  opts?: { scrubProxy?: boolean },
 ): Promise<RemotionPayload | null> {
   const pack = readStylePack(projectId);
   if (pack.layouts.length === 0) return null;
@@ -137,7 +144,36 @@ export async function buildRemotionPayload(
       : existsSync(previewCut)
         ? previewCut
         : base;
-  copyFileSync(personSrc, join(outDir, "person.mp4"));
+
+  // KHUNG XEM: proxy 480p TOÀN KEYFRAME (`-g 1`) → tua tức thì. Cache ở `work/`,
+  // dựng lại chỉ khi nguồn mới hơn. Encode fail → rơi về nguồn (vẫn chạy, chỉ lag).
+  let personFinal = personSrc;
+  if (opts?.scrubProxy) {
+    const proxy = join(workDir(projectId), "scrub-person.mp4");
+    const fresh =
+      existsSync(proxy) &&
+      statSync(proxy).size > 0 &&
+      statSync(proxy).mtimeMs >= statSync(personSrc).mtimeMs;
+    if (!fresh) {
+      await ffmpeg([
+        "-y",
+        "-i",
+        personSrc,
+        "-vf",
+        "scale=480:-2",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "ultrafast",
+        "-g",
+        "1",
+        "-an",
+        proxy,
+      ]).catch(() => undefined);
+    }
+    if (existsSync(proxy) && statSync(proxy).size > 0) personFinal = proxy;
+  }
+  copyFileSync(personFinal, join(outDir, "person.mp4"));
   const personUrl = rel("person.mp4");
 
   const cutMask = join(workDir(projectId), "cut-mask.mp4");
@@ -202,10 +238,14 @@ export async function buildRemotionPayload(
     }
   }
 
+  // KHUNG XEM hạ khổ (540×960) → ít pixel vẽ mỗi frame; hình học tỉ lệ nên LOOK y
+  // hệt (Player phóng lại vừa khung). Export giữ 1080×1920.
+  const width = opts?.scrubProxy ? 540 : WIDTH;
+  const height = opts?.scrubProxy ? 960 : HEIGHT;
   return {
     fps: FPS,
-    width: WIDTH,
-    height: HEIGHT,
+    width,
+    height,
     seconds: keptTotal,
     sourceAspect:
       baseInfo.width && baseInfo.height ? baseInfo.width / baseInfo.height : null,

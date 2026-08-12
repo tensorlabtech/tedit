@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { memo, useEffect, useRef, useState, type RefObject } from "react";
 
 import { Player, type PlayerRef } from "@remotion/player";
 
@@ -6,6 +6,36 @@ import { api } from "@/lib/api";
 import { VideoComposition } from "@/remotion/video-composition";
 import type { EditorState } from "./use-editor";
 import type { RemotionPayload } from "../../../server/remotion-payload";
+
+const PLAYER_STYLE = { width: "100%", height: "100%" } as const;
+
+/**
+ * Bề mặt Player TÁCH RIÊNG + `memo`: chỉ vẽ lại khi `payload` đổi (props ổn định),
+ * KHÔNG vẽ lại theo `editor.time` khi bàn dựng dựng lại lúc kéo dải → hết giật do
+ * Player bị dựng lại liên tục. Tua vào Player đi qua `playerRef` (ngoài render).
+ */
+const PlayerSurface = memo(function PlayerSurface({
+  payload,
+  playerRef,
+}: {
+  payload: RemotionPayload;
+  playerRef: RefObject<PlayerRef | null>;
+}) {
+  return (
+    <Player
+      ref={playerRef}
+      component={VideoComposition}
+      inputProps={payload}
+      durationInFrames={Math.max(1, Math.round(payload.seconds * payload.fps))}
+      fps={payload.fps}
+      compositionWidth={payload.width}
+      compositionHeight={payload.height}
+      style={PLAYER_STYLE}
+      controls
+      loop
+    />
+  );
+});
 
 /**
  * KHUNG XEM = MÁY VẼ REMOTION. Chạy CHÍNH `VideoComposition` (thứ export dùng) qua
@@ -111,18 +141,5 @@ export function RemotionPreview({
       </div>
     );
 
-  return (
-    <Player
-      ref={playerRef}
-      component={VideoComposition}
-      inputProps={payload}
-      durationInFrames={Math.max(1, Math.round(payload.seconds * payload.fps))}
-      fps={payload.fps}
-      compositionWidth={payload.width}
-      compositionHeight={payload.height}
-      style={{ width: "100%", height: "100%" }}
-      controls
-      loop
-    />
-  );
+  return <PlayerSurface payload={payload} playerRef={playerRef} />;
 }

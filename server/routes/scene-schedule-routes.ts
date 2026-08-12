@@ -23,6 +23,7 @@ export default async function sceneScheduleRoutes(app: FastifyInstance) {
   app.get("/api/projects/:id/remotion-payload", async (request) => {
     const { id } = request.params as { id: string };
     assertOwnerIs(request.viewer!, "project", id);
-    return buildRemotionPayload(id);
+    // Khung xem: proxy tua-tức-thì + hạ khổ (mượt khi kéo dải). Export dùng full-res.
+    return buildRemotionPayload(id, undefined, { scrubProxy: true });
   });
 }
