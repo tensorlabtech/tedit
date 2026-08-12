@@ -91,6 +91,7 @@ export function RemotionPreview({
   seekRef.current = editor.seek;
   const lastSeekMsRef = useRef(0);
   const seekTimerRef = useRef<number | null>(null);
+  const lastFrameMsRef = useRef(0);
 
   const fps = state.payload?.fps ?? 30;
 
@@ -99,8 +100,15 @@ export function RemotionPreview({
     const player = playerRef.current;
     if (!player) return;
     const onFrame = (e: { detail: { frame: number } }) => {
+      // THROTTLE ~10/s: lúc phát, frameupdate bắn mỗi frame; đẩy editor.time mỗi
+      // lần thì cả BÀN DỰNG (Timeline) dựng lại 20-30/s = lag. 10/s đủ cho vạch.
+      const now = performance.now();
+      if (now - lastFrameMsRef.current < 100) return;
       const src = toSourceRef.current(e.detail.frame / fps);
-      if (Math.abs(src - timeRef.current) > 0.05) seekRef.current(src);
+      if (Math.abs(src - timeRef.current) > 0.05) {
+        seekRef.current(src);
+        lastFrameMsRef.current = now;
+      }
     };
     player.addEventListener("frameupdate", onFrame);
     return () => player.removeEventListener("frameupdate", onFrame);

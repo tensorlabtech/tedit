@@ -10,8 +10,7 @@ import { normalizeJunction } from "./junction-kinds";
 import { ffmpeg, probe } from "./media-tools";
 import { VIDEO } from "./routes/media-formats";
 import { workDir } from "./paths";
-import { behindElement, keptRanges, resolveElements } from "./pipeline";
-import { emptiestBand } from "./subject-mask";
+import { keptRanges, resolveElements } from "./pipeline";
 import {
   blocksFromPack,
   type AlignId,
@@ -164,10 +163,13 @@ export async function buildRemotionPayload(
   );
   const schedule = scheduleScenes(keptTotal, segments);
 
-  // Thư mục tĩnh cho Remotion đọc. Copy một lần mỗi lần dựng payload.
-  const outDir = join(process.cwd(), "public", "remotion", projectId);
+  // Thư mục tĩnh cho Remotion đọc. TÁCH preview vs export: preview ghi PROXY thấp,
+  // export ghi FULL-RES — chung thư mục sẽ đè nhau (export bundle nhầm proxy → video
+  // mờ). Tách theo `scrubProxy` để không race.
+  const dir = opts?.scrubProxy ? "remotion-preview" : "remotion";
+  const outDir = join(process.cwd(), "public", dir, projectId);
   mkdirSync(outDir, { recursive: true });
-  const rel = (name: string) => `remotion/${projectId}/${name}`;
+  const rel = (name: string) => `${dir}/${projectId}/${name}`;
 
   // Người: dùng base.mp4 (cắt tối thiểu ở dự án thử; bản production sẽ cắt đúng
   // theo `kept`). Mặt nạ: cut-mask nếu có, không thì subject gốc.
@@ -241,24 +243,9 @@ export async function buildRemotionPayload(
       span: e.end - e.start,
     }));
 
-  // CHỮ-SAU-NGƯỜI mở màn: chữ chìm, người tách nền đè lên (chữ hở quanh người).
-  // Người-đã-tách dựng SẴN thành webm ALPHA bằng ffmpeg (tiền xử lý — mask video
-  // không dùng thẳng làm alpha trong Chromium được), rồi Remotion chỉ việc layer.
-  let behind: RemotionPayload["behind"] = null;
-  if (pack.behindText) {
-    const behindEl = behindElement(projectId);
-    const line = behindEl?.content.trim() ? behindEl.content : null;
-    if (line) {
-      const band =
-        (await emptiestBand(projectId, baseInfo.duration / 2).catch(() => null))
-          ?.index ?? 0;
-      const secs = pack.behindText.seconds;
-      // behindText mở màn đang TẮT (SHOW_BEHIND=false ở composition) → KHÔNG encode
-      // webm alpha (nặng, mỗi lần dựng payload sẽ chậm). Giữ line/band phòng khi
-      // bật lại; lúc đó thêm lại bước tách người (xem lịch sử `behind-person.webm`).
-      behind = { line, band, seconds: secs, personCutUrl: null };
-    }
-  }
+  // CHỮ-SAU-NGƯỜI mở màn hiện đang TẮT (SHOW_BEHIND=false ở composition) → không
+  // tính (đỡ gọi emptiestBand mỗi payload). Bật lại thì khôi phục theo lịch sử git.
+  const behind: RemotionPayload["behind"] = null;
 
   // KHUNG XEM hạ khổ (540×960) → ít pixel vẽ mỗi frame; hình học tỉ lệ nên LOOK y
   // hệt (Player phóng lại vừa khung). Export giữ 1080×1920.

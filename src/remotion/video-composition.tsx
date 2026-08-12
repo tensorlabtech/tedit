@@ -44,7 +44,7 @@ function junctionCss(
   t: number,
   junctions: RemotionPayload["junctions"],
   pack: RemotionPayload["pack"],
-): { transform: string; filter: string } {
+): { transform: string; filter: string } | null {
   const acc: Record<string, number> = {
     zoom: 0,
     sang: 0,
@@ -71,6 +71,9 @@ function junctionCss(
     const drive = findJunction(j.kind).drive as Record<string, number>;
     for (const k of Object.keys(acc)) acc[k] += (drive[k] ?? 0) * value;
   }
+  // KHÔNG junction nào active tại t → trả null: nơi gọi KHÔNG bọc lớp filter/
+  // transform. CSS filter (kể cả identity) ép lớp GPU trên video → giật khi tua.
+  if (Object.values(acc).every((v) => Math.abs(v) < 1e-4)) return null;
   const punch = pack.intensity.punchScale;
   const flash = pack.intensity.flashAmount;
   return {
@@ -368,8 +371,9 @@ export function VideoComposition(payload: RemotionPayload) {
           style={{
             position: "absolute",
             inset: 0,
-            transform: jStyle.transform,
-            filter: jStyle.filter,
+            // Chỉ áp transform/filter khi CÓ junction (jStyle non-null). Không thì
+            // div trơn → không ép lớp GPU → tua/phát nhẹ.
+            ...(jStyle ?? {}),
           }}
         >
           {scene ? (
