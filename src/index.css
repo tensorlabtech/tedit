@@ -243,6 +243,14 @@
     * {
         @apply border-border outline-ring/50;
     }
+    /* Nút control của Remotion Player (khung xem) giữ focus sau khi bấm → viền
+       tím toàn cục dính lại trông như lỗi. Tắt outline/ring riêng cho khung xem;
+       play/tạm dừng vẫn có phím Cách + bấm chuột. */
+    .remotion-preview-surface button:focus,
+    .remotion-preview-surface button:focus-visible {
+        outline: none;
+        box-shadow: none;
+    }
     body {
         @apply bg-background text-foreground;
     }

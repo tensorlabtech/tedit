@@ -17,6 +17,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { useState } from "react";
+
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -26,6 +28,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
@@ -140,6 +148,12 @@ export function TextPane({
     });
     playPreview();
   };
+  // Nhãn phong cách ĐANG CHỌN cho thẻ gọn — theo block đã đóng dấu, lùi về nhãn
+  // hiệu lực (preset dự án) nếu cụm chưa đặt riêng.
+  const currentStyleLabel =
+    captionBlocks.find((b) => b.id === currentCaptionBlock)?.presetLabel ??
+    effectiveFontLabel;
+  const [styleOpen, setStyleOpen] = useState(false);
 
   const from = editor.wordsById.get(element.fromWordId);
   const deChong = editor.deLenNhau(element);
@@ -312,22 +326,32 @@ export function TextPane({
             </Field>
 
             {/* PHONG CÁCH CHỮ — text-look bình đẳng: mượn của MỌI style, không
-                khoá theo style video. Hai nhóm: gợi ý (style dự án) trước, Khác
-                sau — dẫn từ style mà không cấm, y như picker khung. */}
+                khoá theo style video. Bày GỌN (thẻ đang chọn + nút Đổi → modal
+                lưới) y như picker khung: thẻ 9:16 của lưới CAO, đặt thẳng trong
+                vùng cuộn thấp thì nhãn canh giữa bị mép cuộn xén; đưa vào modal là
+                có chỗ, và đồng nhất với "Đổi khung". */}
             <Field>
-              <FieldLabel>Phong cách chữ</FieldLabel>
-              {/* POOL phẳng: mọi look chữ của mọi preset, nhãn là tên preset. Nhặt
-                  cái nào thì look chữ của nó đóng dấu vào cụm — trộn được chữ Phấn
-                  với chữ Nhịp-đen trong cùng video. */}
-              <OptionPicker
-                variant="grid"
-                options={captionBlocks.map((b) => ({
-                  id: b.id,
-                  label: b.presetLabel,
-                }))}
-                value={currentCaptionBlock}
-                onSelect={pickCaptionBlock}
-              />
+              <FieldLabel>Phong cách chữ · {currentStyleLabel}</FieldLabel>
+              <div className="flex items-stretch gap-3">
+                <div className="grid aspect-[9/16] w-24 shrink-0 place-items-center overflow-hidden rounded-lg p-2 text-center inset-ring-1 inset-ring-border">
+                  <span className="line-clamp-3 text-xs leading-tight">
+                    {currentStyleLabel}
+                  </span>
+                </div>
+                <div className="flex min-w-0 flex-1 flex-col justify-center gap-2">
+                  <p className="truncate text-sm font-medium">
+                    {currentStyleLabel}
+                  </p>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="self-start"
+                    onClick={() => setStyleOpen(true)}
+                  >
+                    Đổi phong cách
+                  </Button>
+                </div>
+              </div>
             </Field>
 
             <TextOverrideRows
@@ -434,6 +458,31 @@ export function TextPane({
           Xoá chữ này
         </Button>
       </CardFooter>
+
+      {/* Modal chọn PHONG CÁCH CHỮ — lưới nhiều dòng, có chỗ cho danh sách dài.
+          POOL phẳng: mọi look chữ của mọi preset, nhãn là tên preset. Nhặt cái nào
+          thì look chữ đóng dấu vào cụm — trộn được chữ Phấn với chữ Nhịp-đen. */}
+      <Dialog open={styleOpen} onOpenChange={setStyleOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Chọn phong cách chữ</DialogTitle>
+          </DialogHeader>
+          <div className="pt-1">
+            <OptionPicker
+              variant="grid"
+              options={captionBlocks.map((b) => ({
+                id: b.id,
+                label: b.presetLabel,
+              }))}
+              value={currentCaptionBlock}
+              onSelect={(id) => {
+                pickCaptionBlock(id);
+                setStyleOpen(false);
+              }}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

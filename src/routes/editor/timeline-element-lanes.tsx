@@ -1,3 +1,4 @@
+import type { PointerEvent } from "react";
 import { TypeIcon } from "lucide-react";
 
 import type { TextElement } from "./editor-data";
@@ -70,11 +71,14 @@ export function FreeTextLane({
   pxPerSecond,
   selection,
   onSelect,
+  onMove,
 }: {
   elements: TextElement[];
   pxPerSecond: number;
   selection: Selection;
   onSelect: (id: string) => void;
+  /** KÉO DỜI chữ tự do (đã buộc mốc nguồn) — `undefined` = không dời. */
+  onMove?: (id: string) => ((event: PointerEvent) => void) | undefined;
 }) {
   if (elements.length === 0) return null;
   return (
@@ -92,6 +96,7 @@ export function FreeTextLane({
           title={element.content || "Chữ chưa có nội dung"}
           className="gap-1 px-2"
           onSelect={() => onSelect(element.id)}
+          onMoveStart={onMove?.(element.id)}
         >
           <TypeIcon className="size-3 shrink-0" />
           {/* Chữ rỗng vẫn phải ĐỌC RA LÀ MỘT KHỐI: đặt xong mà chưa gõ gì thì

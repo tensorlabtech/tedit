@@ -885,6 +885,9 @@ export const api = {
       captionPreset?: string | null;
       /** Đổi tệp media của b-roll */
       mediaFileId?: string;
+      /** LẤY PHẦN clip b-roll: giây in/out trong clip nguồn. `null` = cả clip. */
+      mediaIn?: number | null;
+      mediaOut?: number | null;
       /** Kéo hai đầu khối chữ tự do trên dải */
       start?: number;
       end?: number;

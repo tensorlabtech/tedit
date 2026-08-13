@@ -39,10 +39,14 @@ export function StudioStep({ projectId }: { projectId: string | undefined }) {
   // Player LÀ đồng hồ (thay thẻ <video> cũ). SPACE bật/tắt phát; kéo dải thì dừng.
   const playerRef = useRef<PlayerRef>(null);
   const togglePlay = () => playerRef.current?.toggle();
-  // Chọn cụm = tua tới đó. Nghe thử quãng = tua đầu quãng RỒI PHÁT (Player + vạch
-  // đồng bộ qua RemotionPreview). Chưa tự dừng ở cuối quãng (phát tiếp tới hết) —
-  // đủ để nghe thử, thêm auto-stop sau nếu cần.
-  const onPreview = (at: number) => editor.seek(at);
+  // Chọn cụm = tua tới đó (chỉ `at`). ĐỔI kiểu (chỗ nối / phong cách chữ) truyền
+  // cả `until` = một QUÃNG → tua đầu quãng RỒI PHÁT, vì chỗ nối/hiện-chữ là hiệu
+  // ứng THEO THỜI GIAN, đứng một khung không thấy gì. (Player + vạch đồng bộ qua
+  // RemotionPreview.) Chưa tự dừng cuối quãng — phát tiếp tới hết, đủ để xem thử.
+  const onPreview = (at: number, until?: number) => {
+    editor.seek(at);
+    if (until != null) playerRef.current?.play();
+  };
   const onAudit = (span: { start: number; end: number }) => {
     editor.seek(span.start);
     playerRef.current?.play();

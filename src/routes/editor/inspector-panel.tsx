@@ -116,6 +116,7 @@ export function InspectorPanel({
         editor={editor}
         elementId={scene.elementId}
         layout={scene.layout}
+        isBlur={!!scene.frameBlock?.blur}
         media={null}
         srcStart={editor.toSource(scene.start)}
         srcEnd={editor.toSource(scene.end)}
@@ -186,6 +187,19 @@ export function InspectorPanel({
   const firstBroll = (editor.sceneLayout?.allowedLayouts ?? []).find((choice) =>
     findLayout(choice.id).needsInsert,
   )?.id;
+  // LẤY PHẦN clip: đọc in/out/độ-dài từ lịch màn (khớp element qua scene.insert).
+  // Chỉ có với b-roll VIDEO đã biết độ dài clip.
+  const scOfInsert = editor.sceneLayout?.schedule.find(
+    (s) => s.elementId === item.id,
+  );
+  const sc =
+    scOfInsert?.insert != null
+      ? editor.sceneLayout?.inserts[scOfInsert.insert]
+      : null;
+  const trim =
+    sc && sc.isVideo && sc.duration
+      ? { in: sc.in, out: sc.out, duration: sc.duration }
+      : null;
   return (
     <LayoutKhungPane
       key={selection.id}
@@ -198,6 +212,7 @@ export function InspectorPanel({
         isVideo: item.isVideo,
         label: item.fullName ?? item.label,
       }}
+      trim={trim}
       srcStart={item.start}
       srcEnd={item.end}
       outStart={editor.toOutput(item.start)}

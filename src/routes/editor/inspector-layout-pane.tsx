@@ -22,7 +22,8 @@ import { Field, FieldLabel } from "@/components/ui/field";
 import { findLayout } from "../../../server/layout-kinds";
 import { findStylePack } from "../../../server/style-pack-catalog";
 import { formatTimeFine } from "./editor-data";
-import { OptionPicker, type PickOption, swatchTextColor } from "./option-picker";
+import { InsertTrimBar } from "./insert-trim-bar";
+import { OptionPicker } from "./option-picker";
 import type { EditorState } from "./use-editor";
 
 /** Chạy thêm một nhịp mỗi đầu để thấy khung vào/ra thế nào. */
@@ -55,8 +56,10 @@ export function LayoutKhungPane({
   elementId,
   layout,
   framePreset,
+  isBlur,
   /** Có tư liệu → khung 2 ô (b-roll). `null` → khung 1 ô (người). */
   media,
+  trim,
   srcStart,
   srcEnd,
   outStart,
@@ -68,7 +71,11 @@ export function LayoutKhungPane({
   layout: string;
   /** Preset đã đóng dấu look Ô của cảnh này — để tô ĐÚNG khung khi đã trộn. */
   framePreset?: string | null;
+  /** Cảnh đang là KHUNG MỜ (defocus) — để picker tô đúng ô "Khung mờ". */
+  isBlur?: boolean;
   media: { thumbUrl?: string; isVideo?: boolean; label?: string } | null;
+  /** LẤY PHẦN clip b-roll (video, đã biết độ dài) — null nếu không áp dụng. */
+  trim?: { in: number | null; out: number | null; duration: number } | null;
   srcStart: number;
   srcEnd: number;
   outStart: number;
@@ -84,49 +91,70 @@ export function LayoutKhungPane({
   // tên preset, nhãn khung để gọn; cả hai gộp lại đọc ra "Phấn · 2-ô".
   const blocks = editor.sceneLayout?.frameBlocks ?? [];
   const behindPresets = editor.sceneLayout?.behindPresets ?? [];
-  // Look của một block → swatch (nền + viền). Đây là cái làm Phấn (kem/vàng) nhìn
-  // KHÁC HẲN Nhịp-đen (tối) ngay trên thẻ — không chỉ khác nhãn chữ.
-  // Khung không khai `page` (nền) thì lùi về nền thẻ mặc định — vẫn hiện được viền.
-  const swatchOf = (b: (typeof blocks)[number]) => ({
-    bg: b.frameLook.page?.tone.color ?? "transparent",
-    border: b.frameLook.subjectEdge?.tone.color ?? null,
-  });
-  const presetGroups = (() => {
-    const by = new Map<string, { label: string; options: PickOption[] }>();
-    for (const b of blocks) {
-      const g = by.get(b.presetId) ?? { label: b.presetLabel, options: [] };
-      g.options.push({
-        id: b.id,
-        label: khungLabel(b.layout),
-        swatch: swatchOf(b),
-      });
-      by.set(b.presetId, g);
+  // MỘT danh sách phẳng, mỗi khung tự xưng "{preset} - {bố cục}" (vd "Nhịp đen -
+  // Ô đơn", "Prism Pro - Toàn khung") — nhìn phát biết look của khung thuộc theme
+  // nào, và preset LOCK look đó (khung Nhịp-đen luôn nền caro, ở mọi video).
+  // "Chữ sau người" là một LOẠI khung của preset khai chữ-nền (Phấn): nhặt nó
+  // không đổi cấu trúc cảnh mà mở ô nhập chữ-nền của cả video.
+  // Nhãn NGẮN (chỉ bố cục) vì đã nhóm theo preset — tiêu đề nhóm mang tên preset.
+  const frameOptions = [
+    ...blocks.map((b) => ({
+      id: b.id,
+      presetId: b.presetId,
+      presetLabel: b.presetLabel,
+      layout: b.layout,
+      label: khungLabel(b.layout),
+    })),
+    ...behindPresets.map((p) => ({
+      id: `behindtext:${p.id}`,
+      presetId: p.id,
+      presetLabel: p.label,
+      layout: "behindtext",
+      label: "Chữ sau người",
+    })),
+  ];
+  // TOÀN KHUNG dùng CHUNG (không theo preset): người phủ kín màn → nền preset bị
+  // che, defocus là mức-video → mọi preset render Y HỆT. Bày một ô chung (đóng dấu
+  // theo style dự án), khỏi lặp ba ô trùng ở ba nhóm.
+  const toanKhungId = `${editor.stylePack}:toan-khung`;
+  const khungMoId = "chung:khung-mo";
+  // Cảnh toàn-khung THƯỜNG (không mờ) vs KHUNG MỜ — cùng layout `toan-khung`, phân
+  // biệt bằng cờ `blur` đã đóng dấu; để tô đúng ô nào trong nhóm "Chung".
+  const isToanKhung = layout === "toan-khung" && !isBlur;
+  // Nhãn khung ĐANG chọn cho thẻ gọn: KHUNG MỜ hiện tên riêng (không "preset -
+  // toan-khung"), còn lại ghép "{preset} - {bố cục}".
+  const currentFrameLabel = isBlur
+    ? "Khung mờ"
+    : `${findStylePack(framePreset ?? editor.stylePack).label} - ${khungLabel(layout)}`;
+  // NHÓM theo preset (bỏ toan-khung), ĐẨY style dự án lên đầu: phần lớn nhặt khung
+  // trong theme đang dùng; theme khác (để trộn) xuống dưới. Giữ thứ tự khai.
+  const frameGroups = (() => {
+    const byPreset = new Map<
+      string,
+      { label: string; items: typeof frameOptions }
+    >();
+    for (const opt of frameOptions) {
+      if (opt.layout === "toan-khung") continue; // toan-khung ra ô CHUNG
+      const group = byPreset.get(opt.presetId) ?? {
+        label: opt.presetLabel,
+        items: [],
+      };
+      group.items.push(opt);
+      byPreset.set(opt.presetId, group);
     }
-    // "Chữ sau người" là một LOẠI khung của preset khai chữ-nền (Phấn) — bày chung
-    // pool để thấy ĐỦ loại. Như b-roll có ô ẢNH, khung này có ô CHỮ. Nhặt nó không
-    // đổi cấu trúc cảnh mà mở ô nhập chữ-nền (chữ mở màn của cả video). Swatch mượn
-    // nền của preset ấy (từ một block cùng rổ) để thẻ ăn màu với các khung anh em.
-    for (const p of behindPresets) {
-      const g = by.get(p.id) ?? { label: p.label, options: [] };
-      const kin = blocks.find((b) => b.presetId === p.id);
-      g.options.push({
-        id: `behindtext:${p.id}`,
-        label: "Chữ sau người",
-        swatch: kin ? swatchOf(kin) : undefined,
-      });
-      by.set(p.id, g);
-    }
-    return [...by.values()];
+    return [...byPreset.entries()]
+      .sort(([a], [b]) =>
+        a === editor.stylePack ? -1 : b === editor.stylePack ? 1 : 0,
+      )
+      .map(([id, group]) => ({ id, ...group }));
   })();
   // Khung ĐANG chọn của cảnh này — tô sáng đúng block đang mang look ấy: khớp cấu
   // trúc + đúng preset LOOK đã đóng dấu vào cảnh. Khi cảnh chưa trộn (chưa có
   // `framePreset`) thì lùi về preset dự án cho khớp.
   const lookPreset = framePreset ?? editor.stylePack;
-  const currentBlock =
-    blocks.find((b) => b.layout === layout && b.presetId === lookPreset) ?? null;
-  const currentBlockId = currentBlock?.id ?? null;
-  // Look cảnh đang mang — để thẻ "Kiểu khung" hiện đúng nền/viền của cảnh này.
-  const currentSwatch = currentBlock ? swatchOf(currentBlock) : null;
+  const currentBlockId =
+    blocks.find((b) => b.layout === layout && b.presetId === lookPreset)?.id ??
+    null;
 
   const [frameOpen, setFrameOpen] = useState(false);
   const [mediaOpen, setMediaOpen] = useState(false);
@@ -186,37 +214,14 @@ export function LayoutKhungPane({
             {/* Thumbnail 9:16 TO, tên ở TRÊN, nút ở DƯỚI. Bấm Đổi mở modal cả danh
                 sách — sau trăm kiểu thì vẫn gọn ở đây. */}
             <div className="flex items-stretch gap-3">
-              <div className="relative grid aspect-[9/16] w-24 shrink-0 place-items-center overflow-hidden rounded-lg inset-ring-1 inset-ring-border p-2 text-center">
-                {/* Nền + viền look của CHÍNH cảnh này (kem/vàng cho Phấn, tối cho
-                    Nhịp-đen) — thấy ngay cảnh đang mang look nào. */}
-                {currentSwatch && (
-                  <span
-                    aria-hidden
-                    className="absolute inset-0"
-                    style={{ backgroundColor: currentSwatch.bg }}
-                  />
-                )}
-                {currentSwatch?.border && (
-                  <span
-                    aria-hidden
-                    className="absolute inset-[3px] rounded-md border-2"
-                    style={{ borderColor: currentSwatch.border }}
-                  />
-                )}
-                <span
-                  className="relative line-clamp-3 text-xs leading-tight"
-                  style={
-                    currentSwatch
-                      ? { color: swatchTextColor(currentSwatch.bg) }
-                      : undefined
-                  }
-                >
-                  {khungLabel(layout)}
+              <div className="grid aspect-[9/16] w-16 shrink-0 place-items-center overflow-hidden rounded-lg inset-ring-1 inset-ring-border p-2 text-center">
+                <span className="line-clamp-3 text-xs leading-tight">
+                  {currentFrameLabel}
                 </span>
               </div>
               <div className="flex min-w-0 flex-1 flex-col justify-center gap-2">
                 <p className="truncate text-sm font-medium">
-                  {khungLabel(layout)}
+                  {currentFrameLabel}
                 </p>
                 <Button
                   variant="secondary"
@@ -241,10 +246,10 @@ export function LayoutKhungPane({
                   <img
                     src={media.thumbUrl}
                     alt=""
-                    className="aspect-[9/16] w-24 shrink-0 rounded-lg object-cover"
+                    className="aspect-[9/16] w-16 shrink-0 rounded-lg object-cover"
                   />
                 ) : (
-                  <div className="grid aspect-[9/16] w-24 shrink-0 place-items-center rounded-lg bg-secondary">
+                  <div className="grid aspect-[9/16] w-16 shrink-0 place-items-center rounded-lg bg-secondary">
                     <FilmIcon className="size-6 text-muted-foreground" />
                   </div>
                 )}
@@ -262,6 +267,23 @@ export function LayoutKhungPane({
                   </Button>
                 </div>
               </div>
+              {/* LẤY PHẦN clip: chỉ b-roll VIDEO đã biết độ dài. Kéo 2 tay nắm chọn
+                  đoạn của clip nguồn; clip lặp trong đoạn đó cho đầy khoảng. */}
+              {trim && (
+                <div className="mt-1 grid gap-1.5">
+                  <span className="text-xs text-muted-foreground">
+                    Lấy đoạn của clip
+                  </span>
+                  <InsertTrimBar
+                    duration={trim.duration}
+                    in={trim.in}
+                    out={trim.out}
+                    onTrim={(inSec, outSec) =>
+                      void editor.setInsertTrim(elementId, inSec, outSec)
+                    }
+                  />
+                </div>
+              )}
             </Field>
           )}
         </div>
@@ -288,22 +310,37 @@ export function LayoutKhungPane({
           <DialogHeader>
             <DialogTitle>Chọn kiểu khung</DialogTitle>
           </DialogHeader>
-          {/* MỌI khung của MỌI preset, phẳng — nhóm theo preset (cái rổ) chỉ để dễ
-              ngắm; tiêu đề nhóm là tên preset, nên nhãn khung đọc ra "Phấn · 2-ô".
-              Nhặt khung nào cũng được, look của nó đi theo cảnh. */}
-          <div className="grid gap-4 pt-1">
-            {presetGroups.map((group) => (
-              <div key={group.label} className="grid gap-2">
-                <p className="text-xs font-medium text-muted-foreground">
-                  {group.label}
-                </p>
+          {/* NHÓM theo preset (style dự án lên đầu), khung đang dùng TÔ SÁNG. Nhặt
+              khung nào cũng được, look preset của nó đóng dấu theo cảnh (trộn được
+              Phấn nền vàng với Nhịp-đen nền caro trong cùng video). */}
+          <div className="grid max-h-[70vh] gap-4 overflow-y-auto pt-1 no-scrollbar">
+            {/* Toàn khung + Khung mờ — dùng chung mọi phong cách (người phủ kín,
+                nền che). "Khung mờ" = người defocus, chữ nổi trên. */}
+            <Field>
+              <FieldLabel>Chung</FieldLabel>
+              <OptionPicker
+                variant="grid"
+                options={[
+                  { id: toanKhungId, label: "Toàn khung" },
+                  { id: khungMoId, label: "Khung mờ" },
+                ]}
+                value={isBlur ? khungMoId : isToanKhung ? toanKhungId : null}
+                onSelect={onPick}
+              />
+            </Field>
+            {frameGroups.map((group) => (
+              <Field key={group.id}>
+                <FieldLabel>{group.label}</FieldLabel>
                 <OptionPicker
                   variant="grid"
-                  options={group.options}
+                  options={group.items.map((opt) => ({
+                    id: opt.id,
+                    label: opt.label,
+                  }))}
                   value={currentBlockId}
                   onSelect={onPick}
                 />
-              </div>
+              </Field>
             ))}
           </div>
         </DialogContent>

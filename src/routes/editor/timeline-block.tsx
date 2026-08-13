@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties, PointerEvent, ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -41,6 +41,7 @@ export function TimelineBlock({
   className,
   style,
   onSelect,
+  onMoveStart,
   children,
 }: {
   start: number;
@@ -69,6 +70,8 @@ export function TimelineBlock({
   className?: string;
   style?: CSSProperties;
   onSelect: () => void;
+  /** Bấm-giữ THÂN khối để KÉO DỜI (body drag). Không có = khối không dời được. */
+  onMoveStart?: (event: PointerEvent) => void;
   children: ReactNode;
 }) {
   return (
@@ -84,7 +87,10 @@ export function TimelineBlock({
       // Ngoài đường Tab: một video có hàng nghìn từ, để chúng trong đường Tab
       // thì bấm Tab cả buổi vẫn chưa ra khỏi dải. Chuột vẫn chọn được.
       tabIndex={-1}
-      onPointerDown={(event) => event.stopPropagation()}
+      onPointerDown={(event) => {
+        event.stopPropagation();
+        onMoveStart?.(event);
+      }}
       onClick={onSelect}
       title={title}
       className={cn(
@@ -99,6 +105,7 @@ export function TimelineBlock({
       style={{
         left: start * pxPerSecond,
         width: Math.max((end - start) * pxPerSecond - 2, minWidth),
+        cursor: onMoveStart ? "grab" : undefined,
         ...style,
       }}
     >

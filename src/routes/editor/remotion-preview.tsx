@@ -17,23 +17,33 @@ const PLAYER_STYLE = { width: "100%", height: "100%" } as const;
 const PlayerSurface = memo(function PlayerSurface({
   payload,
   playerRef,
+  initialFrame,
 }: {
   payload: RemotionPayload;
   playerRef: RefObject<PlayerRef | null>;
+  /** Mốc khởi động Player — giữ vạch khi payload dựng lại (đổi khung/tư liệu),
+      kẻo Player remount ở frame 0 = video nhảy về đầu. */
+  initialFrame: number;
 }) {
+  // Bọc để tắt viền focus (tím) mà nút play/tua của Player nhận từ luật `*` toàn
+  // cục — bấm play xong nút giữ focus, viền tím dính lại trông như lỗi. Play/tạm
+  // dừng vẫn chạy bằng phím Cách + bấm chuột.
   return (
-    <Player
-      ref={playerRef}
-      component={VideoComposition}
-      inputProps={payload}
-      durationInFrames={Math.max(1, Math.round(payload.seconds * payload.fps))}
-      fps={payload.fps}
-      compositionWidth={payload.width}
-      compositionHeight={payload.height}
-      style={PLAYER_STYLE}
-      controls
-      loop
-    />
+    <div className="remotion-preview-surface size-full">
+      <Player
+        ref={playerRef}
+        component={VideoComposition}
+        inputProps={payload}
+        durationInFrames={Math.max(1, Math.round(payload.seconds * payload.fps))}
+        fps={payload.fps}
+        compositionWidth={payload.width}
+        compositionHeight={payload.height}
+        initialFrame={initialFrame}
+        style={PLAYER_STYLE}
+        controls
+        loop
+      />
+    </div>
   );
 });
 
@@ -65,19 +75,38 @@ export function RemotionPreview({
     error: string | null;
   }>({ payload: null, loaded: false, error: null });
 
+  // Vạch hiện tại lúc dựng lại — để Player mount lại đúng chỗ (initialFrame).
+  const resumeFrameRef = useRef(0);
+  // Dự án đang xem — để phân biệt DỰNG LẠI (đổi khung/tư liệu/chỗ nối, cùng dự án)
+  // với ĐỔI DỰ ÁN.
+  const prevProjectRef = useRef(projectId);
+
   useEffect(() => {
     let alive = true;
-    setState({ payload: null, loaded: false, error: null });
+    resumeFrameRef.current = Math.round(
+      toOutputRef.current(timeRef.current) * (state.payload?.fps ?? 30),
+    );
+    // DỰNG LẠI cùng dự án (reloadKey đổi): GIỮ Player cũ hiển thị trong lúc lấy
+    // payload mới rồi TRÁO — hết chớp "Đang dựng khung xem…" và hết NHẢY. Chỉ để
+    // trống (loading) khi ĐỔI DỰ ÁN hoặc lần đầu chưa có gì.
+    if (prevProjectRef.current !== projectId) {
+      setState({ payload: null, loaded: false, error: null });
+      prevProjectRef.current = projectId;
+    }
     api
       .remotionPayload(projectId)
       .then((p) => alive && setState({ payload: p, loaded: true, error: null }))
       .catch(
         (e) =>
-          alive && setState({ payload: null, loaded: true, error: String(e) }),
+          alive &&
+          setState((s) => ({ ...s, loaded: true, error: String(e) })),
       );
     return () => {
       alive = false;
     };
+    // state.payload đọc để chốt fps lúc dựng lại — KHÔNG cho vào deps kẻo mỗi lần
+    // payload đổi lại chạy = vòng lặp.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, reloadKey]);
 
   // Bản đồ thời gian + mốc hiện tại đọc qua ref để listener không "chốt" bản cũ.
@@ -154,5 +183,11 @@ export function RemotionPreview({
       </div>
     );
 
-  return <PlayerSurface payload={payload} playerRef={playerRef} />;
+  return (
+    <PlayerSurface
+      payload={payload}
+      playerRef={playerRef}
+      initialFrame={resumeFrameRef.current}
+    />
+  );
 }

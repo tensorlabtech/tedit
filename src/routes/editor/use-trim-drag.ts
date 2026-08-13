@@ -148,6 +148,227 @@ export function useTrimDrag({
     neighborLimit?: number;
   } | null>(null);
 
+  /**
+   * KÉO DỜI cả khối (body drag) — khác `trim` (kéo mép). Giữ NGUYÊN độ dài, chỉ
+   * dời chỗ. Khối neo-TỪ (b-roll) snap theo từ, giữ nguyên SỐ TIẾNG; khối neo-GIÂY
+   * (nhạc/chữ tự do/hiệu ứng) dời theo giây. Chốt lúc thả ở `commitMove`.
+   */
+  const dragMove = useRef<{
+    kind: TrimKind;
+    id: string;
+    /** neo-từ (b-roll): mã từ mới hai mép + mã cũ để hoàn tác. */
+    fromWordId?: string;
+    toWordId?: string;
+    wasFromWordId?: string;
+    wasToWordId?: string;
+    /** neo-giây: mốc mới + mốc cũ (để hoàn tác). */
+    start?: number;
+    end?: number;
+    wasStart?: number;
+    wasEnd?: number;
+  } | null>(null);
+
+  const move = useCallback((kind: TrimKind, id: string, targetStart: number) => {
+    // KHUNG NGƯỜI: không sống trong `data` — lịch màn là state riêng. Dời cả khối
+    // = snap mép ĐẦU vào từ gần `targetStart`, giữ nguyên SỐ TIẾNG. Vẽ tạm qua
+    // `scenePreview` (mốc XUẤT RA) như nhánh scene của `trim`.
+    if (kind === "scene") {
+      const schedule = sceneScheduleRef.current;
+      const scene = schedule.find(
+        (item) => item.elementId === id && item.insert === undefined,
+      );
+      const words = dataRef.current?.words ?? [];
+      if (!scene || words.length === 0) return;
+      const { toOutput, toSource } = timeMapRef.current;
+      const fromIdx = nearestWordIndex(
+        words, 0, words.length - 1, toSource(scene.start), (w) => w.start,
+      );
+      const toIdx = nearestWordIndex(
+        words, 0, words.length - 1, toSource(scene.end), (w) => w.end,
+      );
+      const span = toIdx - fromIdx;
+      let newFrom = nearestWordIndex(
+        words, 0, Math.max(0, words.length - 1 - span), targetStart, (w) => w.start,
+      );
+      newFrom = Math.max(0, Math.min(newFrom, words.length - 1 - span));
+      const newTo = newFrom + span;
+      dragMove.current = {
+        kind: "scene",
+        id,
+        fromWordId: words[newFrom].id,
+        toWordId: words[newTo].id,
+        wasFromWordId: dragMove.current?.wasFromWordId ?? words[fromIdx].id,
+        wasToWordId: dragMove.current?.wasToWordId ?? words[toIdx].id,
+      };
+      setScenePreview({
+        elementId: id,
+        start: toOutput(words[newFrom].start),
+        end: toOutput(words[newTo].end),
+      });
+      return;
+    }
+    setData((current) => {
+      if (!current) return current;
+      // B-ROLL: neo theo TỪ → snap mép ĐẦU vào từ gần `targetStart`, giữ nguyên SỐ
+      // TIẾNG (mép cuối = đầu + đúng bấy nhiêu tiếng). Không đổi độ dài, chỉ dời.
+      if (kind === "insert") {
+        const insert = current.inserts.find((item) => item.id === id);
+        if (!insert) return current;
+        const words = current.words;
+        const fromIdx = words.findIndex((w) => w.id === insert.fromWordId);
+        const toIdx = words.findIndex((w) => w.id === insert.toWordId);
+        if (fromIdx === -1 || toIdx === -1) return current;
+        const span = toIdx - fromIdx; // số tiếng - 1
+        // Mép đầu tìm trong khoảng cho phép (chừa đủ `span` tiếng ở cuối).
+        let newFrom = nearestWordIndex(
+          words,
+          0,
+          Math.max(0, words.length - 1 - span),
+          targetStart,
+          (w) => w.start,
+        );
+        newFrom = Math.max(0, Math.min(newFrom, words.length - 1 - span));
+        const newTo = newFrom + span;
+        dragMove.current = {
+          kind,
+          id,
+          fromWordId: words[newFrom].id,
+          toWordId: words[newTo].id,
+          wasFromWordId: dragMove.current?.wasFromWordId ?? insert.fromWordId,
+          wasToWordId: dragMove.current?.wasToWordId ?? insert.toWordId,
+        };
+        return {
+          ...current,
+          inserts: current.inserts.map((item) =>
+            item.id === id
+              ? {
+                  ...item,
+                  start: words[newFrom].start,
+                  end: words[newTo].end,
+                  fromWordId: words[newFrom].id,
+                  toWordId: words[newTo].id,
+                }
+              : item,
+          ),
+        };
+      }
+      // NHẠC / CHỮ TỰ DO: neo theo GIÂY → dời cả khối theo delta, kẹp start ≥ 0.
+      const shiftSeconds = (
+        cur: { start: number; end: number },
+      ): { start: number; end: number } => {
+        const len = cur.end - cur.start;
+        const start = Math.max(0, targetStart);
+        return { start, end: start + len };
+      };
+      if (kind === "music") {
+        const track = current.music.find((item) => item.id === id);
+        if (!track) return current;
+        const next = shiftSeconds(track);
+        dragMove.current = {
+          kind, id, ...next,
+          wasStart: dragMove.current?.wasStart ?? track.start,
+          wasEnd: dragMove.current?.wasEnd ?? track.end,
+        };
+        return {
+          ...current,
+          music: current.music.map((item) =>
+            item.id === id ? { ...item, ...next } : item,
+          ),
+        };
+      }
+      if (kind === "text") {
+        const element = current.textElements.find((item) => item.id === id);
+        if (!element) return current;
+        const next = shiftSeconds(element);
+        dragMove.current = {
+          kind, id, ...next,
+          wasStart: dragMove.current?.wasStart ?? element.start,
+          wasEnd: dragMove.current?.wasEnd ?? element.end,
+        };
+        return {
+          ...current,
+          textElements: current.textElements.map((item) =>
+            item.id === id ? { ...item, ...next } : item,
+          ),
+        };
+      }
+      if (kind === "effect") {
+        const manual = current.manualEffects.find((item) => item.id === id);
+        const original =
+          manual ?? effectsRef.current.find((item) => item.id === id) ?? null;
+        if (!original) return current;
+        const next = shiftSeconds(original);
+        dragMove.current = {
+          kind, id, ...next,
+          wasStart: dragMove.current?.wasStart ?? original.start,
+          wasEnd: dragMove.current?.wasEnd ?? original.end,
+        };
+        return {
+          ...current,
+          manualEffects: manual
+            ? current.manualEffects.map((item) =>
+                item.id === id ? { ...item, ...next } : item,
+              )
+            : [...current.manualEffects, { id, ...next, kind: original.kind }],
+        };
+      }
+      return current;
+    });
+  }, []);
+
+  const commitMove = useCallback(async () => {
+    const pending = dragMove.current;
+    dragMove.current = null;
+    setScenePreview(null); // hết nhiệm vụ dù dời loại nào
+    if (!projectId || !pending) return;
+    if (pending.kind === "scene") {
+      if (pending.fromWordId && pending.toWordId) {
+        await api
+          .updateElement(pending.id, {
+            fromWordId: pending.fromWordId,
+            toWordId: pending.toWordId,
+          })
+          .catch(boQuaLoi());
+      }
+      onSceneTrimmed?.(); // xếp lại lịch màn (khung dời → chỗ trống về toàn-khung)
+      return;
+    }
+    if (pending.kind === "insert") {
+      if (pending.fromWordId && pending.toWordId) {
+        await api
+          .updateElement(pending.id, {
+            fromWordId: pending.fromWordId,
+            toWordId: pending.toWordId,
+          })
+          .catch(boQuaLoi());
+      }
+      onInsertTrimmed?.(); // xếp lại lịch màn (b-roll dời → khung người lấp lại)
+      return;
+    }
+    if (pending.kind === "effect") {
+      const item = effectsRef.current.find((row) => row.id === pending.id);
+      await api
+        .setEffect(projectId, pending.id, {
+          start: pending.start ?? 0,
+          end: pending.end ?? 0,
+          kind: item?.kind ?? "zoom-in",
+        })
+        .catch(boQuaLoi());
+      return;
+    }
+    if (pending.kind === "text") {
+      await api
+        .updateElement(pending.id, { start: pending.start, end: pending.end })
+        .catch(boQuaLoi());
+      return;
+    }
+    if (pending.kind === "music") {
+      await api
+        .updateMusic(pending.id, { start: pending.start, end: pending.end })
+        .catch(boQuaLoi());
+    }
+  }, [projectId, onInsertTrimmed, onSceneTrimmed]);
+
   const trim = useCallback(
     (kind: TrimKind, id: string, edge: "start" | "end", nextTime: number) => {
       // Ô NGƯỜI không sống trong `data`/`current` — lịch màn là state riêng
@@ -640,5 +861,5 @@ export function useTrimDrag({
    * hai chỗ lưu và hai cách hiện trên dải.
    */
 
-  return { dragTrim, trim, commitTrim, scenePreview };
+  return { dragTrim, trim, commitTrim, move, commitMove, scenePreview };
 }

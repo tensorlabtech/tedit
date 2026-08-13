@@ -1,3 +1,4 @@
+import type { PointerEvent } from "react";
 import { Music2Icon } from "lucide-react";
 
 import { formatTime, type MusicTrack } from "./editor-data";
@@ -17,11 +18,14 @@ export function MusicLane({
   pxPerSecond,
   selection,
   onSelect,
+  onMove,
 }: {
   tracks: MusicTrack[];
   pxPerSecond: number;
   selection: Selection;
   onSelect: (id: string) => void;
+  /** KÉO DỜI nhạc (đã buộc mốc nguồn) — `undefined` = không dời. */
+  onMove?: (id: string) => ((event: PointerEvent) => void) | undefined;
 }) {
   if (tracks.length === 0) return null;
   return (
@@ -39,6 +43,7 @@ export function MusicLane({
           title={`${track.name} · ${formatTime(track.start)} → ${formatTime(track.end)}`}
           className="gap-1.5 px-2"
           onSelect={() => onSelect(track.id)}
+          onMoveStart={onMove?.(track.id)}
         >
           <Music2Icon className="size-3 shrink-0" />
           <span className="truncate">{track.name}</span>

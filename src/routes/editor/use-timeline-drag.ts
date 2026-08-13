@@ -31,6 +31,9 @@ export interface TimelineController {
   toSource: (at: number) => number;
   trim: (kind: TrimKind, id: string, edge: "start" | "end", at: number) => void;
   commitTrim: () => void;
+  /** KÉO DỜI cả khối (body drag) tới `at` = mốc mới của mép ĐẦU. */
+  move: (kind: TrimKind, id: string, at: number) => void;
+  commitMove: () => void;
 }
 
 /**
@@ -57,6 +60,9 @@ export function useTimelineDrag({
     id: string;
     edge: "start" | "end";
   } | null>(null);
+  // Khối đang KÉO DỜI (body drag) — chỉ để đánh dấu (visual/cờ), listener tự quản
+  // trong `startMove`.
+  const [movingId, setMovingId] = useState<string | null>(null);
 
   // Con lăn: lăn thường thì chạy dải, Ctrl+lăn thì phóng to. Phải nghe thủ công vì
   // React gắn wheel ở chế độ passive nên preventDefault trong onWheel vô hiệu.
@@ -156,5 +162,53 @@ export function useTimelineDrag({
     window.addEventListener("pointerup", onUp);
   };
 
-  return { drag, dragging, trimming, setTrimming, startScrub };
+  /**
+   * KÉO DỜI cả khối (body drag). Gọi từ `pointerdown` của thân khối di-được (b-roll
+   * /nhạc/chữ tự do/hiệu ứng). Tự quản listener (như `startScrub`): quá ngưỡng mới
+   * tính là kéo (dưới ngưỡng là cú bấm chọn); giữ điểm nắm dưới con trỏ bằng
+   * `grabOffset`. Chốt ở `commitMove` lúc thả.
+   */
+  const startMove =
+    (kind: TrimKind, id: string, blockStart: number) =>
+    (event: React.PointerEvent) => {
+      if (trimming || movingId) return;
+      if (event.button !== 0) return;
+      // Đừng để cú này khởi động kéo-chạy-dải; thân khối lo việc dời.
+      event.stopPropagation();
+      const startX = event.clientX;
+      const grabOffset = timeAtClientX(startX) - blockStart;
+      let activated = false;
+      const onMove = (moveEvent: PointerEvent) => {
+        if (!activated && Math.abs(moveEvent.clientX - startX) > DRAG_THRESHOLD) {
+          activated = true;
+          drag.current.moved = true; // để cú click sau khỏi bị hiểu là bấm-chọn-mới
+          setMovingId(id);
+          setPageDragging(true);
+        }
+        if (activated)
+          ctrl.move(kind, id, timeAtClientX(moveEvent.clientX) - grabOffset);
+      };
+      const onUp = () => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        if (activated) {
+          void ctrl.commitMove();
+          setMovingId(null);
+          setPageDragging(false);
+          window.setTimeout(() => (drag.current.moved = false), 0);
+        }
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    };
+
+  return {
+    drag,
+    dragging,
+    trimming,
+    setTrimming,
+    startScrub,
+    startMove,
+    movingId,
+  };
 }

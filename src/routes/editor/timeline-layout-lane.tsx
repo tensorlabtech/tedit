@@ -1,3 +1,4 @@
+import type { PointerEvent } from "react";
 import { FilmIcon, ImageIcon, LibraryIcon } from "lucide-react";
 
 import { findLayout } from "../../../server/layout-kinds";
@@ -30,6 +31,8 @@ export function LayoutLane({
   scenePreview,
   onSelectScene,
   onSelectInsert,
+  onMoveInsert,
+  onMoveScene,
 }: {
   schedule: readonly ScheduledScene[];
   /** B-roll ĐÃ ĐẶT (mốc xuất ra) — vẽ ngay vào chỗ của nó trên dải này. */
@@ -46,6 +49,10 @@ export function LayoutLane({
   onSelectScene: (elementId: string) => void;
   /** Chọn một b-roll — mở bảng sửa b-roll cho nó. */
   onSelectInsert: (id: string) => void;
+  /** Handler KÉO DỜI b-roll (đã buộc sẵn mốc NGUỒN) — `undefined` = không dời được. */
+  onMoveInsert?: (id: string) => ((event: PointerEvent) => void) | undefined;
+  /** Handler KÉO DỜI khung NGƯỜI (elementId, buộc sẵn mốc nguồn). */
+  onMoveScene?: (elementId: string) => ((event: PointerEvent) => void) | undefined;
 }) {
   if (schedule.length === 0 && inserts.length === 0) return null;
 
@@ -57,7 +64,11 @@ export function LayoutLane({
         // trong lịch thưa nên không có khối nền mờ nào.
         .filter((scene) => scene.insert === undefined && scene.elementId)
         .map((scene) => {
-          const label = findLayout(scene.layout).label;
+          // KHUNG MỜ (toan-khung + cờ blur) tên riêng — khớp inspector, khỏi lệch
+          // "Toàn khung" ở dải mà "Khung mờ" ở bảng sửa.
+          const label = scene.frameBlock?.blur
+            ? "Khung mờ"
+            : findLayout(scene.layout).label;
           const preview =
             scenePreview?.elementId === scene.elementId ? scenePreview : null;
           const start = preview?.start ?? scene.start;
@@ -80,6 +91,7 @@ export function LayoutLane({
               title={`Bố cục: ${label} · ${formatTimeFine(start)}–${formatTimeFine(end)}`}
               className="px-1.5"
               onSelect={() => onSelectScene(scene.elementId!)}
+              onMoveStart={onMoveScene?.(scene.elementId!)}
             >
               <span className="truncate">
                 {width >= LABEL_MIN_WIDTH ? label : ""}
@@ -109,6 +121,7 @@ export function LayoutLane({
           }
           className="gap-1.5 pr-2"
           onSelect={() => onSelectInsert(insert.id)}
+          onMoveStart={onMoveInsert?.(insert.id)}
         >
           {insert.thumbUrl ? (
             <span

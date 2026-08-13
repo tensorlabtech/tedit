@@ -83,7 +83,7 @@ export function Timeline({
     [offset, pxPerSecond, time, toSource],
   );
 
-  const { drag, dragging, setTrimming, startScrub } = useTimelineDrag({
+  const { drag, dragging, setTrimming, startScrub, startMove } = useTimelineDrag({
     // `EditorState` đã đủ mười thành viên của `TimelineController`.
     ctrl: editor,
     viewportRef,
@@ -236,6 +236,27 @@ export function Timeline({
                           editor.setSelection({ kind: "scene", id: elementId })
                         }
                         onSelectInsert={(id) => select("insert", id)}
+                        // KÉO DỜI b-roll: buộc mốc NGUỒN (editor.inserts) vì
+                        // `timeAtClientX` làm việc ở giờ nguồn, còn khối vẽ ở giờ
+                        // xuất ra. `startMove` snap theo TỪ, giữ nguyên số tiếng.
+                        onMoveInsert={(id) => {
+                          const src = editor.inserts.find(
+                            (item) => item.id === id,
+                          );
+                          return src
+                            ? startMove("insert", id, src.start)
+                            : undefined;
+                        }}
+                        // KÉO DỜI khung NGƯỜI: lịch màn vẽ giờ XUẤT → mốc nguồn qua
+                        // toSource. Snap theo TỪ, giữ nguyên số tiếng.
+                        onMoveScene={(elementId) => {
+                          const sc = editor.sceneLayout?.schedule.find(
+                            (item) => item.elementId === elementId,
+                          );
+                          return sc
+                            ? startMove("scene", elementId, toSource(sc.start))
+                            : undefined;
+                        }}
                       />
                       {/* Tay nắm gọt mép b-roll đứng trên CHÍNH dải bố cục — cùng
                           hàng với khối b-roll nó đang gọt. */}
@@ -289,6 +310,14 @@ export function Timeline({
                     pxPerSecond={pxPerSecond}
                     selection={selection}
                     onSelect={(id) => select("text", id)}
+                    onMove={(id) => {
+                      const src = editor.textElements.find(
+                        (item) => item.id === id,
+                      );
+                      return src
+                        ? startMove("text", id, src.start)
+                        : undefined;
+                    }}
                   />
                   {selectedText && (
                     <TrimHandles
@@ -319,6 +348,13 @@ export function Timeline({
                       !drag.current.moved &&
                       editor.setSelection({ kind: "junction", id })
                     }
+                    onMove={(id) => {
+                      const eff = editor.effects.find((item) => item.id === id);
+                      // Chỗ nối vẽ ở giờ XUẤT RA; `startMove` cần mốc NGUỒN.
+                      return eff
+                        ? startMove("effect", id, toSource(eff.outStart))
+                        : undefined;
+                    }}
                   />
                   {selectedEffect && (
                     <TrimHandles
@@ -428,6 +464,12 @@ export function Timeline({
                     pxPerSecond={pxPerSecond}
                     selection={selection}
                     onSelect={(id) => select("music", id)}
+                    onMove={(id) => {
+                      const src = editor.music.find((item) => item.id === id);
+                      return src
+                        ? startMove("music", id, src.start)
+                        : undefined;
+                    }}
                   />
                   {selectedMusic && (
                     <TrimHandles

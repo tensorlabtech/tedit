@@ -1,3 +1,5 @@
+import type { PointerEvent } from "react";
+
 import { JUNCTIONS, type JunctionId } from "@/dev/overlays/overlay-model";
 import { formatTimeFine } from "./editor-data";
 import { TimelineBlock } from "./timeline-block";
@@ -45,11 +47,14 @@ export function EffectLane({
   pxPerSecond,
   selection,
   onSelect,
+  onMove,
 }: {
   effects: EffectItem[];
   pxPerSecond: number;
   selection: Selection;
   onSelect: (id: string) => void;
+  /** KÉO DỜI chỗ nối (đã buộc mốc nguồn) — `undefined` = không dời. */
+  onMove?: (id: string) => ((event: PointerEvent) => void) | undefined;
 }) {
   if (effects.length === 0) return null;
   return (
@@ -88,6 +93,7 @@ export function EffectLane({
             }`}
             className="gap-1 px-2"
             onSelect={() => onSelect(item.id)}
+            onMoveStart={onMove?.(item.id)}
           >
             {/* Vạch ĐỈNH — chỗ cú nhấn mạnh nhất, cũng là chỗ vết cắt nếu đây
                 là chỗ nối. Cần nói ra vì đỉnh KHÔNG ở giữa khối: "zoom vào" dồn

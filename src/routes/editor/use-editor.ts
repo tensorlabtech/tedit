@@ -1179,7 +1179,7 @@ export function useEditor(projectId: string | undefined) {
    */
   const effectsRef = useRef<EffectRow[]>([]);
 
-  const { trim, commitTrim, scenePreview } = useTrimDrag({
+  const { trim, commitTrim, move, commitMove, scenePreview } = useTrimDrag({
     projectId,
     setData,
     pushUndo,
@@ -1853,6 +1853,21 @@ export function useEditor(projectId: string | undefined) {
     [projectId],
   );
 
+  /**
+   * LẤY PHẦN clip b-roll — đặt giây in/out TRONG clip nguồn (`null` = cả clip).
+   * Chỉ đổi lịch màn (payload đọc in/out) → bơm `layoutReload` để preview dựng lại.
+   */
+  const setInsertTrim = useCallback(
+    async (elementId: string, mediaIn: number | null, mediaOut: number | null) => {
+      if (!projectId) return;
+      await api
+        .updateElement(elementId, { mediaIn, mediaOut })
+        .catch(boQuaLoi());
+      setLayoutReload((n) => n + 1);
+    },
+    [projectId],
+  );
+
   /** Xoá một segment bố cục → chỗ ấy về TOÀN-KHUNG (mặc định). */
   const deleteSegment = useCallback(async (elementId: string) => {
     await api.deleteElement(elementId).catch(boQuaLoi());
@@ -2259,8 +2274,11 @@ export function useEditor(projectId: string | undefined) {
           : cur,
       );
       await api.setEffect(projectId, id, next).catch(boQuaLoi());
+      // Khung xem (payload) đọc `junctions` từ máy chủ — bơm để nó dựng lại, kẻo
+      // đổi/thêm chỗ nối mà preview vẫn hiện cái cũ (không thấy hiệu ứng mới).
+      bumpLayoutReload();
     },
-    [projectId, current.manualEffects],
+    [projectId, current.manualEffects, bumpLayoutReload],
   );
 
   /**
@@ -2424,6 +2442,7 @@ export function useEditor(projectId: string | undefined) {
     setBehindText,
     pickBehindText,
     setSegmentMedia,
+    setInsertTrim,
     deleteSegment,
     convertBrollToPerson,
     headline,
@@ -2445,6 +2464,8 @@ export function useEditor(projectId: string | undefined) {
     startTranscribe,
     trim,
     commitTrim,
+    move,
+    commitMove,
     /** Ô người ĐANG kéo mép — mốc tạm để dải/tay-nắm vẽ theo tay, xem `use-trim-drag.ts`. */
     scenePreview,
     splitAtPlayhead,
