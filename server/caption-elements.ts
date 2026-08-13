@@ -1,3 +1,4 @@
+import { arrangementFor } from "./caption-arrangement";
 import { buildCaptionGroups } from "./caption-groups";
 import { db, newId } from "./db";
 import type { StylePack } from "./style-pack";
@@ -83,6 +84,9 @@ export async function createCaptionElements(
       );
       if (overlaps) continue;
       const id = newId("e");
+      // Bố cục theo BỘ CÔNG THỨC của bộ dáng (rải ngang + cỡ, ổn định theo câu);
+      // bộ nào không có công thức thì rơi về `defaults`.
+      const recipe = arrangementFor(pack.id, group.words[0].id);
       insert.run(
         id,
         projectId,
@@ -90,8 +94,8 @@ export async function createCaptionElements(
         group.words[group.words.length - 1].id,
         group.text,
         band,
-        pack.defaults.align,
-        pack.defaults.emphasis,
+        recipe?.align ?? pack.defaults.align,
+        recipe?.emphasis ?? pack.defaults.emphasis,
         pack.defaults.reveal,
       );
       created.push(id);

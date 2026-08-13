@@ -32,6 +32,7 @@ import { pickEffects } from "./ai-effects";
 import { pickKeywords } from "./ai-keywords";
 import { pickMusic } from "./ai-music";
 import { createCaptionElements } from "./caption-elements";
+import { placeBlurFrames } from "./blur-frames";
 import { hasModel } from "./llm";
 import { readStylePack } from "./style-pack-store";
 import { stampBlocksFromPack } from "./stamp-blocks";
@@ -751,6 +752,9 @@ export async function resumeAfterTextReview(projectId: string) {
 
 
   await runAiWaves(projectId, ["keywords", "place", "effects", "music"]);
+  // KHUNG MỜ ở cụm-chốt — đặt SAU `keywords` (cần từ khoá để chọn) + `place` (cần
+  // biết b-roll để né). Chỉ bộ có defocus (Prism). Người dùng thêm/bỏ sau tuỳ ý.
+  placeBlurFrames(projectId, pack);
   failStrandedSteps(projectId, "chặng này không chạy được ở lượt vừa rồi");
   setJob(projectId, "transcribe", "done", 100, "Xong — mời vào bàn dựng");
 }

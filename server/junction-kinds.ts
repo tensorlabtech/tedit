@@ -197,6 +197,17 @@ export const JUNCTION_SPECS: JunctionSpec[] = [
     drive: { sang: -1 },
   },
   {
+    id: "defocus",
+    group: "em",
+    label: "Nhoè mềm",
+    // Rack-focus cao cấp: HÌNH mờ nét rồi nét lại, KHÔNG zoom — kiểu Prism Pro
+    // gốc "blur video chính đưa chữ vào giữa". Envelope RỘNG (nửa giây mỗi bên)
+    // để mờ được GIỮ một nhịp chứ không loé qua; chữ nổi hẳn trong lúc hình chìm.
+    note: "Mờ nét mềm rồi nét lại — không zoom, chữ nổi trong lúc hình chìm",
+    halves: [CHAM, CHAM],
+    drive: { nhoe: 14 },
+  },
+  {
     id: "flash-hard",
     group: "manh",
     label: "Loé gắt",

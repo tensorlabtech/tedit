@@ -261,6 +261,8 @@ for (const pack of STYLE_PACKS) {
  *
  * Thêm tên vào đây là một quyết định về DÁNG, không phải một bước dọn kiểu.
  */
+// Ba bộ hiện tại đều dùng MỘT họ chữ cho cả hai vai (Prism nhấn bằng CỠ, không
+// bằng font). Thêm tên vào đây là một quyết định về DÁNG, không phải dọn kiểu.
 const TWO_FACE_PACKS: StylePackId[] = [];
 
 for (const pack of STYLE_PACKS) {

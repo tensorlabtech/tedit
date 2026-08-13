@@ -158,6 +158,8 @@ const BASE = {
     dim: { color: "#D6DBE0", alpha: 0.72 },
     key: { color: "#FFFFFF", alpha: 1 },
   },
+  // Ánh kim chữ nhấn: hai bộ hiện có đều chưa dùng — chữ nhấn tô màu đặc.
+  sheen: null,
   edge: { share: 0.022, tone: { color: "#000000", alpha: 0.7 } },
   glow: { opacity: 0.9, radiusPx: 10, cssBlurShare: 12 },
   box: null,
@@ -177,6 +179,10 @@ const BASE = {
   wrap: null,
   // Khung bao quanh hình: hai bộ hiện có đều chưa dùng — hình vẫn phủ kín như trước.
   frame: null,
+  // Thẻ b-roll sạch: hai bộ hiện có đều dùng lối "dán tay" (nghiêng + rung + viền).
+  insetCard: null,
+  // Defocus giữ ở cụm-nhấn: chỉ Prism dùng (bản gốc "blur chính, chữ vào giữa").
+  punchDefocus: null,
   // Dòng tiêu đề: hai bộ hiện có đều chưa dùng, cùng lý do với mảng màu.
   title: null,
   // Bộ gốc KHÔNG nắn màu: nó là mốc so, và mốc so phải là khung hình y như người
@@ -414,7 +420,83 @@ export const NHIP_DEN: StylePack = {
   defaults: { ...BASE.defaults, align: "left", emphasis: "even" },
 };
 
-export const STYLE_PACKS: StylePack[] = [NHIP_DEN, PHAN];
+/**
+ * PRISM PRO — bộ dựng theo lối EDITORIAL, nhấn bằng CỠ + SẮP XẾP, không đổi font.
+ *
+ * Hai bộ kia nhấn bằng MÀU (vàng / xanh) đều cỡ. Bộ này nhấn bằng BỐ CỤC CHỮ:
+ * `emphasis: "keyword-large"` — cụm từ khoá PHÓNG TO trắng tinh, phần dẫn trước
+ * lùi nhỏ lên trên, phần sau nhỏ xuống dưới. Một họ chữ sạch (Lexend) cho cả cụm
+ * — tương phản HOÀN TOÀN đến từ CỠ + cách xếp, không hiệu ứng thừa. Đúng lối
+ * `examples/caption-styles/prism-pro.mp4` ("The Price", "Is The Monthly Cost").
+ * Title Case (`letterCase: "title"`) cho dáng đầu đề sang.
+ *
+ * (Từng thử hai font sans↔serif per-word và ánh kim chrome — bỏ cả hai vì đọc
+ * "cố quá". Hạ tầng per-word (`pieceFont`) và `sheen` vẫn còn, ngủ đông.)
+ *
+ * KHÔNG nắn màu (`grade` null — quyết định của user). Ô tư liệu là THẺ SẠCH
+ * (`insetCard`): thẳng, bo góc, bóng đổ, cảnh b-roll đơn phủ người mờ sau thẻ.
+ */
+export const PRISM_PRO: StylePack = {
+  ...BASE,
+  id: "prism-pro",
+  label: "Prism Pro",
+  theme: "gon",
+  // MỘT họ chữ sạch cho cả cụm — nhấn bằng CỠ, không bằng font. `accent` trùng
+  // `voice` (bộ một-họ) nên hạ tầng per-word ngủ đông, không đổi nét.
+  fonts: { voice: FONT.lexend, accent: FONT.lexend },
+  letterCase: "title",
+  color: {
+    main: { color: "#FFFFFF", alpha: 0.96 },
+    // Context (tiếng phụ) TRẮNG-MỜ, KHÔNG xám: xám cố định chìm trên nền SÁNG.
+    // Trắng-mờ + quầng tối đọc được cả nền sáng lẫn tối.
+    dim: { color: "#FFFFFF", alpha: 0.78 },
+    // Cụm nhấn (tiếng to) TRẮNG TINH — nổi bằng cỡ, không cần màu riêng.
+    key: { color: "#FFFFFF", alpha: 1 },
+  },
+  // KHÔNG ánh kim: chữ to trắng đã đủ nổi, chrome đọc ra "cố quá".
+  sheen: null,
+  // Viền RẤT MẢNH + MỜ (0.35): chỉ gợi mép, KHÔNG phải viền đen gắt (high-contrast
+  // đọc ra rẻ tiền). Tách nền chủ yếu nhờ QUẦNG TỐI MỀM bên dưới.
+  edge: { share: 0.009, tone: { color: "#0A0F16", alpha: 0.35 } },
+  // QUẦNG TỐI MỀM mạnh: bóng nhoè tối quanh chữ → chữ trắng nổi trên MỌI nền
+  // (kể cả sáng) mà không cần viền cứng. Đây là cách tách nền cao cấp.
+  glow: { opacity: 0.82, radiusPx: 11, cssBlurShare: 11 },
+  // Nền trang TỐI sạch (KHÔNG lưới): lấp khoảng trống của bố cục ô bằng nền phòng
+  // tối cao cấp. Cảnh b-roll đơn phủ NGƯỜI MỜ đè lên (`insetCard.blurBackdrop`).
+  // Bắt buộc có `page` khi đã khai `layouts` — không thì đường ffmpeg bỏ qua cả
+  // khối bố cục. Khác Nhịp đen ở chỗ KHÔNG lưới (`grid: null`).
+  page: { tone: { color: "#0B0E13", alpha: 1 }, grid: null },
+  // Thẻ tư liệu SẠCH: thẳng, GÓC VUÔNG (`cornerShare: 0` — Prism không bo tròn),
+  // bóng đổ; cảnh b-roll đơn phủ người mờ sau thẻ.
+  insetCard: { shadowShare: 0.05, blurBackdrop: true, cornerShare: 0 },
+  // DEFOCUS GIỮ ở cụm-nhấn — dùng THƯA (mỗi ≥14s): là ĐIỂM NHẤN hiếm, không phải
+  // hiệu ứng thường. Lạm dụng blur toàn-khình thì user khó theo dõi. Chỉ mờ cụm dài
+  // ≥ 0,8s. Ramp 0,45s ease mềm hai đầu.
+  punchDefocus: { blurPx: 16, minGapSec: 14, rampSec: 0.45, minSpanSec: 0.8 },
+  // KHÔNG viền vẽ tay quanh người — đó là bản sắc Phấn, không phải Prism.
+  subjectEdge: null,
+  // Toàn khung CHỦ ĐẠO (người phủ kín — dễ theo dõi) + b-roll thẻ nổi + hai ô.
+  // BỎ `o-lech` (ô người đơn): khung-đơn nhiều quá làm video vụn, khó theo dõi —
+  // người để toàn-khung, chỉ dùng thẻ khi CÓ tư liệu (b-roll).
+  layouts: ["toan-khung", "broll-don", "hai-o"],
+  // Máy quay dồn MƯỢT, nhẹ — chất cinematic bình tĩnh, trên một phần ba số màn.
+  scenePush: { ratePerSecond: 0.03, share: 0.35 },
+  density: { ...BASE.density, maxScale: 0.13, lineHeight: 1.15, wordGap: 0.14 },
+  // Chuyển cảnh MỀM (mờ chồng) — KHÔNG dùng junction `defocus`: scheduler đặt nó
+  // dài bất định (đo được 15s!) làm blur cả đoạn = "nhập nhằng". Defocus của Prism
+  // đi qua `punchDefocus` (kiểm soát: chỉ ở cụm-nhấn, giữ đúng cụm, ramp mượt).
+  effectBias: { junction: ["cross-fade", "cross-smooth"], insertReveal: ["fade-up"] },
+  // B-roll THƯA hơn (mỗi 15s thay vì 11): khung đơn ít lại, video đỡ vụn.
+  rhythm: { junctionShare: 0.45, brollEverySec: 15, brollHoldSec: 3.5 },
+  musicBias: { energy: ["em", "vua"], density: [], vocal: ["khong-loi"] },
+  intensity: { ...BASE.intensity, keywordShare: 0.45, minSilence: 0.8 },
+  grouping: { ...BASE.grouping, maxWords: 5, maxChars: 26 },
+  // NHẤN BẰNG CỠ: cụm từ khoá phóng to (phần dẫn nhỏ lên trên, phần sau nhỏ xuống
+  // dưới) — bố cục chữ sáng tạo thay cho đổi font. `align: left` để khối bám lề.
+  defaults: { ...BASE.defaults, align: "left", emphasis: "keyword-large" },
+};
+
+export const STYLE_PACKS: StylePack[] = [NHIP_DEN, PHAN, PRISM_PRO];
 
 export const DEFAULT_STYLE_PACK_ID: StylePackId = "nhip-den";
 
@@ -469,4 +551,12 @@ export function applyFontStyle(
  * phép đo. Đổi thẳng chuỗi thì đo cái gì vẽ cái đó.
  */
 export const styleCase = (text: string, pack: StylePack) =>
-  pack.letterCase === "upper" ? text.toLocaleUpperCase("vi-VN") : text;
+  pack.letterCase === "upper"
+    ? text.toLocaleUpperCase("vi-VN")
+    : pack.letterCase === "title"
+      ? text.replace(
+          /(\p{L})(\p{L}*)/gu,
+          (_, head: string, tail: string) =>
+            head.toLocaleUpperCase("vi-VN") + tail,
+        )
+      : text;

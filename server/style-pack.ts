@@ -70,7 +70,7 @@ export type Tone = { color: string; alpha: number };
  * cột lưu kiểu `string` (không phải `StylePackId`) đúng vì lý do đó — xem
  * `projects-routes.ts`/`elements-routes.ts`.
  */
-export type StylePackId = "nhip-den" | "phan";
+export type StylePackId = "nhip-den" | "phan" | "prism-pro";
 
 /**
  * NHÓM Ý ĐỒ — người dùng chọn theo "video của tôi thuộc loại gì".
@@ -147,7 +147,7 @@ export type StylePack = {
    * Và phép ĐO cũng phải chạy trên chuỗi đã hoa: chữ hoa rộng hơn chữ thường, đo
    * bằng chuỗi thường là chữ tràn khung.
    */
-  letterCase: "as-typed" | "upper";
+  letterCase: "as-typed" | "upper" | "title";
   /**
    * Ba mức màu — thứ tạo ra lớp lang trong khối chữ.
    *
@@ -156,6 +156,18 @@ export type StylePack = {
    * nền video mắt không phân biệt được, và trục từ khoá gần như vô hình.
    */
   color: { main: Tone; dim: Tone; key: Tone };
+  /**
+   * ÁNH KIM trên chữ NHẤN — phủ gradient chrome/lăng kính thay màu phẳng. `null`
+   * là chữ nhấn tô màu đặc (`color.key`) như thường.
+   *
+   * Chỉ áp cho tiếng vẽ bằng vai `accent` (cụm có từ khoá) — đúng chỗ chất
+   * "lăng kính" cần lấp lánh, còn dòng đọc (`voice`) giữ phẳng cho dễ đọc. Là
+   * hiệu ứng TÔ (`background-clip:text`), sống ở trang xem + Remotion; đường ffmpeg
+   * dự phòng không vẽ gradient nên rơi về màu `key`.
+   *
+   * `angle` tính bằng độ (CSS `linear-gradient`); `colors` là các chặng màu.
+   */
+  sheen: { colors: string[]; angle: number } | null;
   /** Viền mảnh bám sát nét, tính theo cỡ chữ. `null` là không viền. */
   edge: { share: number; tone: Tone } | null;
   /**
@@ -553,6 +565,45 @@ export type StylePack = {
     background: Tone;
   } | null;
   /**
+   * THẺ B-ROLL SẠCH — ô tư liệu thành thẻ THẲNG bo góc + bóng đổ, KHÔNG nghiêng /
+   * rung / viền vẽ tay. `null` là lối "dán tay" (nghiêng + rung, viền theo
+   * `subjectEdge`) như Phấn / Nhịp đen giữ nguyên.
+   *
+   * Là trục cấp BỘ DÁNG (cả video một kiểu ô), đọc thẳng từ `pack` lúc vẽ nên
+   * không phụ thuộc block đã đóng dấu — đổi bộ dáng là đổi ngay, không kẹt block cũ.
+   *
+   * - `shadowShare`: bán kính bóng đổ theo bề rộng ô.
+   * - `blurBackdrop`: cảnh CHỈ có ô b-roll (không ô người) thì phủ NGƯỜI mờ làm
+   *   nền sau thẻ — chất editorial "thẻ nổi trên nền mờ".
+   * - `cornerShare`: bo góc theo bề rộng khung. `0` = góc VUÔNG (Prism Pro).
+   */
+  insetCard: {
+    shadowShare: number;
+    blurBackdrop: boolean;
+    cornerShare: number;
+  } | null;
+  /**
+   * DEFOCUS GIỮ ở cụm-nhấn — "blur video chính, chữ vào giữa" kiểu Prism Pro gốc.
+   * `null` là tắt.
+   *
+   * Khác junction `defocus` (xung ngắn ở vết cắt, do scheduler đặt, thưa): đây là
+   * trục CẢ VIDEO đọc từ pack — chọn các cụm-nhấn cách nhau ≥ `minGapSec` làm
+   * "punchline", lúc đó HÌNH mờ giữ suốt cụm (ramp mềm hai đầu) và chữ dời ra dải
+   * GIỮA để nổi hẳn. Không phải per-cảnh nên KHÔNG nằm trong `FrameBlock`.
+   *
+   * - `blurPx`: độ mờ đỉnh (px trên khổ dựng).
+   * - `minGapSec`: giãn cách tối thiểu giữa hai punchline (thưa cho có nhịp).
+   * - `rampSec`: thời gian mờ vào / nét ra ở hai đầu (ease mềm).
+   * - `minSpanSec`: cụm NGẮN hơn mức này KHÔNG làm punchline — cụm 0,1s mà mờ
+   *   thì "chưa kịp mờ đã mất", nhấp nháy. Chỉ mờ ở cụm đủ dài để giữ được.
+   */
+  punchDefocus: {
+    blurPx: number;
+    minGapSec: number;
+    rampSec: number;
+    minSpanSec: number;
+  } | null;
+  /**
    * DÒNG TIÊU ĐỀ — một dòng chữ đại diện cho cả video. `null` là bộ không có.
    *
    * Thứ 12/12 style khảo sát đều có mà Tedit chưa từng có. Nó KHÔNG phải phụ đề,
@@ -701,11 +752,19 @@ export type StylePack = {
  * DUY NHẤT xẻ bộ dáng ra block, dùng cho cả sinh mới lẫn chuyển dữ liệu cũ.
  */
 
-/** Look của khung/ô: nền, viền-ô, dồn máy quay, nét vẽ tay. */
+/** Look của khung/ô: nền, viền-ô, dồn máy quay, nét vẽ tay, kiểu thẻ b-roll. */
 export type FrameBlock = Pick<
   StylePack,
-  "page" | "subjectEdge" | "scenePush" | "doodles"
->;
+  "page" | "subjectEdge" | "scenePush" | "doodles" | "insetCard"
+> & {
+  /**
+   * "KHUNG MỜ" — cảnh người TOÀN-KHUNG nhưng defocus (mờ). Không phải trục bộ
+   * dáng mà là một LOẠI KHUNG chọn per-cảnh (đóng dấu vào `frame_block`): render
+   * đọc cờ này để mờ người, chữ bên trên vẫn là chữ thường. Thay cho cơ chế
+   * defocus-tự-động-theo-caption cũ — giờ mờ là KHUNG, chọn/bỏ như mọi khung.
+   */
+  blur?: boolean;
+};
 
 /** Look của cụm chữ: font, hoa/thường, màu, viền, quầng, hộp, tô sáng, mảng, khoanh. */
 export type CaptionBlock = Pick<
@@ -713,6 +772,7 @@ export type CaptionBlock = Pick<
   | "fonts"
   | "letterCase"
   | "color"
+  | "sheen"
   | "edge"
   | "glow"
   | "box"
@@ -742,11 +802,13 @@ export function blocksFromPack(pack: StylePack): StyleBlocks {
       subjectEdge: pack.subjectEdge,
       scenePush: pack.scenePush,
       doodles: pack.doodles,
+      insetCard: pack.insetCard,
     },
     caption: {
       fonts: pack.fonts,
       letterCase: pack.letterCase,
       color: pack.color,
+      sheen: pack.sheen,
       edge: pack.edge,
       glow: pack.glow,
       box: pack.box,
@@ -774,8 +836,24 @@ export type RevealId = "none" | "fade" | "fade-up" | "slide" | "pop";
  * trên chuỗi gốc còn nét vẽ ra là chuỗi hoa, và cụm chữ tự rộng thêm sau lưng
  * phép đo. Đổi thẳng chuỗi thì đo cái gì vẽ cái đó.
  */
+/**
+ * Viết HOA chữ cái đầu mỗi tiếng (Title Case), giữ nguyên phần còn lại.
+ *
+ * KHÔNG hạ thường phần đuôi: giữ nguyên chỗ người dùng cố ý viết hoa (viết tắt).
+ * Quét theo cụm chữ cái Unicode để không đụng dấu tiếng Việt.
+ */
+export const titleCase = (text: string) =>
+  text.replace(
+    /(\p{L})(\p{L}*)/gu,
+    (_, head: string, tail: string) => head.toLocaleUpperCase("vi-VN") + tail,
+  );
+
 export const styleCase = (text: string, pack: Pick<StylePack, "letterCase">) =>
-  pack.letterCase === "upper" ? text.toLocaleUpperCase("vi-VN") : text;
+  pack.letterCase === "upper"
+    ? text.toLocaleUpperCase("vi-VN")
+    : pack.letterCase === "title"
+      ? titleCase(text)
+      : text;
 
 /**
  * Những trục người dùng đè được ở cấp TỪNG CỤM. `null` = theo bộ dáng.
@@ -832,10 +910,17 @@ export function packForElement(
     ? applyFontStyle(withBlock, override.fontStyle)
     : withBlock;
   const font = base.fonts[fontRoleFor(keywords)];
-  if (!override?.letterCase && !override?.keyColor) return { ...base, font };
+  // Hai họ chữ đi kèm để viewer vẽ per-word (tiếng nhấn ↔ tiếng thường). `font`
+  // vẫn là vai đã chốt cho cả cụm — giữ nguyên phép đo per-cụm và đường máy chủ.
+  const voiceFont = base.fonts.voice;
+  const accentFont = base.fonts.accent;
+  if (!override?.letterCase && !override?.keyColor)
+    return { ...base, font, voiceFont, accentFont };
   return {
     ...base,
     font,
+    voiceFont,
+    accentFont,
     letterCase: override.letterCase ?? base.letterCase,
     color: override.keyColor
       ? { ...base.color, key: { color: override.keyColor, alpha: 1 } }
@@ -854,7 +939,29 @@ export function packForElement(
  * hàm: `pack` và `role` đi cạnh nhau qua mười lăm chỗ gọi là mười lăm cơ hội để
  * chúng rời nhau. Gộp lại thì không còn cơ hội nào.
  */
-export type ShownPack = Omit<StylePack, "fonts"> & { font: FontSpec };
+export type ShownPack = Omit<StylePack, "fonts"> & {
+  font: FontSpec;
+  /**
+   * Hai họ chữ của bộ, giữ lại để vẽ PER-WORD.
+   *
+   * `font` vẫn là vai ĐÃ CHỐT cho cả cụm — dùng cho phép ĐO per-cụm và đường vẽ
+   * máy chủ (giữ nguyên bất biến cũ). Viewer đọc thêm hai trường này để đổi font
+   * theo TỪNG TIẾNG: tiếng nhấn (accent) khác tiếng thường (voice) ở bộ hai-họ
+   * như Prism Pro. Bỏ trống (dựng thủ công chỗ khác) thì về `font` như cũ.
+   */
+  voiceFont?: FontSpec;
+  accentFont?: FontSpec;
+};
+
+/**
+ * Font của MỘT tiếng khi vẽ per-word: tiếng nhấn dùng vai `accent`, tiếng thường
+ * dùng `voice`. Bộ chưa mang hai họ (hoặc một-họ) thì về `font` — không đổi gì.
+ */
+export function pieceFont(pack: ShownPack, isKeyword: boolean): FontSpec {
+  return isKeyword
+    ? (pack.accentFont ?? pack.font)
+    : (pack.voiceFont ?? pack.font);
+}
 
 /**
  * VAI CHỮ của một cụm — MỘT luật, hai đường vẽ cùng import.
@@ -881,7 +988,12 @@ export function fontRoleFor(
  * bằng vai nào"*, bên này là *"tôi muốn xem vai này trông ra sao"*.
  */
 export function withFontRole(pack: StylePack, role: FontRole): ShownPack {
-  return { ...pack, font: pack.fonts[role] };
+  return {
+    ...pack,
+    font: pack.fonts[role],
+    voiceFont: pack.fonts.voice,
+    accentFont: pack.fonts.accent,
+  };
 }
 
 /**
