@@ -3,6 +3,7 @@ import {
   cssColor,
   headlineRoom,
   headlineTopShare,
+  pieceFont,
   trimHeadline,
   styleCase,
   withFontRole,
@@ -65,7 +66,16 @@ const SHAPE_RATIO: Record<Insert["shape"], string> = {
  */
 
 /** Một tiếng đã có đủ số đo — lúc vẽ không còn gì phải quyết định. */
-type Placed = { text: string; size: number; bold: boolean; color: string };
+type Placed = {
+  text: string;
+  size: number;
+  bold: boolean;
+  color: string;
+  /** Tiếng nhấn phủ ÁNH KIM (gradient chrome) thay màu đặc — bộ dáng có `sheen`. */
+  sheen?: boolean;
+  /** Tiếng nhấn (từ khoá) — vẽ bằng vai `accent` (font per-word ở bộ hai-họ). */
+  keyword?: boolean;
+};
 type Row = Placed[];
 
 /** Vùng chữ: neo theo dải, và chừa lề phải rộng hơn ở hai dải dưới vì cột nút. */
@@ -122,11 +132,14 @@ export function buildRows(config: OverlayConfig, pack: ShownPack = BASE_SHOWN): 
     size,
     bold: isKey(word),
     color: isKey(word) ? COLOR.key : COLOR.main,
+    sheen: isKey(word) && !!pack.sheen,
+    keyword: isKey(word),
   });
 
   if (config.emphasis === "even") {
-    // Bẻ dòng theo bề rộng rồi dùng CHUNG một cỡ — dáng phụ đề khổ lớn.
-    const { lines, size } = fitGroup(words.join(" "), avail, pack);
+    // Bẻ dòng theo bề rộng rồi dùng CHUNG một cỡ — dáng phụ đề khổ lớn. Truyền
+    // `isKey` để ĐO mỗi tiếng bằng đúng font vai (per-word) → không tràn khung.
+    const { lines, size } = fitGroup(words.join(" "), avail, pack, isKey);
     return lines.map((line) =>
       line.split(/\s+/).map((word) => plain(word, size)),
     );
@@ -161,6 +174,8 @@ export function buildRows(config: OverlayConfig, pack: ShownPack = BASE_SHOWN): 
         size: heroSize,
         bold: isKey(word),
         color: isKey(word) ? COLOR.key : COLOR.main,
+        sheen: isKey(word) && !!pack.sheen,
+        keyword: isKey(word),
       })),
       ...(after.length > 0 ? [secondary(after)] : []),
     ];
@@ -207,6 +222,8 @@ export function buildRows(config: OverlayConfig, pack: ShownPack = BASE_SHOWN): 
           size: big ? size : size * SMALL,
           bold: big,
           color: isKey(word) ? COLOR.key : COLOR.main,
+          sheen: isKey(word) && !!pack.sheen,
+          keyword: isKey(word),
         };
       });
     });
@@ -266,6 +283,10 @@ function Syllable({
   // hàng thẳng. Chỉ Phấn (`behindText` là dấu nhận bộ, cùng cách server gate).
   // Đơn vị `cqw` = phần trăm bề rộng khung, khớp offset điểm ảnh (theo cỡ khung)
   // của máy chủ. Cộng VÀO transform của hiệu ứng hiện chữ, không đè lên nó.
+  // Font PER-WORD: tiếng nhấn dùng vai `accent`, tiếng thường dùng `voice` (bộ
+  // hai-họ như Prism → nền sans + tiếng nhấn serif). Bộ một-họ thì hai vai trùng
+  // → về đúng `pack.font` như cũ. Phép ĐO ở `wrapAt` cũng theo font này nên khớp.
+  const font = pieceFont(pack, !!word.keyword);
   const reveal = revealStyle(pack, seconds, order, word.size, index, startAt);
   const diagCqw = pack.behindText
     ? word.size * (0.14 * index + 0.05 * Math.sin(index * 2.1 + order)) * 100
@@ -300,17 +321,17 @@ function Syllable({
         marginRight: `${pack.density.wordGap}em`,
         fontSize: `${word.size * 100}cqw`,
         // Đúng họ chữ của bản in ra — không đặt thì nó ăn theo font giao diện.
-        fontFamily: pack.font.cssStack,
+        fontFamily: font.cssStack,
         // MỘT độ đậm cho mọi tiếng: máy chủ chỉ có một tệp font để vẽ, nên nó
         // không có cách nào làm tiếng này đậm hơn tiếng kia. Trước đây trang xem
         // đổi 600/800 theo từ khoá — một khác biệt chỉ tồn tại ở trang xem, và
         // với Arial thì trình duyệt gộp cả hai về Bold nên không ai thấy. Với
         // font thật có đủ hai độ đậm thì nó lộ ra thành "xem một đằng xuất một
         // nẻo". Từ khoá phân biệt bằng MÀU, không bằng độ đậm.
-        fontWeight: pack.font.cssWeight,
+        fontWeight: font.cssWeight,
         // Nghiêng nằm trong chính TỆP font của bộ dáng, không phải một lựa chọn
         // riêng của trang xem.
-        fontStyle: pack.font.italic ? "italic" : "normal",
+        fontStyle: font.italic ? "italic" : "normal",
         lineHeight: pack.density.lineHeight,
         // Nền khối sau chữ, vẽ theo TỪNG TIẾNG — khớp `box=1` của `drawtext`,
         // vốn cũng vẽ nền cho từng lệnh vẽ chứ không cho cả khối.
@@ -365,6 +386,19 @@ function Syllable({
               WebkitTextStrokeWidth: `${word.size * 2 * pack.edge.share * 100}cqw`,
               WebkitTextStrokeColor: cssColor(pack.edge.tone),
               paintOrder: "stroke fill",
+            }
+          : null),
+        // ÁNH KIM — tô tiếng nhấn bằng gradient chrome qua `background-clip:text`:
+        // màu chữ hoá TRONG SUỐT để lộ gradient bên dưới. Đè lên `color` phẳng ở
+        // trên nên phải đứng SAU. Viền/quầng vẫn giữ (viền vẽ trước, quầng là bóng
+        // của hình chữ). Chỉ tiếng từ khoá của bộ có `sheen` (vd Prism Pro).
+        ...(word.sheen && pack.sheen
+          ? {
+              backgroundImage: `linear-gradient(${pack.sheen.angle}deg, ${pack.sheen.colors.join(", ")})`,
+              WebkitBackgroundClip: "text",
+              backgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+              color: "transparent",
             }
           : null),
         ...revealWithDiag,

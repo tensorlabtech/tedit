@@ -23,7 +23,7 @@
  * `/_dev/overlays` sinh ra để bắt.
  */
 import { NHIP_DEN } from "../../../server/style-pack-catalog";
-import { boxPadShare, withFontRole } from "../../../server/style-pack";
+import { boxPadShare, pieceFont, withFontRole } from "../../../server/style-pack";
 import type { ShownPack } from "../../../server/style-pack";
 
 /**
@@ -189,13 +189,26 @@ function wrapAt(
   size: number,
   avail: number,
   pack: ShownPack,
+  /**
+   * Tiếng nào là từ nhấn — để ĐO mỗi tiếng bằng CHÍNH font sẽ vẽ (vai accent cho
+   * tiếng nhấn, voice cho tiếng thường ở bộ hai-họ như Prism). Bỏ trống thì đo cả
+   * cụm bằng `pack.font` như cũ (bộ một-họ không đổi gì).
+   */
+  keyOf?: (word: string) => boolean,
 ) {
   // Nền khối nới MỖI tiếng ra hai bên — cộng vào đây, cùng con số với
   // `wrapAtSize` của máy chủ. Thiếu nó thì bộ có nền khối chọn cỡ to hơn chỗ nó
   // có và hàng tràn ra ngoài mép.
   const pad = boxPadShare(pack) * 2 * size;
+  // Hai bản pack đã chốt font vai — dựng một lần, tra theo tiếng (baseWidth nhớ
+  // theo font+chữ nên đo lặp không tốn).
+  const voicePack: ShownPack = keyOf ? { ...pack, font: pieceFont(pack, false) } : pack;
+  const accentPack: ShownPack = keyOf ? { ...pack, font: pieceFont(pack, true) } : pack;
+  const packOf = keyOf
+    ? (word: string) => (keyOf(word) ? accentPack : voicePack)
+    : () => pack;
   const width = (list: string[]) =>
-    list.reduce((sum, item) => sum + widthOf(item, size, pack) + pad, 0) +
+    list.reduce((sum, item) => sum + widthOf(item, size, packOf(item)) + pad, 0) +
     Math.max(0, list.length - 1) * size * pack.density.wordGap;
   const lines: string[] = [];
   let current: string[] = [];
@@ -234,6 +247,8 @@ export function fitGroup(
   text: string,
   avail: number,
   pack: ShownPack = BASE_SHOWN,
+  /** Tiếng nào là từ nhấn — luồn xuống `wrapAt` để đo per-word. */
+  keyOf?: (word: string) => boolean,
 ): Fitted {
   const maxScale = pack.density.maxScale;
   const words = text.trim().split(/\s+/).filter(Boolean);
@@ -248,11 +263,11 @@ export function fitGroup(
   // con số lệch 1% so với máy chủ mà không đổi lấy gì.
   const room = avail * 0.98;
   for (let size = maxScale; size >= MIN_SCALE; size -= 0.005) {
-    const lines = wrapAt(words, size, room, pack);
+    const lines = wrapAt(words, size, room, pack, keyOf);
     if (lines.length <= MAX_LINES) return { lines, size, needsSplit: false };
   }
   return {
-    lines: wrapAt(words, MIN_SCALE, room, pack).slice(0, MAX_LINES),
+    lines: wrapAt(words, MIN_SCALE, room, pack, keyOf).slice(0, MAX_LINES),
     size: MIN_SCALE,
     needsSplit: true,
   };
