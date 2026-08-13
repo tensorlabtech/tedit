@@ -33,6 +33,18 @@ Dự án này thiết kế với giao diện đồng bộ vả nhất quán, ch�
 - Cách làm: `-mx-(--card-spacing) border-t border-border` rồi trả lại `px-(--card-spacing)` cho chữ (âm lề đúng bằng đệm thẻ). Xem mẫu `src/dev/skin/grouping-panel.tsx` và trang `/_dev/skin`.
 - Khi lồng Card trong Card (vd cột phải có tab): thẻ NGOÀI để `CardContent` `px-0`, thẻ TRONG tự lo đệm ngang — nhờ vậy kẻ của thẻ trong chạm mép thẻ ngoài. Đừng lột px của thẻ trong.
 
+## Kho mẫu bộ dáng (style reference)
+
+- Video gốc của Captions cho từng bộ dáng nằm ở `examples/caption-styles/*.mp4` (vd `prism-pro.mp4`, `chalk.mp4` = Phấn, `pulse.mp4` = Nhịp đen). Khi dựng/chỉnh một theme, trích khung từ file tương ứng để bám đúng bản gốc thay vì đoán.
+
+## Kiến trúc BLOCK-POOL khi RENDER (NGUYÊN TẮC BẮT BUỘC — tôi hay quên)
+
+- **Phong cách (preset / style pack) CHỈ dùng ở bước SEED lúc TẠO** (AI sinh cụm chữ, chọn khung, đặt hiệu ứng). SAU BƯỚC TẠO thì mọi thứ BÌNH ĐẲNG.
+- **Render (composition Remotion + ffmpeg) ĐỌC LOOK TỪ BLOCK đóng dấu trên từng element**: `frame_block` cho khung (nền/`page`/viền/thẻ), `caption_block` cho cụm chữ (font/màu/...). **KHÔNG đọc lại `pack` / preset của dự án tại render.**
+- Hệ quả: **một khung dùng ở video NÀO cũng render Y HỆT.** Khung Nhịp-đen luôn có nền caro (`page.grid=luoi-ba`); khung Prism luôn nền tối + người-mờ; trộn preset trong một video vẫn đúng từng khung.
+- **CẤM render-time đọc `payload.pack.<look>`** cho phần NHÌN. Cần một giá trị cấp-VIDEO (vd defocus toàn-khung — vì cảnh toàn-khung là `scene==null`, không có block) thì **RESOLVE lúc dựng payload thành field riêng của payload** (`payload.punchDefocus`…), KHÔNG đọc `pack` trong component render.
+- `page` (trong frame_block) CHỈ gồm: `tone` (màu nền + độ đục) và `grid` (lưới phủ như `luoi-ba`, hoặc `null`). Nó là nền LỘ RA khi bố cục chừa chỗ trống; `toan-khung` phủ kín thì không thấy nền.
+
 ## Quy tắc code
 
 - Dùng full Tiếng Anh nhé (tên hàm, biến, đường dẫn, ... tất cả mọi thứ), chỉ có cái text hiện lên UI là tiếng Việt thôi
