@@ -35,6 +35,10 @@ export type SceneInsert = {
   /** Tỉ lệ (rộng/cao) của tệp — ô phu đo theo số này, không theo video chính. */
   aspect: number;
   isVideo: boolean;
+  /** LẤY PHẦN clip: giây in/out trong clip + độ dài clip — cho bảng sửa lấy đoạn. */
+  in: number | null;
+  out: number | null;
+  duration: number | null;
 };
 
 /** Một bố cục chọn được ở picker — mã + nhãn tiếng Việt. */
@@ -138,6 +142,9 @@ export async function buildSceneSchedule(
         id: item.mediaId,
         aspect: info?.width && info?.height ? info.width / info.height : 1,
         isVideo: VIDEO.test(item.name),
+        in: item.in,
+        out: item.out,
+        duration: item.duration ?? info?.duration ?? null,
       };
     }),
   );

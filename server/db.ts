@@ -518,6 +518,10 @@ for (const [table, column, type] of [
   // dựng; look thật nằm trong `*_block`. `NULL` = chưa stamp (rơi về preset dự án).
   ["elements", "frame_preset", "TEXT"],
   ["elements", "caption_preset", "TEXT"],
+  // LẤY PHẦN clip nguồn cho b-roll: giây bắt đầu / kết thúc TRONG clip gốc. NULL =
+  // dùng cả clip (phát từ 0, lặp) như cũ. Cho phép "clip 10s, lấy giây 2→8".
+  ["elements", "media_in_sec", "REAL"],
+  ["elements", "media_out_sec", "REAL"],
   ["library_tracks", "energy", "TEXT"],
   ["library_tracks", "density", "TEXT"],
   ["library_tracks", "vocal", "TEXT"],

@@ -153,6 +153,9 @@ app.patch("/api/elements/:elementId", async (request, reply) => {
     captionPreset?: string | null;
     /** Đổi tệp media của b-roll (element kind='insert'). */
     mediaFileId?: string;
+    /** LẤY PHẦN clip b-roll: giây in/out TRONG clip nguồn. `null` = cả clip. */
+    mediaIn?: number | null;
+    mediaOut?: number | null;
     keywords?: string[];
     /** `null` = bỏ đè, quay về theo bộ dáng của dự án */
     letterCase?: string | null;
@@ -263,6 +266,23 @@ app.patch("/api/elements/:elementId", async (request, reply) => {
     if (!owns) return reply.code(400).send({ error: "Tệp không thuộc dự án" });
     db.prepare("UPDATE elements SET media_file_id=? WHERE id=?").run(
       body.mediaFileId,
+      elementId,
+    );
+  }
+  // LẤY PHẦN clip b-roll: giây in/out trong clip nguồn (`null` = cả clip). Nhận
+  // riêng vì cần cả giá trị `null` (bỏ cắt → phát cả clip lại).
+  if (body.mediaIn !== undefined || body.mediaOut !== undefined) {
+    const marks = db
+      .prepare("SELECT media_in_sec, media_out_sec FROM elements WHERE id=?")
+      .get(elementId) as {
+      media_in_sec: number | null;
+      media_out_sec: number | null;
+    };
+    db.prepare(
+      "UPDATE elements SET media_in_sec=?, media_out_sec=? WHERE id=?",
+    ).run(
+      body.mediaIn !== undefined ? body.mediaIn : marks.media_in_sec,
+      body.mediaOut !== undefined ? body.mediaOut : marks.media_out_sec,
       elementId,
     );
   }

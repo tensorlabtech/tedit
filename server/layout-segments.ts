@@ -17,7 +17,16 @@ import type { FrameBlock } from "./style-pack";
  */
 
 /** Tư liệu b-roll theo thứ tự segment — chỉ số `PlacedSegment.insert` tra vào đây. */
-export type PlacedMedia = { mediaId: string; path: string; name: string };
+export type PlacedMedia = {
+  mediaId: string;
+  path: string;
+  name: string;
+  /** LẤY PHẦN clip nguồn: giây bắt đầu/kết thúc TRONG clip. `null` = cả clip. */
+  in: number | null;
+  out: number | null;
+  /** Độ dài clip nguồn (giây) — để kẹp in/out + vẽ thanh nguồn ở bảng sửa. */
+  duration: number | null;
+};
 
 type Row = {
   id: string;
@@ -25,8 +34,15 @@ type Row = {
   mediaId: string | null;
   path: string | null;
   name: string | null;
-  srcStart: number;
-  srcEnd: number;
+  inSec: number | null;
+  outSec: number | null;
+  duration: number | null;
+  /** Mốc NGUỒN đóng dấu trên element (neo-giây) — ưu tiên hơn mốc TỪ nếu có. */
+  elStart: number | null;
+  elEnd: number | null;
+  /** Mốc từ mép (neo-từ, khối cũ) — chỉ dùng khi chưa có `elStart/elEnd`. */
+  wStart: number | null;
+  wEnd: number | null;
   /** Look Ô đã đóng dấu trên element (JSON `FrameBlock`) — nền/viền của CHÍNH cảnh này. */
   frameBlockJson: string | null;
 };
@@ -61,15 +77,20 @@ export function buildPlacedSegments(
 
   const rows = db
     .prepare(
+      // NEO-GIÂY vs NEO-TỪ: b-roll/khung đóng dấu `start_sec/end_sec` (giờ nguồn)
+      // thì dùng nó; chưa có (khối cũ) thì lùi về mốc TỪ. LEFT JOIN vì khối neo-giây
+      // có thể KHÔNG có from/to word.
       `SELECT e.id AS id, e.insert_layout AS layout, e.media_file_id AS mediaId,
               m.stored_path AS path, m.name AS name, e.frame_block AS frameBlockJson,
-              w1.start_sec AS srcStart, w2.end_sec AS srcEnd
+              e.media_in_sec AS inSec, e.media_out_sec AS outSec, m.duration AS duration,
+              e.start_sec AS elStart, e.end_sec AS elEnd,
+              w1.start_sec AS wStart, w2.end_sec AS wEnd
          FROM elements e
-         JOIN words w1 ON w1.id = e.from_word_id
-         JOIN words w2 ON w2.id = e.to_word_id
+         LEFT JOIN words w1 ON w1.id = e.from_word_id
+         LEFT JOIN words w2 ON w2.id = e.to_word_id
          LEFT JOIN media_files m ON m.id = e.media_file_id
         WHERE e.project_id=? AND e.kind IN ('insert','layout')
-        ORDER BY w1.start_sec`,
+        ORDER BY COALESCE(e.start_sec, w1.start_sec)`,
     )
     .all(projectId) as Row[];
 
@@ -77,8 +98,12 @@ export function buildPlacedSegments(
   const media: PlacedMedia[] = [];
 
   for (const row of rows) {
-    const start = mapToOutput(kept, row.srcStart);
-    const end = mapToOutput(kept, row.srcEnd);
+    // NEO-GIÂY ưu tiên; lùi về NEO-TỪ cho khối cũ. Không có mốc nào → bỏ.
+    const srcStart = row.elStart ?? row.wStart;
+    const srcEnd = row.elEnd ?? row.wEnd;
+    if (srcStart === null || srcEnd === null) continue;
+    const start = mapToOutput(kept, srcStart);
+    const end = mapToOutput(kept, srcEnd);
     if (start === null || end === null || end <= start) continue;
 
     // Look Ô của CHÍNH element này — cảnh mang nền/viền riêng, không đọc bộ dáng.
@@ -108,6 +133,9 @@ export function buildPlacedSegments(
           mediaId: row.mediaId,
           path: row.path,
           name: row.name ?? "",
+          in: row.inSec,
+          out: row.outSec,
+          duration: row.duration,
         });
         segments.push({ start, end, layout, insert: index, elementId: row.id, frameBlock });
       } else {

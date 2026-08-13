@@ -67,6 +67,9 @@ export type RemotionPayload = {
   width: number;
   height: number;
   seconds: number;
+  /** Bản KHUNG XEM (editor), không phải bản xuất — bật gợi ý chỉ-dành-cho-editor
+      (vd ô b-roll trống vẽ placeholder để người dùng hiểu chỗ đặt tư liệu). */
+  preview: boolean;
   sourceAspect: number | null;
   /** URL (tương đối `public/`) video người đã dựng. */
   personUrl: string;
@@ -74,10 +77,26 @@ export type RemotionPayload = {
   maskUrl: string | null;
   /** Nền trang gốc của bộ dáng (mỗi cảnh có thể đè bằng `frameBlock.page`). */
   basePage: FrameBlock["page"];
-  /** Bộ dáng dự án — để composition gọi `packForElement` cho từng cụm chữ. */
+  /** Bộ dáng dự án — CHỈ để `packForElement` gộp `caption_block` (look chữ cấp
+   * CỤM) lên trên; KHÔNG được đọc trục LOOK khác của nó ở render (xem CLAUDE.md). */
   pack: StylePack;
+  /**
+   * DEFOCUS toàn-khung — RESOLVE ở đây (lúc dựng payload) từ bộ dáng, KHÔNG để
+   * component render đọc `payload.pack.punchDefocus`. Cảnh toàn-khung là `scene ==
+   * null` (không có frame_block), nên defocus là giá trị cấp VIDEO, không phải trục
+   * của một khung — vì thế nó nằm ở payload chứ không trong block.
+   */
+  punchDefocus: StylePack["punchDefocus"];
   scenes: RemotionScene[];
-  inserts: Array<{ url: string; aspect: number; isVideo: boolean }>;
+  inserts: Array<{
+    url: string;
+    aspect: number;
+    isVideo: boolean;
+    /** LẤY PHẦN clip: giây bắt đầu/kết thúc trong clip + độ dài clip. `null` = cả clip. */
+    in: number | null;
+    out: number | null;
+    duration: number | null;
+  }>;
   captions: RemotionCaption[];
   /** Chỗ nối (zoom/nháy/nghiêng) — xung tam giác quanh mỗi vết cắt, dải ĐÃ CẮT. */
   junctions: Array<{ start: number; end: number; peak: number; kind: string }>;
@@ -219,7 +238,15 @@ export async function buildRemotionPayload(
       const info = await probe(item.path).catch(() => null);
       const aspect =
         info?.width && info?.height ? info.width / info.height : 1;
-      return { url: rel(name), aspect, isVideo: isVid };
+      // LẤY PHẦN clip: in/out (giây trong clip) + độ dài clip. `null` = cả clip.
+      return {
+        url: rel(name),
+        aspect,
+        isVideo: isVid,
+        in: item.in ?? null,
+        out: item.out ?? null,
+        duration: item.duration ?? null,
+      };
     }),
   );
 
@@ -277,12 +304,14 @@ export async function buildRemotionPayload(
     width,
     height,
     seconds: keptTotal,
+    preview: !!opts?.scrubProxy,
     sourceAspect:
       baseInfo.width && baseInfo.height ? baseInfo.width / baseInfo.height : null,
     personUrl,
     maskUrl,
     basePage: blocksFromPack(pack).frame.page,
     pack,
+    punchDefocus: pack.punchDefocus,
     scenes: schedule.map((s) => ({
       start: s.start,
       end: s.end,

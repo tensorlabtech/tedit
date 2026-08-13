@@ -26,15 +26,19 @@ export type FrameBlockChoice = {
 };
 
 /**
- * Liệt kê pool = hợp các khung MỌI preset khai. Trừ `toan-khung`/`trang-chu` (ca
- * đặc biệt, không phải khung-chọn-cho-một-cảnh) qua `PICKABLE_LAYOUTS`.
+ * Liệt kê pool = hợp các khung MỌI preset khai. Trừ `trang-chu` (khung KHÔNG
+ * video, chỉ chữ). GIỮ `toan-khung`: dù `PICKABLE_LAYOUTS` (dùng cho scheduler)
+ * loại nó, người dùng VẪN cần chọn "toàn khung người" cho một cảnh (đưa b-roll về
+ * người), và picker cần nó để TÔ SÁNG đúng khung đang dùng khi cảnh là toàn-khung.
  */
 export function frameBlockPool(): FrameBlockChoice[] {
   const out: FrameBlockChoice[] = [];
   for (const pack of STYLE_PACKS) {
     const frameLook = blocksFromPack(pack).frame;
     for (const layout of pack.layouts) {
-      if (!PICKABLE_LAYOUTS.includes(layout)) continue;
+      // Cho toan-khung qua (picker cần), nhưng vẫn theo `PICKABLE_LAYOUTS` cho các
+      // khung còn lại — nên trang-chu và mọi ca đặc biệt khác vẫn bị loại.
+      if (layout !== "toan-khung" && !PICKABLE_LAYOUTS.includes(layout)) continue;
       out.push({
         id: `${pack.id}:${layout}`,
         presetId: pack.id,
@@ -44,5 +48,15 @@ export function frameBlockPool(): FrameBlockChoice[] {
       });
     }
   }
+  // KHUNG MỜ — dùng CHUNG (như Toàn khung): người phủ kín + defocus, nền che nên
+  // không phụ thuộc preset. `insetCard: null` (không thẻ), `blur: true`. Chọn nó =
+  // đóng dấu cảnh thành "người mờ, chữ nổi".
+  out.push({
+    id: "chung:khung-mo",
+    presetId: "chung",
+    presetLabel: "Chung",
+    layout: "toan-khung",
+    frameLook: { ...blocksFromPack(STYLE_PACKS[0]).frame, insetCard: null, blur: true },
+  });
   return out;
 }
