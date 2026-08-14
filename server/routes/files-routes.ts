@@ -3,9 +3,19 @@ import { createWriteStream } from "node:fs";
 import { unlink } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { pipeline } from "node:stream/promises";
+import { existsSync } from "node:fs";
 import { db, newId } from "../db";
 import { intakeMediaFile, isAcceptedMedia } from "../media-intake";
+import { makeFilmstrip, probe } from "../media-tools";
 import { ensureProjectDirs, workDir } from "../paths";
+
+/** Đường dẫn dải ảnh cache cạnh clip nguồn: `<clip>.strip.jpg`. */
+const stripPath = (storedPath: string) =>
+  storedPath.replace(/\.[^.]+$/, "") + ".strip.jpg";
+
+/** Cắt path về gốc tĩnh (sau `/data/`) để `sendFile` phục vụ được. */
+const staticRel = (absPath: string) =>
+  absPath.slice(absPath.indexOf("/data/") + 6);
 
 export default async function filesRoutes(app: FastifyInstance) {
 app.post("/api/projects/:id/files", async (request, reply) => {
@@ -103,9 +113,64 @@ app.get("/api/files/:fileId/raw", async (request, reply) => {
     .prepare("SELECT stored_path, name FROM media_files WHERE id=?")
     .get(fileId) as { stored_path: string; name: string } | undefined;
   if (!file) return reply.code(404).send({ error: "Không có tệp này" });
-  return reply.sendFile(
-    file.stored_path.slice(file.stored_path.indexOf("/data/") + 6),
+  return reply.sendFile(staticRel(file.stored_path));
+});
+
+/**
+ * Dải ảnh (filmstrip) của một clip b-roll — để bàn dựng bày thumbnail lúc cắt
+ * đoạn in/out. Sinh MỘT LẦN bằng ffmpeg rồi cache (`<clip>.strip.jpg` + ba số
+ * đo trong `media_files`). Lần sau còn tệp + còn số đo thì trả luôn, không dựng
+ * lại. Trả về đo sprite giống endpoint filmstrip video chính.
+ */
+app.post("/api/files/:fileId/filmstrip", async (request, reply) => {
+  const { fileId } = request.params as { fileId: string };
+  const file = db
+    .prepare(
+      "SELECT stored_path, duration, strip_second_width AS w, strip_seconds AS s, strip_native_second_width AS nw FROM media_files WHERE id=?",
+    )
+    .get(fileId) as
+    | {
+        stored_path: string;
+        duration: number | null;
+        w: number | null;
+        s: number | null;
+        nw: number | null;
+      }
+    | undefined;
+  if (!file) return reply.code(404).send({ error: "Không có tệp này" });
+
+  const target = stripPath(file.stored_path);
+  if (file.w != null && file.s != null && file.nw != null && existsSync(target)) {
+    return { secondWidth: file.w, seconds: file.s, nativeSecondWidth: file.nw };
+  }
+
+  const info = await probe(file.stored_path);
+  // Dải ảnh của clip cho KHỐI b-roll trên dải thời gian: cùng thang (laneHeight 56,
+  // 4 fps) với dải video chính để vẽ bằng chung công thức `nativeSecondWidth`.
+  const strip = await makeFilmstrip(
+    file.stored_path,
+    target,
+    file.duration ?? info.duration,
   );
+  db.prepare(
+    "UPDATE media_files SET strip_second_width=?, strip_seconds=?, strip_native_second_width=? WHERE id=?",
+  ).run(strip.secondWidth, strip.totalSeconds, strip.nativeSecondWidth, fileId);
+  return {
+    secondWidth: strip.secondWidth,
+    seconds: strip.totalSeconds,
+    nativeSecondWidth: strip.nativeSecondWidth,
+  };
+});
+
+app.get("/api/files/:fileId/filmstrip.jpg", async (request, reply) => {
+  const { fileId } = request.params as { fileId: string };
+  const file = db
+    .prepare("SELECT stored_path FROM media_files WHERE id=?")
+    .get(fileId) as { stored_path: string } | undefined;
+  if (!file) return reply.code(404).send({ error: "Không có tệp này" });
+  const target = stripPath(file.stored_path);
+  if (!existsSync(target)) return reply.code(404).send({ error: "Chưa có dải ảnh" });
+  return reply.sendFile(staticRel(target));
 });
 
 app.patch("/api/files/:fileId", async (request, reply) => {

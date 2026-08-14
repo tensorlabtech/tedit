@@ -86,6 +86,14 @@ export type Insert = {
   fromWordId: string;
   toWordId: string;
   mediaFileId?: string;
+  /**
+   * CỬA SỔ nguồn của clip (giây trong tệp) — "lấy đoạn nào". Kéo mép khối trên
+   * dải đổi hai số này; `null` = chưa cắt (dùng cả clip từ đầu).
+   */
+  mediaIn: number | null;
+  mediaOut: number | null;
+  /** Độ dài clip nguồn (giây) — TRẦN của `mediaOut`; `null` nếu chưa biết. */
+  clipDuration: number | null;
   /** Tệp lấy từ kho dùng chung — hiện nhãn để phân biệt với tệp tự tải lên */
   fromLibrary?: boolean;
 };
@@ -468,9 +476,15 @@ export type UndoEntry =
       type: "insert-trim";
       label: string;
       elementId: string;
-      edge: "start" | "end";
-      /** Mã TỪ mà mép đang neo TRƯỚC khi kéo */
-      wordId: string;
+      /**
+       * Bộ mốc TRƯỚC khi kéo. Kéo mép b-roll đổi ĐỒNG THỜI vị trí (start/end) LẪN
+       * cửa sổ nguồn (mediaIn/mediaOut) — bất biến out−in == end−start — nên hoàn
+       * tác phải trả LẠI CẢ BỐN, không đủ một mép.
+       */
+      start: number;
+      end: number;
+      mediaIn: number | null;
+      mediaOut: number | null;
     }
   // Ô NGƯỜI cũng neo theo từ như b-roll — cùng dữ liệu hoàn tác, chỉ khác chỗ
   // không cần nạp lại `data` (lịch màn là state riêng, xem `use-scene-layout`).

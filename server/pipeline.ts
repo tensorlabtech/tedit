@@ -1228,6 +1228,14 @@ export async function runExport(projectId: string) {
   // để quay lại `burnElements` (ffmpeg) làm ĐƯỜNG LÙI nếu Remotion hỏng ca nào đó.
   const engine =
     process.env.TEDDIT_ENGINE === "ffmpeg" ? "ffmpeg" : "remotion";
+  // CHỐT số sửa NGAY TRƯỚC render (sau mọi bước đóng dấu/chuẩn bị): đây là "phiên
+  // bản nội dung" mà bản dựng ghi lại. Set vào `exported_rev` khi xong → sửa gì
+  // SAU thời điểm này (content_rev tăng tiếp) tự thành "cũ".
+  const renderedRev = (
+    db.prepare("SELECT content_rev AS r FROM projects WHERE id=?").get(projectId) as
+      | { r: number }
+      | undefined
+  )?.r ?? 0;
   if (engine === "remotion")
     setJob(projectId, "export", "running", 40, "Đang dựng hình (Remotion)");
   const finalPath =
@@ -1293,6 +1301,8 @@ export async function runExport(projectId: string) {
     await mixMusic(projectId, finalPath, cues);
   }
 
+  // Đánh dấu bản dựng trên đĩa ứng với phiên bản nội dung nào → nút biết "tươi".
+  db.prepare("UPDATE projects SET exported_rev=? WHERE id=?").run(renderedRev, projectId);
   setJob(projectId, "export", "done", 100, "Xong", finalPath);
   await dropExportScratch(projectId);
   return finalPath;

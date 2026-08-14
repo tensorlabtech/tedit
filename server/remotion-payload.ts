@@ -75,6 +75,13 @@ export type RemotionPayload = {
   personUrl: string;
   /** Mặt nạ tách người (trắng=người), null nếu chưa có. */
   maskUrl: string | null;
+  /**
+   * TIẾNG chỉ cho KHUNG XEM (preview). Bản XUẤT ghép tiếng bằng ffmpeg SAU khi
+   * Remotion vẽ hình câm, nên hai trường này RỖNG ở export (`null`/`[]`) — không
+   * thì tiếng bị nhân đôi. `voiceUrl` = giọng đã cắt (khớp 1:1 dải output).
+   */
+  voiceUrl: string | null;
+  music: Array<{ url: string; start: number; end: number; volume: number }>;
   /** Nền trang gốc của bộ dáng (mỗi cảnh có thể đè bằng `frameBlock.page`). */
   basePage: FrameBlock["page"];
   /** Bộ dáng dự án — CHỈ để `packForElement` gộp `caption_block` (look chữ cấp
@@ -142,6 +149,30 @@ async function makeScrubProxy(src: string, dest: string): Promise<string> {
     ]).catch(() => undefined);
   }
   return existsSync(dest) && statSync(dest).size > 0 ? dest : src;
+}
+
+/**
+ * Trích TIẾNG (giọng) từ video người ĐÃ CẮT ra tệp audio nhẹ cho khung xem —
+ * proxy người bị `-an` (tắt tiếng) để tua nhanh, nên tiếng phải lấy riêng. Cache
+ * theo mtime như proxy: trim/dời không dựng lại tệp này. `null` nếu nguồn không
+ * có tiếng.
+ */
+async function extractVoiceProxy(
+  src: string,
+  dest: string,
+): Promise<string | null> {
+  const fresh =
+    existsSync(dest) &&
+    statSync(dest).size > 0 &&
+    statSync(dest).mtimeMs >= statSync(src).mtimeMs;
+  if (!fresh) {
+    // `-c:a copy` khi nguồn đã aac (preview.mp4) → gần như tức thì; hỏng thì
+    // ffmpeg tự bỏ, trả null.
+    await ffmpeg(["-y", "-i", src, "-vn", "-c:a", "copy", dest]).catch(
+      () => undefined,
+    );
+  }
+  return existsSync(dest) && statSync(dest).size > 0 ? dest : null;
 }
 
 export async function buildRemotionPayload(
@@ -218,6 +249,37 @@ export async function buildRemotionPayload(
   } else if (existsSync(rawMask)) {
     copyFileSync(rawMask, join(outDir, "mask.mp4"));
     maskUrl = rel("mask.mp4");
+  }
+
+  // TIẾNG cho KHUNG XEM (chỉ preview; export ghép bằng ffmpeg): giọng = tiếng của
+  // video người ĐÃ CẮT (`personSrc`, khớp 1:1 output), nhạc = music_tracks đã đặt.
+  let voiceUrl: string | null = null;
+  const music: RemotionPayload["music"] = [];
+  if (opts?.scrubProxy) {
+    const voiceFile = await extractVoiceProxy(
+      personSrc,
+      join(workDir(projectId), "preview-voice.m4a"),
+    );
+    if (voiceFile) {
+      copyFileSync(voiceFile, join(outDir, "voice.m4a"));
+      voiceUrl = rel("voice.m4a");
+    }
+    const tracks = db
+      .prepare(
+        "SELECT stored_path AS path, start_sec AS s, end_sec AS e, volume AS v FROM music_tracks WHERE project_id=? ORDER BY position",
+      )
+      .all(projectId) as Array<{
+      path: string;
+      s: number;
+      e: number;
+      v: number | null;
+    }>;
+    tracks.forEach((t, i) => {
+      if (!existsSync(t.path)) return;
+      const name = `music-${i}${extname(t.path) || ".mp3"}`;
+      copyFileSync(t.path, join(outDir, name));
+      music.push({ url: rel(name), start: t.s, end: t.e, volume: t.v ?? 1 });
+    });
   }
 
   const inserts = await Promise.all(
@@ -309,6 +371,8 @@ export async function buildRemotionPayload(
       baseInfo.width && baseInfo.height ? baseInfo.width / baseInfo.height : null,
     personUrl,
     maskUrl,
+    voiceUrl,
+    music,
     basePage: blocksFromPack(pack).frame.page,
     pack,
     punchDefocus: pack.punchDefocus,

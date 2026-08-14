@@ -466,9 +466,9 @@ export const PRISM_PRO: StylePack = {
   // Bắt buộc có `page` khi đã khai `layouts` — không thì đường ffmpeg bỏ qua cả
   // khối bố cục. Khác Nhịp đen ở chỗ KHÔNG lưới (`grid: null`).
   page: { tone: { color: "#0B0E13", alpha: 1 }, grid: null },
-  // Thẻ tư liệu SẠCH: thẳng, GÓC VUÔNG (`cornerShare: 0` — Prism không bo tròn),
-  // bóng đổ; cảnh b-roll đơn phủ người mờ sau thẻ.
-  insetCard: { shadowShare: 0.05, blurBackdrop: true, cornerShare: 0 },
+  // Thẻ tư liệu SẠCH: bo góc NHẸ (editorial, không vuông sắc), bóng đổ; cảnh
+  // b-roll đơn phủ người mờ sau thẻ.
+  insetCard: { shadowShare: 0.05, blurBackdrop: true, cornerShare: 0.04 },
   // DEFOCUS GIỮ ở cụm-nhấn — dùng THƯA (mỗi ≥14s): là ĐIỂM NHẤN hiếm, không phải
   // hiệu ứng thường. Lạm dụng blur toàn-khình thì user khó theo dõi. Chỉ mờ cụm dài
   // ≥ 0,8s. Ramp 0,45s ease mềm hai đầu.
@@ -478,7 +478,7 @@ export const PRISM_PRO: StylePack = {
   // Toàn khung CHỦ ĐẠO (người phủ kín — dễ theo dõi) + b-roll thẻ nổi + hai ô.
   // BỎ `o-lech` (ô người đơn): khung-đơn nhiều quá làm video vụn, khó theo dõi —
   // người để toàn-khung, chỉ dùng thẻ khi CÓ tư liệu (b-roll).
-  layouts: ["toan-khung", "broll-don", "hai-o"],
+  layouts: ["toan-khung", "o-vuong", "broll-don", "broll-vuong", "hai-o"],
   // Máy quay dồn MƯỢT, nhẹ — chất cinematic bình tĩnh, trên một phần ba số màn.
   scenePush: { ratePerSecond: 0.03, share: 0.35 },
   density: { ...BASE.density, maxScale: 0.13, lineHeight: 1.15, wordGap: 0.14 },

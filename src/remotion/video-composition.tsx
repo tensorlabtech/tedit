@@ -1,5 +1,6 @@
 import {
   AbsoluteFill,
+  Audio,
   Img,
   OffthreadVideo,
   Sequence,
@@ -251,12 +252,15 @@ function Cells({
               : null;
           const src = ins ? ins.url : payload.personUrl;
           if (!src) return null;
-          // LẤY PHẦN clip b-roll: in/out (giây trong clip) → frame cho Video
-          // trimBefore/trimAfter. `null` = cả clip (phát từ 0). Lặp trong khoảng đã lấy.
+          // B-roll kiểu CapCut: cắt CỬA SỔ nguồn [in, out]. Điểm VÀO đặt bằng
+          // `trimBefore`; điểm RA KHÔNG cần `trimAfter` — bề rộng khối = out−in nên
+          // phát từ `in` đúng đủ độ dài khối là dừng ở `out`. (Và `<Video trimAfter>`
+          // vỡ ở Remotion hiện tại — render ra khung rỗng, nên tránh hẳn.)
           const trimBefore =
             ins?.in != null ? Math.max(0, Math.round(ins.in * fps)) : undefined;
-          const trimAfter =
-            ins?.out != null ? Math.max(1, Math.round(ins.out * fps)) : undefined;
+          // Chỉ LẶP khi CHƯA cắt (out ngầm): clip ngắn hơn khung thì lặp cho đủ.
+          // Đã cắt thì khung = cửa sổ nên phát một lần là vừa khít, khỏi lặp.
+          const brollLoop = ins?.out == null;
           const borderW = Math.max(4, Math.round(Math.min(rect.w, rect.h) * 0.018));
           // MỌC LÊN / THU VỀ — thẻ sạch (KHÔNG toàn-khung) scale + trượt + mờ ở
           // đầu/cuối cảnh, chất "card grows in / shrinks out" của template. Toàn-
@@ -320,13 +324,14 @@ function Cells({
                       }}
                     />
                   ) : (
-                    // B-roll VIDEO = clip NGẮN → cần lặp; Video hỗ trợ loop.
+                    // B-roll VIDEO: phát từ điểm vào (`trimBefore`); lặp chỉ khi
+                    // chưa cắt (xem `brollLoop`). Bề rộng khối = cửa sổ nên tự dừng
+                    // đúng điểm ra, khỏi `trimAfter` (vốn vỡ ở Remotion hiện tại).
                     <Video
                       src={staticFile(src)}
                       muted
-                      loop
+                      loop={brollLoop}
                       trimBefore={trimBefore}
-                      trimAfter={trimAfter}
                       style={{
                         width: "100%",
                         height: "100%",
@@ -484,6 +489,26 @@ export function VideoComposition(payload: RemotionPayload) {
 
   return (
     <AbsoluteFill style={{ backgroundColor: page?.tone.color ?? "#08090C" }}>
+      {/* TIẾNG chỉ ở KHUNG XEM (`payload.preview`). Bản XUẤT vẽ hình CÂM rồi ffmpeg
+          ghép giọng + trộn nhạc SAU — nên ở export hai trường này rỗng, khỏi nhân
+          đôi. Giọng khớp 1:1 dải output (video người đã cắt); nhạc đặt theo mốc +
+          âm lượng của từng bài. */}
+      {payload.preview && payload.voiceUrl && (
+        <Audio src={staticFile(payload.voiceUrl)} />
+      )}
+      {payload.preview &&
+        payload.music.map((track, i) => (
+          <Sequence
+            key={i}
+            from={Math.round(track.start * fps)}
+            durationInFrames={Math.max(
+              1,
+              Math.round((track.end - track.start) * fps),
+            )}
+          >
+            <Audio src={staticFile(track.url)} volume={track.volume} />
+          </Sequence>
+        ))}
       {/* HẠT GIẤY: đốm ấm mờ (#8A7A4E, 28%) qua mặt nạ paper-grain — chỉ rõ trên
           nền sáng (trang Phấn), gần vô hình trên nền tối. Khớp export. */}
       {page && (

@@ -161,6 +161,11 @@ export function useEditor(projectId: string | undefined) {
     status: string;
     message: string;
   } | null>(null);
+  // ĐÃ SỬA SAU KHI XUẤT? Cờ CỤC BỘ cho phiên đang mở (server đã biết qua
+  // `content_rev`, nhưng chỉ đọc lúc TẢI trang; cờ này bắt sửa NGAY trong phiên để
+  // nút đổi "Xuất lại" tức thì). Bật ở `markExportStale`, tắt khi xuất xong.
+  const [exportDirty, setExportDirty] = useState(false);
+  const markExportStale = useCallback(() => setExportDirty(true), []);
   const durationRef = useRef(0);
   /**
    * Số giây dải ảnh biểu diễn — thang để vẽ nó lên dải thời gian.
@@ -332,7 +337,12 @@ export function useEditor(projectId: string | undefined) {
   // vì cả gọt-mép lẫn hoàn-tác b-roll đều cần bơm nó: mốc từ của tư liệu đổi thì
   // khung người hai bên phải xếp lại lấp đúng chỗ b-roll vừa co/nới.
   const [layoutReload, setLayoutReload] = useState(0);
-  const bumpLayoutReload = useCallback(() => setLayoutReload((n) => n + 1), []);
+  // Bump lịch màn = có sửa động tới HÌNH (trim/khung/bố cục/hiệu ứng/tư liệu) →
+  // đánh dấu bản xuất CŨ luôn. Đây là điểm chung của gần hết thao tác sửa.
+  const bumpLayoutReload = useCallback(() => {
+    setLayoutReload((count) => count + 1);
+    setExportDirty(true);
+  }, []);
 
   const { undoLabel, pushUndo, undo } = useUndoStack({
     projectId,
@@ -412,6 +422,7 @@ export function useEditor(projectId: string | undefined) {
             : current,
         );
         setSelection({ kind: "music", id: row.id });
+        setExportDirty(true); // thêm nhạc → bản dựng cũ
       } catch (loi) {
         // Chỗ này hay hỏng vì một lý do CÓ THẬT và sửa được: vạch đang đứng trong
         // khoảng một bài khác. Nói ra thì người dùng dời vạch rồi bấm lại.
@@ -441,6 +452,7 @@ export function useEditor(projectId: string | undefined) {
         : current,
     );
     void api.updateMusic(id, { volume }).catch(boQuaLoi());
+    setExportDirty(true); // nhạc đổi → bản dựng (có nhạc) cũ
   }, []);
 
   const removeMusic = useCallback(async (id: string) => {
@@ -451,6 +463,7 @@ export function useEditor(projectId: string | undefined) {
         : current,
     );
     setSelection(null);
+    setExportDirty(true);
     await api.deleteMusic(id).catch(boQuaLoi());
     if (track) {
       pushUndoRef.current({
@@ -1085,7 +1098,7 @@ export function useEditor(projectId: string | undefined) {
     );
     setSelection(null);
     // Xoá b-roll cũng đổi lịch màn (khung đó biến mất) → nạp lại cho khung xem.
-    setLayoutReload((n) => n + 1);
+    bumpLayoutReload();
   }, []);
 
   /** Tách đoạn tại vạch giữa — thay cho việc cắt bỏ cứng nửa giây. */
@@ -1127,6 +1140,7 @@ export function useEditor(projectId: string | undefined) {
             }
           : current,
       );
+      setExportDirty(true); // bỏ/giữ đoạn = đổi dải cắt → bản dựng cũ
       await api.updateSegment(id, { removed: next });
       pushUndo({
         type: "segment",
@@ -1663,7 +1677,7 @@ export function useEditor(projectId: string | undefined) {
       void api.updateElement(id, patch).catch(boQuaLoi());
       // Đổi bố cục HOẶC look Ô → lịch màn/nền đổi theo, nạp lại.
       if (patch.insertLayout !== undefined || patch.frameBlock !== undefined)
-        setLayoutReload((n) => n + 1);
+        bumpLayoutReload();
     },
     [],
   );
@@ -1699,7 +1713,7 @@ export function useEditor(projectId: string | undefined) {
     });
     void api.updateElement(id, { mediaFileId }).catch(boQuaLoi());
     // Tỉ lệ tệp mới đổi ô phụ; lịch màn đọc lại.
-    setLayoutReload((n) => n + 1);
+    bumpLayoutReload();
   }, []);
 
   /**
@@ -1732,7 +1746,7 @@ export function useEditor(projectId: string | undefined) {
       const fresh = await api.getProject(projectId).catch(() => null);
       if (fresh) setData(shape(fresh));
       setSelection({ kind: "insert", id: created.id });
-      setLayoutReload((n) => n + 1);
+      bumpLayoutReload();
     },
     [projectId],
   );
@@ -1759,7 +1773,7 @@ export function useEditor(projectId: string | undefined) {
       const fresh = await api.getProject(projectId).catch(() => null);
       if (fresh) setData(shape(fresh));
       setSelection({ kind: "scene", id: created.id });
-      setLayoutReload((n) => n + 1);
+      bumpLayoutReload();
     },
     [projectId],
   );
@@ -1791,7 +1805,7 @@ export function useEditor(projectId: string | undefined) {
         insertLayout: layout,
       });
       setSelection({ kind: "scene", id: created.id });
-      setLayoutReload((n) => n + 1);
+      bumpLayoutReload();
     },
     [projectId, data, time],
   );
@@ -1811,7 +1825,7 @@ export function useEditor(projectId: string | undefined) {
           framePreset,
         })
         .catch(boQuaLoi());
-      setLayoutReload((n) => n + 1);
+      bumpLayoutReload();
     },
     [],
   );
@@ -1824,7 +1838,7 @@ export function useEditor(projectId: string | undefined) {
    */
   const setBehindText = useCallback((elementId: string, content: string) => {
     void api.updateElement(elementId, { content }).catch(boQuaLoi());
-    setLayoutReload((n) => n + 1);
+    bumpLayoutReload();
   }, []);
 
   /**
@@ -1848,7 +1862,7 @@ export function useEditor(projectId: string | undefined) {
       const fresh = await api.getProject(projectId).catch(() => null);
       if (fresh) setData(shape(fresh));
       setSelection({ kind: "insert", id: elementId });
-      setLayoutReload((n) => n + 1);
+      bumpLayoutReload();
     },
     [projectId],
   );
@@ -1863,7 +1877,7 @@ export function useEditor(projectId: string | undefined) {
       await api
         .updateElement(elementId, { mediaIn, mediaOut })
         .catch(boQuaLoi());
-      setLayoutReload((n) => n + 1);
+      bumpLayoutReload();
     },
     [projectId],
   );
@@ -1872,7 +1886,7 @@ export function useEditor(projectId: string | undefined) {
   const deleteSegment = useCallback(async (elementId: string) => {
     await api.deleteElement(elementId).catch(boQuaLoi());
     setSelection(null);
-    setLayoutReload((n) => n + 1);
+    bumpLayoutReload();
   }, []);
 
   const setZoomPunch = useCallback(
@@ -1932,7 +1946,7 @@ export function useEditor(projectId: string | undefined) {
       await api.updateProject(projectId, { stylePack: next }).catch(boQuaLoi());
       // Lấy lại lịch màn theo bộ dáng MỚI — sau khi PATCH xong, không thì server
       // đọc cột cũ và trả lịch của bộ trước.
-      setLayoutReload((n) => n + 1);
+      bumpLayoutReload();
     },
     [projectId],
   );
@@ -2103,6 +2117,8 @@ export function useEditor(projectId: string | undefined) {
           message:
             job.status === "queued" ? queueLabel(job) : (job.message ?? ""),
         });
+        // Xuất XONG → bản dựng khớp nội dung hiện tại lại, hết "cũ".
+        if (job.status === "done") setExportDirty(false);
         // Xuất HỎNG cũng phải nói ra — cùng lý do với chép lời. Người dùng đợi
         // vài phút rồi thấy nút quay về chữ "Xuất video" mà không biết vì sao.
         if (job.status === "error") {
@@ -2237,7 +2253,18 @@ export function useEditor(projectId: string | undefined) {
           custom: false,
         });
       });
-    return [...derived, ...tay].sort((a, b) => a.outPeak - b.outPeak);
+    // DEDUP theo id trên mảng GỘP: một chỗ-nối tự-suy đã sửa tay giữ NGUYÊN mã
+    // `eff_cut_<mốc>`, nên vừa có bản `tay` vừa có bản `derived` cùng id (bộ lọc
+    // overlap trên không phải lúc nào cũng bắt) → key React trùng. Xếp `tay`
+    // TRƯỚC để bản người-sửa THẮNG; cũng gộp hai vết cắt sát nhau cùng làm-tròn.
+    const seen = new Set<string>();
+    return [...tay, ...derived]
+      .filter((item) => {
+        if (seen.has(item.id)) return false;
+        seen.add(item.id);
+        return true;
+      })
+      .sort((a, b) => a.outPeak - b.outPeak);
   }, [cutMark, current.manualEffects, zoomPunch, toOutput]);
 
   // Gán ở ĐÂY, còn ref khai sớm hơn — xem chú thích ở chỗ khai.
@@ -2387,6 +2414,11 @@ export function useEditor(projectId: string | undefined) {
     pxPerSecond,
     selection,
     exportJob,
+    // Bản dựng CŨ? = cờ phiên (sửa vừa xong) HOẶC server báo lúc tải (content_rev
+    // ≠ exported_rev). `...current` đã có `exportStale` của server — ghi đè bằng OR.
+    exportStale:
+      exportDirty ||
+      Boolean((current as { exportStale?: boolean } | undefined)?.exportStale),
     canZoomIn,
     canZoomOut,
     projectId,

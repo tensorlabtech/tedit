@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
+import { arrangementFor } from "./caption-arrangement";
 import { DB_PATH } from "./paths";
 
 mkdirSync(dirname(DB_PATH), { recursive: true });
@@ -566,6 +567,18 @@ for (const [table, column, type] of [
    * mà tiêu đề sửa lúc nào cũng được.
    */
   ["media_files", "library_file", "TEXT"],
+  // Dải ảnh (filmstrip) của CHÍNH clip này — cache để bàn dựng bày thumbnail lúc
+  // cắt đoạn (in/out). Sinh một lần bằng ffmpeg rồi giữ; ba số này khớp cách vẽ
+  // sprite của `makeFilmstrip` (bề ngang một giây, tổng số giây, bề ngang gốc).
+  ["media_files", "strip_second_width", "REAL"],
+  ["media_files", "strip_seconds", "REAL"],
+  ["media_files", "strip_native_second_width", "REAL"],
+  // ĐẾM SỬA để biết bản XUẤT còn tươi hay đã cũ. `content_rev` tăng mỗi lần sửa
+  // gì ĐỘNG TỚI HÌNH (elements/nhạc — do trigger bên dưới bump tự động).
+  // `exported_rev` là con số lúc XUẤT gần nhất. Khác nhau = "đã sửa sau khi xuất"
+  // → bản dựng trên đĩa CŨ, nút phải là "Xuất lại" chứ không "Tải bản cũ".
+  ["projects", "content_rev", "INTEGER NOT NULL DEFAULT 0"],
+  ["projects", "exported_rev", "INTEGER NOT NULL DEFAULT 0"],
 ] as const) {
   const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{
     name: string;
@@ -573,6 +586,26 @@ for (const [table, column, type] of [
   if (!columns.some((item) => item.name === column)) {
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
   }
+}
+
+/**
+ * TRIGGER đếm sửa: mọi thay đổi trên `elements` (chữ/khung/b-roll/hiệu ứng) và
+ * `music_tracks` (nhạc) đều bump `projects.content_rev`. Đặt ở TẦNG DB nên bắt
+ * ĐƯỢC HẾT, khỏi nhớ gọi ở từng endpoint. Không trigger trên `projects` → không
+ * vòng lặp. Nhờ nó, "sửa sau khi xuất" tự lộ (content_rev > exported_rev).
+ */
+for (const [tbl, col] of [
+  ["elements", "project_id"],
+  ["music_tracks", "project_id"],
+] as const) {
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS bump_rev_${tbl}_ins AFTER INSERT ON ${tbl}
+    BEGIN UPDATE projects SET content_rev = content_rev + 1 WHERE id = NEW.${col}; END;
+    CREATE TRIGGER IF NOT EXISTS bump_rev_${tbl}_upd AFTER UPDATE ON ${tbl}
+    BEGIN UPDATE projects SET content_rev = content_rev + 1 WHERE id = NEW.${col}; END;
+    CREATE TRIGGER IF NOT EXISTS bump_rev_${tbl}_del AFTER DELETE ON ${tbl}
+    BEGIN UPDATE projects SET content_rev = content_rev + 1 WHERE id = OLD.${col}; END;
+  `);
 }
 
 /**
@@ -636,6 +669,20 @@ function relaxAnchorConstraints() {
   db.pragma("foreign_keys = ON");
 }
 relaxAnchorConstraints();
+
+// NEO-GIÂY cho b-roll: khối cũ neo-TỪ được điền `start_sec/end_sec` từ mốc của từ,
+// một lần — để b-roll thành neo-GIÂY (kéo/gọt tự do như nhạc, kéo mép = in/out
+// nguồn). Chỉ điền chỗ TRỐNG (idempotent); render đã ưu tiên sec, lùi về từ nếu
+// khối nào chưa điền. Chỉ b-roll (`media_file_id`), khung người để giai đoạn sau.
+db.exec(`
+  UPDATE elements
+  SET start_sec = (SELECT start_sec FROM words WHERE id = elements.from_word_id),
+      end_sec   = (SELECT end_sec   FROM words WHERE id = elements.to_word_id)
+  WHERE media_file_id IS NOT NULL
+    AND start_sec IS NULL
+    AND from_word_id IN (SELECT id FROM words)
+    AND to_word_id   IN (SELECT id FROM words)
+`);
 
 /**
  * Chuyển bản sửa chỗ nối cũ (một MỐC) sang hiệu ứng mới (một QUÃNG).
@@ -722,15 +769,55 @@ migrateLayoutAxisNames();
 db.prepare("UPDATE elements SET kind='layout' WHERE kind='insert'").run();
 
 /**
- * Chữ chép lời về cỡ ĐỀU (`even`).
+ * Áp lại BỐ CỤC editorial (từ khoá TO, dẫn nhỏ) cho caption đã bị ép cỡ ĐỀU.
  *
- * Bỏ trục "cỡ chữ / dẫn-nhỏ-ý-to" khỏi bảng sửa: mỗi bộ dáng để chữ đồng đều,
- * người dùng chỉ chọn chỗ đặt + màu từ nhấn. Chữ cũ mang `taper`/`keyword-large`/
- * `mixed-size` phải đưa về `even` để không còn chữ to chữ bé lẫn lộn. Idempotent.
+ * Trước đây có bước ép mọi caption về `even` (chữ đồng đều, chỉ nhấn bằng màu) —
+ * nhưng Prism nhấn bằng CỠ (như bản gốc), màu từ nhấn của nó lại trùng màu chữ nên
+ * `even` ra caption PHẲNG hoàn toàn. Giờ trả về recipe cỡ (`keyword-large`/`taper`)
+ * bốc theo hạt-giống ỔN ĐỊNH (id từ đầu cụm), hệt lúc SEED.
+ *
+ * CHỪA caption KHUNG MỜ (`align='center'` do `blur-frames` đặt): chúng CỐ Ý đều +
+ * canh giữa (chữ lớn phủ nền mờ), không phải bị ép phẳng. Idempotent: recipe không
+ * bao giờ trả `even`, nên caption đã sửa lần sau không còn khớp `emphasis='even'`.
+ */
+{
+  const flat = db
+    .prepare(
+      "SELECT id, from_word_id, caption_preset FROM elements WHERE kind='text' AND emphasis='even' AND from_word_id IS NOT NULL AND (align IS NULL OR align <> 'center')",
+    )
+    .all() as Array<{
+    id: string;
+    from_word_id: string;
+    caption_preset: string | null;
+  }>;
+  const applyRecipe = db.prepare(
+    "UPDATE elements SET emphasis=?, align=? WHERE id=?",
+  );
+  for (const cap of flat) {
+    const recipe = arrangementFor(cap.caption_preset ?? "prism-pro", cap.from_word_id);
+    if (recipe) applyRecipe.run(recipe.emphasis, recipe.align, cap.id);
+  }
+}
+
+/**
+ * Bo góc NHẸ cho thẻ b-roll đã đóng dấu GÓC VUÔNG (`cornerShare = 0`).
+ *
+ * Chỉ Prism có `insetCard.cornerShare` (bộ khác `insetCard: null`), nên `= 0` là
+ * đủ nhắm đúng thẻ vuông của Prism — không đụng bộ khác. Đọc look từ BLOCK ĐÃ ĐÓNG
+ * DẤU nên phải sửa trong block, không thể chỉ đổi ở catalog. Idempotent: sửa xong
+ * `cornerShare = 0.04`, lần sau `= 0` không còn khớp.
  */
 db.prepare(
-  "UPDATE elements SET emphasis='even' WHERE kind='text' AND emphasis IS NOT NULL AND emphasis <> 'even'",
+  "UPDATE elements SET frame_block = json_set(frame_block, '$.insetCard.cornerShare', 0.04) WHERE json_extract(frame_block, '$.insetCard') IS NOT NULL AND COALESCE(json_extract(frame_block, '$.insetCard.cornerShare'), 0) = 0",
 ).run();
+
+/**
+ * Dự án CŨ: bản dựng trên đĩa (nếu có) làm TRƯỚC khi có đếm-sửa, nên không biết
+ * còn tươi không. Đặt `content_rev = 1` (khác `exported_rev = 0`) để coi là ĐÃ CŨ
+ * → nút hiện "Xuất lại" thay vì mời tải bản có thể thiếu chỉnh sửa. Idempotent:
+ * chạm project còn `= 0`; đã có sửa (trigger bump) hoặc đã đánh dấu thì bỏ qua.
+ */
+db.prepare("UPDATE projects SET content_rev = 1 WHERE content_rev = 0").run();
 
 /**
  * Dọn dấu vết của chặng gắn emoji đã bỏ.

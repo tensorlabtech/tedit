@@ -97,6 +97,9 @@ export type ApiElement = {
   content: string | null;
   position_band: string | null;
   media_file_id: string | null;
+  /** CỬA SỔ nguồn của clip b-roll (giây trong tệp): lấy đoạn nào. `null` = chưa cắt. */
+  media_in_sec: number | null;
+  media_out_sec: number | null;
   /** Trục CĂN — `null` với phần tử tạo trước khi tách hai trục */
   align: string | null;
   /** Trục NHẤN — `null` nghĩa là còn dùng `layout` gộp kiểu cũ */
@@ -315,6 +318,10 @@ export type ApiProject = {
     font_style?: string | null;
     /** Dòng tiêu đề của cả video — một cột trên `projects`, không nằm trong `elements`. */
     headline?: string | null;
+    /** Đếm sửa nội dung (bump mỗi lần đổi elements/nhạc) + số lúc XUẤT gần nhất.
+        Khác nhau = bản dựng trên đĩa CŨ so với nội dung hiện tại. */
+    content_rev?: number;
+    exported_rev?: number;
     /** Bộ dáng đang dùng lúc chặng hiệu ứng chạy lần cuối; `null` là chưa chạy. */
     effects_style_pack?: string | null;
     /**
@@ -1236,6 +1243,18 @@ export const api = {
 
   /** Tệp tư liệu để xem trước — phục vụ qua đường tĩnh của máy chủ */
   mediaUrl: (fileId: string) => `${BASE}/api/files/${fileId}/raw`,
+
+  /** Ảnh dải (filmstrip) của một clip b-roll — để cắt đoạn in/out có thumbnail. */
+  fileFilmstripUrl: (fileId: string, version?: number | null) =>
+    `${BASE}/api/files/${fileId}/filmstrip.jpg` + (version ? `?v=${version}` : ""),
+
+  /** Dựng (hoặc lấy cache) dải ảnh của clip b-roll — trả về thang sprite. */
+  makeFileFilmstrip: (fileId: string) =>
+    request<{
+      secondWidth: number;
+      seconds: number;
+      nativeSecondWidth: number;
+    }>(`/api/files/${fileId}/filmstrip`, { method: "POST" }),
 
   /**
    * Dải ảnh thu nhỏ, gộp trong một tệp sprite.

@@ -146,7 +146,9 @@ export type Slot = {
 export type LayoutKindId =
   | "toan-khung"
   | "o-don"
+  | "o-vuong"
   | "broll-don"
+  | "broll-vuong"
   | "hai-o"
   | "vuong-ngang"
   | "ngang-vuong"
@@ -183,6 +185,17 @@ export const LAYOUT_SPECS: LayoutSpec[] = [
     needsInsert: false,
   },
   {
+    id: "o-vuong",
+    label: "Ô vuông",
+    // Như `o-don` nhưng ô người ép VUÔNG (1:1) — chân dung vuông vắn trên nền
+    // trang, cắt lấy giữa. Không cần tư liệu.
+    note: "Người thu vào một ô VUÔNG (1:1) trên nền trang, chữ nằm dưới ô",
+    slots: [
+      { role: "chinh", aspect: "vuong", areaShare: 0.42, anchor: { x: 0.5, y: 0.42 }, mask: "o-bo-goc", z: 0 },
+    ],
+    needsInsert: false,
+  },
+  {
     id: "broll-don",
     label: "B-roll đơn",
     // Tư liệu MỘT MÌNH trên nền trang — cảnh cắt (voiceover), KHÔNG có người. Như
@@ -194,6 +207,17 @@ export const LAYOUT_SPECS: LayoutSpec[] = [
       // 0,5 diện tích (~0,71 cạnh) — LỚN như Chalk (ảnh chiếm 60-75% màn), chừa
       // nền vừa đủ cho doodle ôm góc, không để trống loãng.
       { role: "phu", areaShare: 0.5, anchor: { x: 0.5, y: 0.42 }, mask: "o-bo-goc", z: 0 },
+    ],
+    needsInsert: true,
+  },
+  {
+    id: "broll-vuong",
+    label: "B-roll vuông",
+    // Như `broll-don` nhưng ô ép VUÔNG (1:1): thẻ tư liệu vuông vắn trên nền trang,
+    // cảnh cắt không có người. Tỉ lệ nguồn bị crop lấy giữa về 1:1 (xem `SlotAspect`).
+    note: "Tư liệu b-roll một mình, ô VUÔNG (1:1) — cảnh cắt, không có người",
+    slots: [
+      { role: "phu", aspect: "vuong", areaShare: 0.5, anchor: { x: 0.5, y: 0.42 }, mask: "o-bo-goc", z: 0 },
     ],
     needsInsert: true,
   },

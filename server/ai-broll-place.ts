@@ -200,9 +200,22 @@ export async function placeInserts(projectId: string): Promise<{
   // dùng vẫn đổi từng cái ở bảng sửa, và bảng sửa vẫn bày đủ mọi kiểu.
   // B-roll = khung CÓ tư liệu, `kind='layout'` như mọi khung. Phân biệt bằng
   // `media_file_id`, không bằng `kind`.
+  // B-roll NEO-GIÂY: ghi thẳng `start_sec/end_sec` (mốc nguồn của dải từ đã chọn) —
+  // để kéo/gọt tự do như nhạc, kéo mép = in/out nguồn. Vẫn ghi `from/to_word_id`
+  // (chưa bỏ cột) nhưng render đọc GIÂY (`layout-segments` ưu tiên sec).
   const insert = db.prepare(
-    `INSERT INTO elements (id, project_id, kind, from_word_id, to_word_id, media_file_id, align, emphasis, reveal, shape)
-     VALUES (?,?,'layout',?,?,?,'center','taper',?,'full')`,
+    `INSERT INTO elements (id, project_id, kind, from_word_id, to_word_id, start_sec, end_sec, media_file_id, align, emphasis, reveal, shape)
+     VALUES (?,?,'layout',?,?,?,?,?,'center','taper',?,'full')`,
+  );
+  // KHUNG chiếm NỬA TRÊN (người/tư liệu ở trên, chừa đáy) → phụ đề đè lên đó phải
+  // XUỐNG DƯỚI cho khỏi che. Đặt khung xong thì đẩy mọi cụm chữ CHẠM khoảng thời
+  // gian của khung về `bottom` (cụm có tiếng đầu rơi trong quãng khung).
+  const pushCaptionsDown = db.prepare(
+    `UPDATE elements SET position_band='bottom'
+     WHERE project_id=? AND kind='text' AND COALESCE(position_band,'') <> 'bottom'
+       AND from_word_id IN (
+         SELECT id FROM words WHERE project_id=? AND start_sec >= ? AND start_sec < ?
+       )`,
   );
   const taken: Array<{ start: number; end: number }> = [];
   const seen = new Set<string>();
@@ -322,8 +335,17 @@ export async function placeInserts(projectId: string): Promise<{
         projectId,
         words[item.lo].id,
         words[item.hi].id,
+        words[item.lo].start_sec,
+        words[item.hi].end_sec,
         fileId,
         revealForPack,
+      );
+      // Phụ đề chạm khung này → xuống dưới cho khỏi che khung.
+      pushCaptionsDown.run(
+        projectId,
+        projectId,
+        words[item.lo].start_sec,
+        words[item.hi].end_sec,
       );
     }
   })();

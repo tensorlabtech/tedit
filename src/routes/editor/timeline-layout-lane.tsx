@@ -5,10 +5,19 @@ import { findLayout } from "../../../server/layout-kinds";
 import type { ScheduledScene } from "../../../server/timing";
 import { formatTimeFine, type Insert } from "./editor-data";
 import { TimelineBlock } from "./timeline-block";
+import { InsertFilmstrip } from "./timeline-insert-filmstrip";
+import type { InsertStrip } from "./use-insert-filmstrips";
 import type { Selection } from "./use-editor";
 
 /** Nhãn chỉ in khi khối đủ rộng cho một chữ — cùng luật dải hiệu ứng. */
 const LABEL_MIN_WIDTH = 40;
+
+/**
+ * Chiều cao dải bố cục (px). Đủ thấy DẢI ẢNH đoạn clip trên khối b-roll nhưng
+ * THẤP HƠN dải video chính (56px) — để hai dải không nặng ngang nhau và phân
+ * biệt được bằng chiều cao.
+ */
+const LANE_HEIGHT = 40;
 
 /**
  * DẢI BỐ CỤC — THƯA và liền mạch: chỉ vẽ chỗ KHÁC mặc định.
@@ -29,6 +38,7 @@ export function LayoutLane({
   pxPerSecond,
   selection,
   scenePreview,
+  strips,
   onSelectScene,
   onSelectInsert,
   onMoveInsert,
@@ -37,6 +47,8 @@ export function LayoutLane({
   schedule: readonly ScheduledScene[];
   /** B-roll ĐÃ ĐẶT (mốc xuất ra) — vẽ ngay vào chỗ của nó trên dải này. */
   inserts: readonly Insert[];
+  /** Dải ảnh clip theo `mediaFileId` — nền của khối b-roll (chưa có = khối trơn). */
+  strips: Record<string, InsertStrip>;
   pxPerSecond: number;
   selection: Selection;
   /**
@@ -57,7 +69,8 @@ export function LayoutLane({
   if (schedule.length === 0 && inserts.length === 0) return null;
 
   return (
-    <div className="relative h-6">
+    // Cao vừa đủ bày DẢI ẢNH clip trên khối b-roll, thấp hơn dải video chính.
+    <div className="relative" style={{ height: LANE_HEIGHT }}>
       {schedule
         // Ô NGƯỜI đọc từ lịch (segment kind='layout'). B-roll vẽ từ chính phần tử
         // đã đặt (có mặt tệp + kéo mép) ở dưới, nên bỏ ở đây. Không còn toàn-khung
@@ -119,33 +132,54 @@ export function LayoutLane({
             (insert.fullName ?? insert.label) +
             (insert.fromLibrary ? " — lấy từ kho tư liệu" : "")
           }
-          className="gap-1.5 pr-2"
+          className="px-0"
           onSelect={() => onSelectInsert(insert.id)}
           onMoveStart={onMoveInsert?.(insert.id)}
         >
-          {insert.thumbUrl ? (
+          {/* NỀN = DẢI ẢNH đoạn clip đang lấy (video, đã có dải). Kéo mép khối đổi
+              đoạn → dải trượt theo. Ảnh chưa dựng xong hoặc là ẢNH tĩnh thì rơi về
+              ảnh thu nhỏ / biểu tượng. */}
+          {insert.isVideo && insert.mediaFileId && strips[insert.mediaFileId] ? (
+            <InsertFilmstrip
+              widthPx={(insert.end - insert.start) * pxPerSecond}
+              heightPx={LANE_HEIGHT}
+              mediaIn={insert.mediaIn ?? 0}
+              pxPerSecond={pxPerSecond}
+              strip={strips[insert.mediaFileId]}
+            />
+          ) : insert.thumbUrl ? (
+            // B-roll ẢNH: KHÔNG kéo giãn một khung ra cả khối. Lặp ảnh ở ĐÚNG tỉ lệ
+            // (cao lấp khối, ngang tự nhiên) → trông như dải ảnh, không bẹt méo.
             <span
-              className="h-full w-8 shrink-0 bg-cover bg-center"
-              style={{ backgroundImage: `url(${insert.thumbUrl})` }}
+              className="absolute inset-0"
+              style={{
+                backgroundImage: `url(${insert.thumbUrl})`,
+                backgroundSize: "auto 100%",
+                backgroundRepeat: "repeat-x",
+                backgroundPosition: "left center",
+              }}
             />
           ) : (
-            <span className="grid h-full w-6 shrink-0 place-items-center">
+            <span className="absolute inset-0 grid place-items-center">
               {insert.isVideo ? (
-                <FilmIcon className="size-3" />
+                <FilmIcon className="size-4" />
               ) : (
-                <ImageIcon className="size-3" />
+                <ImageIcon className="size-4" />
               )}
             </span>
           )}
-          <span className="truncate">{insert.label}</span>
-          {/* Tư liệu máy TỰ LẤY TỪ KHO phải nói ra — không thì thấy một clip
-              mình chưa từng thêm mà không rõ ở đâu ra. */}
-          {insert.fromLibrary && (
-            <LibraryIcon
-              className="size-3 shrink-0 opacity-70"
-              aria-label="từ kho"
-            />
-          )}
+          {/* Nhãn tên tệp — dải mờ dưới chân cho đọc được trên nền ảnh. */}
+          <span className="absolute inset-x-0 bottom-0 flex items-center gap-1 bg-gradient-to-t from-black/70 to-transparent px-1.5 pt-3 pb-1 text-white">
+            <span className="truncate">{insert.label}</span>
+            {/* Tư liệu máy TỰ LẤY TỪ KHO phải nói ra — không thì thấy một clip
+                mình chưa từng thêm mà không rõ ở đâu ra. */}
+            {insert.fromLibrary && (
+              <LibraryIcon
+                className="size-3 shrink-0 opacity-80"
+                aria-label="từ kho"
+              />
+            )}
+          </span>
         </TimelineBlock>
       ))}
     </div>

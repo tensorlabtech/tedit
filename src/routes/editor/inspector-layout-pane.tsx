@@ -22,7 +22,6 @@ import { Field, FieldLabel } from "@/components/ui/field";
 import { findLayout } from "../../../server/layout-kinds";
 import { findStylePack } from "../../../server/style-pack-catalog";
 import { formatTimeFine } from "./editor-data";
-import { InsertTrimBar } from "./insert-trim-bar";
 import { OptionPicker } from "./option-picker";
 import type { EditorState } from "./use-editor";
 
@@ -35,8 +34,10 @@ const PAD = 0.2;
  */
 const KHUNG_LABEL: Record<string, string> = {
   "o-don": "1 ô · Trên",
+  "o-vuong": "1 ô · Vuông",
   "o-lech": "1 ô · Dưới",
   "broll-don": "B-roll · Riêng",
+  "broll-vuong": "B-roll · Vuông",
   "hai-o": "2 ô · Đều",
   "vuong-ngang": "2 ô · Vuông trên",
   "ngang-vuong": "2 ô · Ngang trên",
@@ -59,7 +60,6 @@ export function LayoutKhungPane({
   isBlur,
   /** Có tư liệu → khung 2 ô (b-roll). `null` → khung 1 ô (người). */
   media,
-  trim,
   srcStart,
   srcEnd,
   outStart,
@@ -74,8 +74,6 @@ export function LayoutKhungPane({
   /** Cảnh đang là KHUNG MỜ (defocus) — để picker tô đúng ô "Khung mờ". */
   isBlur?: boolean;
   media: { thumbUrl?: string; isVideo?: boolean; label?: string } | null;
-  /** LẤY PHẦN clip b-roll (video, đã biết độ dài) — null nếu không áp dụng. */
-  trim?: { in: number | null; out: number | null; duration: number } | null;
   srcStart: number;
   srcEnd: number;
   outStart: number;
@@ -267,23 +265,9 @@ export function LayoutKhungPane({
                   </Button>
                 </div>
               </div>
-              {/* LẤY PHẦN clip: chỉ b-roll VIDEO đã biết độ dài. Kéo 2 tay nắm chọn
-                  đoạn của clip nguồn; clip lặp trong đoạn đó cho đầy khoảng. */}
-              {trim && (
-                <div className="mt-1 grid gap-1.5">
-                  <span className="text-xs text-muted-foreground">
-                    Lấy đoạn của clip
-                  </span>
-                  <InsertTrimBar
-                    duration={trim.duration}
-                    in={trim.in}
-                    out={trim.out}
-                    onTrim={(inSec, outSec) =>
-                      void editor.setInsertTrim(elementId, inSec, outSec)
-                    }
-                  />
-                </div>
-              )}
+              {/* CẮT ĐOẠN clip giờ làm NGAY TRÊN KHỐI b-roll ở dải thời gian (kéo
+                  mép trái/phải = chọn đoạn, kéo thân = đặt chỗ) — không còn thanh
+                  riêng ở đây. */}
             </Field>
           )}
         </div>

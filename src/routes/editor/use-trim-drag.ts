@@ -146,6 +146,19 @@ export function useTrimDrag({
      */
     fixedIndex?: number;
     neighborLimit?: number;
+    /**
+     * B-ROLL kiểu CapCut: kéo mép khối = chọn CỬA SỔ nguồn. Đổi đồng thời vị trí
+     * (start/end) và cửa sổ (mediaIn/mediaOut), giữ bất biến out−in == end−start.
+     * Chốt lúc thả ghi cả bốn; `wasStart/End/In/Out` là bộ CŨ để hoàn tác.
+     */
+    insertStart?: number;
+    insertEnd?: number;
+    mediaIn?: number;
+    mediaOut?: number;
+    wasStart?: number;
+    wasEnd?: number;
+    wasIn?: number | null;
+    wasOut?: number | null;
   } | null>(null);
 
   /**
@@ -209,50 +222,8 @@ export function useTrimDrag({
     }
     setData((current) => {
       if (!current) return current;
-      // B-ROLL: neo theo TỪ → snap mép ĐẦU vào từ gần `targetStart`, giữ nguyên SỐ
-      // TIẾNG (mép cuối = đầu + đúng bấy nhiêu tiếng). Không đổi độ dài, chỉ dời.
-      if (kind === "insert") {
-        const insert = current.inserts.find((item) => item.id === id);
-        if (!insert) return current;
-        const words = current.words;
-        const fromIdx = words.findIndex((w) => w.id === insert.fromWordId);
-        const toIdx = words.findIndex((w) => w.id === insert.toWordId);
-        if (fromIdx === -1 || toIdx === -1) return current;
-        const span = toIdx - fromIdx; // số tiếng - 1
-        // Mép đầu tìm trong khoảng cho phép (chừa đủ `span` tiếng ở cuối).
-        let newFrom = nearestWordIndex(
-          words,
-          0,
-          Math.max(0, words.length - 1 - span),
-          targetStart,
-          (w) => w.start,
-        );
-        newFrom = Math.max(0, Math.min(newFrom, words.length - 1 - span));
-        const newTo = newFrom + span;
-        dragMove.current = {
-          kind,
-          id,
-          fromWordId: words[newFrom].id,
-          toWordId: words[newTo].id,
-          wasFromWordId: dragMove.current?.wasFromWordId ?? insert.fromWordId,
-          wasToWordId: dragMove.current?.wasToWordId ?? insert.toWordId,
-        };
-        return {
-          ...current,
-          inserts: current.inserts.map((item) =>
-            item.id === id
-              ? {
-                  ...item,
-                  start: words[newFrom].start,
-                  end: words[newTo].end,
-                  fromWordId: words[newFrom].id,
-                  toWordId: words[newTo].id,
-                }
-              : item,
-          ),
-        };
-      }
-      // NHẠC / CHỮ TỰ DO: neo theo GIÂY → dời cả khối theo delta, kẹp start ≥ 0.
+      // B-ROLL / NHẠC / CHỮ TỰ DO: neo theo GIÂY → dời cả khối theo delta, giữ
+      // nguyên độ dài, kẹp start ≥ 0.
       const shiftSeconds = (
         cur: { start: number; end: number },
       ): { start: number; end: number } => {
@@ -260,6 +231,22 @@ export function useTrimDrag({
         const start = Math.max(0, targetStart);
         return { start, end: start + len };
       };
+      if (kind === "insert") {
+        const insert = current.inserts.find((item) => item.id === id);
+        if (!insert) return current;
+        const next = shiftSeconds(insert);
+        dragMove.current = {
+          kind, id, ...next,
+          wasStart: dragMove.current?.wasStart ?? insert.start,
+          wasEnd: dragMove.current?.wasEnd ?? insert.end,
+        };
+        return {
+          ...current,
+          inserts: current.inserts.map((item) =>
+            item.id === id ? { ...item, ...next } : item,
+          ),
+        };
+      }
       if (kind === "music") {
         const track = current.music.find((item) => item.id === id);
         if (!track) return current;
@@ -334,14 +321,13 @@ export function useTrimDrag({
       return;
     }
     if (pending.kind === "insert") {
-      if (pending.fromWordId && pending.toWordId) {
-        await api
-          .updateElement(pending.id, {
-            fromWordId: pending.fromWordId,
-            toWordId: pending.toWordId,
-          })
-          .catch(boQuaLoi());
-      }
+      // B-roll neo-GIÂY: dời = ghi start/end mới.
+      await api
+        .updateElement(pending.id, {
+          start: pending.start,
+          end: pending.end,
+        })
+        .catch(boQuaLoi());
       onInsertTrimmed?.(); // xếp lại lịch màn (b-roll dời → khung người lấp lại)
       return;
     }
@@ -567,46 +553,69 @@ export function useTrimDrag({
           };
         }
         if (kind === "insert") {
+          // B-ROLL kiểu CapCut: kéo mép khối = chọn CỬA SỔ nguồn [in,out] của clip.
+          // Bất biến: out − in == end − start (bề rộng khối = bề rộng cửa sổ, HẾT
+          // loop). Mép trái giữ end/out, đổi start→in; mép phải giữ start/in, đổi
+          // end→out. TRẦN là độ dài clip (in≥0, out≤clipDuration) → "kéo tới max
+          // thì dừng". Cửa sổ chưa cắt (null) coi như [0, độ dài khối].
           const insert = current.inserts.find((item) => item.id === id);
           if (!insert) return current;
-          const words = current.words;
-          const from = words.findIndex((w) => w.id === insert.fromWordId);
-          const to = words.findIndex((w) => w.id === insert.toWordId);
-          if (from === -1 || to === -1) return current;
-          // Mép BÁM RANH GIỚI TỪ, không bám giây: tư liệu chèn neo vào khoảng
-          // từ (đặc tả §1), nên "kéo dài thêm" nghĩa là phủ thêm một tiếng nữa.
-          // Giữ ít nhất một tiếng — hai mép trùng nhau là khối rộng 0.
-          const pick =
-            edge === "start"
-              ? nearestWordIndex(words, 0, to, nextTime, (w) => w.start)
-              : nearestWordIndex(
-                  words,
-                  from,
-                  words.length - 1,
-                  nextTime,
-                  (w) => w.end,
-                );
-          const word = words[pick];
+          const clipDur =
+            insert.clipDuration ??
+            insert.mediaOut ??
+            insert.end - insert.start;
+          const inS = insert.mediaIn ?? 0;
+          const outS =
+            insert.mediaOut ?? Math.min(clipDur, inS + (insert.end - insert.start));
+
+          let nextStart = insert.start;
+          let nextEnd = insert.end;
+          let nextIn = inS;
+          let nextOut = outS;
+          if (edge === "start") {
+            // Giới hạn dưới `end − outS`: giữ in ≥ 0 (không lấy trước đầu clip).
+            nextStart = Math.min(
+              Math.max(nextTime, insert.end - outS),
+              insert.end - MIN_SEGMENT,
+            );
+            nextIn = outS - (insert.end - nextStart);
+          } else {
+            // Giới hạn trên `start + (clipDur − inS)`: giữ out ≤ độ dài clip.
+            nextEnd = Math.min(
+              Math.max(nextTime, insert.start + MIN_SEGMENT),
+              insert.start + (clipDur - inS),
+            );
+            nextOut = inS + (nextEnd - insert.start);
+          }
           dragTrim.current = {
             kind: "insert",
             id,
             edge,
-            at: edge === "start" ? word.start : word.end,
+            at: edge === "start" ? nextStart : nextEnd,
             was:
               dragTrim.current?.was ??
               (edge === "start" ? insert.start : insert.end),
-            wordId: word.id,
-            wasWordId:
-              dragTrim.current?.wasWordId ??
-              (edge === "start" ? insert.fromWordId : insert.toWordId),
+            insertStart: nextStart,
+            insertEnd: nextEnd,
+            mediaIn: nextIn,
+            mediaOut: nextOut,
+            // Bộ CŨ (chốt ở lần kéo ĐẦU) để hoàn tác trả lại cả bốn.
+            wasStart: dragTrim.current?.wasStart ?? insert.start,
+            wasEnd: dragTrim.current?.wasEnd ?? insert.end,
+            wasIn: dragTrim.current?.wasIn ?? insert.mediaIn,
+            wasOut: dragTrim.current?.wasOut ?? insert.mediaOut,
           };
           return {
             ...current,
             inserts: current.inserts.map((item) =>
               item.id === id
-                ? edge === "start"
-                  ? { ...item, start: word.start, fromWordId: word.id }
-                  : { ...item, end: word.end, toWordId: word.id }
+                ? {
+                    ...item,
+                    start: nextStart,
+                    end: nextEnd,
+                    mediaIn: nextIn,
+                    mediaOut: nextOut,
+                  }
                 : item,
             ),
           };
@@ -739,25 +748,25 @@ export function useTrimDrag({
     }
 
     if (pending.kind === "insert") {
-      if (pending.wordId) {
-        await api
-          .updateElement(
-            pending.id,
-            pending.edge === "start"
-              ? { fromWordId: pending.wordId }
-              : { toWordId: pending.wordId },
-          )
-          .catch(boQuaLoi());
-      }
-      if (pending.wasWordId) {
-        pushUndo({
-          type: "insert-trim",
-          label: "Đổi khoảng tư liệu",
-          elementId: pending.id,
-          edge: pending.edge,
-          wordId: pending.wasWordId,
-        });
-      }
+      // B-roll kiểu CapCut: ghi ĐỒNG THỜI vị trí (start/end) và cửa sổ nguồn
+      // (mediaIn/mediaOut) — đổi mép là đổi cả hai.
+      await api
+        .updateElement(pending.id, {
+          start: pending.insertStart,
+          end: pending.insertEnd,
+          mediaIn: pending.mediaIn ?? null,
+          mediaOut: pending.mediaOut ?? null,
+        })
+        .catch(boQuaLoi());
+      pushUndo({
+        type: "insert-trim",
+        label: "Đổi đoạn tư liệu",
+        elementId: pending.id,
+        start: pending.wasStart ?? pending.insertStart ?? 0,
+        end: pending.wasEnd ?? pending.insertEnd ?? 0,
+        mediaIn: pending.wasIn ?? null,
+        mediaOut: pending.wasOut ?? null,
+      });
       // Mép b-roll đổi → xếp lại lịch màn để khung người lấp đúng chỗ vừa co.
       onInsertTrimmed?.();
       return;

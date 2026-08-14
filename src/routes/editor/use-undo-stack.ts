@@ -212,20 +212,33 @@ export function useUndoStack({
       return;
     }
     if (last.type === "insert-trim") {
+      // B-roll kiểu CapCut: trả LẠI CẢ vị trí lẫn cửa sổ nguồn về bộ cũ.
       await api
-        .updateElement(
-          last.elementId,
-          last.edge === "start"
-            ? { fromWordId: last.wordId }
-            : { toWordId: last.wordId },
-        )
+        .updateElement(last.elementId, {
+          start: last.start,
+          end: last.end,
+          mediaIn: last.mediaIn,
+          mediaOut: last.mediaOut,
+        })
         .catch(boQuaLoi());
-      const fresh = await api.getProject(projectId ?? "").catch(() => null);
-      if (fresh) {
-        const shaped = shape(fresh);
-        durationRef.current = shaped.duration;
-        setData(shaped);
-      }
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              inserts: current.inserts.map((item) =>
+                item.id === last.elementId
+                  ? {
+                      ...item,
+                      start: last.start,
+                      end: last.end,
+                      mediaIn: last.mediaIn,
+                      mediaOut: last.mediaOut,
+                    }
+                  : item,
+              ),
+            }
+          : current,
+      );
       // Mép b-roll trả về chỗ cũ → xếp lại lịch màn cho khung người theo kịp.
       onInsertTrimmed?.();
       return;

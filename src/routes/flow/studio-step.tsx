@@ -117,13 +117,17 @@ export function StudioStep({ projectId }: { projectId: string | undefined }) {
 /** Nút xuất video ở header — đang dựng nền / xuất được / đang xuất / tải về. */
 function ExportAction({ editor }: { editor: EditorState }) {
   const job = editor.exportJob;
-  if (job?.status === "done") {
+  // Xuất XONG mà bản dựng còn TƯƠI (chưa sửa gì sau đó) → cho tải luôn. Nếu ĐÃ SỬA
+  // sau khi xuất (`exportStale`) thì bản trên đĩa CŨ — KHÔNG mời tải nữa, đổi thành
+  // "Xuất lại video" để khỏi tải nhầm bản thiếu chỉnh sửa.
+  if (job?.status === "done" && !editor.exportStale) {
     return (
       <Button render={<a href={api.exportUrl(editor.projectId!)} download />}>
         Tải video về
       </Button>
     );
   }
+  const doneButStale = job?.status === "done" && editor.exportStale;
   return (
     <Button
       disabled={
@@ -137,7 +141,9 @@ function ExportAction({ editor }: { editor: EditorState }) {
         ? (job.message ?? "Đang xuất…")
         : !editor.masterReady
           ? "Đang chuẩn bị bản dựng…"
-          : "Xuất video"}
+          : doneButStale
+            ? "Xuất lại video"
+            : "Xuất video"}
     </Button>
   );
 }

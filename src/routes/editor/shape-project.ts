@@ -166,11 +166,17 @@ export function shape(data: ApiProject) {
       const order = file ? insertOrder(data, file.id) : undefined;
       return {
         id: element.id,
-        start: from?.start ?? 0,
-        end: to?.end ?? 0,
+        // NEO-GIÂY: mốc từ chính element (`start_sec/end_sec`); lùi về mốc TỪ cho
+        // khối cũ chưa điền. B-roll giờ kéo/gọt tự do theo giây như nhạc.
+        start: element.start_sec ?? from?.start ?? 0,
+        end: element.end_sec ?? to?.end ?? 0,
         fromWordId: element.from_word_id ?? "",
         toWordId: element.to_word_id ?? "",
         mediaFileId: element.media_file_id ?? undefined,
+        // CỬA SỔ nguồn (lấy đoạn nào của clip) + TRẦN là độ dài clip thật.
+        mediaIn: element.media_in_sec ?? null,
+        mediaOut: element.media_out_sec ?? null,
+        clipDuration: file?.duration ?? null,
         fromLibrary: !!file?.from_library,
         label: file ? shortMediaLabel(file.name, order) : "Tư liệu",
         fullName: file?.name,
@@ -284,6 +290,9 @@ export function shape(data: ApiProject) {
     clips,
     duration: segmentsEnd || cursor || (sentences.at(-1)?.end ?? 0),
     title: data.project.title,
+    /** Bản dựng trên đĩa đã CŨ so với nội dung? (sửa gì sau lần xuất gần nhất). */
+    exportStale:
+      (data.project.content_rev ?? 0) !== (data.project.exported_rev ?? 0),
     /** Mã những lời nhắc đã bỏ qua — hàng soát lọc theo danh sách này */
     dismissed: data.dismissed ?? [],
     /** Tiến trình dựng — màn dựng (studio ở /flow) dùng nó làm CỔNG */

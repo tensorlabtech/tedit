@@ -247,6 +247,10 @@ export async function makeFilmstrip(
   // Lệch một con số là mặt người bị kéo dài/bẹt ở mọi mức phóng.
   laneHeight = 56,
   density = 2,
+  // Khung/giây MONG MUỐN (trần vẫn hạ tiếp nếu vượt giới hạn texture). Dải thời
+  // gian dùng 4 (mịn). Thanh CẮT ĐOẠN dùng ÍT hơn (vd 2) để mỗi khung RỘNG gấp
+  // đôi → cao gấp đôi khi vẽ vừa bề ngang thanh, nhìn rõ hơn.
+  startFps = 4,
 ) {
   /*
    * Trần bề ngang của dải — do GPU đặt ra, không phải do JPEG.
@@ -274,7 +278,7 @@ export async function makeFilmstrip(
   // Số khung/giây: DÀY NHẤT mà cả dải vẫn dưới trần texture (kể cả 1 giây dôi ở
   // cuối — xem `columns`). Ô rộng (khung dọc) thì ít khung/giây hơn — đổi độ mịn
   // thời gian lấy ĐÚNG tỉ lệ, vì tỉ lệ sai đọc ra ngay còn thưa khung thì không.
-  let framesPerSecond = 4;
+  let framesPerSecond = Math.max(1, Math.round(startFps));
   while (
     framesPerSecond > 1 &&
     (seconds + 1) * framesPerSecond * cellWidth > MAX_WIDTH

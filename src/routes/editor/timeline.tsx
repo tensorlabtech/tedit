@@ -17,6 +17,7 @@ import { TimelineSideRail } from "./timeline-side-rail";
 import { ZOOM_STEP } from "./timeline-zoom";
 import { MusicLane } from "./timeline-music-lane";
 import { TrimHandles } from "./timeline-trim-handle";
+import { useInsertFilmstrips } from "./use-insert-filmstrips";
 import { useTimelineDrag } from "./use-timeline-drag";
 import { useTimelineView } from "./timeline-view";
 import { type EditorState, type Selection } from "./use-editor";
@@ -89,6 +90,9 @@ export function Timeline({
     viewportRef,
     timeAtClientX,
   });
+
+  // Dải ảnh của từng clip b-roll — nền của khối trên dải bố cục (cắt đoạn tại chỗ).
+  const insertStrips = useInsertFilmstrips(editor.inserts);
 
   const selectedClip =
     selection?.kind === "clip"
@@ -229,6 +233,7 @@ export function Timeline({
                       <LayoutLane
                         schedule={editor.sceneLayout.schedule}
                         inserts={toVisible(editor.inserts)}
+                        strips={insertStrips}
                         pxPerSecond={pxPerSecond}
                         selection={selection}
                         scenePreview={editor.scenePreview}

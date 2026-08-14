@@ -124,6 +124,21 @@ export function RemotionPreview({
 
   const fps = state.payload?.fps ?? 30;
 
+  // Payload mới về (trim/dời/đổi khung): ÉP Player vẽ lại KHUNG HIỆN TẠI. Player
+  // đang PAUSE không tự vẽ lại chỉ vì `inputProps` đổi tham chiếu — nó kẹt ở
+  // arrangement CŨ (timeline một đằng, hình một nẻo). `seekTo` lại đúng chỗ buộc
+  // dựng khung với payload mới. Chạy SAU khi payload đã commit (deps `state.payload`).
+  useEffect(() => {
+    if (!state.payload) return;
+    const player = playerRef.current;
+    if (!player) return;
+    const frame = Math.round(
+      toOutputRef.current(timeRef.current) * state.payload.fps,
+    );
+    player.seekTo(frame);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.payload]);
+
   // Player → editor: mỗi frame, quy giờ output về source rồi đẩy vạch (nếu lệch đủ).
   useEffect(() => {
     const player = playerRef.current;

@@ -33,7 +33,7 @@ export function TextOverrideRows({
   );
 
   return (
-    <Field>
+    <Field className="pb-2">
       <FieldLabel>Màu từ nhấn</FieldLabel>
       <div className="flex flex-wrap items-center gap-1.5">
         <ColorSwatch
