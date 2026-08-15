@@ -43,7 +43,7 @@ export async function seedSegmentsByCaption(
    */
   pack: StylePack,
 ) {
-  const groups = await buildCaptionGroups(projectId, "bottom", pack);
+  const { groups } = await buildCaptionGroups(projectId, "bottom", pack);
   if (groups.length === 0) return 0;
 
   const envelope = await readEnvelope(projectId);

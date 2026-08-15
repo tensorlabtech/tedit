@@ -1,5 +1,4 @@
 import {
-  ArrowLeftIcon,
   ClapperboardIcon,
   CogIcon,
   ImagesIcon,
@@ -7,6 +6,7 @@ import {
   PencilLineIcon,
   ScissorsIcon,
   SpellCheckIcon,
+  Undo2Icon,
   VideoIcon,
   Wand2Icon,
 } from "lucide-react";
@@ -133,12 +133,13 @@ export function FlowSidebar({
             về, hành động lùi ra chứ không phải một điểm đến ngang hàng. */}
         <Button
           variant="ghost"
-          size="sm"
-          className="mt-1 w-full justify-center gap-1.5"
+          className="mt-1 h-auto w-full flex-col gap-2 px-1.5 py-3"
           onClick={onHome}
         >
-          <ArrowLeftIcon className="size-4" />
-          Về trang chủ
+          <Undo2Icon className="size-6 text-muted-foreground" />
+          <span className="text-[11px] leading-tight text-muted-foreground">
+            Trang chủ
+          </span>
         </Button>
       </CardContent>
     </Card>

@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { db } from "../db";
 import {
+  cancelJob,
   enqueue,
   queuePosition,
 } from "../job-queue";
@@ -108,11 +109,18 @@ app.post("/api/projects/:id/steps/:key/retry", async (request, reply) => {
 
 app.post("/api/projects/:id/export", async (request, reply) => {
   const { id } = request.params as { id: string };
-  const outcome = enqueue(id, "export", () => runExport(id));
+  const outcome = enqueue(id, "export", (signal) => runExport(id, signal));
   if (outcome === "duplicate") {
     return reply.code(409).send({ error: "Đang xuất video rồi" });
   }
   return reply.code(202).send({ status: outcome === "queued" ? "queued" : "running" });
+});
+
+/** HUỶ lượt xuất đang chạy/chờ — bấm Huỷ ở modal xuất. */
+app.post("/api/projects/:id/export/cancel", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const stopped = cancelJob(id, "export");
+  return reply.code(stopped ? 202 : 200).send({ cancelled: stopped });
 });
 
 app.get("/api/projects/:id/jobs/:kind", async (request, reply) => {

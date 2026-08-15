@@ -30,11 +30,15 @@ type QueuedJob = {
   key: JobKey;
   projectId: string;
   kind: string;
-  run: () => Promise<unknown>;
+  /** Nhận `signal` để tự dừng khi người dùng bấm Huỷ; việc cũ bỏ qua tham số này. */
+  run: (signal: AbortSignal) => Promise<unknown>;
 };
 
 /** Việc đang chạy thật. Đây là NGUỒN SỰ THẬT, không phải bảng `jobs`. */
 const running = new Map<JobKey, Promise<void>>();
+
+/** Bộ ngắt của mỗi việc ĐANG chạy — để `cancelJob` gọi `abort()` mà dừng nó. */
+const controllers = new Map<JobKey, AbortController>();
 
 /** Việc đã nhận nhưng chưa tới lượt, theo thứ tự tới trước chạy trước. */
 const waiting: QueuedJob[] = [];
@@ -101,8 +105,11 @@ function launch(job: QueuedJob) {
   // Nhịp tim không được giữ tiến trình sống chỉ vì nó còn hẹn giờ.
   timer.unref?.();
 
+  const controller = new AbortController();
+  controllers.set(job.key, controller);
+
   const task = job
-    .run()
+    .run(controller.signal)
     .then(() => {
       // Việc chạy xong mà bảng vẫn ghi `running` nghĩa là phép chạy quên tự
       // đóng. Đóng hộ ở đây, vì hậu quả nằm ở phía người dùng: màn hình hỏi
@@ -123,6 +130,7 @@ function launch(job: QueuedJob) {
     .finally(() => {
       clearInterval(timer);
       running.delete(job.key);
+      controllers.delete(job.key);
       pump();
     });
 
@@ -149,7 +157,7 @@ function pump() {
 export function enqueue(
   projectId: string,
   kind: string,
-  run: () => Promise<unknown>,
+  run: (signal: AbortSignal) => Promise<unknown>,
 ): EnqueueResult {
   const key = keyOf(projectId, kind);
   if (running.has(key) || waiting.some((job) => job.key === key)) {
@@ -177,6 +185,29 @@ export function enqueue(
 export function queuePosition(projectId: string, kind: string): number | null {
   const index = waiting.findIndex((job) => job.key === keyOf(projectId, kind));
   return index === -1 ? null : index + 1;
+}
+
+/**
+ * HUỶ một việc — đang chờ thì rút khỏi hàng, đang chạy thì `abort()` bộ ngắt để
+ * phép chạy tự dừng (vd Remotion nhận `cancelSignal`). Trả `true` nếu có gì để huỷ.
+ *
+ * Đánh `error` "Đã huỷ" NGAY cho việc đang chờ; việc đang chạy để phép chạy tự
+ * throw rồi `launch` ghi `error` (một nguồn ghi trạng thái, khỏi tranh nhau).
+ */
+export function cancelJob(projectId: string, kind: string): boolean {
+  const key = keyOf(projectId, kind);
+  const controller = controllers.get(key);
+  if (controller) {
+    controller.abort();
+    return true;
+  }
+  const index = waiting.findIndex((job) => job.key === key);
+  if (index !== -1) {
+    waiting.splice(index, 1);
+    setJob(projectId, kind, "error", 0, "Đã huỷ");
+    return true;
+  }
+  return false;
 }
 
 /** Số việc đang chạy và đang chờ — cho `/api/health` và lúc gỡ lỗi. */

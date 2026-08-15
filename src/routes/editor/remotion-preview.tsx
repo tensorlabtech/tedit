@@ -1,4 +1,5 @@
 import { memo, useEffect, useRef, useState, type RefObject } from "react";
+import { PauseIcon, PlayIcon } from "lucide-react";
 
 import { Player, type PlayerRef } from "@remotion/player";
 
@@ -42,6 +43,15 @@ const PlayerSurface = memo(function PlayerSurface({
         style={PLAYER_STYLE}
         controls
         loop
+        // Icon play/pause THƯỜNG (tam giác sắc của lucide) — mặc định của Remotion
+        // là tam giác bo tròn trông "béo". `fill` để đặc ruột như nút play chuẩn.
+        renderPlayPauseButton={({ playing }) =>
+          playing ? (
+            <PauseIcon className="size-full" fill="currentColor" />
+          ) : (
+            <PlayIcon className="size-full" fill="currentColor" />
+          )
+        }
       />
     </div>
   );
@@ -118,6 +128,9 @@ export function RemotionPreview({
   toOutputRef.current = editor.toOutput;
   const seekRef = useRef(editor.seek);
   seekRef.current = editor.seek;
+  // Ref ỔN ĐỊNH (identity giữ qua các lượt vẽ) — listener frameupdate đọc `.current`
+  // sống dù closure có "chốt" bản editor cũ.
+  const previewStopRef = editor.previewStopRef;
   const lastSeekMsRef = useRef(0);
   const seekTimerRef = useRef<number | null>(null);
   const lastFrameMsRef = useRef(0);
@@ -144,11 +157,20 @@ export function RemotionPreview({
     const player = playerRef.current;
     if (!player) return;
     const onFrame = (e: { detail: { frame: number } }) => {
+      const src = toSourceRef.current(e.detail.frame / fps);
+      // TỰ DỪNG cuối quãng xem-thử: chọn chỗ nối / cụm chữ là tua vào rồi PHÁT để
+      // thấy hiệu ứng theo-thời-gian; tới hết quãng phải dừng, không chạy tuột hết
+      // video. Kiểm MỖI frame (ngoài throttle) cho dừng đúng chỗ. `null` = phát tự
+      // do (Cách/kéo dải) — không dừng.
+      const stopAt = previewStopRef.current;
+      if (stopAt != null && src >= stopAt) {
+        playerRef.current?.pause();
+        previewStopRef.current = null;
+      }
       // THROTTLE ~10/s: lúc phát, frameupdate bắn mỗi frame; đẩy editor.time mỗi
       // lần thì cả BÀN DỰNG (Timeline) dựng lại 20-30/s = lag. 10/s đủ cho vạch.
       const now = performance.now();
       if (now - lastFrameMsRef.current < 100) return;
-      const src = toSourceRef.current(e.detail.frame / fps);
       if (Math.abs(src - timeRef.current) > 0.05) {
         seekRef.current(src);
         lastFrameMsRef.current = now;

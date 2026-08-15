@@ -56,6 +56,10 @@ const ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
 const MODEL = process.env.OPENROUTER_MODEL ?? "deepseek/deepseek-v4-pro";
 const MODEL_CHEAP =
   process.env.OPENROUTER_MODEL_CHEAP ?? process.env.OPENROUTER_MODEL ?? MODEL;
+// Bậc CAO cho việc CẦN NGỮ NGHĨA nhưng NHẸ (vd chia cụm ~5s). KHÔNG dùng cho việc
+// nặng đọc-cả-bản-chép — model suy-luận chạy đó vài phút. `pro: true` chọn bậc này.
+const MODEL_PRO =
+  process.env.OPENROUTER_MODEL_PRO ?? "deepseek/deepseek-v4-pro";
 
 /**
  * Mô hình cho lời gọi CÓ ẢNH (mô tả tư liệu chèn).
@@ -167,6 +171,8 @@ export async function ask<T>(options: {
   schemaName: string;
   images?: ImagePart[];
   cheap?: boolean;
+  /** Bậc CAO (ngữ nghĩa) cho việc NHẸ — vd chia cụm. Đừng dùng cho việc nặng. */
+  pro?: boolean;
   /**
    * Mức SUY LUẬN của mô hình. Bỏ trống là để nhà cung cấp tự chọn.
    *
@@ -181,6 +187,12 @@ export async function ask<T>(options: {
    * có 6,6KB nên không phải chỗ tốn.
    */
   effort?: "minimal" | "low" | "medium" | "high";
+  /**
+   * Trần token SINH RA. Bỏ trống là để mô hình dùng mặc định của nó — mà mặc định
+   * của bậc pro (deepseek-v4-pro) là 65536, đủ để một request nhỏ vượt số credit
+   * chi được và HỎNG cả lượt. Việc NHẸ output ngắn (vd chia cụm) nên đặt trần thấp.
+   */
+  maxTokens?: number;
 }): Promise<T> {
   if (!hasModel()) throw new Error("Chưa có OPENROUTER_API_KEY");
 
@@ -198,9 +210,11 @@ export async function ask<T>(options: {
     // Có ảnh thì BẮT BUỘC dùng mô hình nhìn được ảnh, bất kể `cheap`.
     model: options.images?.length
       ? MODEL_VISION
-      : options.cheap
-        ? MODEL_CHEAP
-        : MODEL,
+      : options.pro
+        ? MODEL_PRO
+        : options.cheap
+          ? MODEL_CHEAP
+          : MODEL,
     messages: [
       { role: "system", content: options.instructions },
       { role: "user", content },
@@ -234,6 +248,7 @@ export async function ask<T>(options: {
     // Chỉ gửi khi chỗ gọi có ý kiến. Gửi kèm một mức mặc định do mình chọn là
     // âm thầm đổi hành vi của cả bảy chặng còn lại.
     ...(options.effort ? { reasoning: { effort: options.effort } } : {}),
+    ...(options.maxTokens ? { max_tokens: options.maxTokens } : {}),
   };
 
   /*

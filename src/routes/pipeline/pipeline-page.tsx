@@ -74,6 +74,28 @@ export const STEP_LABELS: Record<string, string> = {
 };
 
 /**
+ * Dòng phụ MẶC ĐỊNH của mỗi chặng — bày lúc CHƯA tới (chưa có kết quả). Nhờ nó
+ * mọi hàng đều hai dòng, không "cụt ngủn" một dòng. Chặng XONG thì kết quả thật
+ * (vd "65 đoạn · 53 chữ") đè lên mô tả này.
+ */
+export const STEP_DESCRIPTIONS: Record<string, string> = {
+  prepare: "Chuẩn hoá tiếng và hình",
+  transcribe: "Máy nghe rồi gõ ra chữ",
+  fix: "Chữa lại từ nghe sai",
+  captions: "Tách câu, dựng phụ đề",
+  silence: "Bỏ quãng lặng thừa",
+  cuts: "Gợi ý đoạn nên bỏ",
+  "review-cut": "Bạn xem lại chỗ cắt",
+  "commit-cut": "Chốt bản cắt cuối",
+  "review-text": "Bạn soát lỗi chính tả",
+  keywords: "Tô đậm từ quan trọng",
+  describe: "Máy xem từng tư liệu",
+  place: "Đặt b-roll đúng chỗ",
+  effects: "Thêm chuyển cảnh, nhấn nhịp",
+  music: "Chọn nhạc hợp mạch",
+};
+
+/**
  * "đang chạy 12s" — mốc `updated_at` là lúc chặng đổi sang `running`.
  *
  * Trang tự hỏi lại máy chủ mỗi 1,5 giây nên con số này nhích theo mà không cần một

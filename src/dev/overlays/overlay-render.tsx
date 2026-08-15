@@ -136,7 +136,11 @@ export function buildRows(config: OverlayConfig, pack: ShownPack = BASE_SHOWN): 
     keyword: isKey(word),
   });
 
-  if (config.emphasis === "even") {
+  // CHỌN HẾT từ làm "từ nhấn" = muốn CẢ CÂU TO ĐỀU (như một cụm chốt). Dựng như
+  // `even`: bẻ dòng + một cỡ LỚN chung, thay vì nhồi hết vào MỘT hàng hero (câu
+  // dài sẽ nhỏ đi). Nhờ vậy "tô hết = to hết" đúng như người dùng nghĩ.
+  const allKeywords = words.every(isKey);
+  if (config.emphasis === "even" || allKeywords) {
     // Bẻ dòng theo bề rộng rồi dùng CHUNG một cỡ — dáng phụ đề khổ lớn. Truyền
     // `isKey` để ĐO mỗi tiếng bằng đúng font vai (per-word) → không tràn khung.
     const { lines, size } = fitGroup(words.join(" "), avail, pack, isKey);
@@ -156,7 +160,9 @@ export function buildRows(config: OverlayConfig, pack: ShownPack = BASE_SHOWN): 
     const before = from >= 0 ? words.slice(0, from) : words.slice(1);
     const after = from >= 0 ? words.slice(last + 1) : [];
     const heroSize = fitRow(hero.join(" "), avail, 1, pack);
-    const small = Math.min(heroSize * 0.4, 0.075);
+    // Chữ KHÔNG nhấn (dẫn nhỏ) trước đây bị hãm 0,075 nên bé hẳn so với hero. Nâng
+    // tỉ lệ 0,4→0,48 và trần 0,075→0,085 cho đọc rõ hơn, vẫn nhỏ hơn hero rõ rệt.
+    const small = Math.min(heroSize * 0.48, 0.085);
     const secondary = (list: string[]): Row =>
       list.map((word) => ({
         text: word,

@@ -165,20 +165,14 @@ async function fixOnce(projectId: string): Promise<{
       words.map((word, at) => `${at}|${word.id}|${word.text}`).join("\n"),
     schemaName: "transcript_fixes",
     schema: SCHEMA,
-    /**
-     * Hạ mức suy luận — chặng này từng chiếm quá nửa cả lượt dựng.
-     *
-     * Đo trên một bản chép 221 từ, cùng mô hình, cùng dữ liệu: để mặc định thì
-     * 48,6 giây một lượt và mô hình đốt 3.904 token chỉ để nghĩ; `low` còn 24,9
-     * giây với 1.600 token, mà vẫn đề xuất đúng chừng ấy chỗ sửa. Chặng chạy hai
-     * lượt nên người dùng ngồi chờ gần ba phút, giờ còn khoảng năm mươi giây.
-     *
-     * Không xuống `minimal` (3,6 giây, 0 token suy luận): ở mức đó nó đề xuất 4
-     * chỗ sửa trên một bản chép ĐÃ ĐÚNG, tức là bắt đầu sờ vào chữ không cần sửa.
-     * `soundsAlike` chặn được phần lớn, nhưng chặng này viết lại lời của người ta
-     * nên thà chậm hơn hai mươi giây còn hơn đổi lấy một cú sửa sai không ai thấy.
+    /*
+     * Dùng CHAT (không `effort`). Đây là chặng NẶNG (đọc cả bản chép) — model
+     * SUY-LUẬN chạy đây mất vài PHÚT (đốt hàng nghìn token chỉ để nghĩ). Chat làm
+     * việc này trong ~vài giây và vẫn đoán đúng chỗ nghe nhầm nhờ ngữ cảnh chủ đề.
+     * `effort` chỉ dành cho model suy-luận; kèm nó với chat là OpenRouter báo "no
+     * endpoints handle the requested parameters" → lời gọi hỏng.
      */
-    effort: "low",
+    cheap: true,
   });
 
   const index = new Map(words.map((word, at) => [word.id, at]));

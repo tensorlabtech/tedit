@@ -230,14 +230,10 @@ export function TextPane({
       </CardHeader>
 
       <CardContent className="min-h-0 flex-1">
-        {/* Không bày thanh cuộn — nó ăn ~12px bề ngang, đủ để ô cuối của hàng
-            "Chỗ đặt" bị cắt cụt. `scroll-fade-b` che mờ mép dưới nên vẫn thấy được
-            là bên dưới còn nữa, mà không tốn pixel nào. */}
-        <ScrollArea
-          className="h-full"
-          scrollbar={false}
-          viewportClassName="scroll-fade-b"
-        >
+        {/* Thanh cuộn OVERLAY (Radix — absolute, KHÔNG ăn bề ngang nên không cắt ô
+            "Chỗ đặt") để người dùng THẤY là cuộn được; giữ thêm `scroll-fade-b` gợi
+            còn nội dung bên dưới. Trước đây ẩn hẳn thanh, đọc ra "không scroll được". */}
+        <ScrollArea className="h-full" viewportClassName="scroll-fade-b">
           <div className="grid gap-3 pr-1">
             {/* Gõ tới đâu khung xem đổi tới đó, nhưng CHỐT lúc rời ô: ghi nội
                 dung là ghi ngược cả vào lời chép, mà gõ dở nửa chừng thì lời

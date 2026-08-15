@@ -23,7 +23,7 @@ import { buildPlacedSegments } from "./layout-segments";
 import { PICKABLE_LAYOUTS } from "./layout-kinds";
 import { proposeCuts } from "./ai-cuts";
 import { fixTranscript } from "./ai-fix-transcript";
-import { trimSilence } from "./auto-trim-silence";
+import { trimSilence, trimWordlessIslands } from "./auto-trim-silence";
 import { detectSpeech, readSpeech } from "./vad";
 import { describeInserts } from "./ai-broll-describe";
 import { placeInserts } from "./ai-broll-place";
@@ -986,7 +986,10 @@ export function behindElement(
   return row ? { id: row.id, content: row.content ?? "" } : null;
 }
 
-export async function runExport(projectId: string) {
+export async function runExport(projectId: string, signal?: AbortSignal) {
+  const stop = () => {
+    if (signal?.aborted) throw new Error("Đã huỷ");
+  };
   setJob(projectId, "export", "running", 5, "Đang chuẩn bị");
   const sources = mainSources(projectId);
   if (sources.length === 0) throw new Error("Chưa có video chính");
@@ -1040,6 +1043,7 @@ export async function runExport(projectId: string) {
 
   const crossAt = buildCrossAt(kept, manual, defaultKind);
 
+  stop();
   setJob(projectId, "export", "running", 35, "Đang bỏ các đoạn đã gạch");
   const cut = await cutRanges(projectId, baseVideo, kept, crossAt);
   /*
@@ -1236,6 +1240,7 @@ export async function runExport(projectId: string) {
       | { r: number }
       | undefined
   )?.r ?? 0;
+  stop();
   if (engine === "remotion")
     setJob(projectId, "export", "running", 40, "Đang dựng hình (Remotion)");
   const finalPath =
@@ -1244,6 +1249,19 @@ export async function runExport(projectId: string) {
           projectId,
           cut,
           join(outDir(projectId), "final.mp4"),
+          {
+            signal,
+            // Khâu Remotion (0..1) trải lên quãng 40→80 của tiến trình xuất —
+            // đây là khâu LÂU nhất; nối vào để thanh chạy mượt thay vì đứng ở 40.
+            onProgress: (ratio) =>
+              setJob(
+                projectId,
+                "export",
+                "running",
+                40 + Math.round(ratio * 40),
+                "Đang dựng hình (Remotion)",
+              ),
+          },
         )
       : await burnElements(
     projectId,
@@ -1576,7 +1594,13 @@ function aiJobs(projectId: string): AiJob[] {
       key: "cuts",
       run: async () => {
         const { applied, rejected } = await proposeCuts(projectId);
-        return `bỏ ${applied} chỗ` + (rejected > 0 ? ` · gạt ${rejected}` : "");
+        // SAU ai-cuts: dọn ĐẢO GIỮ không-lời (VAD báo nhầm tiếng gõ/ồn thành
+        // giọng, ai-cuts không đụng được vì không có chữ). Bản chép giờ đã chốt.
+        const island = trimWordlessIslands(projectId);
+        return (
+          `bỏ ${applied + island.trimmed} chỗ` +
+          (rejected > 0 ? ` · gạt ${rejected}` : "")
+        );
       },
     },
     {

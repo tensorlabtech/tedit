@@ -122,7 +122,6 @@ export function FlowPage() {
    * (sidebar không bấm được), chỉ tiến bằng nút.
    */
   const [intakeStep, setIntakeStep] = useState(0);
-  const intakeInited = useRef(false);
 
   useEffect(() => {
     // Chưa có mã (vào `/flow` để tạo mới): không có gì để tải — tắt cờ chờ ngay,
@@ -237,14 +236,9 @@ export function FlowPage() {
   const stale = upload.transcriptStale || upload.briefStale;
 
   const machineAt = currentStep(snap);
-  // Khởi tạo intakeStep MỘT LẦN theo trạng thái (dự án dở giữa chừng thì vào đúng
-  // bước), rồi để nút đẩy — không cho snap về sau kéo nó đi.
-  useEffect(() => {
-    if (intakeInited.current || loading) return;
-    intakeInited.current = true;
-    if (!snap.started)
-      setIntakeStep(snap.hasBrief ? 2 : snap.hasMain ? 1 : 0);
-  }, [loading, snap.started, snap.hasBrief, snap.hasMain]);
+  // KHÔNG tự nhảy bước theo dữ liệu: tải cảnh chính xong (hoặc mở lại dự án) vẫn
+  // ĐỨNG ở bước nhập đang xem; muốn sang bước sau phải BẤM "Tiếp". Chỉ khi máy đã
+  // chạy (`snap.started`) mới bám theo máy ở dưới. Reload = về bước 0 rồi bấm qua.
   const INTAKE_STEPS = ["main-footage", "b-roll", "brief"] as const;
   // Máy chưa chạy → bước do wizard cầm; chạy rồi → bám máy (bước máy tự tiến qua
   // Chuẩn bị/Cắt/Soát/Dựng/Bàn dựng).
@@ -359,7 +353,13 @@ export function FlowPage() {
           định `min-width:auto` — không cho co dưới min-content, nên bước nào có
           khung xem rộng là cả ô này phình quá bề ngang, đẩy nội dung lòi khỏi mép
           và bị `overflow-hidden` cắt (ring cột phải mất một cạnh). Cho co về 0. */}
-      <div className="grid min-h-0 min-w-0 gap-2 lg:h-full lg:grid-rows-[minmax(0,1fr)_auto]">
+      <div
+        className={`grid min-h-0 min-w-0 gap-2 lg:h-full ${
+          action
+            ? "lg:grid-rows-[minmax(0,1fr)_auto]"
+            : "lg:grid-rows-[minmax(0,1fr)]"
+        }`}
+      >
         {/*
           Ô phải KHÔNG bọc thêm một Card nữa.
 

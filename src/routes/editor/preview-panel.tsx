@@ -89,8 +89,12 @@ export function PreviewPanel({
   //
   // `element.start/end` đã đúng cho CẢ HAI kiểu neo (dựng ở `shape()`), nên bỏ
   // hẳn phép tra là vừa sửa lỗi vừa bớt một đường vòng.
+  // Mép `end` LOẠI (`< end`), không bao gồm: đúng mốc chuyển cụm (end A = start B)
+  // mà bao gồm cả hai thì hai cụm hiện chồng một khung. Khớp `runningRowId` và
+  // `active` của hàng bản chép (đều `< end`), nên khung xem và danh sách sáng CÙNG
+  // một dòng.
   const visible = editor.textElements.filter(
-    (element) => editor.time >= element.start && editor.time <= element.end,
+    (element) => editor.time >= element.start && editor.time < element.end,
   );
 
   const insert = editor.inserts.find(
@@ -635,7 +639,11 @@ export function PreviewPanel({
                     );
                   });
                 })()}
-              <div className="absolute inset-x-[5%] top-[10%] bottom-[20%] rounded-md border border-dashed border-muted-foreground/25" />
+              {/* Khung gạch-đứt = vùng an-toàn đặt caption. Ẩn ở Soát lời: bước
+                  này chỉ ĐỌC/soát chữ, không đặt caption — khung này chỉ làm nhiễu. */}
+              {!proofread && (
+                <div className="absolute inset-x-[5%] top-[10%] bottom-[20%] rounded-md border border-dashed border-muted-foreground/25" />
+              )}
 
               {/* B-roll vẽ đè CHỈ khi không có bố cục ô. Bộ có bố cục thì b-roll đã
                 hiện trong ô phụ của màn — vẽ thêm lớp đè nữa là hiện đôi. */}
@@ -899,7 +907,18 @@ export function PreviewPanel({
                     <div
                       className="h-full rounded-full bg-white"
                       style={{
-                        width: `${(editor.toOutput(editor.time) / editor.outputDuration) * 100}%`,
+                        // Chặn chia-cho-0 (video bị bỏ TOÀN BỘ → outputDuration=0):
+                        // không chặn thì bề rộng ra `NaN%`.
+                        width: `${
+                          editor.outputDuration > 0
+                            ? Math.min(
+                                100,
+                                (editor.toOutput(editor.time) /
+                                  editor.outputDuration) *
+                                  100,
+                              )
+                            : 0
+                        }%`,
                       }}
                     />
                   </div>

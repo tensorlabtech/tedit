@@ -1,6 +1,7 @@
 import { voiBoiCanh } from "./ai-context";
 import { copyIntoProject, libraryCandidates } from "./asset-library";
 import { db, newId } from "./db";
+import { findLayout, type LayoutKindId } from "./layout-kinds";
 import { ask, object } from "./llm";
 import { settingsForProject } from "./settings";
 import { readStylePack } from "./style-pack-store";
@@ -174,18 +175,31 @@ export async function placeInserts(projectId: string): Promise<{
   // chỉ có 2 tấm hình là mời nó đặt cùng một tấm hai lần.
   const byUser = Math.round((spokenSeconds / 60) * moiPhut);
   const byPack = Math.round(spokenSeconds / pack.rhythm.brollEverySec);
-  const want = Math.max(1, Math.min(free.length, Math.max(byUser, byPack)));
+  // LUẬT: DÙNG HẾT b-roll USER tự tải (`trongDuAn`) — họ chỉ thêm cái cần dùng.
+  // Số nhắm = MAX(số user, nhịp cài đặt, nhịp bộ dáng). KHO chỉ BÙ nếu user chưa
+  // đủ nhịp; đủ rồi thì không mời kho (khỏi lấp video bằng tư liệu tự-lấy).
+  const target = Math.max(trongDuAn.length, byUser, byPack);
+  const offered = [
+    ...trongDuAn,
+    ...tuKho.slice(0, Math.max(0, target - trongDuAn.length)),
+  ];
+  const want = Math.max(1, offered.length);
 
-  // Kho kiểu hiện ra ưu tiên của bộ dáng. Kiểu ĐẦU danh sách là kiểu mọi lần
-  // chèn của chặng này dùng — mô hình không chọn kiểu hiện ra, nó chỉ chọn CHỖ.
+  // KIỂU KHUNG xoay vòng cho ĐA DẠNG (trước đây mọi chèn cùng một kiểu). Lấy các
+  // bố cục b-roll (cần tư liệu) của bộ dáng; chèn thứ i dùng kiểu i%N. Người dùng
+  // vẫn đổi từng cái ở bảng sửa.
+  const brollLayouts = pack.layouts.filter(
+    (id) => findLayout(id as LayoutKindId).needsInsert,
+  ) as LayoutKindId[];
   const revealForPack = pack.effectBias.insertReveal[0] ?? "none";
 
   const proposal = await ask<Proposal>({
     instructions: voiBoiCanh(INSTRUCTIONS, projectId),
     input:
-      `Lời dài ${spokenSeconds.toFixed(0)} giây. Nhắm khoảng ${want} chỗ chèn.\n\n` +
+      `Lời dài ${spokenSeconds.toFixed(0)} giây. Nhắm khoảng ${want} chỗ chèn — ` +
+      `hãy DÙNG HẾT tư liệu dưới đây, mỗi tệp một chỗ.\n\n` +
       `Tư liệu (mã|tên|nội dung):\n` +
-      free.map((a) => `${a.id}|${a.name}|${a.description}`).join("\n") +
+      offered.map((a) => `${a.id}|${a.name}|${a.description}`).join("\n") +
       `\n\nLời (mã|chữ):\n` +
       words.map((w) => `${w.id}|${w.text}`).join("\n"),
     schemaName: "broll_places",
@@ -204,8 +218,8 @@ export async function placeInserts(projectId: string): Promise<{
   // để kéo/gọt tự do như nhạc, kéo mép = in/out nguồn. Vẫn ghi `from/to_word_id`
   // (chưa bỏ cột) nhưng render đọc GIÂY (`layout-segments` ưu tiên sec).
   const insert = db.prepare(
-    `INSERT INTO elements (id, project_id, kind, from_word_id, to_word_id, start_sec, end_sec, media_file_id, align, emphasis, reveal, shape)
-     VALUES (?,?,'layout',?,?,?,?,?,'center','taper',?,'full')`,
+    `INSERT INTO elements (id, project_id, kind, from_word_id, to_word_id, start_sec, end_sec, media_file_id, insert_layout, align, emphasis, reveal, shape)
+     VALUES (?,?,'layout',?,?,?,?,?,?,'center','taper',?,'full')`,
   );
   // KHUNG chiếm NỬA TRÊN (người/tư liệu ở trên, chừa đáy) → phụ đề đè lên đó phải
   // XUỐNG DƯỚI cho khỏi che. Đặt khung xong thì đẩy mọi cụm chữ CHẠM khoảng thời
@@ -234,7 +248,12 @@ export async function placeInserts(projectId: string): Promise<{
    * xuất nào bị luật gạt sẽ để lại một tệp thừa nằm trong dự án mà không phần tử
    * nào trỏ tới.
    */
-  const duyet: Array<{ fileId: string; lo: number; hi: number }> = [];
+  const duyet: Array<{
+    fileId: string;
+    lo: number;
+    hi: number;
+    layout: LayoutKindId | null;
+  }> = [];
   {
     for (const place of proposal.places) {
       const from = index.get(place.fromWordId);
@@ -286,7 +305,10 @@ export async function placeInserts(projectId: string): Promise<{
         reject("sát đầu");
         continue;
       }
-      if (length > budget) {
+      // B-roll USER tự tải MIỄN budget (luật: dùng hết cái họ đưa); chỉ tư liệu
+      // từ KHO (`kho:…`) mới bị trần 30% để khỏi lấp video bằng kho tự-lấy.
+      const isUserBroll = !asset.id.startsWith("kho:");
+      if (!isUserBroll && length > budget) {
         reject("hết ngân sách");
         continue;
       }
@@ -303,7 +325,11 @@ export async function placeInserts(projectId: string): Promise<{
         continue;
       }
 
-      duyet.push({ fileId: asset.id, lo, hi });
+      // KIỂU KHUNG xoay vòng theo thứ tự nhận (đa dạng); rỗng thì để null (mặc định).
+      const layout = brollLayouts.length
+        ? brollLayouts[duyet.length % brollLayouts.length]
+        : null;
+      duyet.push({ fileId: asset.id, lo, hi, layout });
       taken.push({ start, end });
       seen.add(asset.id);
       budget -= length;
@@ -338,6 +364,7 @@ export async function placeInserts(projectId: string): Promise<{
         words[item.lo].start_sec,
         words[item.hi].end_sec,
         fileId,
+        item.layout,
         revealForPack,
       );
       // Phụ đề chạm khung này → xuống dưới cho khỏi che khung.

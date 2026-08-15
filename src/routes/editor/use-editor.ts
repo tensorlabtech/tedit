@@ -160,12 +160,18 @@ export function useEditor(projectId: string | undefined) {
   const [exportJob, setExportJob] = useState<{
     status: string;
     message: string;
+    /** 0..100 — cho vòng tiến trình ở modal xuất. */
+    progress: number;
   } | null>(null);
   // ĐÃ SỬA SAU KHI XUẤT? Cờ CỤC BỘ cho phiên đang mở (server đã biết qua
   // `content_rev`, nhưng chỉ đọc lúc TẢI trang; cờ này bắt sửa NGAY trong phiên để
-  // nút đổi "Xuất lại" tức thì). Bật ở `markExportStale`, tắt khi xuất xong.
+  // nút đổi "Xuất lại" tức thì). Các mutation gọi thẳng `setExportDirty(true)`.
   const [exportDirty, setExportDirty] = useState(false);
-  const markExportStale = useCallback(() => setExportDirty(true), []);
+  // ĐÃ XUẤT XONG TRONG PHIÊN NÀY? — cờ `current.exportStale` của server chỉ đọc lúc
+  // TẢI trang và KHÔNG tự refresh; nếu lúc tải đang "cũ" thì dù xuất xong nó vẫn
+  // báo cũ (exported_rev đã cập nhật ở server mà client không biết) → modal kẹt ở
+  // 100%. Cờ này chốt "phiên này vừa xuất tươi" để BỎ QUA cờ tải-cũ ấy.
+  const [sessionExported, setSessionExported] = useState(false);
   const durationRef = useRef(0);
   /**
    * Số giây dải ảnh biểu diễn — thang để vẽ nó lên dải thời gian.
@@ -223,7 +229,11 @@ export function useEditor(projectId: string | undefined) {
          */
         const job = project.jobs?.find((item) => item.kind === "export");
         if (job && (job.status === "done" || job.status === "running")) {
-          setExportJob({ status: job.status, message: job.message ?? "" });
+          setExportJob({
+            status: job.status,
+            message: job.message ?? "",
+            progress: job.progress ?? (job.status === "done" ? 100 : 0),
+          });
         }
         // Dự án dựng bằng bản cũ không ghi lại thang của dải ảnh. Dựng lại một
         // lần ngay tại đây: vừa có con số đúng, vừa lên được bản 2× cho màn
@@ -303,6 +313,14 @@ export function useEditor(projectId: string | undefined) {
    * khựng thì vạch chạy chậm lại theo — không ai tua ai.
    */
   const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  /**
+   * Mốc TỰ DỪNG khi xem thử một quãng (giờ GỐC/source). Chọn một chỗ nối / cụm chữ
+   * là tua vào rồi PHÁT để thấy hiệu ứng theo-thời-gian; tới hết quãng thì phải
+   * DỪNG, không chạy tuột hết video. `null` = phát tự do (Cách, kéo dải…). Khung
+   * xem đọc ref này ở `frameupdate` và tạm dừng khi vạch chạm mốc.
+   */
+  const previewStopRef = useRef<number | null>(null);
 
   const seek = useCallback(
     (next: number) =>
@@ -611,6 +629,10 @@ export function useEditor(projectId: string | undefined) {
                 : undefined,
             captionPreset: patch.captionPreset,
           })
+          // Ghi xong mới DỰNG LẠI payload preview: đổi dải/căn/nhấn/màu... đều ảnh
+          // hưởng HÌNH, mà khung xem đọc payload từ máy chủ nên phải refetch thì
+          // Player mới thấy (vd đổi Trên/Giữa/Dưới hiện ngay).
+          .then(() => bumpLayoutReload())
           .catch(boQuaLoi());
         return {
           ...current,
@@ -620,7 +642,7 @@ export function useEditor(projectId: string | undefined) {
         };
       });
     },
-    [],
+    [bumpLayoutReload],
   );
 
   /** Gõ tới đâu thấy tới đó — chỉ đổi trên màn, chưa ghi xuống máy chủ. */
@@ -2104,7 +2126,13 @@ export function useEditor(projectId: string | undefined) {
   const startExport = useCallback(async () => {
     if (!projectId) return;
     await api.startExport(projectId);
-    setExportJob({ status: "running", message: "Đang xếp hàng" });
+    setExportJob({ status: "running", message: "Đang xếp hàng", progress: 0 });
+  }, [projectId]);
+
+  /** Huỷ lượt xuất đang chạy — server dừng render, job về `error` "Đã huỷ". */
+  const cancelExport = useCallback(async () => {
+    if (!projectId) return;
+    await api.cancelExport(projectId).catch(boQuaLoi());
   }, [projectId]);
 
   useEffect(() => {
@@ -2116,9 +2144,14 @@ export function useEditor(projectId: string | undefined) {
           status: job.status,
           message:
             job.status === "queued" ? queueLabel(job) : (job.message ?? ""),
+          progress: job.progress ?? 0,
         });
-        // Xuất XONG → bản dựng khớp nội dung hiện tại lại, hết "cũ".
-        if (job.status === "done") setExportDirty(false);
+        // Xuất XONG → bản dựng khớp nội dung hiện tại lại, hết "cũ". Ghi cả cờ
+        // phiên để bỏ qua cờ tải-cũ của server (không tự refresh).
+        if (job.status === "done") {
+          setExportDirty(false);
+          setSessionExported(true);
+        }
         // Xuất HỎNG cũng phải nói ra — cùng lý do với chép lời. Người dùng đợi
         // vài phút rồi thấy nút quay về chữ "Xuất video" mà không biết vì sao.
         if (job.status === "error") {
@@ -2260,6 +2293,12 @@ export function useEditor(projectId: string | undefined) {
     const seen = new Set<string>();
     return [...tay, ...derived]
       .filter((item) => {
+        // "Cắt thẳng" (none) = KHÔNG hiệu ứng — đừng vẽ chip cho nó. Một khối mang
+        // tên "Cắt thẳng" đọc ra như một hiệu ứng, mà nó chẳng làm gì; nhất là khi
+        // mặc định dự án vốn đã là cắt thẳng thì mọi vết cắt đẻ ra một chip thừa.
+        // Bản 'none' đè-tay VẪN còn trong `manualEffects` (chặn cái tự-suy mọc lại),
+        // chỉ là không HIỆN. Muốn thêm hiệu ứng vào vết cắt trống thì dùng nút "+".
+        if (item.kind === "none") return false;
         if (seen.has(item.id)) return false;
         seen.add(item.id);
         return true;
@@ -2379,6 +2418,32 @@ export function useEditor(projectId: string | undefined) {
       const item = effectsRef.current.find((row) => row.id === id);
       if (!item) return;
       if (item.atCut) {
+        // Mặc định dự án ĐÃ là cắt thẳng → cái tự-suy vốn đã 'none', khỏi cần ghi
+        // hàng 'none' đè (thừa, và để lại rác trong CSDL). Xoá hàng cho sạch. Chỉ
+        // khi mặc định KHÁC cắt thẳng mới ghi 'none' để chặn cái tự-suy mọc lại.
+        if (zoomPunch === "none") {
+          pushUndoRef.current({
+            type: "effect",
+            label: "Bỏ đánh dấu chỗ nối",
+            effectId: id,
+            was: item.custom
+              ? { start: item.start, end: item.end, kind: item.kind }
+              : null,
+          });
+          setData((cur) =>
+            cur
+              ? {
+                  ...cur,
+                  manualEffects: cur.manualEffects.filter(
+                    (row) => row.id !== id,
+                  ),
+                }
+              : cur,
+          );
+          setSelection(null);
+          await api.deleteEffect(projectId, id).catch(boQuaLoi());
+          return;
+        }
         await saveEffect(
           id,
           { start: item.start, end: item.end, kind: "none" },
@@ -2403,7 +2468,7 @@ export function useEditor(projectId: string | undefined) {
       setSelection(null);
       await api.deleteEffect(projectId, id).catch(boQuaLoi());
     },
-    [projectId, saveEffect],
+    [projectId, zoomPunch, saveEffect],
   );
 
   return {
@@ -2418,11 +2483,15 @@ export function useEditor(projectId: string | undefined) {
     // ≠ exported_rev). `...current` đã có `exportStale` của server — ghi đè bằng OR.
     exportStale:
       exportDirty ||
-      Boolean((current as { exportStale?: boolean } | undefined)?.exportStale),
+      (!sessionExported &&
+        Boolean(
+          (current as { exportStale?: boolean } | undefined)?.exportStale,
+        )),
     canZoomIn,
     canZoomOut,
     projectId,
     videoRef,
+    previewStopRef,
     seek,
     scrubByPixels,
     zoomBy,
@@ -2492,6 +2561,7 @@ export function useEditor(projectId: string | undefined) {
     setMusicVolume,
     removeMusic,
     startExport,
+    cancelExport,
     transcribeJob,
     startTranscribe,
     trim,

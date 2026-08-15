@@ -28,7 +28,10 @@ import { usePreviewPlayback } from "@/routes/editor/use-preview-playback";
  */
 export function SoatLoiStep({ projectId }: { projectId: string | undefined }) {
   const editor = useEditor(projectId);
-  const { playing, togglePlay } = usePreviewPlayback(editor);
+  // `onPreview` = tua + phát ĐÚNG cụm rồi DỪNG (nghe lại một dòng để soát); `onAudit`
+  // = nghe khoảng có-tiếng-chưa-có-chữ. Trước đây hai hàm này không được nối vào —
+  // soát lời chỉ tua rồi phải tự phát tới hết video.
+  const { playing, togglePlay, onPreview, onAudit } = usePreviewPlayback(editor);
   useEditorGuards({ editor, onTogglePlay: togglePlay });
 
   if (editor.loading || editor.error) {
@@ -63,7 +66,12 @@ export function SoatLoiStep({ projectId }: { projectId: string | undefined }) {
         onTogglePlay={togglePlay}
         proofread
       />
-      <TranscriptPanel editor={editor} proofread />
+      <TranscriptPanel
+        editor={editor}
+        proofread
+        onPreview={onPreview}
+        onAudit={onAudit}
+      />
     </div>
   );
 }

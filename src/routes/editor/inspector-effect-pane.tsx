@@ -87,7 +87,14 @@ export function EffectPane({
           <Accordion defaultValue={ALL_GROUPS} className="gap-0">
             {JUNCTION_GROUPS.map((group) => {
               const items = JUNCTIONS.filter(
-                (item) => item.group === group.id && item.id !== "none",
+                (item) =>
+                  item.group === group.id &&
+                  item.id !== "none" &&
+                  // Chỉ bày kiểu THẤY ĐƯỢC Ở PREVIEW (có transform `drive`). Kiểu
+                  // chuyển-cảnh chồng hai cảnh (chỉ `cross`: wipe/trượt/hoà tan)
+                  // render ở bản XUẤT nhưng preview chưa vẽ được → ẩn để khỏi chọn
+                  // nhầm "không thấy gì". Bật lại khi preview dựng được cross.
+                  Object.keys(item.drive ?? {}).length > 0,
               );
               if (items.length === 0) return null;
               const holdsCurrent = currentSpec?.group === group.id;

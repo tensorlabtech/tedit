@@ -1,5 +1,16 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { SplitIcon } from "lucide-react";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,6 +22,7 @@ import {
 } from "@/components/ui/card";
 import { Empty, EmptyDescription, EmptyTitle } from "@/components/ui/empty";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { api, ApiError } from "@/lib/api";
 
 import { AddLineRow } from "./transcript-add-line-row";
 import { formatTime, type TextElement } from "./editor-data";
@@ -32,6 +44,8 @@ import type { EditorState } from "./use-editor";
 export function TranscriptPanel({
   editor,
   proofread,
+  onPreview,
+  onAudit,
 }: {
   editor: EditorState;
   /**
@@ -39,6 +53,10 @@ export function TranscriptPanel({
    * dòng — ở đây chỉ soát CHỮ, việc cắt đã xong ở bước trước.
    */
   proofread?: boolean;
+  /** Tua + phát một quãng rồi DỪNG (nghe lại đúng một cụm). */
+  onPreview?: (at: number, until?: number) => void;
+  /** Nghe một khoảng CÓ TIẾNG chưa có chữ (để quyết định thêm lời). */
+  onAudit?: (span: { start: number; end: number }) => void;
 }) {
   /**
    * Cuộn tới dòng đang chọn khi cú chọn đến TỪ NƠI KHÁC.
@@ -159,6 +177,31 @@ export function TranscriptPanel({
    */
   const [anchor, setAnchor] = useState<string | null>(null);
   const [focus, setFocus] = useState<string | null>(null);
+
+  // CHIA LẠI CỤM: gọi bộ chunk mô hình dựng lại ranh cụm. Máy chủ chặn bằng 409 khi
+  // có cụm đã VIẾT LẠI CHỮ (chia lại đặt lại chỗ-đặt per-cụm) → mở hộp xác nhận rồi
+  // gửi `force`. Chia lại đổi cả ranh cụm lẫn đoạn nên tải lại trang cho chắc.
+  const [rechunking, setRechunking] = useState(false);
+  const [confirmRechunk, setConfirmRechunk] = useState(false);
+  const [rechunkError, setRechunkError] = useState<string | null>(null);
+  const runRechunk = async (force: boolean) => {
+    if (!editor.projectId) return;
+    setRechunking(true);
+    setConfirmRechunk(false);
+    try {
+      await api.rechunkCaptions(editor.projectId, force);
+      window.location.reload();
+    } catch (error) {
+      setRechunking(false);
+      if (error instanceof ApiError && error.status === 409) {
+        setConfirmRechunk(true);
+      } else if (error instanceof ApiError && error.status === 400) {
+        setRechunkError("Chưa có khoá mô hình nên máy không chia lại được.");
+      } else {
+        setRechunkError("Chia lại cụm không xong — thử lại sau ít phút nhé.");
+      }
+    }
+  };
   // Gom chữ về câu chứa từ anchor của nó. Chữ do người dùng tự thêm cũng vào đây —
   // nó cũng anchor vào một khoảng từ, nên cũng thuộc một câu.
   const rowsBySentence = useMemo(() => {
@@ -232,10 +275,56 @@ export function TranscriptPanel({
               : "Đã soát xong"
             : "Bản chép lời"}
         </CardTitle>
-        <CardAction>
+        <CardAction className="flex items-center gap-2">
+          {proofread && (
+            <Button
+              variant="ghost"
+              size="xs"
+              tooltip="Chia lại cụm chữ theo nghĩa (giữ chữ và từ nhấn)"
+              disabled={rechunking || editor.words.length === 0}
+              onClick={() => void runRechunk(false)}
+            >
+              <SplitIcon />
+              {rechunking ? "Đang chia…" : "Chia lại cụm"}
+            </Button>
+          )}
           <Badge variant="secondary">{editor.words.length} từ</Badge>
         </CardAction>
       </CardHeader>
+      <AlertDialog open={confirmRechunk} onOpenChange={setConfirmRechunk}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Chia lại cụm?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Bạn đã sửa chữ ở một số cụm. Chia lại giữ nguyên chữ đã sửa không
+              được — sẽ dựng lại theo lời máy chép. Từ nhấn vẫn giữ, chỉ chỗ đặt
+              từng cụm đặt lại. Vẫn chia lại?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Thôi</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void runRechunk(true)}>
+              Chia lại
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        open={rechunkError !== null}
+        onOpenChange={(open) => !open && setRechunkError(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Chưa chia lại được</AlertDialogTitle>
+            <AlertDialogDescription>{rechunkError}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setRechunkError(null)}>
+              Đã hiểu
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {!proofread && selectable.length > 1 && (
         // Chỉ hiện khi thật sự có DẢI. Một dòng thì nút bỏ ngay trên dòng đó đã
         // đủ, thêm một thanh nữa chỉ là thêm một chỗ để phân vân.
@@ -341,6 +430,17 @@ export function TranscriptPanel({
                             text,
                           )
                         }
+                        // Nghe thẳng khoảng trống này (có tiếng chưa có chữ) để
+                        // biết máy sót lời gì mà điền.
+                        onListen={
+                          onAudit
+                            ? () =>
+                                onAudit({
+                                  start: gapStart,
+                                  end: sentence.start,
+                                })
+                            : undefined
+                        }
                       />
                     )}
                     {!proofread && previous && (leadIn >= 1 || cut) && (
@@ -358,6 +458,7 @@ export function TranscriptPanel({
                         activeTime={editor.time}
                         inRangeIds={range}
                         proofread={proofread}
+                        onPreview={onPreview}
                         onPick={(row, extend) => {
                           if (extend && anchor) {
                             setFocus(row.id);

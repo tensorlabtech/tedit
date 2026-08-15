@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { EyeOffIcon, Undo2Icon } from "lucide-react";
+import { EyeOffIcon, PencilLineIcon, Undo2Icon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -8,12 +8,16 @@ import { formatTime, type TextElement } from "./editor-data";
 import type { EditorState } from "./use-editor";
 
 /** Một dòng = một cụm chữ = một khối trên dải. Sửa chữ CHỈ ở đây. */
+/** Chạy thêm một nhịp sau cụm để nghe trọn tiếng cuối rồi mới dừng. */
+const PLAY_TAIL = 0.15;
+
 export function CaptionRow({
   row,
   editor,
   active,
   inRange,
   onPick,
+  onPreview,
   proofread,
 }: {
   row: TextElement;
@@ -22,6 +26,8 @@ export function CaptionRow({
   /** Đang nằm trong vùng chọn nhiều dòng */
   inRange: boolean;
   onPick: (row: TextElement, extend: boolean) => void;
+  /** Tua + phát ĐÚNG cụm này rồi dừng (nghe lại để soát). */
+  onPreview?: (at: number, until?: number) => void;
   /** Bước Soát lời: chỉ sửa CHỮ, ẩn nút cắt video (cắt là bước trước đó). */
   proofread?: boolean;
 }) {
@@ -47,22 +53,36 @@ export function CaptionRow({
     editor.seek(row.start + 0.05);
   };
 
-  // MỘT cú bấm là vào sửa được luôn — không bắt bấm đúp.
-  //
-  // Sửa chữ là việc chính của bảng này, mà bấm đúp thì không có dấu hiệu nào
-  // cho biết là làm được. Bấm một cái vừa chọn, vừa nhảy vạch tới đó, vừa mở ô
-  // sửa — ba thứ người dùng đều muốn cùng lúc. Bấm ra chỗ khác là xong, không
-  // sửa gì thì không có gì đổi.
-  const openEdit = (event: React.MouseEvent) => {
-    // Shift-bấm là NỐI DÀI vùng chọn, không mở ô sửa: đang gom nhiều dòng để bỏ
-    // một lượt thì mở ô sửa ra giữa chừng là chắn mất tầm nhìn.
+  // NGHE lại đúng cụm này: tua vào đầu cụm rồi phát tới hết cụm (+ đuôi) thì DỪNG.
+  const playLine = () => {
+    editor.setSelection({ kind: "text", id: row.id });
+    onPreview?.(row.start, row.end + PLAY_TAIL);
+  };
+
+  // Mở ô sửa — chọn, tua tới, bật textarea.
+  const startEdit = () => {
+    onPick(row, false);
+    select();
+    setEditing(true);
+  };
+
+  // Bấm CHỮ:
+  //  · Shift-bấm = NỐI DÀI vùng chọn (gom nhiều dòng để bỏ).
+  //  · Soát lời (có nghe-thử) = CHỌN + NGHE đúng cụm rồi dừng — KHÔNG mở edit.
+  //    Mở edit ngay đá nhau với phím Cách: con trỏ vào textarea thì Cách gõ
+  //    khoảng trắng chứ không play. Muốn sửa thì bấm-đúp hoặc bấm nút bút.
+  //  · Còn lại (bàn dựng cũ) = mở edit một-cú-bấm như trước.
+  const onClickText = (event: React.MouseEvent) => {
     if (event.shiftKey) {
       onPick(row, true);
       return;
     }
-    onPick(row, false);
-    select();
-    setEditing(true);
+    if (proofread && onPreview) {
+      onPick(row, false);
+      playLine();
+    } else {
+      startEdit();
+    }
   };
 
   return (
@@ -107,7 +127,9 @@ export function CaptionRow({
       ) : (
         <button
           type="button"
-          onClick={openEdit}
+          onClick={onClickText}
+          // Bấm-đúp luôn mở edit (kể cả ở soát lời, nơi một-cú-bấm là để NGHE).
+          onDoubleClick={startEdit}
           className={cn(
             "min-h-6 flex-1 text-left text-sm leading-snug text-balance",
             removed && "text-muted-foreground line-through",
@@ -133,8 +155,20 @@ export function CaptionRow({
           dòng — và cả danh sách nhích lên khi bắt đầu gõ.
 
           Bước Soát lời ẩn hẳn nút này: cắt đã xong ở bước trước, ở đây cắt tiếp
-          là chồng lát cắt mới lên bản đã cắt — chỉ soát CHỮ thôi. */}
-      {proofread ? null : (
+          là chồng lát cắt mới lên bản đã cắt — chỉ soát CHỮ thôi. Thay bằng nút
+          BÚT (sửa) vì một-cú-bấm ở đây là để NGHE, không mở edit. */}
+      {proofread ? (
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label="Sửa chữ dòng này"
+          tooltip="Sửa chữ"
+          className="shrink-0 opacity-0 group-hover/row:opacity-100"
+          onClick={startEdit}
+        >
+          <PencilLineIcon />
+        </Button>
+      ) : (
       <Button
         variant="ghost"
         size="icon-xs"

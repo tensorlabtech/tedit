@@ -483,7 +483,52 @@ export function normalizeJunction(
   return BY_ID.has(id) ? id : "none";
 }
 
+/**
+ * Cross (hai luồng) → kiểu MỘT LUỒNG gần nghĩa nhất, để THẤY được ở preview.
+ *
+ * Preview chưa dựng được chuyển-cảnh-thật, nên các kiểu `cross` chỉ hiện lúc XUẤT
+ * — người dùng chọn mà preview trống. Bảng này quy mỗi cross về một kiểu có
+ * `drive` CÙNG CẢM GIÁC (nhóm/hướng/tông): "Qua đen"→"Chìm đen", "Qua xám"→"Nhạt
+ * màu", "Trượt trái"→"Quét trái"… Dùng khi DỌN dữ liệu cũ đã lỡ gắn cross (picker
+ * nay đã ẩn cross nên không phát sinh mới). Kiểu không-cross trả về chính nó.
+ */
+export const CROSS_TO_VISIBLE: Record<string, JunctionId> = {
+  "cross-pixel": "zoom-blur",
+  "cross-slice": "whip-left",
+  "cross-wind": "whip-left",
+  "cross-slide-left": "whip-left",
+  "cross-slide-right": "whip-right",
+  "cross-wipe": "whip-left",
+  "cross-radial": "tilt",
+  "cross-blur": "defocus",
+  "cross-fade": "defocus",
+  "cross-black": "dip",
+  "cross-gray": "desaturate",
+  "cross-circle": "zoom-out",
+  "cross-smooth": "defocus",
+};
+
+/** Quy một kiểu về bản THẤY-Ở-PREVIEW: cross → một-luồng gần nghĩa; còn lại giữ. */
+export function visibleJunction(kind: string): JunctionId {
+  return CROSS_TO_VISIBLE[kind] ?? normalizeJunction(kind);
+}
+
+/** Chỗ nối CHUYỂN ĐỘNG phải đủ dài để THẤY — dưới mức này thì nới lên. */
+const MIN_MOTION_SECONDS = 2;
+/** Trục CHUYỂN ĐỘNG/NHOÈ (nới được). Sáng/màu/tương-phản là xung ngắn, chừa. */
+const MOTION_KEYS = ["zoom", "dichX", "dichY", "xoay", "nhoe", "vien"] as const;
+
 export function junctionHalves(kind: string): [number, number] {
   const spec = findJunction(kind);
-  return spec.halves[0] + spec.halves[1] > 0 ? spec.halves : [CHAM, NHANH];
+  const raw: [number, number] =
+    spec.halves[0] + spec.halves[1] > 0 ? spec.halves : [CHAM, NHANH];
+  // Nháy sáng / chìm đen / rực màu... là XUNG NGẮN — kéo 2s thành nhức mắt hoặc
+  // đổi màu cả cảnh, nên GIỮ NGUYÊN. Chỉ chỗ nối có chuyển động/nhoè mới nới cho
+  // đủ thấy (0,18s "giật nảy" trước đây chớp một cái là hết, không ai kịp thấy).
+  const drive = spec.drive as Record<string, number>;
+  const hasMotion = MOTION_KEYS.some((k) => (drive[k] ?? 0) !== 0);
+  const sum = raw[0] + raw[1];
+  if (!hasMotion || sum >= MIN_MOTION_SECONDS) return raw;
+  const k = MIN_MOTION_SECONDS / sum; // nới ĐỀU, giữ dáng nửa dài/nửa ngắn
+  return [raw[0] * k, raw[1] * k];
 }

@@ -23,7 +23,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import type { ApiStep } from "@/lib/api";
 
-import { STEP_LABELS } from "../pipeline/pipeline-page";
+import { STEP_LABELS, STEP_DESCRIPTIONS } from "../pipeline/pipeline-page";
 
 /**
  * MÀN "MÁY ĐANG LÀM" — quãng chờ máy dựng, dựng như đang-sống chứ không đứng im.
@@ -240,8 +240,8 @@ export function MachineWorkingPanel({
                       >
                         {STEP_LABELS[step.key] ?? step.key}
                       </span>
-                      {/* Dòng phụ: kết quả khi xong, lý do khi hỏng. Chặng chưa tới
-                        không có dòng phụ — chấm mờ đã nói đủ. */}
+                      {/* Dòng phụ: kết quả khi xong, lý do khi hỏng, còn lại là MÔ
+                        TẢ ngắn (chặng làm gì) để hàng nào cũng hai dòng, không cụt. */}
                       {isDone && step.result ? (
                         <span className="text-muted-foreground text-xs">
                           {step.result}
@@ -256,6 +256,10 @@ export function MachineWorkingPanel({
                           )}
                         >
                           {step.error ?? (step.required ? "hỏng" : "bỏ qua")}
+                        </span>
+                      ) : STEP_DESCRIPTIONS[step.key] ? (
+                        <span className="text-muted-foreground/70 text-xs">
+                          {STEP_DESCRIPTIONS[step.key]}
                         </span>
                       ) : null}
                     </div>

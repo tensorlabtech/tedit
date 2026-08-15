@@ -1,6 +1,11 @@
 import { type AudioEnvelope } from "./audio-envelope";
 import { db } from "./db";
-import { listSegments, removeRange, removedCount } from "./segments";
+import {
+  listSegments,
+  removeRange,
+  removedCount,
+  setSegmentRemoved,
+} from "./segments";
 import { type SpeechRegion } from "./vad";
 
 /**
@@ -143,5 +148,55 @@ export function trimSilence(
     saved += target.end - target.start;
   }
 
+  return { trimmed, saved };
+}
+
+/**
+ * Dọn ĐẢO GIỮ KHÔNG-LỜI — đoạn được giữ mà không có tiếng chép nào, kẹp giữa hai
+ * chỗ đã bỏ.
+ *
+ * `trimSilence` cố tình GIỮ vùng VAD nghe ra "có giọng" DÙ máy không chép ra chữ,
+ * để khỏi mất lời Whisper sót. Nhưng tiếng GÕ PHÍM / ồn nền hay làm VAD báo NHẦM là
+ * giọng → sinh ra "đảo có tiếng, không lời". `ai-cuts` cũng không đụng được (không
+ * chữ để đọc). Chạy pass này SAU ai-cuts: đoạn GIỮ không-từ mà HAI bên đều là chỗ
+ * đã bỏ (hoặc mép video) gần như chắc chắn là ồn — bỏ luôn.
+ *
+ * AN TOÀN: chỉ bỏ ĐẢO CÔ LẬP (kẹp giữa cắt), KHÔNG bỏ vùng không-lời nằm SÁT lời
+ * thật — chỗ đó có thể là lời Whisper sót, giữ nguyên như chủ ý của `trimSilence`.
+ */
+export function trimWordlessIslands(projectId: string): {
+  trimmed: number;
+  saved: number;
+} {
+  const segments = listSegments(projectId); // theo thứ tự vị trí
+  const words = db
+    .prepare(
+      "SELECT start_sec, end_sec FROM words WHERE project_id=? ORDER BY start_sec",
+    )
+    .all(projectId) as Array<{ start_sec: number; end_sec: number }>;
+
+  const hasWord = (start: number, end: number) =>
+    words.some((word) => word.start_sec < end && word.end_sec > start);
+
+  let trimmed = 0;
+  let saved = 0;
+  for (let i = 0; i < segments.length; i += 1) {
+    const seg = segments[i];
+    if (seg.removed) continue;
+    if (hasWord(seg.start_sec, seg.end_sec)) continue;
+    const prev = segments[i - 1];
+    const next = segments[i + 1];
+    // Mỗi bên là "chỗ cắt": đoạn ĐÃ BỎ hoặc mép video (không có đoạn kề).
+    const prevCut = !prev || prev.removed === 1;
+    const nextCut = !next || next.removed === 1;
+    // Ít nhất một bên phải là đoạn ĐÃ BỎ thật — khỏi bỏ nhầm đoạn duy nhất của
+    // video (cả hai bên đều là mép).
+    const realCutNeighbor = prev?.removed === 1 || next?.removed === 1;
+    if (prevCut && nextCut && realCutNeighbor) {
+      setSegmentRemoved(seg.id, true);
+      trimmed += 1;
+      saved += seg.end_sec - seg.start_sec;
+    }
+  }
   return { trimmed, saved };
 }

@@ -119,9 +119,14 @@ export function TimelinePlayheadButtons({
               khung người đầu tiên bộ dáng khai, đổi/xoá sau ở "Đang sửa". Chỉ hiện
               khi bộ dáng có bố cục người. */}
           {(() => {
-            const person = editor.sceneLayout?.allowedLayouts.find(
+            // Khung người thêm vào phải THUỘC bộ dáng đang dùng (`suggested`): pool
+            // khung tô-sáng theo (bố cục + preset dự án), nên nhặt bố cục KHÔNG có
+            // trong pack (vd `o-don` khi Prism chỉ có `o-vuong`) thì mở modal không
+            // ô nào active. Ưu tiên bố cục pack khai; hụt mới rơi về cái chung đầu.
+            const persons = (editor.sceneLayout?.allowedLayouts ?? []).filter(
               (choice) => !findLayout(choice.id).needsInsert,
             );
+            const person = persons.find((c) => c.suggested) ?? persons[0];
             if (!person) return null;
             return (
               <DropdownMenuItem

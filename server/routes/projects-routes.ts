@@ -27,8 +27,11 @@ import {
 } from "../segments";
 import {
   createCaptionElements,
+  hasUserRewrittenCaptions,
+  rechunkCaptions,
   splitVerbatimCaptions,
 } from "../caption-elements";
+import { hasModel } from "../llm";
 import { suggestOpeningLines } from "../ai-opening";
 import { DEFAULT_STYLE_PACK_ID, STYLE_PACKS } from "../style-pack-catalog";
 import { readStylePack } from "../style-pack-store";
@@ -378,6 +381,47 @@ app.get("/api/projects/:id", async (request, reply) => {
       "UPDATE projects SET captions_seeded=1, subtitles=0 WHERE id=?",
     ).run(id);
   }
+  // TỰ CỨU cụm vỡ-lúc-gieo: `captions_llm_ok=0` nghĩa là chia cụm bằng heuristic
+  // (gọi mô hình HỎNG lúc gieo, hoặc gieo lúc chưa có khoá). Có khoá + máy rảnh +
+  // người dùng CHƯA viết lại chữ cụm nào → chia lại MỘT LẦN. Cờ lật 1 sau đó nên
+  // GET gọi bao nhiêu lần cũng chỉ chạy một lần. Chỉ chặn theo VIẾT-LẠI-CHỮ (cái
+  // chia lại làm mất thật); nhấn được re-map giữ, chỗ-đặt máy đặt lại được.
+  const chunkState = db
+    .prepare(
+      "SELECT captions_llm_ok, captions_auto_healed FROM projects WHERE id=?",
+    )
+    .get(id) as
+    | { captions_llm_ok: number | null; captions_auto_healed: number | null }
+    | undefined;
+  if (
+    idle &&
+    hasModel() &&
+    seeded?.captions_seeded &&
+    !chunkState?.captions_llm_ok &&
+    !chunkState?.captions_auto_healed &&
+    wordCount.n > 0 &&
+    !hasUserRewrittenCaptions(id)
+  ) {
+    // Đánh dấu ĐÃ THỬ ngay, TRƯỚC khi chia lại: nếu chia lại hỏng (mô hình lỗi →
+    // llm_ok vẫn 0) thì cờ này vẫn chặn GET sau tự-cứu lại — không gọi mô hình vô hạn.
+    db.prepare("UPDATE projects SET captions_auto_healed=1 WHERE id=?").run(id);
+    // Bọc lỗi: tự-cứu là việc PHỤ ở một đường ĐỌC. Nó hỏng thì cứ trả dự án như
+    // thường, đừng để cả GET thành 500 và trang không mở được. `rechunkCaptions`
+    // đã nguyên-tử (throw thì cụm cũ còn nguyên); ở đây chỉ cần nuốt để GET sống.
+    try {
+      await rechunkCaptions(
+        id,
+        (seeded?.subtitle_band ?? "bottom") as Band,
+        readStylePack(id),
+      );
+      // Ép dựng lại đoạn theo cụm MỚI: khối dưới đọc `segments_by_caption` < 4 thì chạy.
+      db.prepare("UPDATE projects SET segments_by_caption=0 WHERE id=?").run(id);
+    } catch (error) {
+      console.warn(
+        `[auto-rechunk] ${id} hỏng: ${(error as Error)?.message ?? error}`,
+      );
+    }
+  }
   // Dựng lại đoạn theo cụm chữ và khoảng lặng — cũng một lần cho mỗi dự án.
   // Đoạn cũ chia theo "10 giây một khối" nên dải phim và bảng Lời chia theo hai
   // nhịp khác nhau, và bỏ một cụm phải tách đoạn ra ở hai đầu trước.
@@ -459,6 +503,32 @@ app.get("/api/projects/:id", async (request, reply) => {
  * Một đường `GET` mời trình duyệt và mọi lớp đệm ở giữa gọi lại nó bất cứ lúc
  * nào — mà ở đây gọi lại nghĩa là trả tiền lại.
  */
+/**
+ * CHIA LẠI cụm phụ đề — dựng lại ranh cụm bằng bộ chunk mô hình, giữ chữ+mốc+nhấn.
+ *
+ * `force` để chấp nhận mất chỗ-đặt per-cụm khi có cụm đã VIẾT LẠI CHỮ (nút tay
+ * hỏi xác nhận rồi mới gửi `force`). Không force mà có viết-lại → trả 409 để UI
+ * hỏi. Sau khi chia lại, ép dựng lại đoạn ở GET kế bằng cách hạ `segments_by_caption`.
+ */
+app.post("/api/projects/:id/rechunk", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const force = (request.body as { force?: boolean } | undefined)?.force === true;
+  if (!hasModel())
+    return reply.code(400).send({ error: "chưa có khoá mô hình" });
+  const rewritten = hasUserRewrittenCaptions(id);
+  if (rewritten && !force)
+    return reply.code(409).send({ needsConfirm: true, reason: "rewritten" });
+  const band =
+    (
+      db.prepare("SELECT subtitle_band FROM projects WHERE id=?").get(id) as
+        | { subtitle_band: string | null }
+        | undefined
+    )?.subtitle_band ?? "bottom";
+  const count = await rechunkCaptions(id, band as Band, readStylePack(id));
+  db.prepare("UPDATE projects SET segments_by_caption=0 WHERE id=?").run(id);
+  return { count, rewritten };
+});
+
 app.post("/api/projects/:id/opening-lines", async (request) => {
   const { id } = request.params as { id: string };
   // Cùng một đường cho cả câu mở lẫn tiêu đề: hai lời nhắc khác nhau, một

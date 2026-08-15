@@ -553,13 +553,61 @@ export function useTrimDrag({
           };
         }
         if (kind === "insert") {
-          // B-ROLL kiểu CapCut: kéo mép khối = chọn CỬA SỔ nguồn [in,out] của clip.
+          const insert = current.inserts.find((item) => item.id === id);
+          if (!insert) return current;
+
+          // ẢNH: đứng hình, KHÔNG có cửa sổ clip → cho kéo DÀI/NGẮN tuỳ ý (chỉ giới
+          // hạn MIN_SEGMENT, không âm). Cắt theo `clipDuration` (0,04s của tệp ảnh)
+          // là sai — kéo phát co cụt. Xoá luôn mediaIn/mediaOut (vô nghĩa với ảnh).
+          if (insert.isVideo === false) {
+            let nextStart = insert.start;
+            let nextEnd = insert.end;
+            if (edge === "start") {
+              nextStart = Math.min(
+                Math.max(nextTime, 0),
+                insert.end - MIN_SEGMENT,
+              );
+            } else {
+              nextEnd = Math.max(nextTime, insert.start + MIN_SEGMENT);
+            }
+            dragTrim.current = {
+              kind: "insert",
+              id,
+              edge,
+              at: edge === "start" ? nextStart : nextEnd,
+              was:
+                dragTrim.current?.was ??
+                (edge === "start" ? insert.start : insert.end),
+              insertStart: nextStart,
+              insertEnd: nextEnd,
+              mediaIn: undefined,
+              mediaOut: undefined,
+              wasStart: dragTrim.current?.wasStart ?? insert.start,
+              wasEnd: dragTrim.current?.wasEnd ?? insert.end,
+              wasIn: dragTrim.current?.wasIn ?? insert.mediaIn,
+              wasOut: dragTrim.current?.wasOut ?? insert.mediaOut,
+            };
+            return {
+              ...current,
+              inserts: current.inserts.map((item) =>
+                item.id === id
+                  ? {
+                      ...item,
+                      start: nextStart,
+                      end: nextEnd,
+                      mediaIn: null,
+                      mediaOut: null,
+                    }
+                  : item,
+              ),
+            };
+          }
+
+          // VIDEO kiểu CapCut: kéo mép khối = chọn CỬA SỔ nguồn [in,out] của clip.
           // Bất biến: out − in == end − start (bề rộng khối = bề rộng cửa sổ, HẾT
           // loop). Mép trái giữ end/out, đổi start→in; mép phải giữ start/in, đổi
           // end→out. TRẦN là độ dài clip (in≥0, out≤clipDuration) → "kéo tới max
           // thì dừng". Cửa sổ chưa cắt (null) coi như [0, độ dài khối].
-          const insert = current.inserts.find((item) => item.id === id);
-          if (!insert) return current;
           const clipDur =
             insert.clipDuration ??
             insert.mediaOut ??

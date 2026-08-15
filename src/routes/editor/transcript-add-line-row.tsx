@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { PlusIcon } from "lucide-react";
+import { PlayIcon, PlusIcon } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 /**
@@ -13,29 +14,48 @@ import { cn } from "@/lib/utils";
 export function AddLineRow({
   seconds,
   onAdd,
+  onListen,
 }: {
   /** Độ dài khe, giây — in kèm để người dùng ước lượng "sót bao nhiêu". */
   seconds: number;
   onAdd: (text: string) => void;
+  /** Nghe đúng khoảng này (có tiếng chưa có chữ) để biết máy sót lời gì. */
+  onListen?: () => void;
 }) {
   const [editing, setEditing] = useState(false);
 
   if (!editing) {
     return (
-      <button
-        type="button"
-        onClick={() => setEditing(true)}
+      <div
         className={cn(
-          "text-muted-foreground hover:text-primary hover:border-primary/40 hover:bg-primary/5",
-          "flex w-full items-center gap-2 rounded-lg border border-dashed border-border px-2 py-1 text-left text-sm transition-colors",
+          "group/gap flex items-center gap-1 rounded-lg border border-dashed border-border pr-1 text-sm transition-colors",
+          "hover:border-primary/40 hover:bg-primary/5",
         )}
       >
-        <PlusIcon className="text-primary size-3.5 shrink-0" />
-        <span>Thêm lời</span>
-        <span className="text-muted-foreground/70 text-xs tabular-nums">
-          · {seconds.toFixed(1).replace(".", ",")}s có tiếng chưa có chữ
-        </span>
-      </button>
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="text-muted-foreground group-hover/gap:text-primary flex flex-1 items-center gap-2 px-2 py-1 text-left"
+        >
+          <PlusIcon className="text-primary size-3.5 shrink-0" />
+          <span>Thêm lời</span>
+          <span className="text-muted-foreground/70 text-xs tabular-nums">
+            · {seconds.toFixed(1).replace(".", ",")}s có tiếng chưa có chữ
+          </span>
+        </button>
+        {onListen && (
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            aria-label="Nghe khoảng này"
+            tooltip="Nghe khoảng này"
+            className="shrink-0 opacity-0 group-hover/gap:opacity-100"
+            onClick={onListen}
+          >
+            <PlayIcon />
+          </Button>
+        )}
+      </div>
     );
   }
 

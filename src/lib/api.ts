@@ -589,6 +589,17 @@ export const api = {
       body: JSON.stringify({ mode }),
     }),
 
+  /**
+   * Chia LẠI cụm phụ đề theo nghĩa (bộ chunk mô hình). Giữ chữ+mốc+nhấn, chỉ đổi
+   * ranh cụm. `force` để chấp nhận đặt lại chỗ-đặt per-cụm khi có cụm đã VIẾT LẠI
+   * CHỮ — không `force` mà có viết-lại thì máy chủ trả 409 (ApiError.status) để UI hỏi.
+   */
+  rechunkCaptions: (projectId: string, force = false) =>
+    request<{ count: number; rewritten: boolean }>(
+      `/api/projects/${projectId}/rechunk`,
+      { method: "POST", body: JSON.stringify({ force }) },
+    ),
+
   /** Bỏ qua một lời nhắc ở hàng soát — ghi xuống máy chủ để tải lại không hỏi lại */
   dismissIssue: (projectId: string, issueId: string) =>
     request<{ ok: true }>(`/api/projects/${projectId}/dismissed`, {
@@ -1229,6 +1240,13 @@ export const api = {
     request<{ status: string }>(`/api/projects/${projectId}/export`, {
       method: "POST",
     }),
+
+  /** Huỷ lượt xuất đang chạy/chờ (nút Huỷ ở modal xuất). */
+  cancelExport: (projectId: string) =>
+    request<{ cancelled: boolean }>(
+      `/api/projects/${projectId}/export/cancel`,
+      { method: "POST" },
+    ),
 
   getJob: (projectId: string, kind: string) =>
     request<ApiJob>(`/api/projects/${projectId}/jobs/${kind}`),

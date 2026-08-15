@@ -58,6 +58,29 @@ export function OptionPicker({
           ? "grid grid-cols-[repeat(auto-fill,minmax(6.5rem,1fr))] gap-3"
           : "flex gap-1.5 overflow-x-auto pb-1",
       )}
+      // Hàng NGANG (`overflow-x-auto`) là HỘP CUỘN → nó NUỐT lăn DỌC, nên đặt chuột
+      // lên picker mà lăn thì bảng "Đang sửa" đứng im. Chuyển lăn dọc lên hộp cuộn
+      // DỌC gần nhất (viewport ScrollArea) để cuộn như thường.
+      onWheel={
+        variant === "row"
+          ? (event) => {
+              if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+              let el = event.currentTarget.parentElement as HTMLElement | null;
+              while (el) {
+                const oy = getComputedStyle(el).overflowY;
+                if (
+                  (oy === "auto" || oy === "scroll") &&
+                  el.scrollHeight > el.clientHeight
+                ) {
+                  el.scrollTop += event.deltaY;
+                  event.preventDefault();
+                  return;
+                }
+                el = el.parentElement;
+              }
+            }
+          : undefined
+      }
     >
       {options.map((option) => (
         <button

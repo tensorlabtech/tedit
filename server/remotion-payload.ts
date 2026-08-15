@@ -286,11 +286,15 @@ export async function buildRemotionPayload(
     media.map(async (item, i) => {
       const isVid = VIDEO.test(item.name);
       // Khung xem: proxy tua-tức-thì cho b-roll VIDEO (ảnh tĩnh không cần).
+      // Cache proxy theo `mediaId` (DANH TÍNH tệp) chứ KHÔNG theo chỉ số vị trí:
+      // proxy chỉ phụ thuộc tệp nguồn (in/out áp lúc render, không vào proxy). Key
+      // theo index thì khi thứ tự b-roll đổi (thêm/bớt/dời), proxy cũ ở index ấy vẫn
+      // "tươi" theo mtime → tái dùng NHẦM media của clip khác.
       const src =
         opts?.scrubProxy && isVid
           ? await makeScrubProxy(
               item.path,
-              join(workDir(projectId), `scrub-insert-${i}.mp4`),
+              join(workDir(projectId), `scrub-insert-${item.mediaId}.mp4`),
             )
           : item.path;
       const ext = isVid ? ".mp4" : extname(item.path) || ".jpg";
@@ -314,10 +318,27 @@ export async function buildRemotionPayload(
 
   // Phụ đề — CÙNG nguồn với export (`resolveElements`), mốc từng tiếng đã quy dải
   // cắt. Trừ đầu cụm để `OverlayTextBlock` đếm giây từ đầu cụm (như preview).
-  const captions: RemotionCaption[] = resolveElements(projectId, kept)
+  //
+  // HIỆN SỚM (lead): chữ xuất hiện đúng lúc nói thì người xem đọc không kịp. Dời
+  // ĐẦU cụm sớm lên tối đa `CAPTION_LEAD` giây (giữ ĐUÔI → cụm ở màn lâu hơn). Giữ
+  // `wordStarts` tương đối theo start GỐC nên reveal từng tiếng cũng sớm đúng bấy
+  // nhiêu — cả cụm nhích sớm, không đổi dáng karaoke. Kẹp không lấn cụm TRƯỚC (đầu
+  // này ≥ đuôi cụm trước) để không hiện chồng hai cụm.
+  const CAPTION_LEAD = 0.25;
+  const textEls = resolveElements(projectId, kept)
     .filter((e) => e.kind === "text" && !!e.content)
-    .map((e) => ({
-      start: e.start,
+    .sort((a, b) => a.start - b.start);
+  let prevEnd = -Infinity;
+  const captions: RemotionCaption[] = textEls.map((e) => {
+    // Kẹp: không quá `CAPTION_LEAD`, không lấn đuôi cụm trước, không lùi trước 0.
+    const lead = Math.max(
+      0,
+      Math.min(CAPTION_LEAD, e.start - prevEnd, e.start),
+    );
+    prevEnd = e.end;
+    const start = e.start - lead;
+    return {
+      start,
       end: e.end,
       content: e.content as string,
       align: e.align,
@@ -328,9 +349,13 @@ export async function buildRemotionPayload(
       letterCase: e.letterCase,
       keyColor: e.keyColor,
       fontStyle: e.fontStyle,
+      // Tương đối theo start GỐC (`e.start`), KHÔNG theo start đã dời — nhờ vậy
+      // tiếng đầu (mốc 0) hiện ngay lúc cụm vào (đã sớm `lead`), các tiếng sau
+      // cũng sớm đúng `lead`.
       wordStarts: e.wordStarts?.map((at) => at - e.start),
-      span: e.end - e.start,
-    }));
+      span: e.end - start,
+    };
+  });
 
   // CHỮ-SAU-NGƯỜI mở màn hiện đang TẮT (SHOW_BEHIND=false ở composition) → không
   // tính (đỡ gọi emptiestBand mỗi payload). Bật lại thì khôi phục theo lịch sử git.

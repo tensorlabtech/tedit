@@ -7,13 +7,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Empty, EmptyDescription, EmptyTitle } from "@/components/ui/empty";
 import { Spinner } from "@/components/ui/spinner";
-import { api } from "@/lib/api";
 
 import { RemotionPreview } from "@/routes/editor/remotion-preview";
 import { RightPanel } from "@/routes/editor/right-panel";
 import { Timeline } from "@/routes/editor/timeline";
 import { useEditor, type EditorState } from "@/routes/editor/use-editor";
 import { useEditorGuards } from "@/routes/editor/use-editor-guards";
+import { ExportModal } from "./export-modal";
 
 /** Ô trong hàng tiêu đề /flow mà bước Bàn dựng nhét nút xuất video vào. */
 export const STUDIO_ACTION_SLOT = "flow-studio-action";
@@ -38,17 +38,24 @@ export function StudioStep({ projectId }: { projectId: string | undefined }) {
   const editor = useEditor(projectId);
   // Player LÀ đồng hồ (thay thẻ <video> cũ). SPACE bật/tắt phát; kéo dải thì dừng.
   const playerRef = useRef<PlayerRef>(null);
-  const togglePlay = () => playerRef.current?.toggle();
+  // Phát tự do (Cách) → BỎ mốc tự-dừng của lần xem-thử trước, kẻo đang phát lại
+  // khựng ở mốc cũ.
+  const togglePlay = () => {
+    editor.previewStopRef.current = null;
+    playerRef.current?.toggle();
+  };
   // Chọn cụm = tua tới đó (chỉ `at`). ĐỔI kiểu (chỗ nối / phong cách chữ) truyền
   // cả `until` = một QUÃNG → tua đầu quãng RỒI PHÁT, vì chỗ nối/hiện-chữ là hiệu
-  // ứng THEO THỜI GIAN, đứng một khung không thấy gì. (Player + vạch đồng bộ qua
-  // RemotionPreview.) Chưa tự dừng cuối quãng — phát tiếp tới hết, đủ để xem thử.
+  // ứng THEO THỜI GIAN, đứng một khung không thấy gì. Đặt mốc TỰ DỪNG = `until`
+  // (giờ gốc) để phát hết quãng thì dừng, không chạy tuột hết video.
   const onPreview = (at: number, until?: number) => {
     editor.seek(at);
+    editor.previewStopRef.current = until ?? null;
     if (until != null) playerRef.current?.play();
   };
   const onAudit = (span: { start: number; end: number }) => {
     editor.seek(span.start);
+    editor.previewStopRef.current = span.end;
     playerRef.current?.play();
   };
   useEditorGuards({ editor, onTogglePlay: togglePlay });
@@ -58,6 +65,9 @@ export function StudioStep({ projectId }: { projectId: string | undefined }) {
   useEffect(() => {
     setActionSlot(document.getElementById(STUDIO_ACTION_SLOT));
   }, []);
+
+  // Modal xuất (kiểu TikTok) — nút header mở, editor giữ mounted phía dưới.
+  const [exportOpen, setExportOpen] = useState(false);
 
   if (editor.loading || editor.error) {
     return (
@@ -79,7 +89,16 @@ export function StudioStep({ projectId }: { projectId: string | undefined }) {
 
   return (
     <div className="grid min-h-0 gap-2 lg:h-full lg:grid-rows-[minmax(0,1fr)_auto]">
-      {actionSlot && createPortal(<ExportAction editor={editor} />, actionSlot)}
+      {actionSlot &&
+        createPortal(
+          <ExportAction editor={editor} onOpen={() => setExportOpen(true)} />,
+          actionSlot,
+        )}
+      <ExportModal
+        editor={editor}
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+      />
 
       <div className="grid gap-2 lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_34rem]">
         {/* KHUNG XEM = Remotion Player (chính VideoComposition của export) → preview
@@ -105,6 +124,8 @@ export function StudioStep({ projectId }: { projectId: string | undefined }) {
       <div
         onPointerDown={(event) => {
           if (!event.currentTarget.contains(event.target as Node)) return;
+          // Chạm dải = người dùng tự lái → bỏ mốc tự-dừng của lần xem-thử trước.
+          editor.previewStopRef.current = null;
           playerRef.current?.pause();
         }}
       >
@@ -114,36 +135,36 @@ export function StudioStep({ projectId }: { projectId: string | undefined }) {
   );
 }
 
-/** Nút xuất video ở header — đang dựng nền / xuất được / đang xuất / tải về. */
-function ExportAction({ editor }: { editor: EditorState }) {
+/**
+ * Nút xuất ở header — MỞ MODAL xuất (kiểu TikTok), không tự chạy ngay ở đây. Việc
+ * render / tiến trình / tải / huỷ do `ExportModal` lo; nút chỉ phản ánh trạng thái
+ * và là cửa vào. Nhãn: đang dựng nền / Xuất / Xuất lại (đã sửa) / Video sẵn sàng.
+ */
+function ExportAction({
+  editor,
+  onOpen,
+}: {
+  editor: EditorState;
+  onOpen: () => void;
+}) {
   const job = editor.exportJob;
-  // Xuất XONG mà bản dựng còn TƯƠI (chưa sửa gì sau đó) → cho tải luôn. Nếu ĐÃ SỬA
-  // sau khi xuất (`exportStale`) thì bản trên đĩa CŨ — KHÔNG mời tải nữa, đổi thành
-  // "Xuất lại video" để khỏi tải nhầm bản thiếu chỉnh sửa.
-  if (job?.status === "done" && !editor.exportStale) {
-    return (
-      <Button render={<a href={api.exportUrl(editor.projectId!)} download />}>
-        Tải video về
-      </Button>
-    );
-  }
+  const running = job?.status === "running" || job?.status === "queued";
+  const freshDone = job?.status === "done" && !editor.exportStale;
   const doneButStale = job?.status === "done" && editor.exportStale;
   return (
     <Button
-      disabled={
-        job?.status === "running" ||
-        editor.sentences.length === 0 ||
-        !editor.masterReady
-      }
-      onClick={() => void editor.startExport()}
+      disabled={editor.sentences.length === 0 || !editor.masterReady}
+      onClick={onOpen}
     >
-      {job?.status === "running"
-        ? (job.message ?? "Đang xuất…")
+      {running
+        ? "Đang xuất…"
         : !editor.masterReady
           ? "Đang chuẩn bị bản dựng…"
-          : doneButStale
-            ? "Xuất lại video"
-            : "Xuất video"}
+          : freshDone
+            ? "Video đã sẵn sàng"
+            : doneButStale
+              ? "Xuất lại video"
+              : "Xuất video"}
     </Button>
   );
 }

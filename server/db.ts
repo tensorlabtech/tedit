@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
 import { arrangementFor } from "./caption-arrangement";
+import { CROSS_TO_VISIBLE } from "./junction-kinds";
 import { DB_PATH } from "./paths";
 
 mkdirSync(dirname(DB_PATH), { recursive: true });
@@ -426,6 +427,14 @@ for (const [table, column, type] of [
   // Đã sinh chữ từ lời cho dự án này chưa. Sinh ĐÚNG MỘT LẦN: xoá hết chữ đi
   // rồi mở lại mà nó tự mọc lại thì người dùng không xoá được gì cả.
   ["projects", "captions_seeded", "INTEGER DEFAULT 0"],
+  // Cụm chữ được chia bằng break của MÔ HÌNH (1) hay tụt heuristic vì gọi-hỏng /
+  // không có khoá (0). Mặc định 0 để dự án cũ tính là "chưa chắc LLM" → đủ điều
+  // kiện tự-cứu chia lại (còn chặn thêm bởi "chưa có cụm bị người sửa").
+  ["projects", "captions_llm_ok", "INTEGER DEFAULT 0"],
+  // Tự-cứu chia-lại ĐÃ chạy một lần chưa. Tách khỏi `captions_llm_ok` vì cần chặn
+  // LẶP kể cả khi chia lại THẤT BẠI (mô hình hỏng → llm_ok vẫn 0): thiếu cờ này thì
+  // mỗi GET lại tự-cứu, gọi mô hình vô hạn. Đặt 1 sau lần thử ĐẦU (thành hay bại).
+  ["projects", "captions_auto_healed", "INTEGER DEFAULT 0"],
   // Đã dựng lại đoạn theo CỤM CHỮ và KHOẢNG LẶNG chưa. Dự án cũ chia đoạn theo
   // "10 giây một khối" nên dải phim và bảng Lời chia theo hai nhịp khác nhau.
   ["projects", "segments_by_caption", "INTEGER DEFAULT 0"],
@@ -585,6 +594,17 @@ for (const [table, column, type] of [
   }>;
   if (!columns.some((item) => item.name === column)) {
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+    // BACKFILL đúng một lần lúc TẠO cột `captions_llm_ok`: dự án ĐÃ gieo chữ từ
+    // trước bản này thì coi là "ổn" (=1) — KHÔNG tự chia lại hàng loạt (người dùng
+    // chọn chỉ chữa dự án lỗi-lúc-gieo về SAU, không đụng dự án cũ/đã tinh chỉnh).
+    // Muốn chữa dự án cũ vỡ cụm thì bấm nút "Chia lại cụm". Seed MỚI mới nhận cờ thật.
+    if (table === "projects" && column === "captions_llm_ok") {
+      db.exec("UPDATE projects SET captions_llm_ok=1 WHERE captions_seeded=1");
+    }
+    // Dự án cũ coi như đã "yên" — không tự-cứu chúng (chỉ chữa qua nút tay).
+    if (table === "projects" && column === "captions_auto_healed") {
+      db.exec("UPDATE projects SET captions_auto_healed=1 WHERE captions_seeded=1");
+    }
   }
 }
 
@@ -818,6 +838,41 @@ db.prepare(
  * chạm project còn `= 0`; đã có sửa (trigger bump) hoặc đã đánh dấu thì bỏ qua.
  */
 db.prepare("UPDATE projects SET content_rev = 1 WHERE content_rev = 0").run();
+
+/**
+ * Quy chỗ nối CHUYỂN-CẢNH-THẬT (cross) cũ về kiểu MỘT LUỒNG thấy-ở-preview.
+ *
+ * Preview chưa vẽ được cross → chọn cross là "gắn mà preview trống". Picker nay đã
+ * ẩn cross (không phát sinh mới), nhưng dữ liệu CŨ đã lỡ gắn vẫn còn — cả effect
+ * đặt tay (`effects.kind`) lẫn mặc định dự án (`projects.zoom_punch`). Đổi mỗi
+ * cross về một-luồng cùng cảm giác (bảng ở junction-kinds) để preview lẫn xuất đều
+ * THẤY. Idempotent: xong không còn giá trị cross nào khớp.
+ */
+{
+  const fixEffect = db.prepare("UPDATE effects SET kind=? WHERE kind=?");
+  const fixDefault = db.prepare(
+    "UPDATE projects SET zoom_punch=? WHERE zoom_punch=?",
+  );
+  for (const [from, to] of Object.entries(CROSS_TO_VISIBLE)) {
+    fixEffect.run(to, from);
+    fixDefault.run(to, from);
+  }
+}
+
+/**
+ * Dọn chỗ nối 'none' (cắt thẳng) THỪA ở dự án có mặc định ĐÃ là cắt thẳng.
+ *
+ * "Bỏ đánh dấu" một chỗ nối trước đây ghi một hàng 'none' đè để chặn cái tự-suy
+ * mọc lại. Nhưng khi mặc định dự án vốn đã 'none' (cột `zoom_punch` = '0'/'none'/
+ * rỗng/NULL), cái tự-suy cũng đã 'none' → hàng đè này vô nghĩa và chỉ để lại rác.
+ * Xoá cho sạch. GIỮ 'none' ở dự án có mặc định KHÁC (ở đó nó thật sự chặn mặc
+ * định). Idempotent: xong không còn hàng nào khớp.
+ */
+db.prepare(
+  `DELETE FROM effects WHERE kind='none' AND project_id IN (
+     SELECT id FROM projects WHERE zoom_punch IS NULL OR zoom_punch IN ('0','none','')
+   )`,
+).run();
 
 /**
  * Dọn dấu vết của chặng gắn emoji đã bỏ.

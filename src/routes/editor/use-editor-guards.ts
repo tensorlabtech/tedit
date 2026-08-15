@@ -97,14 +97,8 @@ export function useEditorGuards({
         editor.setSelection(null);
         return;
       }
-
-      // Mũi tên nhích vạch, không cuộn trang. Một khung hình là bước nhỏ nhất
-      // có nghĩa; giữ Shift thì đi một giây.
-      if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-        event.preventDefault();
-        const step = event.shiftKey ? 1 : 1 / 30;
-        editor.seek(editor.time + (event.key === "ArrowLeft" ? -step : step));
-      }
+      // Mũi tên nhích-vạch (lia) đã BỎ: màn có video chỉ giữ phím Cách = play/pause,
+      // không phím lia nào khác. Muốn tới đúng chỗ thì bấm trên dải/cụm.
     };
 
     // Nút HTML kích hoạt ở lúc NHẢ dấu cách, không phải lúc nhấn — chặn một
