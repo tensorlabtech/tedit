@@ -1,5 +1,6 @@
 import { computeCaptionBreaks } from "./ai-caption-groups";
 import { db } from "./db";
+import { noBreakAfterWords } from "./vi-word-segment";
 import { skippedSpans } from "./segments";
 import { OUT_HEIGHT, OUT_WIDTH } from "./render";
 import { contentRect, shownPacks, type StylePack } from "./style-pack";
@@ -43,7 +44,9 @@ const build = (words: CaptionWord[]): CaptionGroup => ({
  * Tiếng "DÍNH SAU" — gần như luôn gắn với tiếng ĐỨNG SAU nó (mạo/loại từ, liên từ,
  * giới từ, phó từ trước động/tính từ). Kết cụm bằng chúng đọc cụt lủn.
  */
-const ATTACH_FORWARD = new Set([
+// NGUỒN DUY NHẤT của danh sách tiếng dính-sau — `ai-caption-groups.ts` import lại
+// (trước đây hai file khai hai bản lệch nhau, "con/chiếc/ở/trong" chỉ có một bên).
+export const ATTACH_FORWARD = new Set([
   "một", "các", "những", "mỗi", "mọi", "cái", "con", "chiếc",
   "và", "hoặc", "hay", "là", "của", "cho", "với", "về", "từ",
   "đến", "tới", "ở", "trong", "để", "mà", "thì", "nếu", "như",
@@ -53,6 +56,8 @@ const isAttachForward = (text: string) =>
   ATTACH_FORWARD.has(text.trim().toLowerCase());
 /** Dấu KẾT MỆNH ĐỀ (phẩy/chấm-phẩy/hai-chấm) — biên có nghĩa của ASR/LLM. */
 const endsClause = (text: string) => /[,;:]$/.test(text.trim());
+/** Nghỉ hơi giữa hai tiếng dài hơn ngần này = mép cụm CỨNG (biên thật của giọng). */
+const BREATH_GAP = 0.35;
 /** Số trần ("30") — không được đứng cuối cụm (xẻ khỏi đơn vị "tuổi"). */
 const isBareNumber = (text: string) => /^\d+([.,]\d+)?$/.test(text.trim());
 
@@ -63,13 +68,17 @@ const isBareNumber = (text: string) => /^\d+([.,]\d+)?$/.test(text.trim());
  *  1) dấu phẩy gần giữa nhất (biên mệnh đề), rồi
  *  2) chỗ gần giữa mà KHÔNG xẻ số+đơn vị và KHÔNG kết bằng tiếng dính-sau.
  */
-function bestSplitPoint(words: CaptionWord[]): number {
+function bestSplitPoint(
+  words: CaptionWord[],
+  noBreak: ReadonlySet<string>,
+): number {
   const n = words.length;
   const mid = Math.max(1, Math.round(n / 2));
   let comma = -1;
   let best = Infinity;
   for (let i = 1; i < n; i += 1) {
-    if (endsClause(words[i - 1].text)) {
+    // Dấu phẩy ở tiếng cấm-ngắt-sau thì không dùng (không xẻ giữa từ).
+    if (endsClause(words[i - 1].text) && !noBreak.has(words[i - 1].id)) {
       const dist = Math.abs(i - mid);
       if (dist < best) {
         best = dist;
@@ -79,7 +88,9 @@ function bestSplitPoint(words: CaptionWord[]): number {
   }
   if (comma !== -1) return comma;
   const bad = (i: number) =>
-    isBareNumber(words[i - 1].text) || isAttachForward(words[i - 1].text);
+    isBareNumber(words[i - 1].text) ||
+    isAttachForward(words[i - 1].text) ||
+    noBreak.has(words[i - 1].id);
   for (let off = 0; off < n; off += 1) {
     for (const i of [mid - off, mid + off]) {
       if (i >= 1 && i < n && !bad(i)) return i;
@@ -89,25 +100,22 @@ function bestSplitPoint(words: CaptionWord[]): number {
 }
 
 /*
- * BỐN CON SỐ CHIA CỤM nay nằm trong bộ dáng (`pack.grouping`), không còn là hằng.
+ * CON SỐ CHIA CỤM nằm trong bộ dáng (`pack.grouping`), không còn là hằng.
  *
- * Vì sao chúng từng là hằng, và vì sao mỗi con số có lý do riêng:
+ * CHỖ NÀY THỰC SỰ ĐANG DÙNG GÌ (đọc kỹ trước khi chỉnh — comment cũ ghi sai số):
  *
- * - **Số tiếng (mặc định 5)** — ràng buộc CỐ Ý, không phải cho dễ đọc: hệ
- *   Oversize in chữ ở ~17% chiều cao khung, nên quá 5 tiếng là hết chỗ và phép
- *   đo buộc phải co chữ về cỡ chú thích. Ít chữ to hơn nhiều chữ nhỏ.
- * - **Số ký tự (mặc định 26)** — ràng buộc THẬT, còn trần số tiếng chỉ là ước.
- *   Suy từ trần 3 dòng: bề rộng dùng được ≈ 77% của 1080 = 832px, cỡ sàn 15% bề
- *   rộng = 162px, một ký tự rộng ≈ 0,6 cỡ ≈ 97px → chừng 8,5 ký tự một dòng, ba
- *   dòng là 26. Cần cả hai trần vì "Mình" và "nghiêng" đều một tiếng mà dài gấp
- *   đôi nhau: 5 tiếng có thể ra 15 ký tự mà cũng có thể ra 35.
- * - **Độ dài cụm (mặc định 2,2 giây)** — dài quá thì chữ đứng lâu, mất cảm giác
- *   chạy theo lời.
- * - **Sàn thời gian hiện (mặc định 0)** — chỉ có nghĩa với phụ đề từng chữ.
+ * - **maxWords (thật: 7)** — trần số TIẾNG mỗi cụm. Ràng buộc bề rộng: quá tay
+ *   là phép đo font buộc co chữ về cỡ chú thích. Ít chữ to hơn nhiều chữ nhỏ.
+ * - **maxChars (thật: 32–36 theo bộ)** — trần KÝ TỰ, ràng buộc THẬT (trần tiếng
+ *   chỉ là ước): "Mình" và "nghiêng" đều một tiếng mà dài gấp đôi nhau.
  *
- * Nới chúng thành trục của bộ dáng là chỗ mở ra "phụ đề từng chữ": `maxWords: 1`.
- * Mô hình dữ liệu vốn đã chịu được, vì chữ neo vào KHOẢNG TỪ và khoảng một từ là
- * hợp lệ — không cần thêm loại `element` nào.
+ * Chỉ HAI trần trên được `groupWordsByBreaks` cưỡng chế. Ngưỡng THỜI GIAN thực tế
+ * KHÔNG phải `maxSpan` mà là **nghỉ-hơi > 0,35s** (hằng `BREATH_GAP`, dưới) — mép
+ * nghỉ hơi cắt cụm cứng.
+ *
+ * `maxSpan` / `minHold` KHAI trong `pack.grouping` nhưng HÀM NÀY CHƯA đọc — chúng
+ * là chỗ để dành cho "phụ đề từng chữ" (`maxWords: 1`, cần sàn thời gian mỗi cụm
+ * kẻo một tiếng 0,12s nhấp nháy). Đừng tưởng đổi hai số đó là đổi được hành vi.
  */
 
 /**
@@ -153,13 +161,17 @@ export async function buildCaptionGroups(
   // khoá mô hình → rơi heuristic width; câu gọi-hỏng chỉ thiếu break câu đó, `fitGroup`
   // lo. `llmOk` = break đáng tin của mô hình → nơi gọi ghi cờ `captions_llm_ok`.
   const { breaks, llmOk } = await computeCaptionBreaks(projectId, words, pack);
-  const groups = groupWordsByBreaks(words, cuts, breaks, pack.grouping);
+  // Tách TỪ tiếng Việt: tiếng nào dính với tiếng sau thành một từ ("phần"→"mềm")
+  // thì CẤM ngắt cụm sau nó — dù LLM hay width chọn chỗ đó. Diệt "phần|mềm" tận gốc.
+  const noBreak = await noBreakAfterWords(words);
+  const groups = groupWordsByBreaks(words, cuts, breaks, pack.grouping, noBreak);
 
   // Đo rồi mới chốt: trần tiếng và trần ký tự chỉ là ước, còn vừa hay không vừa
   // phải hỏi phép đo bằng đúng tệp font sẽ in — mà cùng một cụm ở dải dưới hẹp
   // hơn dải trên 12% bề rộng, nên vừa ở trên chưa chắc vừa ở dưới.
   const fitted: CaptionGroup[] = [];
-  for (const group of groups) fitted.push(...(await fitGroup(group, band, pack)));
+  for (const group of groups)
+    fitted.push(...(await fitGroup(group, band, pack, noBreak)));
 
   // CHỐNG VỤN: gộp cụm NGẮN (≤2 tiếng) vào hàng xóm cho tới khi hết. Cụm 2 tiếng
   // chỉ nên dành cho lúc NHẤN — còn lại đọc lên cụt ngủn. Chỉ GỘP (không xẻ) nên
@@ -181,6 +193,8 @@ export function groupWordsByBreaks(
   cuts: readonly number[],
   llmBreaks: Set<number> | null,
   grouping: { maxWords: number; maxChars: number },
+  /** Mã tiếng mà "sau nó CẤM ngắt" (dính tiếng sau thành một từ). */
+  noBreak: ReadonlySet<string> = new Set(),
 ): CaptionGroup[] {
   const { maxWords, maxChars } = grouping;
   const groups: CaptionGroup[] = [];
@@ -206,7 +220,12 @@ export function groupWordsByBreaks(
     }
     if (cut === -1) {
       cut = current.length;
-      while (cut > 1 && isAttachForward(current[cut - 1].text)) cut -= 1;
+      // Nhả đuôi "dính sau" VÀ không xẻ giữa một từ (tiếng cấm-ngắt-sau).
+      while (
+        cut > 1 &&
+        (isAttachForward(current[cut - 1].text) || noBreak.has(current[cut - 1].id))
+      )
+        cut -= 1;
     }
     groups.push(build(current.slice(0, cut)));
     current = current.slice(cut);
@@ -229,15 +248,19 @@ export function groupWordsByBreaks(
       );
       // Mô hình bảo ngắt SAU tiếng trước (index idx-1)?
       const llmBreakHere = llmBreaks?.has(idx - 1) ?? false;
+      // Tiếng trước DÍNH với tiếng này thành một từ → CẤM ngắt ở đây (dù mô hình
+      // hay width chọn). Biên cứng (nghỉ hơi/hết câu/chỗ cắt) vẫn tôn trọng: chúng
+      // là ranh THẬT, gần như không rơi vào giữa một từ.
+      const glued = noBreak.has(previous.id);
 
       // Thứ tự: (1) BIÊN CỨNG (nghỉ hơi / hết câu / qua chỗ cắt). (2) MÔ HÌNH ngắt
       // theo NGHĨA (giữ từ ghép, cỡ cụm). (3) TRẦN BỀ-RỘNG làm LƯỚI AN TOÀN — LUÔN
       // áp, kể cả khi có break mô hình: câu nào mô hình BỎ SÓT / GỌI HỎNG (không có
-      // break) mà cứ trôi thì trần này chặn ở biên đẹp, không để cụm dài lê thê. Cắt
-      // "mềm" lùi về dấu phẩy / nhả đuôi dính-sau nên hiếm khi xẻ từ ghép.
-      if (gap > 0.35 || newSentence || crossesCut) flush();
-      else if (llmBreakHere) flush();
-      else if (current.length >= maxWords || charsWith(word) > maxChars) {
+      // break) mà cứ trôi thì trần này chặn ở biên đẹp. Cả (2) và (3) đều KHÔNG được
+      // xẻ giữa một từ (`glued`) — chờ hết từ rồi ngắt.
+      if (gap > BREATH_GAP || newSentence || crossesCut) flush();
+      else if (llmBreakHere && !glued) flush();
+      else if (!glued && (current.length >= maxWords || charsWith(word) > maxChars)) {
         flushSoft();
       }
     }
@@ -313,6 +336,7 @@ async function fitGroup(
   group: CaptionGroup,
   band: Band,
   pack: StylePack,
+  noBreak: ReadonlySet<string>,
   depth = 0,
 ): Promise<CaptionGroup[]> {
   /*
@@ -343,9 +367,9 @@ async function fitGroup(
   }
   // Chẻ ở BIÊN ĐẸP (dấu phẩy / tránh xẻ số+đơn vị / tránh kết dính-sau) thay vì
   // chính giữa — chẻ giữa hay rơi vào "30 | tuổi".
-  const mid = bestSplitPoint(group.words);
+  const mid = bestSplitPoint(group.words, noBreak);
   return [
-    ...(await fitGroup(build(group.words.slice(0, mid)), band, pack, depth + 1)),
-    ...(await fitGroup(build(group.words.slice(mid)), band, pack, depth + 1)),
+    ...(await fitGroup(build(group.words.slice(0, mid)), band, pack, noBreak, depth + 1)),
+    ...(await fitGroup(build(group.words.slice(mid)), band, pack, noBreak, depth + 1)),
   ];
 }

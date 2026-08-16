@@ -1,4 +1,5 @@
 import { voiBoiCanh } from "./ai-context";
+import { ATTACH_FORWARD } from "./caption-groups";
 import { ask, hasModel, object } from "./llm";
 import type { StylePack } from "./style-pack";
 
@@ -24,12 +25,8 @@ import type { StylePack } from "./style-pack";
 
 type BreaksReply = { breaks: number[] };
 
-/** Tiếng gần như luôn gắn với tiếng SAU — không được đứng CUỐI cụm. */
-const ATTACH_FORWARD = new Set([
-  "một", "các", "những", "mỗi", "mọi", "cái", "và", "hoặc", "hay", "là",
-  "của", "cho", "với", "về", "từ", "để", "mà", "thì", "nếu", "như", "theo",
-  "bằng", "sẽ", "đang", "rất", "cũng",
-]);
+// `ATTACH_FORWARD` (tiếng dính-sau, không được đứng CUỐI cụm) import từ
+// `caption-groups.ts` — một nguồn duy nhất cho cả bên chọn break lẫn bên gom cụm.
 
 const SCHEMA = object({
   breaks: { type: "array", items: { type: "integer" } },

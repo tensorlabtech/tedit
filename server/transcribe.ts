@@ -4,6 +4,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
+import { hasScribe, transcribeWithScribe } from "./asr-scribe";
+
 const run = promisify(execFile);
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -63,6 +65,12 @@ export async function transcribeAudio(
    */
   prompt?: string,
 ): Promise<AsrSegment[]> {
+  // Có khoá ElevenLabs → dùng Scribe (chính xác hơn hẳn cho tiếng Việt + code-switch).
+  // Scribe timings đã chuẩn nên KHÔNG cần `repairWordTimings`. Không có khoá thì rơi
+  // về Whisper local dưới đây. `prompt` (mồi từ vựng) chỉ Whisper dùng — Scribe v1
+  // không nhận initial_prompt, mà cũng đủ chính xác nên bỏ qua.
+  if (hasScribe()) return transcribeWithScribe(audioPath, language);
+
   const { stdout } = await run(
     PYTHON,
     [SCRIPT, audioPath, language, ...(prompt ? [prompt] : [])],

@@ -82,6 +82,19 @@ async function main() {
     dangles.map((g) => g.text).join(" | "),
   );
 
+  // ── 2b. noBreak: KHÔNG xẻ giữa một từ nhiều tiếng (tách-từ tiếng Việt) ──────
+  clock = 0;
+  const gw = "một phần mềm mới cho công ty".split(" ").map((t) => word(t, "sg"));
+  const nb = new Set([gw[1].id, gw[5].id]); // "phần" (dính "mềm"), "công" (dính "ty")
+  // Mô hình ngắt sau "phần" (idx1) — phải bị VETO; width tại maxWords cũng không xẻ "công ty".
+  const gg = groupWordsByBreaks(gw, [], new Set([1]), GROUPING, nb);
+  const glueSplit = gg.filter((g) => nb.has(g.words[g.words.length - 1].id));
+  check(
+    "noBreak: không cụm nào kết GIỮA một từ (phần|mềm, công|ty)",
+    glueSplit.length === 0,
+    gg.map((g) => g.text).join(" | "),
+  );
+
   // ── 3. computeCaptionBreaks chia theo câu ─────────────────────────────────
   process.env.OPENROUTER_API_KEY = "guard"; // hasModel() → true
   clock = 0;
