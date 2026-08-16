@@ -1,8 +1,17 @@
+import { useState } from "react";
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { useRevealLoop } from "@/dev/overlays/use-reveal-loop";
+import { StylePreviewTile } from "@/routes/pipeline/style-preview-tile";
 import { STYLE_PACKS } from "../../../server/style-pack-catalog";
 import type { StylePackId } from "../../../server/style-pack";
+
+/** Cụm ví dụ vẽ trong ô mẫu — bước này chưa có video/lời thật để lấy khung hình
+ * hay lời nói, nên ô mẫu rơi về nền tối + câu ví dụ (giống `StyleSwitchDialog`
+ * lúc chưa có cụm nào để bám). */
+const SAMPLE_TEXT = "Video của bạn sẽ trông như thế này";
 
 /**
  * BƯỚC ĐỀ BÀI — tên, mô tả, và chọn phong cách.
@@ -29,8 +38,11 @@ import type { StylePackId } from "../../../server/style-pack";
  *
  * ══ LƯỚI PHONG CÁCH ══
  *
- * Mỗi bộ một khung 9:16 với tên ở giữa — cùng khổ với video sẽ xuất ra, nên khi
- * thay bằng đoạn phim mẫu thì không phải xếp lại lưới.
+ * Mỗi ô là `StylePreviewTile` — CÙNG ô mẫu dùng ở `/upload` và trong bàn dựng
+ * (`StyleSwitchDialog`), vẽ THẬT bằng bộ máy overlay chứ không phải chữ nhãn
+ * suông. Người dùng thấy font/màu/nhịp tô sáng trước khi chọn, không chọn mù.
+ * Bước này chưa có video hay lời thật nên ô mẫu rơi về nền tối + câu ví dụ
+ * (`SAMPLE_TEXT`) — cùng cách `StyleSwitchDialog` xử lý lúc chưa có cụm nào.
  *
  * Lưới tự giãn theo bề ngang (`auto-fill` + `minmax`) chứ không khai cứng số
  * cột: hôm nay mười hai bộ, mai ba mươi thì vẫn xếp gọn, không cần sửa gì.
@@ -51,6 +63,13 @@ export function BriefStep({
   onBrief: (value: string) => void;
   onStylePack: (id: StylePackId) => void;
 }) {
+  const [hovered, setHovered] = useState<StylePackId | null>(null);
+  // Chỉ chạy vòng lặp hiệu ứng khi có ô đang được ngó — ba ô vẽ lại 60 lần mỗi
+  // giây lúc không ai nhìn là phí vô ích.
+  const seconds = useRevealLoop(hovered !== null);
+  // Đủ lớn để mọi tiếng đã hiện xong: ô không được ngó thì đứng ở dáng cuối.
+  const DONE = 99;
+
   return (
     <Card className="lg:h-full lg:min-h-0">
       <CardHeader>
@@ -99,15 +118,18 @@ export function BriefStep({
               sửa số cột ở đây. Mười hai bộ hôm nay, ba mươi bộ vẫn gọn. */}
           <div className="grid grid-cols-[repeat(auto-fill,minmax(7rem,1fr))] gap-2">
             {STYLE_PACKS.map((pack) => (
-              <button
+              <StylePreviewTile
                 key={pack.id}
-                type="button"
-                onClick={() => onStylePack(pack.id)}
-                data-state={pack.id === stylePack ? "here" : "off"}
-                className="grid aspect-[9/16] cursor-pointer place-items-center rounded-lg border border-border p-2 text-center text-sm data-[state=here]:ring-2 data-[state=here]:ring-primary data-[state=here]:ring-inset"
-              >
-                {pack.label}
-              </button>
+                pack={pack}
+                text={SAMPLE_TEXT}
+                poster={null}
+                selected={pack.id === stylePack}
+                seconds={hovered === pack.id ? seconds : DONE}
+                onSelect={() => onStylePack(pack.id)}
+                onHoverChange={(hovering) =>
+                  setHovered(hovering ? pack.id : null)
+                }
+              />
             ))}
           </div>
         </div>

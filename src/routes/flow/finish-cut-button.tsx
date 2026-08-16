@@ -14,7 +14,18 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
-import { api } from "@/lib/api";
+import { api, type ApiSegment } from "@/lib/api";
+
+/** Suy ba con số hiển thị (số chỗ bỏ, giây bỏ, giây còn) từ một tập đoạn thô. */
+function summariseCut(rows: ApiSegment[]) {
+  const cuts = rows.filter((row) => row.removed === 1);
+  const seconds = cuts.reduce(
+    (sum, row) => sum + (row.end_sec - row.start_sec),
+    0,
+  );
+  const total = rows.at(-1)?.end_sec ?? 0;
+  return { cuts: cuts.length, seconds, kept: Math.max(0, total - seconds) };
+}
 
 /**
  * CHỐT BẢN CẮT — cửa một chiều, nên hỏi trước một câu.
@@ -33,6 +44,15 @@ import { api } from "@/lib/api";
  * Câu hỏi ghi thẳng bỏ bao nhiêu chỗ và mất bao nhiêu giây. "Bạn chắc chưa?" thì
  * không ai trả lời được — người dùng vừa nhìn dải xong, cái họ cần xác nhận là
  * CON SỐ, không phải quyết tâm.
+ *
+ * ══ SỐ HIỂN THỊ PHẢI TƯƠI, KHÔNG PHẢI SỐ VỌNG TỪ POLL ══
+ *
+ * `cuts`/`seconds`/`kept` truyền vào từ `flow-page` đọc qua vòng poll `getProject`
+ * mỗi 1,5 giây — mở hộp thoại này NGAY SAU một cú sửa trên dải thì số cũ còn kịp
+ * hiện ra, lệch với cái người dùng vừa thấy trên dải. Máy chủ vẫn nướng đúng bản
+ * MỚI NHẤT lúc bấm "Chốt" (không đọc lại số này), nên đây chỉ là lệch hiển thị —
+ * nhưng lệch ở đúng cửa không-quay-lại thì vẫn phải sửa. Mở hộp thoại là lấy lại
+ * `listSegments` — trạng thái THẬT trên máy chủ — thay vì tin vào prop có thể cũ.
  */
 export function FinishCutButton({
   projectId,
@@ -48,6 +68,23 @@ export function FinishCutButton({
   kept: number;
 }) {
   const [sending, setSending] = useState(false);
+  // `null` = chưa lấy lại số tươi (đang mở, đang tải, hoặc lần tải trước hỏng);
+  // lúc đó vẫn bày tạm số từ prop để hộp thoại không trống trong lúc chờ.
+  const [live, setLive] = useState<ReturnType<typeof summariseCut> | null>(
+    null,
+  );
+
+  const refreshLive = async () => {
+    try {
+      setLive(summariseCut(await api.listSegments(projectId)));
+    } catch {
+      // Tải lại hỏng thì thôi, cứ bày tạm số cũ từ prop — không chặn việc xem
+      // hộp thoại, chỉ là số có thể hơi cũ.
+      setLive(null);
+    }
+  };
+
+  const shown = live ?? { cuts, seconds, kept };
 
   const go = async () => {
     setSending(true);
@@ -74,7 +111,11 @@ export function FinishCutButton({
     `${Math.floor(value / 60)}:${String(Math.round(value % 60)).padStart(2, "0")}`;
 
   return (
-    <AlertDialog>
+    <AlertDialog
+      onOpenChange={(open) => {
+        if (open) void refreshLive();
+      }}
+    >
       <AlertDialogTrigger
         render={
           <Button disabled={sending}>
@@ -87,7 +128,8 @@ export function FinishCutButton({
         <AlertDialogHeader>
           <AlertDialogTitle>Chốt bản cắt?</AlertDialogTitle>
           <AlertDialogDescription>
-            Bỏ {cuts} chỗ · {clock(seconds)}. Video còn {clock(kept)}.
+            Bỏ {shown.cuts} chỗ · {clock(shown.seconds)}. Video còn{" "}
+            {clock(shown.kept)}.
             <br />
             Máy sẽ cắt lại tệp rồi chép lời một lượt nữa. Sau đó{" "}
             <strong>không quay lại sửa chỗ cắt được nữa</strong> — bước sau chỉ

@@ -79,6 +79,7 @@ export function CutLane({
   selectedId,
   onSelect,
   onSeek,
+  onPause,
   onZoom,
   onResize,
   onAddAt,
@@ -102,6 +103,15 @@ export function CutLane({
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   onSeek: (at: number) => void;
+  /**
+   * Dừng phát — gọi lúc bắt đầu kéo tua trên dải.
+   *
+   * Không dừng thì vòng rAF ở `CutStep` vẫn ghi `transform` từ `liveTimeRef` mỗi
+   * khung TRONG LÚC người dùng đang kéo dải bằng tay — hai nguồn cùng ghi một
+   * `transform`, dải giật qua lại như hai vạch giành nhau. Bàn dựng (`timeline.tsx`)
+   * dừng phát ngay khi chạm dải; ở đây làm y hệt.
+   */
+  onPause: () => void;
   onZoom: (factor: number) => void;
   onResize: (id: string, start: number, end: number) => void;
   /** Thêm một khoảng cắt quanh mốc `at` — hook tự đo độ lặng để định bề rộng. */
@@ -342,6 +352,9 @@ export function CutLane({
               // cắt và tay nắm đều chặn nổi bọt, nên pointerdown chỉ tới đây khi
               // bấm vào nền/thước/dải phim — đúng nghĩa "click ra ngoài".
               onPointerDown={(event) => {
+                // Dừng phát TRƯỚC khi bắt đầu kéo — đúng nết bàn dựng, tránh vòng
+                // rAF của phát và cú kéo tay cùng ghi `transform` đè lên nhau.
+                onPause();
                 onSelect(null);
                 startScrub(event);
               }}

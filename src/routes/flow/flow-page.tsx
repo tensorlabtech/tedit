@@ -1,13 +1,30 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 
-import { ArrowRightIcon } from "lucide-react";
+import { AlertTriangleIcon, ArrowRightIcon } from "lucide-react";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Empty, EmptyDescription, EmptyTitle } from "@/components/ui/empty";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { Spinner } from "@/components/ui/spinner";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 
 import {
   FLOW_STEPS,
@@ -22,7 +39,7 @@ import { BigDropZone } from "./big-drop-zone";
 import { BriefStep } from "./brief-step";
 import { FinishCutButton } from "./finish-cut-button";
 import { FinishTextButton } from "./finish-text-button";
-import { CutStep, type CutWord } from "./cut-step";
+import { CutStep } from "./cut-step";
 import { SoatLoiStep } from "./soat-loi-step";
 import { STUDIO_ACTION_SLOT, StudioStep } from "./studio-step";
 import { MachineWorkingPanel } from "./machine-working-panel";
@@ -81,13 +98,6 @@ type Snapshot = {
   started: boolean;
   /** Mười bốn chặng máy — chỉ bày ở BÊN PHẢI lúc bước máy đang chạy. */
   steps: ApiStep[];
-  /**
-   * TỪNG TỪ đã chép, cho bước cắt.
-   *
-   * Từ chứ không phải câu: một khoảng cắt hay nằm gọn trong lòng một câu, nên
-   * lấy câu thì hàng soát hiện cả câu cho một chỗ chỉ bỏ hai chữ.
-   */
-  words: CutWord[];
   /** Thống kê bản cắt cho nút chốt trên đầu trang. */
   cut: { count: number; seconds: number; kept: number };
   /** Số chữ máy còn chưa chắc — nút "Chốt chính tả" nhắc nếu còn. */
@@ -101,7 +111,6 @@ const TRONG: Snapshot = {
   settled: false,
   started: false,
   steps: [],
-  words: [],
   cut: { count: 0, seconds: 0, kept: 0 },
   unsureCount: 0,
 };
@@ -111,6 +120,17 @@ export function FlowPage() {
   const navigate = useNavigate();
   const [snap, setSnap] = useState<Snapshot>(TRONG);
   const [loading, setLoading] = useState(true);
+  /**
+   * Lượt hỏi máy chủ gần nhất hỏng — chuỗi là câu lỗi để bày, `null` là ổn.
+   *
+   * Không hỏng thì `snap` không đổi gì cả — dự án CÓ tồn tại, thiếu đúng một
+   * lượt hỏi. Trước đây `pull()` không bắt lỗi này: `snap` đứng nguyên ở giá
+   * trị RỖNG ban đầu, và trang đọc `hasMain: false` ra thành "chưa có gì",
+   * bày khung thả tệp cho một dự án đang có sẵn dữ liệu.
+   */
+  const [loadError, setLoadError] = useState<string | null>(null);
+  /** Bấm "Thử lại" chỉ cần đổi số này — effect bên dưới có nó trong deps. */
+  const [retryTick, setRetryTick] = useState(0);
   /**
    * BƯỚC NHẬP LIỆU (main → cảnh phụ → đề bài) là một WIZARD một chiều, người dùng
    * TỰ bấm "Tiếp" để sang bước sau.
@@ -131,44 +151,73 @@ export function FlowPage() {
       return;
     }
     let alive = true;
+    let timer: number | undefined;
     const pull = async () => {
       try {
         const data = await api.getProject(projectId);
         if (!alive) return;
+        const steps = data.pipeline?.steps ?? [];
+        /*
+         * Chặng máy đang dừng ở: đang chạy, đang mở cổng chờ người, hoặc — nếu
+         * không chặng nào đang bận — đã VẤP ở một chặng BẮT BUỘC.
+         *
+         * Bỏ sót nhánh cuối là lý do một chặng hỏng biến thành ngõ cụt: máy
+         * dừng hẳn (không chặng nào `running`/`awaiting-user` nữa), `stage`
+         * rơi về `null`, `currentStep` (`server/flow-steps.ts`) rơi về
+         * "preparing" vì không phân biệt được với "chưa chạy gì", sidebar
+         * quay mãi ở "Chuẩn bị", và chặng hỏng bị lọc KHỎI danh sách bày ở
+         * `MachineWorkingPanel` — nút "Thử lại" nó đã có sẵn không hiện ra.
+         */
+        const active = steps.find(
+          (item) =>
+            item.status === "running" || item.status === "awaiting-user",
+        );
+        const blocked = steps.find(
+          (item) => item.status === "failed" && item.required,
+        );
         setSnap({
           hasMain: data.files.some((file) => file.role === "main"),
           hasBrief: Boolean(data.project.profile?.trim()),
-          // Chặng máy đang dừng ở: đang chạy, hoặc đang mở cổng chờ người.
-          stage:
-            data.pipeline?.steps.find(
-              (item) =>
-                item.status === "running" || item.status === "awaiting-user",
-            )?.key ?? null,
+          stage: (active ?? blocked)?.key ?? null,
           settled: data.pipeline?.settled ?? false,
-          started: (data.pipeline?.steps.length ?? 0) > 0,
-          steps: data.pipeline?.steps ?? [],
+          started: steps.length > 0,
+          steps,
           cut: summariseCut(data.segments ?? []),
-          words: (data.words ?? []).map((row) => ({
-            text: row.text,
-            start: row.start_sec,
-            end: row.end_sec,
-          })),
           unsureCount: (data.words ?? []).filter(
             (row) => (row.confidence ?? 1) < 0.6,
           ).length,
         });
+        setLoadError(null);
+        // Đã tới bàn dựng thì không còn chặng nào đổi nữa — hỏi tiếp mỗi 1,5s
+        // là hỏi cho có, tốn một lượt gọi mạng mỗi giây rưỡi suốt lúc người
+        // dùng ngồi sửa ở bàn dựng.
+        if (data.pipeline?.settled && timer !== undefined) {
+          window.clearInterval(timer);
+        }
+      } catch (err) {
+        // KHÔNG bắt là lỗi cũ: một lượt 500 ném thẳng xuống, `snap` đứng
+        // nguyên ở giá trị RỖNG ban đầu, và trang bày khung thả tệp cho một
+        // dự án đang tồn tại — bắt ở đây để bày đúng "chưa tải được", không
+        // giả một dự án trống.
+        if (!alive) return;
+        setLoadError(
+          err instanceof ApiError
+            ? err.message
+            : "Không tải được dự án, thử lại.",
+        );
       } finally {
         if (alive) setLoading(false);
       }
     };
     void pull();
     // Hỏi lại đều đặn: bước máy đổi mà không có ai báo, nên trang phải tự nhìn.
-    const timer = setInterval(() => void pull(), 1500);
+    // Dừng lại khi đã `settled` — xem nhánh trong `pull()`.
+    timer = window.setInterval(() => void pull(), 1500);
     return () => {
       alive = false;
-      clearInterval(timer);
+      window.clearInterval(timer);
     };
-  }, [projectId]);
+  }, [projectId, retryTick]);
 
   /*
    * Ba bước nạp dùng LẠI thẻ của `/upload`, không dựng mới.
@@ -194,6 +243,15 @@ export function FlowPage() {
   const pickRole = useRef<MediaRole | undefined>(undefined);
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  /**
+   * Người dùng đã bấm "Vẫn mở bàn dựng" sau lời nhắc "không nghe ra câu nào".
+   *
+   * `upload.noSpeechFound` không tự tắt — chép lời xong 0 câu vẫn cứ 0 câu cho
+   * tới khi chép lại. Không có cờ riêng này thì lời nhắc chặn bàn dựng VĨNH
+   * VIỄN kể cả với video nhạc-không-lời hợp lệ, mà `at` đã ở "studio" thì
+   * không còn nút "Chép lại lời" nào để thoát ra nữa.
+   */
+  const [bypassNoSpeech, setBypassNoSpeech] = useState(false);
 
   const handleFiles = (incoming: File[], role?: MediaRole) => {
     const result = upload.addFiles(incoming, role);
@@ -223,7 +281,7 @@ export function FlowPage() {
   // video là một khoảng trắng vô nghĩa.
 
   /*
-   * Mạch LỆCH thì CHẶN, không nhắc.
+   * Mạch LỆCH thì CHẶN, không nhắc — nhưng CHỈ lúc còn ở bước NHẬP.
    *
    * `transcriptStale` bật khi thêm hoặc bớt cảnh sau lúc chép lời xong — phần
    * mới không có chữ nào. Trang cũ chỉ hiện một dòng nhắc, mà nút đi tiếp vẫn
@@ -231,9 +289,35 @@ export function FlowPage() {
    * khác. Cắt sai chỗ vì lịch cắt bám mốc từ, soát lời trên bản chép cũ, đặt tư
    * liệu vào chỗ không còn tồn tại.
    *
-   * Nhắc một dòng cho một hậu quả cỡ ấy là không cân. Chặn.
+   * Nhắc một dòng cho một hậu quả cỡ ấy là không cân. Chặn — nhưng chỉ chặn
+   * đúng chỗ người dùng còn SỬA được cảnh/đề bài (ba bước nhập). Trước đây cờ
+   * này đứng ĐẦU ternary của `action` mà không xét `at`, nên hễ nó bật lên là
+   * nút chính ở MỌI bước — kể cả nút "Xuất video" ở bàn dựng — bị nuốt mất,
+   * thay bằng một nút "Chép lại lời" một-cú-bấm-là-xoá-sạch-cắt-soát-chữ.
    */
   const stale = upload.transcriptStale || upload.briefStale;
+
+  /**
+   * Đang gửi lệnh chép lời — che nút trong khoảng hở giữa lúc gọi máy chủ
+   * xong và lúc `snap.started` bắt kịp (mãi 1,5s sau, nhịp hỏi của `pull()`).
+   *
+   * Chỉ tắt lại khi HỎNG: gọi xong mà không hỏng thì cứ để `true` — bước sẽ tự
+   * đổi (`snap.started`) và nút này biến mất theo, không cần ai tắt tay.
+   */
+  const [transcribing, setTranscribing] = useState(false);
+  const beginTranscribe = async () => {
+    setTranscribing(true);
+    try {
+      await upload.startTranscribe();
+    } catch {
+      setTranscribing(false);
+      toast.add({
+        title: "Chưa bắt đầu chép lời được",
+        description: "Máy chủ không nhận. Thử lại.",
+        type: "error",
+      });
+    }
+  };
 
   const machineAt = currentStep(snap);
   // KHÔNG tự nhảy bước theo dữ liệu: tải cảnh chính xong (hoặc mở lại dự án) vẫn
@@ -246,6 +330,13 @@ export function FlowPage() {
     ? machineAt
     : INTAKE_STEPS[Math.min(intakeStep, 2)];
   const step = FLOW_STEPS[stepIndex(at)];
+  // Nhắc "Chép lại lời" CHỈ ở ba bước nhập — sau khi máy đã chạy thì nút chính
+  // của cut/proofread/studio không được nhường chỗ cho nó (xem đoạn trên).
+  const staleAction =
+    stale && (at === "main-footage" || at === "b-roll" || at === "brief");
+  /** Đã tới bàn dựng mà chưa nghe ra câu nào, và người dùng chưa bấm qua. */
+  const noSpeechWarning =
+    at === "studio" && upload.noSpeechFound && !bypassNoSpeech;
   /*
    * Khung xem chiếu đúng LOẠI tệp của bước đang đứng.
    *
@@ -267,6 +358,23 @@ export function FlowPage() {
       item.status === "running" &&
       STAGES_OF[at].includes(item.key),
   );
+  /**
+   * Bước đang đứng có một chặng máy CỦA NÓ đã vấp chưa — kể cả khi bước ấy
+   * nhãn là của NGƯỜI (`proofread` sở hữu `commit-cut`/`fix`, hai chặng MÁY
+   * chạy trước cổng soát chính tả).
+   *
+   * Thiếu nhánh này thì `commit-cut` hỏng ở bước `proofread` không khớp
+   * `machineBusy` (nó chỉ hỏi `running`) lẫn không khớp `step.actor==="machine"`
+   * (nhãn của `proofread` là "user") — ô phải rơi thẳng vào `SoatLoiStep`, tức
+   * bày bảng soát lời cho một bản chép CHƯA CÓ, và nút Thử lại nằm ở
+   * `MachineWorkingPanel` chẳng bao giờ được dựng ra.
+   */
+  const machineBlocked = snap.steps.some(
+    (item) =>
+      item.status === "failed" &&
+      item.required &&
+      STAGES_OF[at].includes(item.key),
+  );
 
   const pool = at === "b-roll" ? upload.insertFiles : upload.mainFiles;
   const previewing =
@@ -283,11 +391,34 @@ export function FlowPage() {
    * nút của nó là ô cắm portal cho "Xuất video" (render từ `StudioStep`), không
    * phải nút "Mở bàn dựng".
    */
-  const action = stale ? (
-    <Button onClick={() => void upload.startTranscribe()}>
-      Chép lại lời
-      <ArrowRightIcon data-icon="inline-end" />
-    </Button>
+  const action = staleAction ? (
+    // Việc XOÁ SẠCH cắt/soát/chữ đã dựng — hỏi trước, không một-cú-bấm-là-mất.
+    <AlertDialog>
+      <AlertDialogTrigger
+        render={
+          <Button disabled={transcribing}>
+            Chép lại lời
+            <ArrowRightIcon data-icon="inline-end" />
+          </Button>
+        }
+      />
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Chép lại lời?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Mạch cảnh hoặc đề bài đã đổi sau lần chép lời trước. Chép lại sẽ{" "}
+            <strong>xoá bản cắt, soát lời và chữ đã dựng</strong> để chép trên
+            mạch mới.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Để sau</AlertDialogCancel>
+          <AlertDialogAction onClick={() => void beginTranscribe()}>
+            Chép lại, xoá bản cũ
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   ) : at === "cut" && projectId ? (
     <FinishCutButton
       projectId={projectId}
@@ -295,30 +426,61 @@ export function FlowPage() {
       seconds={snap.cut.seconds}
       kept={snap.cut.kept}
     />
-  ) : machineBusy ? null : at === "proofread" && projectId ? (
+  ) : machineBusy || machineBlocked ? null : at === "proofread" &&
+    projectId ? (
     <FinishTextButton projectId={projectId} unsureCount={snap.unsureCount} />
-  ) : at === "studio" ? (
+  ) : noSpeechWarning ? null : at === "studio" ? (
     <div id={STUDIO_ACTION_SLOT} className="contents" />
   ) : at === "main-footage" ? (
     /* WIZARD một chiều: mỗi bước nhập xong bấm "Tiếp" sang bước KẾ, không nhảy
        thẳng vào chép lời. Cảnh chính bắt buộc — chưa có thì nút mờ. */
-    <Button disabled={!snap.hasMain} onClick={() => setIntakeStep(1)}>
+    <Button
+      disabled={!snap.hasMain || transcribing}
+      onClick={() => setIntakeStep(1)}
+    >
       Tiếp
       <ArrowRightIcon data-icon="inline-end" />
     </Button>
   ) : at === "b-roll" ? (
     // Cảnh phụ KHÔNG bắt buộc — luôn cho đi tiếp.
-    <Button onClick={() => setIntakeStep(2)}>
+    <Button disabled={transcribing} onClick={() => setIntakeStep(2)}>
       Tiếp
       <ArrowRightIcon data-icon="inline-end" />
     </Button>
   ) : at === "brief" ? (
-    // Bước nhập CUỐI: bắt đầu chép lời, máy tự chạy tiếp các bước sau.
-    <Button onClick={() => void upload.startTranscribe()}>
+    // Bước nhập CUỐI: bắt đầu chép lời, máy tự chạy tiếp các bước sau. Che nút
+    // trong lúc gửi — `snap.started` bắt kịp mãi ~1,5s sau (nhịp hỏi máy chủ),
+    // nên không che thì click đúp bắn hai lượt `startTranscribe`.
+    <Button disabled={transcribing} onClick={() => void beginTranscribe()}>
       Bắt đầu chép lời
       <ArrowRightIcon data-icon="inline-end" />
     </Button>
   ) : null;
+
+  if (loadError) {
+    return (
+      <div className="hide-scrollbars grid min-h-svh place-items-center gap-2 bg-background p-2 text-foreground lg:h-svh lg:overflow-hidden">
+        <Card className="w-full max-w-sm">
+          <CardContent>
+            <Empty>
+              <EmptyTitle>Không tải được dự án</EmptyTitle>
+              <EmptyDescription>{loadError}</EmptyDescription>
+              <EmptyContent>
+                <Button
+                  onClick={() => {
+                    setLoading(true);
+                    setRetryTick((tick) => tick + 1);
+                  }}
+                >
+                  Thử lại
+                </Button>
+              </EmptyContent>
+            </Empty>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -405,10 +567,9 @@ export function FlowPage() {
           ) : at === "cut" ? (
             <CutStep
               projectId={projectId}
-              words={snap.words}
               previewUrl={projectId ? api.baseVideoUrl(projectId) : null}
             />
-          ) : step.actor === "machine" || machineBusy ? (
+          ) : step.actor === "machine" || machineBusy || machineBlocked ? (
             /*
              * Bước MÁY: bày các chặng của bước ấy ở BÊN PHẢI.
              *
@@ -512,6 +673,36 @@ export function FlowPage() {
                 onRemove={handleRemove}
               />
             </div>
+          ) : noSpeechWarning ? (
+            /*
+             * Máy chép lời chạy xong mà KHÔNG nghe ra câu nào — video có thể
+             * chỉ có nhạc, hoặc máy nghe hỏng. `useUpload` đã tính sẵn
+             * `noSpeechFound`, nhưng trước đây `/flow` chưa từng đọc nó: mở
+             * thẳng vào bàn dựng RỖNG chữ, không một lời báo.
+             */
+            <Card className="lg:min-h-0 lg:h-full">
+              <CardContent className="grid min-h-0 flex-1 place-items-center">
+                <Empty>
+                  <EmptyMedia variant="icon">
+                    <AlertTriangleIcon />
+                  </EmptyMedia>
+                  <EmptyTitle>Không nghe ra câu nào</EmptyTitle>
+                  <EmptyDescription>
+                    Máy chép lời chạy xong nhưng không tách được câu nói nào.
+                    Video có thể chỉ có nhạc, hoặc máy nghe nhầm — bàn dựng sẽ
+                    trống chữ nếu mở tiếp.
+                  </EmptyDescription>
+                  <EmptyContent>
+                    <Button
+                      variant="outline"
+                      onClick={() => setBypassNoSpeech(true)}
+                    >
+                      Vẫn mở bàn dựng
+                    </Button>
+                  </EmptyContent>
+                </Empty>
+              </CardContent>
+            </Card>
           ) : at === "studio" ? (
             /* Bước cuối "Bàn dựng": bàn dựng thế hệ mới — editor lược phần cắt.
                Nút xuất video nằm trong chính workspace này. */

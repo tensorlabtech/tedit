@@ -131,87 +131,82 @@ function StripRow({
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: file.id });
   return (
-    <>
-      {[file].map(() => (
-        <div
-          key={file.id}
-          ref={setNodeRef}
-          style={{ transform: CSS.Transform.toString(transform), transition }}
-          data-state={selected ? "here" : "off"}
-          className={
-            "group flex items-center gap-2 rounded-lg border border-border p-2 data-[state=here]:ring-2 data-[state=here]:ring-primary data-[state=here]:ring-inset" +
-            (isDragging ? " opacity-50" : "")
-          }
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      data-state={selected ? "here" : "off"}
+      className={
+        "group flex items-center gap-2 rounded-lg border border-border p-2 data-[state=here]:ring-2 data-[state=here]:ring-primary data-[state=here]:ring-inset" +
+        (isDragging ? " opacity-50" : "")
+      }
+    >
+      {/*
+        Icon BẤM ĐƯỢC thì phải là `Button`, không phải svg trần.
+        Bọc trong `Button` mới có vùng bấm đủ rộng, có trạng thái rê
+        chuột, và tự nhận luật chỉnh cỡ icon của design system
+        (`[&_svg:not([class*='size-'])]:size-4`) — luật ấy chỉ chạy bên
+        trong `Button`, nên svg trần bị lucide vẽ 24px và lấn át chữ.
+      */}
+      <Button
+        variant="ghost"
+        size="icon-xs"
+        aria-label="Kéo để đổi thứ tự"
+        className="cursor-grab"
+        {...attributes}
+        {...listeners}
+      >
+        <GripVerticalIcon />
+      </Button>
+      <span className="text-muted-foreground w-4 shrink-0 tabular-nums text-xs">
+        {index + 1}
+      </span>
+      {/* Cả mảng ảnh + tên là một nút mở xem trước — vùng bấm lớn, và
+          người dùng không phải nhắm vào một dòng chữ mảnh. */}
+      <button
+        type="button"
+        onClick={() => onOpen(file.id)}
+        className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
+      >
+        <span className="bg-muted h-11 w-8 shrink-0 overflow-hidden rounded-md">
+          {file.thumbnail ? (
+            <img
+              src={file.thumbnail}
+              alt=""
+              className="h-full w-full object-cover"
+            />
+          ) : null}
+        </span>
+        {/* Tên XUỐNG DÒNG chứ không cắt: cắt còn "mai…" thì sáu cảnh
+            nhìn giống hệt nhau. `break-all` vì tên tệp thường không có
+            khoảng trắng để ngắt. */}
+        <span className="min-w-0 flex-1 text-sm leading-tight break-all">
+          {file.name}
+        </span>
+      </button>
+      {/*
+        Rê chuột thì nút GỠ thế chỗ thời lượng, không nằm cạnh nó.
+        Nằm cạnh thì lúc không rê chuột có một khoảng trống bên phải mà
+        không ai biết vì đâu — thời lượng trông như bị đẩy lệch.
+        Cùng một ô, hai trạng thái: đọc thì thấy thời lượng, định làm gì
+        thì thấy nút.
+      */}
+      <span className="grid shrink-0 place-items-center">
+        <span className="text-muted-foreground col-start-1 row-start-1 tabular-nums text-xs group-hover:invisible">
+          {file.duration ? formatDuration(file.duration) : ""}
+        </span>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label={`Gỡ ${file.name}`}
+          // Tooltip NGẮN, không để mặc định lấy nguyên tên tệp từ aria-label
+          // — overlay dài portal ra sát mép phải đẩy document, hiện scrollbar.
+          tooltip="Gỡ cảnh"
+          onClick={() => onRemove(file.id)}
+          className="col-start-1 row-start-1 opacity-0 group-hover:opacity-100"
         >
-            {/*
-              Icon BẤM ĐƯỢC thì phải là `Button`, không phải svg trần.
-              Bọc trong `Button` mới có vùng bấm đủ rộng, có trạng thái rê
-              chuột, và tự nhận luật chỉnh cỡ icon của design system
-              (`[&_svg:not([class*='size-'])]:size-4`) — luật ấy chỉ chạy bên
-              trong `Button`, nên svg trần bị lucide vẽ 24px và lấn át chữ.
-            */}
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              aria-label="Kéo để đổi thứ tự"
-              className="cursor-grab"
-              {...attributes}
-              {...listeners}
-            >
-              <GripVerticalIcon />
-            </Button>
-            <span className="text-muted-foreground w-4 shrink-0 tabular-nums text-xs">
-              {index + 1}
-            </span>
-            {/* Cả mảng ảnh + tên là một nút mở xem trước — vùng bấm lớn, và
-                người dùng không phải nhắm vào một dòng chữ mảnh. */}
-            <button
-              type="button"
-              onClick={() => onOpen(file.id)}
-              className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
-            >
-              <span className="bg-muted h-11 w-8 shrink-0 overflow-hidden rounded-md">
-                {file.thumbnail ? (
-                  <img
-                    src={file.thumbnail}
-                    alt=""
-                    className="h-full w-full object-cover"
-                  />
-                ) : null}
-              </span>
-              {/* Tên XUỐNG DÒNG chứ không cắt: cắt còn "mai…" thì sáu cảnh
-                  nhìn giống hệt nhau. `break-all` vì tên tệp thường không có
-                  khoảng trắng để ngắt. */}
-              <span className="min-w-0 flex-1 text-sm leading-tight break-all">
-                {file.name}
-              </span>
-            </button>
-            {/*
-              Rê chuột thì nút GỠ thế chỗ thời lượng, không nằm cạnh nó.
-              Nằm cạnh thì lúc không rê chuột có một khoảng trống bên phải mà
-              không ai biết vì đâu — thời lượng trông như bị đẩy lệch.
-              Cùng một ô, hai trạng thái: đọc thì thấy thời lượng, định làm gì
-              thì thấy nút.
-            */}
-            <span className="grid shrink-0 place-items-center">
-              <span className="text-muted-foreground col-start-1 row-start-1 tabular-nums text-xs group-hover:invisible">
-                {file.duration ? formatDuration(file.duration) : ""}
-              </span>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                aria-label={`Gỡ ${file.name}`}
-                // Tooltip NGẮN, không để mặc định lấy nguyên tên tệp từ aria-label
-                // — overlay dài portal ra sát mép phải đẩy document, hiện scrollbar.
-                tooltip="Gỡ cảnh"
-                onClick={() => onRemove(file.id)}
-                className="col-start-1 row-start-1 opacity-0 group-hover:opacity-100"
-              >
-                <XIcon />
-              </Button>
-            </span>
-        </div>
-      ))}
-    </>
+          <XIcon />
+        </Button>
+      </span>
+    </div>
   );
 }

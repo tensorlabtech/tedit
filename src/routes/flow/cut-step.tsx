@@ -58,7 +58,6 @@ export function CutStep({
   projectId: string | undefined;
   /** `base.mp4` — bản gốc chưa cắt, nên mốc của nó chính là mốc của dải. */
   previewUrl: string | null;
-  words: CutWord[];
 }) {
   const cut = useCutEdit(projectId);
   const { spans, total } = cut;
@@ -84,6 +83,22 @@ export function CutStep({
    * nghe được chính chỗ ấy. Hai việc trái nhau, nên tách bằng chủ ý.
    */
   const auditing = useRef<string | null>(null);
+  /**
+   * Hẹn giờ dừng của `audit()` (xem dưới) — giữ handle để HUỶ được.
+   *
+   * Không giữ thì hẹn giờ cũ vẫn sống: nghe thử một khoảng rồi bấm Cách phát tự
+   * do TRƯỚC khi hẹn giờ tới hạn, nó vẫn nổ đúng lúc và dừng phát ngoài ý muốn —
+   * người dùng không bấm gì mà video tự đứng lại. Huỷ ở MỌI chỗ có thể đổi trạng
+   * thái phát: nghe thử khoảng khác, phát/dừng tay, và khi màn bị gỡ.
+   */
+  const auditTimeout = useRef<number | null>(null);
+  const clearAuditTimeout = () => {
+    if (auditTimeout.current !== null) {
+      window.clearTimeout(auditTimeout.current);
+      auditTimeout.current = null;
+    }
+  };
+  useEffect(() => clearAuditTimeout, []);
   /**
    * Mốc phát THẬT, cập nhật mỗi khung (60fps) cho dải trôi mượt mà không phải đẩy
    * state 60fps. `CutLane` đọc nó trong vòng rAF riêng để lái `transform` trực
@@ -185,6 +200,9 @@ export function CutStep({
   const togglePlay = () => {
     const video = videoRef.current;
     if (!video) return;
+    // Phát/dừng TAY thì bỏ hẹn giờ của lần nghe thử trước — không thì nó vẫn nổ
+    // đúng lúc và dừng phát tự do ngoài ý muốn.
+    clearAuditTimeout();
     if (video.paused) void video.play();
     else video.pause();
   };
@@ -227,23 +245,29 @@ export function CutStep({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+    // `cut.deleteSpan` (không phải `cut`): `useCutEdit` trả một object literal MỚI
+    // mỗi lượt vẽ, nên phụ thuộc cả `cut` khiến effect gỡ-gắn lại mỗi lần render.
+    // `deleteSpan` tự nó ổn định qua `useCallback` (chỉ đổi khi `projectId` đổi).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, total, cut]);
+  }, [selectedId, total, cut.deleteSpan]);
 
   /** Nghe thử một khoảng — phát chính nó dù bản đã-cắt vốn nhảy qua. */
   const audit = (span: Span) => {
     const video = videoRef.current;
     if (!video) return;
+    // Nghe thử khoảng MỚI thì huỷ hẹn giờ của khoảng TRƯỚC — không thì hai hẹn
+    // giờ đua nhau, và cái cũ dừng phát giữa lúc đang nghe khoảng mới.
+    clearAuditTimeout();
     setSelectedId(span.id);
     auditing.current = span.id;
     video.currentTime = Math.max(0, span.start - SEAM);
     void video.play();
     // Dừng ngay sau khi qua hết khoảng: không dừng thì nó chạy tiếp hết video
     // trong khi câu hỏi đã trả lời xong từ lâu.
-    window.setTimeout(
-      () => video.pause(),
-      (span.end - span.start + SEAM * 2) * 1000,
-    );
+    auditTimeout.current = window.setTimeout(() => {
+      auditTimeout.current = null;
+      video.pause();
+    }, (span.end - span.start + SEAM * 2) * 1000);
   };
 
   return (
@@ -297,6 +321,10 @@ export function CutStep({
               selectedId={selectedId}
               onSelect={setSelectedId}
               onSeek={seek}
+              onPause={() => {
+                clearAuditTimeout();
+                videoRef.current?.pause();
+              }}
               onZoom={zoom.zoomBy}
               onResize={(id, start, end) => void cut.resizeSpan(id, start, end)}
               onAddAt={async (at) => {

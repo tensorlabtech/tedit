@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api, type ApiSegment } from "@/lib/api";
+import { toast } from "@/components/ui/toast";
 
 import type { AudioEnvelope } from "../editor/timeline-audio-lane";
 import { DEFAULT_PX_PER_SECOND } from "../editor/timeline-zoom";
@@ -86,6 +87,34 @@ export function useCutEdit(projectId: string | undefined) {
     segmentsRef.current = rows;
     setSegments(rows);
   }, []);
+
+  /**
+   * Một phép sửa hỏng giữa chừng — BÁO cho người dùng và ĐỌC LẠI trạng thái thật.
+   *
+   * `resizeSpan` gọi `dissolve` rồi `removeRange` qua hai vòng máy chủ tách rời.
+   * Vòng đầu ăn, vòng sau hỏng thì khoảng đã được trả lại (KEPT) trên máy chủ
+   * nhưng state cục bộ (optimistic) vẫn coi như đã sửa xong — cú cắt của người
+   * dùng LẶNG LẼ biến mất, và cổng "Chốt bản cắt" phía sau không có đường lùi.
+   * Nên: báo lỗi bằng toast, rồi lấy lại `segments` THẬT từ máy chủ để dải khớp
+   * đúng những gì đã (hoặc chưa) lưu — không để state lạc khỏi sự thật.
+   */
+  const recoverFromFailure = useCallback(
+    async (error: unknown, description: string) => {
+      toast.add({
+        title: "Chưa lưu được thay đổi",
+        description,
+        type: "error",
+      });
+      if (import.meta.env.DEV) console.error(error);
+      if (!projectId) return;
+      try {
+        applyRows(await api.listSegments(projectId));
+      } catch {
+        // Tải lại cũng hỏng — thôi, ít nhất người dùng đã được báo bằng toast.
+      }
+    },
+    [projectId, applyRows],
+  );
 
   /**
    * HÀNG ĐỢI MỘT LÀN — mọi phép sửa cắt chạy nối đuôi, không bao giờ chồng nhau.
@@ -218,18 +247,25 @@ export function useCutEdit(projectId: string | undefined) {
   const applySpans = useCallback(
     async (target: Array<{ start: number; end: number }>) => {
       if (!projectId) return;
-      let rows = await api.listSegments(projectId);
-      for (const row of rows.filter((item) => item.removed === 1)) {
-        rows = await dissolve(row.id);
+      try {
+        let rows = await api.listSegments(projectId);
+        for (const row of rows.filter((item) => item.removed === 1)) {
+          rows = await dissolve(row.id);
+        }
+        // Bỏ từ CUỐI lên ĐẦU: `removeRange` chẻ đoạn, nên đi xuôi thì các mốc phía
+        // sau đã xê dịch sau lần bỏ đầu tiên.
+        for (const span of [...target].sort((a, b) => b.start - a.start)) {
+          rows = await api.removeRange(projectId, span.start, span.end, true);
+        }
+        applyRows(rows);
+      } catch (error) {
+        await recoverFromFailure(
+          error,
+          "Hoàn tác nửa chừng thì mạng lỗi. Đã tải lại đúng bản trên máy chủ.",
+        );
       }
-      // Bỏ từ CUỐI lên ĐẦU: `removeRange` chẻ đoạn, nên đi xuôi thì các mốc phía
-      // sau đã xê dịch sau lần bỏ đầu tiên.
-      for (const span of [...target].sort((a, b) => b.start - a.start)) {
-        rows = await api.removeRange(projectId, span.start, span.end, true);
-      }
-      applyRows(rows);
     },
-    [projectId, dissolve, applyRows],
+    [projectId, dissolve, applyRows, recoverFromFailure],
   );
 
   // Chụp trạng thái TRƯỚC một phép — đọc từ ref (mới nhất), không từ `spans`
@@ -259,19 +295,36 @@ export function useCutEdit(projectId: string | undefined) {
       enqueue(async () => {
         if (!projectId) return;
         remember();
-        await dissolve(id);
-        applyRows(await api.removeRange(projectId, start, end, true));
+        try {
+          await dissolve(id);
+          applyRows(await api.removeRange(projectId, start, end, true));
+        } catch (error) {
+          // `dissolve` có thể đã ăn (khoảng trả về KEPT) trong khi `removeRange`
+          // hỏng — cú kéo mép coi như MẤT. Đọc lại trạng thái thật, đừng để state
+          // cục bộ nói dối là đã sửa xong.
+          await recoverFromFailure(
+            error,
+            "Mạng lỗi giữa lúc sửa khoảng cắt. Đã tải lại đúng bản trên máy chủ, kiểm tra lại chỗ vừa kéo.",
+          );
+        }
       }),
-    [projectId, dissolve, remember, enqueue, applyRows],
+    [projectId, dissolve, remember, enqueue, applyRows, recoverFromFailure],
   );
 
   const deleteSpan = useCallback(
     (id: string) =>
       enqueue(async () => {
         remember();
-        applyRows(await dissolve(id));
+        try {
+          applyRows(await dissolve(id));
+        } catch (error) {
+          await recoverFromFailure(
+            error,
+            "Mạng lỗi khi giữ lại đoạn này. Đã tải lại đúng bản trên máy chủ.",
+          );
+        }
       }),
-    [dissolve, remember, enqueue, applyRows],
+    [dissolve, remember, enqueue, applyRows, recoverFromFailure],
   );
 
   /**
@@ -338,16 +391,33 @@ export function useCutEdit(projectId: string | undefined) {
         if (end - start < MIN_NEW_SPAN) return null;
 
         remember();
-        const rows = await api.removeRange(projectId, start, end, true);
-        applyRows(rows);
-        // Trả đoạn VỪA TẠO để nơi gọi active luôn — đoạn phủ giữa khoảng vừa bỏ.
-        const mid = (start + end) / 2;
-        const created = rows.find(
-          (row) => row.removed === 1 && row.start_sec <= mid && row.end_sec >= mid,
-        );
-        return created?.id ?? null;
+        try {
+          const rows = await api.removeRange(projectId, start, end, true);
+          applyRows(rows);
+          // Trả đoạn VỪA TẠO để nơi gọi active luôn — đoạn phủ giữa khoảng vừa bỏ.
+          const mid = (start + end) / 2;
+          const created = rows.find(
+            (row) =>
+              row.removed === 1 && row.start_sec <= mid && row.end_sec >= mid,
+          );
+          return created?.id ?? null;
+        } catch (error) {
+          await recoverFromFailure(
+            error,
+            "Mạng lỗi khi thêm khoảng cắt. Đã tải lại đúng bản trên máy chủ.",
+          );
+          return null;
+        }
       }),
-    [projectId, total, remember, silenceAround, enqueue, applyRows],
+    [
+      projectId,
+      total,
+      remember,
+      silenceAround,
+      enqueue,
+      applyRows,
+      recoverFromFailure,
+    ],
   );
 
   return {

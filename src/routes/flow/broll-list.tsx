@@ -8,6 +8,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Empty, EmptyDescription, EmptyTitle } from "@/components/ui/empty";
 import { formatDuration, type MediaFile } from "../upload/upload-data";
 
 /**
@@ -65,72 +66,83 @@ export function BRollList({
           ra ngoài và `truncate` thành vô dụng vì cột đã nở rồi. Khai một cột
           minmax(0,1fr) thì cột LẤP đúng bề ngang card, hàng bị bó lại, `truncate`
           của tên mới ăn và thời lượng giữ được chỗ. */}
-      <CardContent className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] content-start gap-2 overflow-y-auto">
-        {files.length === 0 ? (
-          <p className="text-muted-foreground">
-            Chưa có tư liệu nào. Không có cũng được — máy vẫn dựng, chỉ là không
-            có gì chèn vào giữa lời nói.
-          </p>
-        ) : null}
-        {files.map((file) => (
-          // Hàng là FLEX thẳng, KHÔNG bọc thêm lớp `grid` bên ngoài: lớp grid
-          // đó là một grid-item có `min-width:auto`, cắt đứt chuỗi `min-w-0` nên
-          // `truncate` của tên tệp mất tác dụng — tên dài tràn khỏi card, đẩy
-          // thời lượng ra ngoài. Ưu tiên là: thời lượng/nút gỡ (`shrink-0`) luôn
-          // giữ chỗ, tên (`min-w-0 flex-1`) co lại còn bao nhiêu ăn bấy nhiêu.
-          <div
-            key={file.id}
-            data-state={file.id === selectedId ? "here" : "off"}
-            className="group flex items-center gap-2 rounded-lg border border-border p-3 data-[state=here]:ring-2 data-[state=here]:ring-primary data-[state=here]:ring-inset"
-          >
-            <button
-              type="button"
-              onClick={() => onOpen(file.id)}
-              className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
+      {files.length === 0 ? (
+        // Cùng cách bày với `soat-loi-step`/`studio-step`: `Empty` DS component,
+        // canh giữa cả chiều ngang lẫn chiều cao — không phải chữ trần góc trái.
+        <CardContent className="grid min-h-0 flex-1 place-items-center">
+          <Empty>
+            <EmptyTitle>Chưa có tư liệu nào</EmptyTitle>
+            <EmptyDescription>
+              Không có cũng được — máy vẫn dựng, chỉ là không có gì chèn vào
+              giữa lời nói.
+            </EmptyDescription>
+          </Empty>
+        </CardContent>
+      ) : (
+        <CardContent className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] content-start gap-2 overflow-y-auto">
+          {files.map((file) => (
+            // Hàng là FLEX thẳng, KHÔNG bọc thêm lớp `grid` bên ngoài: lớp grid
+            // đó là một grid-item có `min-width:auto`, cắt đứt chuỗi `min-w-0`
+            // nên `truncate` của tên tệp mất tác dụng — tên dài tràn khỏi card,
+            // đẩy thời lượng ra ngoài. Ưu tiên là: thời lượng/nút gỡ
+            // (`shrink-0`) luôn giữ chỗ, tên (`min-w-0 flex-1`) co lại còn bao
+            // nhiêu ăn bấy nhiêu.
+            <div
+              key={file.id}
+              data-state={file.id === selectedId ? "here" : "off"}
+              className="group flex items-center gap-2 rounded-lg border border-border p-3 data-[state=here]:ring-2 data-[state=here]:ring-primary data-[state=here]:ring-inset"
             >
-              <span className="bg-muted h-11 w-8 shrink-0 overflow-hidden rounded-md">
-                {file.thumbnail ? (
-                  <img
-                    src={file.thumbnail}
-                    alt=""
-                    className="h-full w-full object-cover"
-                  />
-                ) : null}
-              </span>
-              {/* `truncate` (một dòng + "…") thay vì `break-all`: tên tệp mạng
-                  xã hội dài cả trăm ký tự vỡ thành ba dòng, đội cao cả hàng và
-                  đẩy lệch mọi thẻ dưới. Tên đầy đủ vẫn còn ở `title`/aria. */}
-              <span
-                title={file.name}
-                className="min-w-0 flex-1 truncate text-sm leading-tight"
+              <button
+                type="button"
+                onClick={() => onOpen(file.id)}
+                className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
               >
-                {file.name}
+                <span className="bg-muted h-11 w-8 shrink-0 overflow-hidden rounded-md">
+                  {file.thumbnail ? (
+                    <img
+                      src={file.thumbnail}
+                      alt=""
+                      className="h-full w-full object-cover"
+                    />
+                  ) : null}
+                </span>
+                {/* `truncate` (một dòng + "…") thay vì `break-all`: tên tệp
+                    mạng xã hội dài cả trăm ký tự vỡ thành ba dòng, đội cao cả
+                    hàng và đẩy lệch mọi thẻ dưới. Tên đầy đủ vẫn còn ở
+                    `title`/aria. */}
+                <span
+                  title={file.name}
+                  className="min-w-0 flex-1 truncate text-sm leading-tight"
+                >
+                  {file.name}
+                </span>
+              </button>
+              {/* Rê chuột thì nút gỡ thế chỗ thời lượng — cùng một ô, hai
+                  trạng thái, nên không có khoảng trống lơ lửng lúc không rê. */}
+              <span className="grid shrink-0 place-items-center">
+                <span className="text-muted-foreground col-start-1 row-start-1 tabular-nums text-xs group-hover:invisible">
+                  {file.duration ? formatDuration(file.duration) : ""}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label={`Gỡ ${file.name}`}
+                  // Tooltip NGẮN, không lấy mặc-định-từ-aria-label. Nút X nằm ở
+                  // cột 34rem ngoài cùng bên phải; để tooltip là nguyên tên tệp
+                  // thì overlay portal ra sát mép phải, đẩy rộng document →
+                  // hiện scrollbar ngang lúc rê chuột. Tên đã hiện ngay trên
+                  // hàng rồi.
+                  tooltip="Gỡ tư liệu"
+                  onClick={() => onRemove(file.id)}
+                  className="col-start-1 row-start-1 opacity-0 group-hover:opacity-100"
+                >
+                  <XIcon />
+                </Button>
               </span>
-            </button>
-            {/* Rê chuột thì nút gỡ thế chỗ thời lượng — cùng một ô, hai trạng
-                thái, nên không có khoảng trống lơ lửng lúc không rê. */}
-            <span className="grid shrink-0 place-items-center">
-              <span className="text-muted-foreground col-start-1 row-start-1 tabular-nums text-xs group-hover:invisible">
-                {file.duration ? formatDuration(file.duration) : ""}
-              </span>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                aria-label={`Gỡ ${file.name}`}
-                // Tooltip NGẮN, không lấy mặc-định-từ-aria-label. Nút X nằm ở cột
-                // 34rem ngoài cùng bên phải; để tooltip là nguyên tên tệp thì
-                // overlay portal ra sát mép phải, đẩy rộng document → hiện
-                // scrollbar ngang lúc rê chuột. Tên đã hiện ngay trên hàng rồi.
-                tooltip="Gỡ tư liệu"
-                onClick={() => onRemove(file.id)}
-                className="col-start-1 row-start-1 opacity-0 group-hover:opacity-100"
-              >
-                <XIcon />
-              </Button>
-            </span>
-          </div>
-        ))}
-      </CardContent>
+            </div>
+          ))}
+        </CardContent>
+      )}
     </Card>
   );
 }

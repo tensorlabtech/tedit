@@ -1,4 +1,4 @@
-import { type ReactNode, type RefObject } from "react";
+import { useEffect, useState, type ReactNode, type RefObject } from "react";
 import { PauseIcon, PlayIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -37,10 +37,18 @@ export function FlowPreview({
   /** Chữ bên phải nút phát trên dải điều khiển. */
   children?: ReactNode;
 }) {
+  // `src` 404 hay hỏng khung hình thì `<video>` không tự báo gì lên UI — khung
+  // đứng im, trông như treo. Bắt `onError` và rơi về ĐÚNG thông báo của nhánh
+  // `src == null`, chỉ đổi câu chữ cho đúng lý do.
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
+
   return (
     <Card className="lg:min-h-0 [--card-spacing:--spacing(2)]">
       <CardContent className="grid min-h-0 flex-1 place-items-center overflow-hidden">
-        {src ? (
+        {src && !failed ? (
           <div className="relative mx-auto aspect-[9/16] h-full max-w-full overflow-hidden rounded-lg">
             <video
               ref={videoRef}
@@ -49,6 +57,7 @@ export function FlowPreview({
               onPlay={onPlay}
               onPause={onPause}
               onClick={onToggle}
+              onError={() => setFailed(true)}
             />
             <div className="absolute inset-x-0 bottom-0 z-20 flex items-center gap-2 bg-gradient-to-t from-black/70 to-transparent p-2 pt-8">
               <Button
@@ -64,7 +73,9 @@ export function FlowPreview({
           </div>
         ) : (
           <p className="text-muted-foreground text-center">
-            Chưa có bản xem trước. Máy đang ghép mạch chính.
+            {failed
+              ? "Không tải được bản xem trước. Thử tải lại trang."
+              : "Chưa có bản xem trước. Máy đang ghép mạch chính."}
           </p>
         )}
       </CardContent>

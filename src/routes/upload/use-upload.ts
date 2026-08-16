@@ -39,6 +39,16 @@ export type IntakeResult = {
 /** Nơi nhớ phong cách đã chọn lần trước, để dự án sau không phải chọn lại. */
 const LAST_STYLE_KEY = "teddit-style-pack";
 
+/**
+ * Đường gốc trên đường dẫn cho mã dự án — hook này gắn ở CẢ `/upload/:id` lẫn
+ * `/flow/:id` (trang Flow dùng lại nguyên hook). Viết cứng "/upload" khi rewrite
+ * đường dẫn thì mở dưới `/flow` bị đẩy lệch route, tải lại trang là lạc trang.
+ * Đọc thẳng `window.location.pathname` thay vì tham số riêng vì cả hai nơi gọi
+ * hook đều không truyền gì thêm ngoài mã dự án.
+ */
+const basePathFor = () =>
+  window.location.pathname.startsWith("/flow") ? "/flow" : "/upload";
+
 export function useUpload(openingProjectId?: string) {
   const [files, setFiles] = useState<MediaFile[]>([]);
   const [projectId, setProjectId] = useState<string | null>(
@@ -88,6 +98,21 @@ export function useUpload(openingProjectId?: string) {
   // Bản sao đồng bộ: `ensureProject` chạy trong một lời hứa đã đóng băng giá trị
   // của lượt dựng cũ, mà nó cần cái tên VỪA gõ.
   const titleRef = useRef(suggestedTitle());
+  // Bản sao đồng bộ cho `remakeProject`: nó dựng lại dự án trong một lời hứa đóng
+  // băng, mà phải MANG phong cách đã chọn sang dự án MỚI — không thì dự án mới về
+  // default (nhip-den) dù người dùng đã chọn Prism, UI và DB lệch nhau.
+  const stylePackRef = useRef(stylePack);
+  useEffect(() => {
+    stylePackRef.current = stylePack;
+  }, [stylePack]);
+  // Cùng lý do — cùng cho `remakeProject`: nó phải mang đúng NGƯỠNG RÚT LẶNG
+  // người dùng đang có (kể cả `0` — "đừng tự rút, tôi tự cắt ở bàn dựng"), chứ
+  // không phải mặc định của phong cách. Đọc thẳng state `minSilence` trong lời
+  // hứa đã đóng băng thì được giá trị lúc dựng lại, sai với giá trị lúc chạy.
+  const minSilenceRef = useRef(minSilence);
+  useEffect(() => {
+    minSilenceRef.current = minSilence;
+  }, [minSilence]);
   // Bản sao đồng bộ: nhịp hỏi tiến độ chạy trong `setInterval` nên nó nhìn thấy
   // `profile` của lượt dựng đã đóng băng, không phải giá trị vừa gõ.
   const profileRef = useRef("");
@@ -189,7 +214,27 @@ export function useUpload(openingProjectId?: string) {
     setTranscribe(null);
     setSentenceCount(null);
     const id = await ensureProject();
-    window.history.replaceState(null, "", `/upload/${id}`);
+    // Dự án MỚI phải mang PHONG CÁCH đã chọn sang — `createProject` sinh ra với
+    // default, không PATCH thì Prism đã chọn thành nhip-den (khung rung, chữ khác).
+    //
+    // NGƯỠNG RÚT LẶNG mang theo từ `minSilenceRef`, KHÔNG tính lại mặc định của
+    // phong cách: người dùng có thể đã tự kéo thanh này, kể cả về `0`, và dự án
+    // chết-rồi-dựng-lại là chuyện máy móc phải trong suốt với họ — không được
+    // âm thầm trả một lựa chọn thật về mặc định.
+    const carriedMinSilence = minSilenceRef.current;
+    void api
+      .updateProject(id, {
+        stylePack: stylePackRef.current,
+        minSilence: carriedMinSilence,
+      })
+      .then(() => {
+        // Ghi xong mới đồng bộ vào state: DB và ô kéo trên màn phải khớp nhau,
+        // không để DB đã mang default cũ trong khi thanh kéo vẫn hiện lựa chọn
+        // trước đó (hoặc ngược lại).
+        setMinSilence(carriedMinSilence);
+      })
+      .catch(() => {});
+    window.history.replaceState(null, "", `${basePathFor()}/${id}`);
 
     // Mọi tệp đã tải lên dự án cũ CŨNG chết theo nó.
     //
@@ -337,7 +382,7 @@ export function useUpload(openingProjectId?: string) {
         // không, và mỗi ô video hiện một dòng đỏ "Không có dự án này".
         if (error instanceof ApiError && error.status === 404) {
           projectRef.current = null;
-          window.history.replaceState(null, "", "/upload");
+          window.history.replaceState(null, "", basePathFor());
           toast.add({
             title: "Dự án này không còn",
             description: "Thả tệp vào để bắt đầu một mạch mới",
@@ -638,6 +683,20 @@ export function useUpload(openingProjectId?: string) {
       commit(list.filter((item) => item.id !== id));
 
       return () => {
+        // Tệp KHÔNG có `File` gốc trong tay (dự án MỞ LẠI từ máy chủ — trình
+        // duyệt của phiên này chưa từng giữ nó) mà bản trên máy chủ vừa bị xoá
+        // thật ở trên — không còn gì để tải lại nữa. Dựng lại ô "đã xong" trong
+        // tình huống đó là bày ra một tệp ma: xem trước vỡ, và các chặng sau
+        // (chép lời, dựng phim) không thấy nó trên máy chủ. Nói thẳng không
+        // hoàn tác được, còn hơn một ô xanh nói dối.
+        if (!source) {
+          toast.add({
+            title: "Không hoàn tác được",
+            description: "Tệp đã xoá khỏi máy chủ — thả lại tệp này nếu cần",
+            type: "error",
+          });
+          return;
+        }
         // Ảnh xem trước chỉ thu hồi khi người dùng đã bỏ hẳn ý định hoàn tác,
         // nên `URL.revokeObjectURL` không nằm ở nhánh gỡ.
         const current = latest.current;
@@ -647,12 +706,11 @@ export function useUpload(openingProjectId?: string) {
         next.splice(Math.min(index, next.length), 0, gone);
         commit(next);
         // Tệp đã lên máy chủ thì bản trên đó vừa bị xoá — phải tải lại.
-        if (source)
-          void enqueueUpload(
-            { ...gone, status: "uploading", progress: 0 },
-            source,
-            gone.role,
-          );
+        void enqueueUpload(
+          { ...gone, status: "uploading", progress: 0 },
+          source,
+          gone.role,
+        );
       };
     },
     [enqueueUpload],
@@ -838,6 +896,12 @@ export function useUpload(openingProjectId?: string) {
    */
   const saveStylePack = useCallback(
     async (next: StylePackId) => {
+      // Giữ lại lựa chọn CŨ để trả về nếu ghi hỏng — cùng cách `saveInsertSource`
+      // làm bên dưới. Không trả lại thì màn hình hiện phong cách mới trong khi
+      // máy chủ vẫn giữ cái cũ, và bản xuất (đọc pack từ DB ở bước dựng khối) ra
+      // một bộ khác hẳn với những gì người dùng đang thấy trên màn.
+      const truocPack = stylePack;
+      const truocMinSilence = minSilence;
       setStylePackState(next);
       const pack = findStylePack(next);
       setMinSilence(pack.intensity.minSilence);
@@ -856,9 +920,17 @@ export function useUpload(openingProjectId?: string) {
           stylePack: next,
           minSilence: pack.intensity.minSilence,
         })
-        .catch(() => {});
+        .catch(() => {
+          setStylePackState(truocPack);
+          setMinSilence(truocMinSilence);
+          toast.add({
+            title: "Không lưu được phong cách",
+            description: "Máy chủ không trả lời — thử lại giúp mình",
+            type: "error",
+          });
+        });
     },
-    [ensureProject],
+    [ensureProject, stylePack, minSilence],
   );
 
   const saveTitle = useCallback(async (next: string) => {
@@ -1022,6 +1094,28 @@ export function useUpload(openingProjectId?: string) {
   const startTranscribe = useCallback(async () => {
     const id = projectRef.current;
     if (!id) return;
+    // CHỐT PHONG CÁCH NGAY TRƯỚC KHI DỰNG — và ĐỢI nó xong.
+    //
+    // `saveStylePack` ghi phong cách lúc người dùng bấm chọn, nhưng lượt ghi ấy có
+    // thể lỡ nhịp (mạng chớp, hoặc effect nạp-lại dự án đè state về bộ trên DB) —
+    // và bước gieo/đóng-dấu của pipeline ĐỌC `projects.style_pack` để quyết look
+    // từng khung/chữ. Lệch một nhịp là cả video ra nhip-den dù người dùng chọn
+    // Prism, mà tới được đây tốn rất nhiều công. Ghi lại ĐÚNG bộ đang chọn ở đây,
+    // đợi xác nhận, rồi mới dựng — bất biến: "bộ người dùng đang thấy chọn = bộ
+    // được dựng". Hỏng thì KHÔNG dựng, báo rõ, để khỏi dựng nhầm bộ.
+    try {
+      await api.updateProject(id, {
+        stylePack: stylePackRef.current,
+        minSilence: minSilenceRef.current,
+      });
+    } catch {
+      toast.add({
+        title: "Chưa lưu được phong cách",
+        description: "Kiểm tra mạng rồi bấm dựng lại — tránh dựng nhầm bộ dáng",
+        type: "error",
+      });
+      return;
+    }
     transcribedKey.current = null;
     await api.startTranscribe(id);
     setTranscribe({ status: "running", message: "Đang xếp hàng", progress: 0 });
