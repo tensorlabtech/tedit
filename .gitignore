@@ -59,3 +59,7 @@ out/
 public/spike/
 public/remotion/
 public/remotion-preview/
+
+# Vietnamese NLP python env (underthesea) — cài local mỗi máy, không commit
+scripts/vi-segment/vienv/
+scripts/vi-segment/install.log
