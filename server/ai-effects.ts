@@ -40,6 +40,8 @@ const SECONDS_PER_EFFECT = 10;
 const SHOWCASE_SECONDS = 30;
 /** Hai hiệu ứng gần nhau quá thì đọc ra là giật, không phải nhịp. */
 const MIN_GAP_SECONDS = 2.5;
+/** Cú nhấn ngắn hơn ngần này đọc ra là GIẬT — nới cho đủ nhìn (trong chỗ còn). */
+const MIN_EFFECT = 0.45;
 /**
  * `junctionShare` của bộ THAM CHIẾU — mốc để quy các bộ khác thành hệ số nhân.
  *
@@ -184,6 +186,24 @@ export async function pickEffects(
     .prepare("SELECT start_sec, end_sec FROM effects WHERE project_id=?")
     .all(projectId) as Array<{ start_sec: number; end_sec: number }>;
 
+  // KHUNG đã đặt (b-roll + ô người) — cú nhấn KHÔNG được rơi TRÚNG khung: một cú
+  // zoom/whip đè lên thẻ b-roll đọc ra là lỗi, không ra chuyển cảnh. Effects chạy
+  // SAU `place` + `layout` (chặng `layout` chặn giữa) nên khung đã có mặt để né.
+  // Mốc GIÂY: sau chốt-cắt chỉ còn MỘT trục, khung neo-giây (hoặc lùi về mốc từ).
+  const frames = db
+    .prepare(
+      `SELECT COALESCE(e.start_sec, w1.start_sec) AS s,
+              COALESCE(e.end_sec,   w2.end_sec)   AS en
+         FROM elements e
+         LEFT JOIN words w1 ON w1.id = e.from_word_id
+         LEFT JOIN words w2 ON w2.id = e.to_word_id
+        WHERE e.project_id=? AND e.kind='layout'`,
+    )
+    .all(projectId) as Array<{ s: number | null; en: number | null }>;
+  const frameSpans = frames
+    .filter((f) => f.s != null && f.en != null && f.en > f.s)
+    .map((f) => ({ start: f.s as number, end: f.en as number }));
+
   // Độ dài phim SẼ XUẤT RA, không phải độ dài bản gốc: mật độ nhịp là thứ người
   // xem cảm nhận trên bản đã cắt.
   const outputSeconds = kept.reduce(
@@ -280,10 +300,26 @@ export async function pickEffects(
         rejected += 1;
         continue;
       }
+      // MIN ĐỘ DÀI: cú quá ngắn (chớp 0,12s / dip 0,18s) đọc ra như GIẬT, không
+      // ra nhịp. Nới đều hai nửa cho tổng ≥ MIN_EFFECT, NHƯNG chỉ trong phần đoạn
+      // giữ còn (không lấn vùng đã bỏ — cùng lý do với chặn "không đủ chỗ").
+      let bef = before;
+      let aft = after;
+      if (bef + aft < MIN_EFFECT) {
+        const grow = (MIN_EFFECT - before - after) / 2;
+        bef = Math.min(join.roomBefore, before + grow);
+        aft = Math.min(join.roomAfter, after + grow);
+      }
       // Quãng vắt QUA vết cắt: nửa trước nằm ở đoạn trước, nửa sau ở đoạn sau.
       // Đặt gọn một bên thì đỉnh xung không rơi đúng chỗ nối.
-      const start = Math.max(0, join.cut - before);
-      const end = join.resume + after;
+      const start = Math.max(0, join.cut - bef);
+      const end = join.resume + aft;
+      // NÉ KHUNG: cú nhấn CHẠM một khung (b-roll/ô người) đọc ra là lỗi, không ra
+      // chuyển cảnh → bỏ. Effects chạy sau place+layout nên khung đã có mặt.
+      if (frameSpans.some((f) => start < f.end && f.start < end)) {
+        rejected += 1;
+        continue;
+      }
       if (
         taken.some(
           (item) =>
