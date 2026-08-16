@@ -23,6 +23,12 @@ const TARGET_SHARE = 0.3;
 const MIN_GAP_SECONDS = 6;
 /** Ô người dài quá thì mất nhịp — bỏ qua câu quá dài. */
 const MAX_SECONDS = 5;
+/**
+ * Ô người NGẮN quá thì nháy một cái đã hết chưa kịp đọc ra khung — mắt đọc là
+ * lỗi giật chứ không ra dụng ý. Cụm có từ nhấn nhưng chỉ dài 0,2s (một tiếng) thì
+ * KHÔNG đặt khung ở đó. Cùng lý do `MIN_SECONDS` của b-roll.
+ */
+const MIN_SECONDS = 1.5;
 
 type Span = { fromWordId: string; toWordId: string; start: number; end: number };
 
@@ -99,6 +105,7 @@ export function placePersonLayouts(projectId: string): { placed: number } {
   let placed = 0;
   for (const s of specials) {
     if (used >= target) break;
+    if (s.end - s.start < MIN_SECONDS) continue;
     if (s.end - s.start > MAX_SECONDS) continue;
     if (s.start - lastEnd < MIN_GAP_SECONDS) continue;
     if (overlapsBroll(s)) continue;

@@ -93,13 +93,21 @@ export type FlowState = {
   hasMain: boolean;
   hasBrief: boolean;
   /**
-   * Chặng máy ĐANG dừng ở — đang chạy, hoặc đang mở cổng chờ người.
+   * Chặng máy ĐANG dừng ở — đang chạy, đang mở cổng chờ người, hoặc đã VẤP ở
+   * một chặng BẮT BUỘC (máy không còn tự đi tiếp được nữa).
    *
    * Một trường thay cho hai (`awaiting` + `started`) vì cả hai đều là câu trả lời
    * mờ cho cùng câu hỏi "máy đang ở đâu", và mờ thì phải đoán nốt phần còn lại.
    * Đúng chỗ ấy đã sai: có `started` mà không có cổng nào mở thì bản cũ luôn trả
    * "Chuẩn bị", nên chốt bản cắt xong sidebar NHẢY LÙI từ bước 5 về bước 4 trong
    * khi máy đang chạy `commit-cut` — chặng của bước 6.
+   *
+   * Nhánh "đã vấp" bị bỏ sót từng là một ngõ cụt khác: chặng bắt buộc hỏng thì
+   * không còn chặng nào `running`/`awaiting-user` nữa, `stage` rơi về `null`,
+   * và `currentStep` bên dưới không phân biệt được "máy vấp" với "máy chưa
+   * chạy gì" — cả hai đều rơi về `"preparing"`. Bên gọi (`src/routes/flow/flow-page.tsx`)
+   * phải đưa cả chặng `failed && required` vào đây, không chỉ hai trạng thái
+   * đang-chạy.
    */
   stage: string | null;
   /** Mạch đã chạy hết chưa. */
@@ -194,6 +202,6 @@ export const STAGES_OF: Record<FlowStepId, string[]> = {
   preparing: ["prepare", "describe", "transcribe", "silence", "cuts"],
   cut: ["review-cut"],
   proofread: ["commit-cut", "fix", "review-text"],
-  building: ["captions", "keywords", "place", "effects", "music"],
+  building: ["captions", "keywords", "place", "layout", "effects", "music"],
   studio: [],
 };

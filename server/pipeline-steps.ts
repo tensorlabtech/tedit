@@ -98,6 +98,9 @@ export const STEP_PLAN: Array<{ key: string; required: boolean }> = [
   // video xem được lấy không gì cả.
   { key: "keywords", required: false },
   { key: "place", required: false },
+  // Gieo Ô NGƯỜI chạy SAU `place`: nó nhắm ~30% thời-gian-CÒN-LẠI (tổng − b-roll)
+  // và chỉ đặt vào câu có TỪ NHẤN, nên cần cả `place` lẫn `keywords` xong trước.
+  { key: "layout", required: false },
   { key: "effects", required: false },
   { key: "music", required: false },
 ];

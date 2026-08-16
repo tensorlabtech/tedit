@@ -69,6 +69,7 @@ export const STEP_LABELS: Record<string, string> = {
   keywords: "Chọn từ khoá",
   describe: "Đọc tư liệu chèn",
   place: "Ghép tư liệu chèn",
+  layout: "Đặt khung người",
   effects: "Chọn hiệu ứng",
   music: "Chọn nhạc nền",
 };
@@ -91,6 +92,7 @@ export const STEP_DESCRIPTIONS: Record<string, string> = {
   keywords: "Tô đậm từ quan trọng",
   describe: "Máy xem từng tư liệu",
   place: "Đặt b-roll đúng chỗ",
+  layout: "Đặt vài khung người cho đỡ đơn điệu",
   effects: "Thêm chuyển cảnh, nhấn nhịp",
   music: "Chọn nhạc hợp mạch",
 };

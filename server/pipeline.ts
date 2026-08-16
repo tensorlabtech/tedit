@@ -708,8 +708,11 @@ export async function resumeAfterTextReview(projectId: string) {
   // Người dùng tắt phụ đề ở màn nạp tệp thì KHÔNG gieo chữ. Đoạn vẫn dựng — đoạn
   // là chỗ cắt, không phải chữ — nên bàn dựng vẫn cắt được như thường.
   const wantCaptions = captionState?.want_captions !== 0;
+  // `pack` khai ở scope HÀM: khâu gieo chữ (trong `if`) VÀ `placeBlurFrames` cuối
+  // hàm đều cần. Trước đây khai trong `if` nên khung mờ ở đuôi tham chiếu `pack`
+  // ngoài scope — sập `ReferenceError` ngay khi chạy tới.
+  const pack = readStylePack(projectId);
   if (wantCaptions && !captionState?.captions_seeded) {
-    const pack = readStylePack(projectId);
     /*
      * Chọn dải, không mặc định `bottom` nữa.
      *
@@ -751,7 +754,7 @@ export async function resumeAfterTextReview(projectId: string) {
   });
 
 
-  await runAiWaves(projectId, ["keywords", "place", "effects", "music"]);
+  await runAiWaves(projectId, ["keywords", "place", "layout", "effects", "music"]);
   // KHUNG MỜ ở cụm-chốt — đặt SAU `keywords` (cần từ khoá để chọn) + `place` (cần
   // biết b-roll để né). Chỉ bộ có defocus (Prism). Người dùng thêm/bỏ sau tuỳ ý.
   placeBlurFrames(projectId, pack);
@@ -1520,7 +1523,8 @@ const STEP_PROGRESS: Record<string, [number, string]> = {
   cuts: [80, "Đang tìm chỗ nên bỏ"],
   keywords: [88, "Đang chọn từ khoá"],
   place: [90, "Đang ghép tư liệu chèn"],
-  effects: [93, "Đang chọn hiệu ứng"],
+  layout: [92, "Đang đặt khung người"],
+  effects: [94, "Đang chọn hiệu ứng"],
   music: [96, "Đang chọn nhạc nền"],
 };
 
@@ -1556,18 +1560,33 @@ function markStepRunning(projectId: string, key: string) {
 const SONG_SONG = new Set(["keywords", "place", "effects", "music"]);
 
 async function runAiWaves(projectId: string, keys: readonly string[]) {
-  const byKey = new Map(aiJobs(projectId).map((job) => [job.key, job]));
-  for (const key of keys.filter((k) => !SONG_SONG.has(k))) {
-    const job = byKey.get(key);
-    if (job) await runOne(projectId, job);
+  // Chạy THEO ĐÚNG THỨ TỰ chuẩn của `aiJobs`, gom các bước SONG SONG LIỀN KỀ thành
+  // một mẻ chạy cùng lúc; bước TUẦN TỰ (vd `layout` — cần `place` xong để biết
+  // b-roll đặt đâu) tạo một RÀO: mẻ song song trước nó phải xong hẳn mới tới nó, và
+  // nó xong mới tới mẻ sau.
+  //
+  // Bản cũ dồn HẾT bước tuần tự lên đầu rồi mới tới cả cụm song song — nên `layout`
+  // chạy TRƯỚC `place`, sai phụ thuộc. Vì thế trước đợt này `layout` KHÔNG được đưa
+  // vào wave nào (ô người không bao giờ được gieo); nay thứ tự đã đúng nên gieo được.
+  const want = new Set(keys);
+  const jobs = aiJobs(projectId).filter((job) => want.has(job.key));
+  let batch: AiJob[] = [];
+  const flush = async () => {
+    if (batch.length === 0) return;
+    const pending = batch;
+    batch = [];
+    if (pending.length === 1) await runOne(projectId, pending[0]);
+    else await Promise.all(pending.map((job) => runOne(projectId, job)));
+  };
+  for (const job of jobs) {
+    if (SONG_SONG.has(job.key)) {
+      batch.push(job);
+    } else {
+      await flush(); // chốt mẻ song song trước RÀO
+      await runOne(projectId, job);
+    }
   }
-  const together = keys
-    .filter((k) => SONG_SONG.has(k))
-    .map((k) => byKey.get(k))
-    .filter((job): job is AiJob => !!job);
-  if (together.length > 0) {
-    await Promise.all(together.map((job) => runOne(projectId, job)));
-  }
+  await flush();
 }
 
 type AiJob = { key: string; run: () => Promise<string> };
@@ -1676,9 +1695,9 @@ async function runOne(
   projectId: string,
   job: { key: string; run: () => Promise<string> },
 ) {
-  // `silence` thuần phép trừ trên mốc từ, không gọi mô hình — thiếu khoá vẫn phải
-  // chạy, và đó là chặng cắt được NHIỀU thời lượng nhất.
-  if (!hasModel() && job.key !== "silence") {
+  // `silence` (trừ trên mốc từ) và `layout` (gieo ô người thuần DB, chọn theo câu
+  // có từ nhấn) KHÔNG gọi mô hình — thiếu khoá vẫn phải chạy.
+  if (!hasModel() && job.key !== "silence" && job.key !== "layout") {
     setStep(projectId, job.key, "failed", { error: "chưa có khoá mô hình" });
     return;
   }
