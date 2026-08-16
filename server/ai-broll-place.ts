@@ -71,6 +71,26 @@ sự không có đoạn nào hình đó minh hoạ được. Quãng nên bọc �
 đừng bọc cả câu dài. Mỗi tư liệu dùng nhiều nhất một lần, rải khắp video.`;
 
 /**
+ * Pass 2 — ép khớp NỐT những clip pass 1 bỏ sót.
+ *
+ * Pass 1 để model tự do "bỏ ra nếu không khớp" — và nó lạm quyền đó: đo trên dự
+ * án thật, v4-pro chỉ đặt 2/6 clip dù được bảo dùng hết, kể cả clip có chỗ khớp
+ * hiển nhiên (ảnh "Mình là Thái" ↔ lời "Mình là Thái, founder…" ở cuối). Bốn
+ * clip còn lại rơi xuống "đặt nốt" MÙ nội dung → dồn cục vào khoảng trống lớn
+ * nhất (đầu video), lời khớp ở nửa sau thì trơ mặt người.
+ *
+ * Pass 2 hỏi lại với danh sách HẸP (chỉ clip còn thừa) và CẤM bỏ trống: việc nhỏ
+ * hơn, model làm kỹ hơn. Chỉ clip nào pass 2 vẫn không ra mới xuống "đặt nốt".
+ */
+const INSTRUCTIONS_FILL = `Một số tư liệu chèn CHƯA được đặt vào video. Với TỪNG
+tư liệu dưới đây, tìm quãng lời khớp NHẤT mà hình đó minh hoạ được — trả mã từ
+đầu và mã từ cuối của quãng ấy.
+
+BẮT BUỘC đặt HẾT, mỗi tệp đúng một chỗ. Không có chỗ khớp hoàn hảo thì chọn chỗ
+CHỦ ĐỀ GẦN NHẤT (đang nói về việc/thứ mà hình gợi tới) — đừng bỏ trống. Quãng
+bọc đúng cụm từ mang ý, đừng bọc cả câu dài. TRÁNH các quãng đã có tư liệu.`;
+
+/**
  * Đếm số lần gạt THEO TỪNG LUẬT.
  *
  * Một con số "gạt 1" gộp chung thì không nói được máy đang quá tay hay mô hình
@@ -203,89 +223,135 @@ export async function placeInserts(projectId: string): Promise<{
     endSec: number;
     layout: LayoutKindId | null;
   }> = [];
-  {
-    for (const place of proposal.places) {
-      const from = index.get(place.fromWordId);
-      const to = index.get(place.toWordId);
-      const asset = free.find((item) => item.id === place.fileId);
-      if (from === undefined || to === undefined || to < from || !asset) {
-        reject("mã sai");
-        continue;
-      }
-      // Mỗi tệp một lần. Mô hình lặp lại một tệp là chuyện thường, mà cùng một
-      // hình hiện hai lần trong một video ngắn thì lộ ngay là máy làm.
-      if (seen.has(asset?.id ?? place.fileId)) {
-        reject("trùng tệp");
-        continue;
-      }
-
-      /**
-       * GIỮ NGUYÊN ĐỘ DÀI: khối dài ĐÚNG bằng clip gốc.
-       *
-       * Bản trước ép khối về 2,5–4s bằng cách nới dải TỪ — tư liệu bị cắt cụt còn
-       * vài giây, mất phần lớn footage user tải lên. Giờ khối bắt đầu ĐÚNG chỗ lời
-       * khớp (`from`) và chạy trọn độ dài clip; user tự cắt ngắn sau nếu muốn.
-       *
-       * Neo theo GIÂY (`start_sec/end_sec`) — cột mã-từ `from/to_word_id` chỉ còn
-       * để tương thích, render đọc giây. Ảnh (không có thời lượng) hoặc tệp KHO
-       * (chưa biết độ dài ở bước này) rơi về `MIN_SECONDS` đủ để hiện có nghĩa.
-       */
-      const start = words[from].start_sec;
-      if (start < START_MARGIN_SECONDS) {
-        reject("sát đầu");
-        continue;
-      }
-      const clipLen =
-        asset.duration && asset.duration > 0.05 ? asset.duration : MIN_SECONDS;
-      // Không tràn khỏi lời: kẹp mép ra vào cuối bản chép, chừa một nhịp.
-      const end = Math.min(start + clipLen, spokenEnd - 0.1);
-      const length = end - start;
-      if (length < 0.5) {
-        reject("hết chỗ");
-        continue;
-      }
-      // Chồng nhau HOẶC sát nhau quá đều loại: hai lần cắt cảnh cách nhau một
-      // giây đọc ra là lỗi kỹ thuật chứ không phải dụng ý.
-      if (
-        taken.some(
-          (item) =>
-            start < item.end + MIN_GAP_SECONDS &&
-            item.start - MIN_GAP_SECONDS < end,
-        )
-      ) {
-        reject("sát cái khác");
-        continue;
-      }
-
-      // KIỂU KHUNG chọn theo TỈ LỆ tư liệu: dùng ĐỦ mọi khung b-roll của style,
-      // nhưng chỉ những khung mà ô đựng KHÔNG cắt hỏng clip (dọc không nhét ô
-      // ngang…). Trong nhóm hợp thì xoay vòng cho đa dạng. Không biết tỉ lệ (tệp
-      // kho) thì mọi khung đều hợp. Rỗng → null (toàn-khung mặc định).
-      const mediaAspect =
-        asset.width && asset.height ? asset.width / asset.height : null;
-      const fitting = brollLayouts.filter((id) =>
-        layoutFitsMedia(id, mediaAspect),
-      );
-      const pool = fitting.length ? fitting : brollLayouts;
-      const layout = pool.length ? pool[duyet.length % pool.length] : null;
-
-      // `to_word_id`: từ cuối cùng bắt đầu trước mép ra — cột neo cũ, đủ để bảng
-      // sửa hiển thị; mốc thật là GIÂY ở trên.
-      let hiIdx = from;
-      while (hiIdx + 1 < words.length && words[hiIdx + 1].start_sec < end)
-        hiIdx += 1;
-      duyet.push({
-        fileId: asset.id,
-        loWordId: words[from].id,
-        hiWordId: words[hiIdx].id,
-        startSec: start,
-        endSec: end,
-        layout,
-      });
-      taken.push({ start, end });
-      seen.add(asset.id);
-      placed += 1;
+  /**
+   * Chấm MỘT đề xuất qua bảy cổng luật rồi ghi vào `duyet` nếu qua. Trả `true`
+   * khi đặt được. Dùng chung cho cả hai pass khớp-nội-dung (pass 1 tự do, pass 2
+   * ép nốt) để luật đặt CHỈ có một bản — sửa một chỗ là cả hai pass theo.
+   */
+  const considerPlace = (place: {
+    fileId: string;
+    fromWordId: string;
+    toWordId: string;
+  }): boolean => {
+    const from = index.get(place.fromWordId);
+    const to = index.get(place.toWordId);
+    const asset = free.find((item) => item.id === place.fileId);
+    if (from === undefined || to === undefined || to < from || !asset) {
+      reject("mã sai");
+      return false;
     }
+    // Mỗi tệp một lần. Mô hình lặp lại một tệp là chuyện thường, mà cùng một
+    // hình hiện hai lần trong một video ngắn thì lộ ngay là máy làm.
+    if (seen.has(asset.id)) {
+      reject("trùng tệp");
+      return false;
+    }
+
+    /**
+     * GIỮ NGUYÊN ĐỘ DÀI: khối dài ĐÚNG bằng clip gốc.
+     *
+     * Bản trước ép khối về 2,5–4s bằng cách nới dải TỪ — tư liệu bị cắt cụt còn
+     * vài giây, mất phần lớn footage user tải lên. Giờ khối bắt đầu ĐÚNG chỗ lời
+     * khớp (`from`) và chạy trọn độ dài clip; user tự cắt ngắn sau nếu muốn.
+     *
+     * Neo theo GIÂY (`start_sec/end_sec`) — cột mã-từ `from/to_word_id` chỉ còn
+     * để tương thích, render đọc giây. Ảnh (không có thời lượng) hoặc tệp KHO
+     * (chưa biết độ dài ở bước này) rơi về `MIN_SECONDS` đủ để hiện có nghĩa.
+     */
+    const start = words[from].start_sec;
+    if (start < START_MARGIN_SECONDS) {
+      reject("sát đầu");
+      return false;
+    }
+    const clipLen =
+      asset.duration && asset.duration > 0.05 ? asset.duration : MIN_SECONDS;
+    // Không tràn khỏi lời: kẹp mép ra vào cuối bản chép, chừa một nhịp.
+    const end = Math.min(start + clipLen, spokenEnd - 0.1);
+    const length = end - start;
+    if (length < 0.5) {
+      reject("hết chỗ");
+      return false;
+    }
+    // Chồng nhau HOẶC sát nhau quá đều loại: hai lần cắt cảnh cách nhau một
+    // giây đọc ra là lỗi kỹ thuật chứ không phải dụng ý.
+    if (
+      taken.some(
+        (item) =>
+          start < item.end + MIN_GAP_SECONDS &&
+          item.start - MIN_GAP_SECONDS < end,
+      )
+    ) {
+      reject("sát cái khác");
+      return false;
+    }
+
+    // KIỂU KHUNG chọn theo TỈ LỆ tư liệu: dùng ĐỦ mọi khung b-roll của style,
+    // nhưng chỉ những khung mà ô đựng KHÔNG cắt hỏng clip (dọc không nhét ô
+    // ngang…). Trong nhóm hợp thì xoay vòng cho đa dạng. Không biết tỉ lệ (tệp
+    // kho) thì mọi khung đều hợp. Rỗng → null (toàn-khung mặc định).
+    const mediaAspect =
+      asset.width && asset.height ? asset.width / asset.height : null;
+    const fitting = brollLayouts.filter((id) =>
+      layoutFitsMedia(id, mediaAspect),
+    );
+    const pool = fitting.length ? fitting : brollLayouts;
+    const layout = pool.length ? pool[duyet.length % pool.length] : null;
+
+    // `to_word_id`: từ cuối cùng bắt đầu trước mép ra — cột neo cũ, đủ để bảng
+    // sửa hiển thị; mốc thật là GIÂY ở trên.
+    let hiIdx = from;
+    while (hiIdx + 1 < words.length && words[hiIdx + 1].start_sec < end)
+      hiIdx += 1;
+    duyet.push({
+      fileId: asset.id,
+      loWordId: words[from].id,
+      hiWordId: words[hiIdx].id,
+      startSec: start,
+      endSec: end,
+      layout,
+    });
+    taken.push({ start, end });
+    seen.add(asset.id);
+    placed += 1;
+    return true;
+  };
+
+  // PASS 1 — model tự do đọc cả bản chép, đặt chỗ nào nó thấy khớp.
+  for (const place of proposal.places) considerPlace(place);
+
+  // PASS 2 — ÉP KHỚP NỐT clip pass 1 bỏ sót (theo NỘI DUNG, không phải chỗ trống).
+  //
+  // Trước "đặt nốt" mù: cho model một cơ-hội-thứ-hai với danh sách hẹp + cấm bỏ.
+  // Nhờ vậy clip có chỗ khớp rõ ở nửa sau (vd ảnh chân dung ↔ lời tự giới thiệu
+  // cuối video) về đúng chỗ, thay vì bị nhét bừa ra đầu. Clip nào pass 2 vẫn
+  // không đặt được (trùng chỗ, hết chỗ…) mới rơi xuống "đặt nốt" bên dưới.
+  //
+  // THỬ TỐI ĐA 2 LƯỢT vì model KHÔNG tất định: nó phải CHÉP LẠI mã từ dài (12 ký
+  // tự) cho mỗi chỗ, và v4-pro chép sai bữa được bữa không (đo: cùng đầu vào ra
+  // "gạt 107 · 41 · 32 · 28"). Một lượt bốc trúng đặt đúng cả 4 clip theo nội
+  // dung; lượt trượt bịa mã → bị gạt sạch. Lượt sau đổi tiền tố `[lần N]` để
+  // KHÔNG trúng cache lượt trước (mỗi lượt một xúc xắc mới). Đã đặt hết thì dừng.
+  const MAX_FILL_TRIES = 2;
+  for (let tries = 0; tries < MAX_FILL_TRIES; tries += 1) {
+    const soter = trongDuAn.filter((asset) => !seen.has(asset.id));
+    if (soter.length === 0) break;
+    const busy = [...taken]
+      .sort((a, b) => a.start - b.start)
+      .map((t) => `${t.start.toFixed(0)}-${t.end.toFixed(0)}s`)
+      .join(", ");
+    const fill = await ask<Proposal>({
+      instructions: voiBoiCanh(INSTRUCTIONS_FILL, projectId),
+      input:
+        (tries > 0 ? `[lần ${tries + 1}]\n` : "") +
+        `Tư liệu CHƯA đặt (mã|tên|nội dung):\n` +
+        soter.map((a) => `${a.id}|${a.name}|${a.description}`).join("\n") +
+        (busy ? `\n\nQuãng ĐÃ có tư liệu (tránh ra): ${busy}` : "") +
+        `\n\nLời (mã|chữ):\n` +
+        words.map((w) => `${w.id}|${w.text}`).join("\n"),
+      schemaName: "broll_fill",
+      schema: SCHEMA,
+    });
+    for (const place of fill.places) considerPlace(place);
   }
 
   // ── ĐẶT NỐT: bảo đảm DÙNG HẾT b-roll USER tự tải ──────────────────────────
@@ -318,13 +384,33 @@ export async function placeInserts(projectId: string): Promise<{
       const gap = gaps.reduce((big, g) =>
         g.end - g.start > big.end - big.start ? g : big,
       );
-      const avail = gap.end - gap.start - 2 * GAP_MARGIN;
-      if (avail < 0.5) break; // khoảng lớn nhất cũng không đủ → dừng, số còn lại đành chịu
-      // Giữ full-length nếu vừa; chật thì gọt ĐÚNG chỗ trống (thà ngắn còn hơn rơi).
+      const winStart = gap.start + GAP_MARGIN;
+      const winEnd = gap.end - GAP_MARGIN;
+      if (winEnd - winStart < 0.5) break; // khoảng lớn nhất cũng không đủ → dừng
+      // NEO MÉP VÀO TỪ trong khoảng trống — TUYỆT ĐỐI không đặt theo giây thô của
+      // `gap.start`. Giây thô có thể rơi đúng một HỞ giữa hai đoạn (breath-pause);
+      // bước dựng lịch BỎ hở đó (`keptRanges`) nên element neo vào hở map ra null →
+      // RỚT KHỎI VIDEO (khung không hiện, ra người). Mép của một TỪ luôn nằm trong
+      // vùng GIỮ, nên neo vào từ thì không bao giờ rớt.
+      let lo = -1;
+      for (let i = 0; i < words.length; i += 1)
+        if (words[i].start_sec >= winStart && words[i].start_sec < winEnd) {
+          lo = i;
+          break;
+        }
+      if (lo < 0) break; // khoảng trống toàn lặng, không từ nào để neo
       const clipLen =
         asset.duration && asset.duration > 0.05 ? asset.duration : MIN_SECONDS;
-      const start = gap.start + GAP_MARGIN;
-      const end = start + Math.min(clipLen, avail);
+      const targetEnd = Math.min(words[lo].start_sec + clipLen, winEnd);
+      let hi = lo;
+      while (
+        hi + 1 < words.length &&
+        words[hi + 1].start_sec < targetEnd &&
+        words[hi + 1].end_sec <= winEnd
+      )
+        hi += 1;
+      const start = words[lo].start_sec;
+      const end = words[hi].end_sec;
       // Khung theo tỉ lệ (như vòng chính).
       const mediaAspect =
         asset.width && asset.height ? asset.width / asset.height : null;
@@ -333,16 +419,6 @@ export async function placeInserts(projectId: string): Promise<{
       );
       const pool = fitting.length ? fitting : brollLayouts;
       const layout = pool.length ? pool[duyet.length % pool.length] : null;
-      // Từ neo gần mốc — cột cũ cho bảng sửa; mốc thật là GIÂY.
-      let lo = 0;
-      for (let i = 1; i < words.length; i += 1)
-        if (
-          Math.abs(words[i].start_sec - start) <
-          Math.abs(words[lo].start_sec - start)
-        )
-          lo = i;
-      let hi = lo;
-      while (hi + 1 < words.length && words[hi + 1].start_sec < end) hi += 1;
       duyet.push({
         fileId: asset.id,
         loWordId: words[lo].id,
