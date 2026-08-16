@@ -8,7 +8,6 @@ import {
   FilmIcon,
   LayersIcon,
   PauseIcon,
-  ClapperboardIcon,
   SquarePenIcon,
   SparklesIcon,
   TypeIcon,
@@ -36,7 +35,6 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 import { findStylePack } from "../../../server/style-pack-catalog";
-import { OpeningHookPane } from "./opening-hook-pane";
 import { api } from "@/lib/api";
 
 import { formatTime } from "./editor-data";
@@ -63,8 +61,7 @@ type IssueKind =
   | "insert"
   | "overlap"
   | "mismatch"
-  | "style-changed"
-  | "opening";
+  | "style-changed";
 
 type Issue = {
   id: string;
@@ -94,27 +91,6 @@ type Issue = {
 };
 
 type Measured = { lines: number; truncated: boolean; needsSplit: boolean };
-
-/**
- * Tiếng LẤP hay gặp ở đầu video tiếng Việt.
- *
- * Danh sách ngắn và chỉ soi ba tiếng đầu: dài ra thì nó bắt cả những câu mở
- * bình thường, và một lời nhắc hiện với mọi video là một lời nhắc không ai đọc.
- */
-const FILLER_OPENERS = ["ừm", "à", "ờ", "ừ", "thì", "kiểu", "ok", "okay"];
-
-/**
- * Quãng im trước tiếng nói đầu tiên, từ mức này trở lên mới tính là RÀO ĐÓN.
- *
- * 1,2 giây chứ không phải 0,35: gần như video nào cũng có vài phần mười giây
- * hít vào trước khi nói, nên ngưỡng thấp làm dòng nhắc hiện với MỌI video — và
- * một lời nhắc hiện với mọi video là một lời nhắc không ai đọc nữa. Trên một
- * giây thì người xem đã kịp thấy màn hình đứng im, đó mới là thứ đáng bỏ.
- *
- * Vẫn thấp hơn `LONG_SILENCE` (4 giây) rất nhiều: quãng im GIỮA video có thể là
- * nhịp nghỉ có chủ ý, còn quãng im ở NGAY ĐẦU thì không bao giờ là.
- */
-const DEAD_LEAD_IN = 1.2;
 
 function buildIssues(
   editor: EditorState,
@@ -281,35 +257,6 @@ function buildIssues(
     });
   }
 
-  // BA GIÂY ĐẦU.
-  //
-  // Chỉ hiện khi ba giây đầu CÓ DẤU HIỆU RÀO ĐÓN — quãng im trước lời thật, hoặc
-  // mở bằng một tiếng lấp. Video mở đầu gọn mà vẫn bị nhắc thì hàng soát thành
-  // chỗ nhắc cho đủ, và người dùng học được cách không đọc nó nữa.
-  //
-  // Không chấm điểm: hook hay hay không thì máy không đo được, mà một con số bịa
-  // ở đây làm hỏng lòng tin vào mọi con số khác đang bày ra.
-  const opening = editor.words.filter((word) => word.start < 3);
-  const firstWord = editor.words[0];
-  const hedging =
-    firstWord &&
-    (firstWord.start >= DEAD_LEAD_IN ||
-      FILLER_OPENERS.some((filler) =>
-        opening
-          .slice(0, 3)
-          .some((word) => word.text.toLowerCase().replace(/[.,…]/g, "") === filler),
-      ));
-  if (firstWord && hedging) {
-    issues.push({
-      id: "opening-hook",
-      kind: "opening",
-      title: "3 giây đầu",
-      detail: opening.map((word) => word.text).join(" ") || "…",
-      time: 0,
-      selection: null,
-    });
-  }
-
   // Đổi bộ dáng SAU khi máy đã đặt hiệu ứng.
   //
   // Không tự đặt lại — hiệu ứng và tư liệu chèn là những vật nằm trên dải, người
@@ -349,14 +296,11 @@ function buildIssues(
     overlap: 1,
     // Lời mời đặt lại hiệu ứng đứng TRÊN mấy lời nhắc lặt vặt: nó nói về cả
     // video chứ không về một cụm, và nó chỉ sống tới khi người dùng trả lời.
-    // "3 giây đầu" đứng gần đầu: nó nói về thứ quyết định người xem có ở lại
-    // hay không, mà mọi lời nhắc khác đều nói về một cụm ở giữa video.
-    opening: 2,
-    "style-changed": 3,
-    caption: 4,
-    insert: 5,
-    silence: 6,
-    unsure: 7,
+    "style-changed": 2,
+    caption: 3,
+    insert: 4,
+    silence: 5,
+    unsure: 6,
   };
   return issues.sort(
     (a, b) => severity[a.kind] - severity[b.kind] || a.time - b.time,
@@ -371,7 +315,6 @@ const KIND_ICON: Record<IssueKind, React.ReactNode> = {
   mismatch: <TriangleAlertIcon />,
   insert: <FilmIcon />,
   "style-changed": <SparklesIcon />,
-  opening: <ClapperboardIcon />,
 };
 
 /**
@@ -455,28 +398,15 @@ export function ReviewQueue({
   editor,
   issues,
   onBoQua,
-  onPreview,
 }: {
   editor: EditorState;
   issues: Issue[];
   onBoQua: (id: string) => void;
-  /** Nghe thử một quãng — dùng lại đúng đường mà bảng sửa đang dùng. */
-  onPreview: (at: number, until?: number) => void;
 }) {
   /** Mã từ đang mở ô sửa — mỗi lúc chỉ một, như mọi ô sửa khác của bàn dựng. */
   const [editingWord, setEditingWord] = useState<string | null>(null);
-  // Ba đường xử lý của "3 giây đầu" cần diện tích và cần xem thử được, nên
-  // chúng nằm trong một Dialog chứ không nhét vào một dòng cao 36px.
-  const [openingOpen, setOpeningOpen] = useState(false);
   return (
     <Card className="h-full min-h-0">
-      <OpeningHookPane
-        open={openingOpen}
-        onOpenChange={setOpeningOpen}
-        editor={editor}
-        onPreview={onPreview}
-        onDone={() => onBoQua("opening-hook")}
-      />
       <CardHeader>
         <CardTitle>Cần bạn xem</CardTitle>
         <CardAction>
@@ -510,10 +440,6 @@ export function ReviewQueue({
                       role="button"
                       tabIndex={0}
                       onClick={() => {
-                        if (issue.kind === "opening") {
-                          setOpeningOpen(true);
-                          return;
-                        }
                         editor.seek(issue.time);
                         editor.setSelection(issue.selection);
                       }}

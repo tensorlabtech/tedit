@@ -32,7 +32,6 @@ import {
   splitVerbatimCaptions,
 } from "../caption-elements";
 import { hasModel } from "../llm";
-import { suggestOpeningLines } from "../ai-opening";
 import { DEFAULT_STYLE_PACK_ID, STYLE_PACKS } from "../style-pack-catalog";
 import { readStylePack } from "../style-pack-store";
 import { type Band } from "../text-layout";
@@ -527,20 +526,6 @@ app.post("/api/projects/:id/rechunk", async (request, reply) => {
   const count = await rechunkCaptions(id, band as Band, readStylePack(id));
   db.prepare("UPDATE projects SET segments_by_caption=0 WHERE id=?").run(id);
   return { count, rewritten };
-});
-
-app.post("/api/projects/:id/opening-lines", async (request) => {
-  const { id } = request.params as { id: string };
-  // Cùng một đường cho cả câu mở lẫn tiêu đề: hai lời nhắc khác nhau, một
-  // đường ống. Thêm một route nữa là thêm một chỗ phải nhớ đặt sau `auth-guard`.
-  const mode =
-    (request.body as { mode?: string } | undefined)?.mode === "headline"
-      ? ("headline" as const)
-      : ("opening" as const);
-  // Không có khoá mô hình thì trả mảng rỗng, KHÔNG trả lỗi: hai đường xử lý kia
-  // của màn "3 giây đầu" không cần AI, nên một lỗi ở đây sẽ chặn cả ba.
-  const lines = await suggestOpeningLines(id, mode).catch(() => []);
-  return { lines };
 });
 
 app.post("/api/projects/:id/dismissed", async (request, reply) => {

@@ -576,20 +576,6 @@ export const api = {
     }),
 
   /**
-   * Ba câu mở gợi ý cho "3 giây đầu". Mảng rỗng nghĩa là chưa có lời hoặc chưa
-   * có khoá mô hình — hai đường xử lý kia của màn đó vẫn chạy được.
-   */
-  suggestOpeningLines: (
-    projectId: string,
-    /** `headline` cho chữ IN LÊN khung hình — 3–6 tiếng, không phải câu để nói. */
-    mode: "opening" | "headline" = "opening",
-  ) =>
-    request<{ lines: string[] }>(`/api/projects/${projectId}/opening-lines`, {
-      method: "POST",
-      body: JSON.stringify({ mode }),
-    }),
-
-  /**
    * Chia LẠI cụm phụ đề theo nghĩa (bộ chunk mô hình). Giữ chữ+mốc+nhấn, chỉ đổi
    * ranh cụm. `force` để chấp nhận đặt lại chỗ-đặt per-cụm khi có cụm đã VIẾT LẠI
    * CHỮ — không `force` mà có viết-lại thì máy chủ trả 409 (ApiError.status) để UI hỏi.
