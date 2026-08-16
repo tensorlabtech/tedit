@@ -86,14 +86,19 @@ export async function seedSegmentsByCaption(
         )
       : group.end;
 
-    // Khoảng lặng trước cụm này. Dưới 0,25 giây thì không phải quãng lặng, chỉ
-    // là kẽ hở giữa hai tiếng — đẻ ra một đoạn cho nó là làm dải vụn vô ích.
-    if (start - cursor > 0.25) {
+    // Khoảng lặng trước cụm này. Hở LỚN (>0,25s) → đoạn lặng riêng (người dùng
+    // bấm bỏ được). Hở NHỎ (≤0,25s) thì KHÔNG đáng một đoạn — nhưng NÓ VẪN PHẢI
+    // THUỘC MỘT ĐOẠN: để trống thì `keptRanges` bỏ nó, trục render NÉN lại, phụ đề
+    // trôi khỏi tiếng và đuôi video cụt (đúng ý định "đoạn LIỀN MẠCH" ở đầu tệp).
+    // Nên hở nhỏ thì GỘP vào đầu đoạn lời này (đoạn bắt đầu từ `cursor`).
+    const hasGap = start - cursor > 0.25;
+    if (hasGap) {
       spans.push({ start: cursor, end: start });
     }
+    const spanStart = hasGap ? start : cursor;
     spans.push({
-      start: Math.max(cursor, start),
-      end: Math.max(end, Math.max(cursor, start) + 0.05),
+      start: spanStart,
+      end: Math.max(end, spanStart + 0.05),
     });
     cursor = spans[spans.length - 1].end;
   }
