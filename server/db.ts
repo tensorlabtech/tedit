@@ -479,11 +479,11 @@ for (const [table, column, type] of [
   // điều làm việc đổi bộ dáng an toàn tuyệt đối: đổi = ghi một dòng, video vẽ
   // lại theo, còn nội dung và bố cục người dùng đã chỉnh thì không đụng tới.
   //
-  // Default là bộ mặc định HIỆN HÀNH (`nhip-den`), KHÔNG phải "goc" đã xoá: dự án
+  // Default là bộ mặc định HIỆN HÀNH (`prism-pro`), KHÔNG phải "goc" đã xoá: dự án
   // mới không set cột này sẽ dính default, mà "goc" thì không có bố cục. Dự án cũ
   // đã lỡ mang "goc" thì `readStylePack` rơi về bộ mặc định để render, nhưng layout
   // đã lưu thì vẫn rỗng — cần migration riêng nếu muốn chúng có bố cục.
-  ["projects", "style_pack", "TEXT DEFAULT 'nhip-den'"],
+  ["projects", "style_pack", "TEXT DEFAULT 'prism-pro'"],
   // BA TRỤC NHÃN của kho nhạc — vốn từ ĐÓNG, xem `server/music-tags.ts`.
   //
   // Tách khỏi cột `tags` tự do chứ không nhét chung: `tags` là chữ NGƯỜI đọc

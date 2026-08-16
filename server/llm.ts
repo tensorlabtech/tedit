@@ -25,7 +25,15 @@ const ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
  * một trong năm bài nhạc thì bậc rẻ làm được, còn sửa lời và đặt tư liệu mới
  * cần suy luận thật.
  *
- * ══ VÌ SAO HIỆN GIỜ CẢ HAI BẬC ĐỀU LÀ V4-PRO ══
+ * ══ HAI BẬC KHÁC NHAU: cheap = Gemini Flash, pro/default = v4-pro ══
+ *
+ * `v4-pro` chất lượng cao nhưng ~35–78s/lượt (chậm); `deepseek-chat` nhanh-rẻ
+ * nhưng chất lượng thấp cho tiếng Việt (chia cụm/từ nhấn ra ẩu). Lối ra: bậc
+ * `cheap` trỏ `google/gemini-2.5-flash` — nhanh, RẺ (rẻ hơn v4-pro nhiều bậc),
+ * tiếng Việt tốt hơn hẳn deepseek-chat. Bậc mặc định + `pro` giữ `v4-pro` cho
+ * việc nặng suy luận (đặt b-roll/hiệu ứng/cắt). Đổi bằng env, không cần sửa code.
+ *
+ * ── Đo cũ (giữ lại làm mốc cho bậc PRO/DEFAULT) ──
  *
  * Đo trên một dự án thật, chặng chọn từ nhấn, đếm ĐỀ XUẤT BỊ GẠT (mô hình đưa
  * ra rồi bị loại vì bịa mã hoặc đề xuất thừa):
@@ -54,8 +62,11 @@ const ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
  * riêng chính là để hạ riêng một chặng về gpt-5 nếu cần, không phải đổi cả bộ.
  */
 const MODEL = process.env.OPENROUTER_MODEL ?? "deepseek/deepseek-v4-pro";
+// Bậc RẺ: nhanh + rẻ + tiếng Việt tốt. Gemini Flash thắng deepseek-chat rõ ở
+// chia cụm / chọn từ nhấn mà vẫn rẻ hơn v4-pro nhiều bậc. Env vẫn thắng mặc định
+// này — nhớ cập nhật `OPENROUTER_MODEL_CHEAP` (hoặc bỏ hẳn) ở cả máy dev lẫn deploy.
 const MODEL_CHEAP =
-  process.env.OPENROUTER_MODEL_CHEAP ?? process.env.OPENROUTER_MODEL ?? MODEL;
+  process.env.OPENROUTER_MODEL_CHEAP ?? "google/gemini-2.5-flash";
 // Bậc CAO cho việc CẦN NGỮ NGHĨA nhưng NHẸ (vd chia cụm ~5s). KHÔNG dùng cho việc
 // nặng đọc-cả-bản-chép — model suy-luận chạy đó vài phút. `pro: true` chọn bậc này.
 const MODEL_PRO =

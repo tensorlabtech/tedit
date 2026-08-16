@@ -200,7 +200,7 @@ const BASE = {
   },
   // Đúng năm con số từng chôn trong `caption-groups.ts`. Xem lý do của từng số
   // ở ghi chú trong tệp đó — chúng không phải chọn cho dễ đọc.
-  grouping: { maxWords: 5, maxChars: 26, maxSpan: 2.2, minHold: 0 },
+  grouping: { maxWords: 7, maxChars: 36, maxSpan: 2.2, minHold: 0 },
   density: {
     maxScale: 0.15,
     lineHeight: 1,
@@ -226,7 +226,7 @@ const BASE = {
   // Nhịp của bộ gốc = nhịp đang chạy trước khi có trục này: không thiên về kiểu
   // nào, và ba con số nhịp lấy đúng mức trung dung.
   effectBias: { junction: [], insertReveal: [] },
-  rhythm: { junctionShare: 0.5, brollEverySec: 12, brollHoldSec: 3 },
+  rhythm: { junctionShare: 0.75, brollEverySec: 12 },
   musicBias: { energy: [], density: [], vocal: ["khong-loi"] },
   // `taper` (Dẫn nhỏ · ý to) chứ không phải `even`: đo video tham khảo
   // (`examples/`) thấy dòng dẫn cao 4,0% khung còn dòng ý cao 6,5% — chênh 1,6
@@ -352,10 +352,10 @@ export const PHAN: StylePack = {
     junction: ["cross-smooth", "zoom-out"],
     insertReveal: ["fade"],
   },
-  rhythm: { junctionShare: 0.4, brollEverySec: 14, brollHoldSec: 4 },
+  rhythm: { junctionShare: 0.6, brollEverySec: 14 },
   musicBias: { energy: ["em", "vua"], density: [], vocal: ["khong-loi"] },
   intensity: { ...BASE.intensity, keywordShare: 0.5, minSilence: 0.8 },
-  grouping: { ...BASE.grouping, maxWords: 4, maxChars: 24 },
+  grouping: { ...BASE.grouping, maxWords: 7, maxChars: 34 },
   defaults: { ...BASE.defaults, align: "left", emphasis: "even" },
 };
 
@@ -411,12 +411,12 @@ export const NHIP_DEN: StylePack = {
   scenePush: { ratePerSecond: 0.06, share: 0.3 },
   // Không viền chữ: chữ đứng trên nền đen, không cần bao ngoài để tách khỏi nền.
   edge: null,
-  density: { ...BASE.density, maxScale: 0.115, lineHeight: 1.2, wordGap: 0.14 },
+  density: { ...BASE.density, maxScale: 0.09, lineHeight: 1.2, wordGap: 0.14 },
   effectBias: { junction: ["cross-fade", "zoom-in"], insertReveal: ["slide"] },
-  rhythm: { junctionShare: 0.55, brollEverySec: 9, brollHoldSec: 3 },
+  rhythm: { junctionShare: 0.83, brollEverySec: 9 },
   musicBias: { energy: ["vua", "manh"], density: [], vocal: ["khong-loi"] },
   intensity: { ...BASE.intensity, keywordShare: 0.5, minSilence: 0.7 },
-  grouping: { ...BASE.grouping, maxWords: 4, maxChars: 22 },
+  grouping: { ...BASE.grouping, maxWords: 7, maxChars: 32 },
   defaults: { ...BASE.defaults, align: "left", emphasis: "even" },
 };
 
@@ -487,10 +487,10 @@ export const PRISM_PRO: StylePack = {
   // đi qua `punchDefocus` (kiểm soát: chỉ ở cụm-nhấn, giữ đúng cụm, ramp mượt).
   effectBias: { junction: ["cross-fade", "cross-smooth"], insertReveal: ["fade-up"] },
   // B-roll THƯA hơn (mỗi 15s thay vì 11): khung đơn ít lại, video đỡ vụn.
-  rhythm: { junctionShare: 0.45, brollEverySec: 15, brollHoldSec: 3.5 },
+  rhythm: { junctionShare: 0.68, brollEverySec: 15 },
   musicBias: { energy: ["em", "vua"], density: [], vocal: ["khong-loi"] },
   intensity: { ...BASE.intensity, keywordShare: 0.45, minSilence: 0.8 },
-  grouping: { ...BASE.grouping, maxWords: 5, maxChars: 26 },
+  grouping: { ...BASE.grouping, maxWords: 7, maxChars: 36 },
   // NHẤN BẰNG CỠ: cụm từ khoá phóng to (phần dẫn nhỏ lên trên, phần sau nhỏ xuống
   // dưới) — bố cục chữ sáng tạo thay cho đổi font. `align: left` để khối bám lề.
   defaults: { ...BASE.defaults, align: "left", emphasis: "keyword-large" },
@@ -498,7 +498,7 @@ export const PRISM_PRO: StylePack = {
 
 export const STYLE_PACKS: StylePack[] = [NHIP_DEN, PHAN, PRISM_PRO];
 
-export const DEFAULT_STYLE_PACK_ID: StylePackId = "nhip-den";
+export const DEFAULT_STYLE_PACK_ID: StylePackId = "prism-pro";
 
 /**
  * MỘT cổng duy nhất chịu trách nhiệm rơi-về-mặc-định.
@@ -508,7 +508,13 @@ export const DEFAULT_STYLE_PACK_ID: StylePackId = "nhip-den";
  * mạch vì một chuỗi lạ hay một chuỗi đã lỗi thời.
  */
 export function findStylePack(id: string | null | undefined): StylePack {
-  return STYLE_PACKS.find((pack) => pack.id === id) ?? NHIP_DEN;
+  // Tên lạ/rác → rơi về bộ MẶC ĐỊNH hiện hành (một nguồn: `DEFAULT_STYLE_PACK_ID`);
+  // `?? NHIP_DEN` là lưới cuối phòng khi chính default lỗi thời.
+  return (
+    STYLE_PACKS.find((pack) => pack.id === id) ??
+    STYLE_PACKS.find((pack) => pack.id === DEFAULT_STYLE_PACK_ID) ??
+    NHIP_DEN
+  );
 }
 
 /**

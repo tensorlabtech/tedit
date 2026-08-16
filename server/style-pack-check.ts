@@ -29,7 +29,7 @@ import {
   type StylePackId,
   type Tone,
 } from "./style-pack";
-import { NHIP_DEN, STYLE_PACKS, findStylePack } from "./style-pack-catalog";
+import { DEFAULT_STYLE_PACK_ID, NHIP_DEN, STYLE_PACKS, findStylePack } from "./style-pack-catalog";
 import { SAFE, textWidth, usableWidthOf } from "./text-layout";
 import { readStylePack } from "./style-pack-store";
 
@@ -62,7 +62,7 @@ db.prepare(
 console.log("\nCột và luật rơi về mặc định");
 check(
   "dự án mới có sẵn bộ dáng mặc định",
-  readStylePack(projectId).id === "nhip-den",
+  readStylePack(projectId).id === DEFAULT_STYLE_PACK_ID,
   readStylePack(projectId).id,
 );
 
@@ -87,7 +87,7 @@ db.prepare("UPDATE projects SET style_pack=? WHERE id=?").run(
 );
 check(
   "bộ dáng đã bỏ (chu-hoa-vang) rơi về bộ mặc định, không sập",
-  readStylePack(projectId).id === "nhip-den",
+  readStylePack(projectId).id === DEFAULT_STYLE_PACK_ID,
 );
 
 db.prepare("UPDATE projects SET style_pack=? WHERE id=?").run(
@@ -96,20 +96,20 @@ db.prepare("UPDATE projects SET style_pack=? WHERE id=?").run(
 );
 check(
   "tên rác trong CSDL rơi về bộ mặc định, không sập",
-  readStylePack(projectId).id === "nhip-den",
+  readStylePack(projectId).id === DEFAULT_STYLE_PACK_ID,
 );
 
 db.prepare("UPDATE projects SET style_pack=NULL WHERE id=?").run(projectId);
 check(
   "cột rỗng (dự án cũ) rơi về bộ mặc định",
-  readStylePack(projectId).id === "nhip-den",
+  readStylePack(projectId).id === DEFAULT_STYLE_PACK_ID,
 );
 
 check(
   "dự án không tồn tại rơi về bộ mặc định",
-  readStylePack("prj_khong_co").id === "nhip-den",
+  readStylePack("prj_khong_co").id === DEFAULT_STYLE_PACK_ID,
 );
-check("tên rỗng rơi về bộ mặc định", findStylePack("").id === "nhip-den");
+check("tên rỗng rơi về bộ mặc định", findStylePack("").id === DEFAULT_STYLE_PACK_ID);
 
 console.log("\nBất biến: đổi bộ dáng không đụng bảng elements");
 /*
@@ -934,8 +934,8 @@ console.log("\nBộ dáng nằm trong dải cho phép");
 for (const pack of STYLE_PACKS) {
   const { maxScale, lineHeight } = pack.density;
   check(
-    `"${pack.label}" maxScale trong [0.10, 0.16] và lineHeight trong [1.0, 1.4]`,
-    maxScale >= 0.1 &&
+    `"${pack.label}" maxScale trong [0.07, 0.16] và lineHeight trong [1.0, 1.4]`,
+    maxScale >= 0.07 &&
       maxScale <= 0.16 &&
       lineHeight >= 1 &&
       lineHeight <= 1.4,

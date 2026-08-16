@@ -707,7 +707,6 @@ export type StylePack = {
     /** Khoảng cách mong muốn giữa hai lần chèn tư liệu, tính bằng giây. */
     brollEverySec: number;
     /** Một lần chèn giữ bao lâu, tính bằng giây. */
-    brollHoldSec: number;
   };
   /**
    * Thiên lệch NHẠC — ưu tiên, không phải hàng rào.
