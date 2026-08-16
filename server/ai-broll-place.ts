@@ -1,7 +1,7 @@
 import { voiBoiCanh } from "./ai-context";
 import { copyIntoProject, libraryCandidates } from "./asset-library";
 import { db, newId } from "./db";
-import { findLayout, type LayoutKindId } from "./layout-kinds";
+import { findLayout, layoutFitsMedia, type LayoutKindId } from "./layout-kinds";
 import { ask, object } from "./llm";
 import { settingsForProject } from "./settings";
 import { readStylePack } from "./style-pack-store";
@@ -38,7 +38,6 @@ function insertSourceOf(projectId: string) {
  * nhận ra nó minh hoạ điều đang nói.
  */
 const MIN_SECONDS = 2.5;
-const MAX_SECONDS = 4;
 /** Tổng thời lượng bị tư liệu che, tính trên toàn video. */
 const MAX_SHARE = 0.3;
 /** Hai lần chèn liền nhau phải cách ngần này, không thì thành nhấp nháy. */
@@ -47,7 +46,15 @@ const MIN_GAP_SECONDS = 3;
 const START_MARGIN_SECONDS = 2;
 
 type Word = { id: string; start_sec: number; end_sec: number };
-type Asset = { id: string; name: string; description: string | null };
+type Asset = {
+  id: string;
+  name: string;
+  description: string | null;
+  /** Tỉ lệ + độ dài clip — có với tư liệu TRONG dự án; tệp KHO thì thiếu (undefined). */
+  width?: number | null;
+  height?: number | null;
+  duration?: number | null;
+};
 
 type Proposal = {
   places: Array<{ fileId: string; fromWordId: string; toWordId: string }>;
@@ -106,7 +113,7 @@ export async function placeInserts(projectId: string): Promise<{
 }> {
   const assets = db
     .prepare(
-      `SELECT id, name, description FROM media_files
+      `SELECT id, name, description, width, height, duration FROM media_files
        WHERE project_id=? AND role='insert' AND description IS NOT NULL AND description<>''`,
     )
     .all(projectId) as Asset[];
@@ -142,11 +149,18 @@ export async function placeInserts(projectId: string): Promise<{
       : libraryCandidates(
           ownerId,
           nguon === "library" ? "library" : "starred",
-        ).map((item) => ({
-          id: `kho:${item.file}`,
-          name: item.title,
-          description: item.description,
-        }));
+        ).map(
+          (item): Asset => ({
+            id: `kho:${item.file}`,
+            name: item.title,
+            description: item.description,
+            // Chưa biết tỉ lệ/độ dài ở bước này — chép về mới có. Null → khung
+            // hợp mọi tỉ lệ + độ dài rơi về mặc định.
+            width: null,
+            height: null,
+            duration: null,
+          }),
+        );
 
   const free = [...trongDuAn, ...tuKho];
   if (free.length === 0) return { placed: 0, rejected: 0, why: "" };
@@ -158,7 +172,8 @@ export async function placeInserts(projectId: string): Promise<{
     .all(projectId) as Array<Word & { text: string }>;
   if (words.length < 10) return { placed: 0, rejected: 0, why: "" };
 
-  const spokenSeconds = words.at(-1)!.end_sec - words[0].start_sec;
+  const spokenEnd = words.at(-1)!.end_sec;
+  const spokenSeconds = spokenEnd - words[0].start_sec;
   // Mật độ do người dùng đặt ở trang Cài đặt. Đặt 0 nghĩa là "đừng tự chèn" —
   // tôn trọng đúng nghĩa đó, không kẹp lên 1.
   const moiPhut = settingsForProject(projectId).placesPerMinute;
@@ -250,8 +265,10 @@ export async function placeInserts(projectId: string): Promise<{
    */
   const duyet: Array<{
     fileId: string;
-    lo: number;
-    hi: number;
+    loWordId: string;
+    hiWordId: string;
+    startSec: number;
+    endSec: number;
     layout: LayoutKindId | null;
   }> = [];
   {
@@ -271,38 +288,28 @@ export async function placeInserts(projectId: string): Promise<{
       }
 
       /**
-       * Nới bằng cách MỞ RỘNG DẢI TỪ, không phải sửa hai con số.
+       * GIỮ NGUYÊN ĐỘ DÀI: khối dài ĐÚNG bằng clip gốc.
        *
-       * Phần tử chèn neo vào MÃ TỪ (`from_word_id`/`to_word_id`), nên độ dài
-       * thật lúc dựng là quãng của dải từ ấy — mọi phép nới trên `start`/`end`
-       * chỉ sống trong hàm này rồi bị vứt. Bản trước tôi nới đúng kiểu đó: phép
-       * kiểm đi qua, còn video dựng ra vẫn 0,56s vì dải từ "lập một công ty"
-       * vốn chỉ dài bấy nhiêu.
+       * Bản trước ép khối về 2,5–4s bằng cách nới dải TỪ — tư liệu bị cắt cụt còn
+       * vài giây, mất phần lớn footage user tải lên. Giờ khối bắt đầu ĐÚNG chỗ lời
+       * khớp (`from`) và chạy trọn độ dài clip; user tự cắt ngắn sau nếu muốn.
        *
-       * Mở đều hai phía để chỗ nhấn không trôi, và dừng khi chạm mép bản chép
-       * lời.
+       * Neo theo GIÂY (`start_sec/end_sec`) — cột mã-từ `from/to_word_id` chỉ còn
+       * để tương thích, render đọc giây. Ảnh (không có thời lượng) hoặc tệp KHO
+       * (chưa biết độ dài ở bước này) rơi về `MIN_SECONDS` đủ để hiện có nghĩa.
        */
-      let lo = from;
-      let hi = to;
-      const span = () => words[hi].end_sec - words[lo].start_sec;
-      while (span() < MIN_SECONDS && (lo > 0 || hi < words.length - 1)) {
-        if (hi < words.length - 1) hi += 1;
-        if (span() >= MIN_SECONDS) break;
-        if (lo > 0) lo -= 1;
-      }
-      const start = words[lo].start_sec;
-      const end = words[hi].end_sec;
-      const length = end - start;
-      if (length > MAX_SECONDS) {
-        reject("quá dài");
-        continue;
-      }
-      if (length < MIN_SECONDS) {
-        reject("hết chỗ nới");
-        continue;
-      }
+      const start = words[from].start_sec;
       if (start < START_MARGIN_SECONDS) {
         reject("sát đầu");
+        continue;
+      }
+      const clipLen =
+        asset.duration && asset.duration > 0.05 ? asset.duration : MIN_SECONDS;
+      // Không tràn khỏi lời: kẹp mép ra vào cuối bản chép, chừa một nhịp.
+      const end = Math.min(start + clipLen, spokenEnd - 0.1);
+      const length = end - start;
+      if (length < 0.5) {
+        reject("hết chỗ");
         continue;
       }
       // B-roll USER tự tải MIỄN budget (luật: dùng hết cái họ đưa); chỉ tư liệu
@@ -325,14 +332,103 @@ export async function placeInserts(projectId: string): Promise<{
         continue;
       }
 
-      // KIỂU KHUNG xoay vòng theo thứ tự nhận (đa dạng); rỗng thì để null (mặc định).
-      const layout = brollLayouts.length
-        ? brollLayouts[duyet.length % brollLayouts.length]
-        : null;
-      duyet.push({ fileId: asset.id, lo, hi, layout });
+      // KIỂU KHUNG chọn theo TỈ LỆ tư liệu: dùng ĐỦ mọi khung b-roll của style,
+      // nhưng chỉ những khung mà ô đựng KHÔNG cắt hỏng clip (dọc không nhét ô
+      // ngang…). Trong nhóm hợp thì xoay vòng cho đa dạng. Không biết tỉ lệ (tệp
+      // kho) thì mọi khung đều hợp. Rỗng → null (toàn-khung mặc định).
+      const mediaAspect =
+        asset.width && asset.height ? asset.width / asset.height : null;
+      const fitting = brollLayouts.filter((id) =>
+        layoutFitsMedia(id, mediaAspect),
+      );
+      const pool = fitting.length ? fitting : brollLayouts;
+      const layout = pool.length ? pool[duyet.length % pool.length] : null;
+
+      // `to_word_id`: từ cuối cùng bắt đầu trước mép ra — cột neo cũ, đủ để bảng
+      // sửa hiển thị; mốc thật là GIÂY ở trên.
+      let hiIdx = from;
+      while (hiIdx + 1 < words.length && words[hiIdx + 1].start_sec < end)
+        hiIdx += 1;
+      duyet.push({
+        fileId: asset.id,
+        loWordId: words[from].id,
+        hiWordId: words[hiIdx].id,
+        startSec: start,
+        endSec: end,
+        layout,
+      });
       taken.push({ start, end });
       seen.add(asset.id);
       budget -= length;
+      placed += 1;
+    }
+  }
+
+  // ── ĐẶT NỐT: bảo đảm DÙNG HẾT b-roll USER tự tải ──────────────────────────
+  //
+  // Vòng trên chỉ đặt được clip mà mô hình TÌM ĐƯỢC chỗ lời khớp và qua hết bảy
+  // cổng gạt (cách nhau, sát đầu…). Clip user không được đề xuất, hoặc bị gạt vì
+  // chật chỗ, thì rơi rụng — trái luật "dùng hết cái họ đưa". Ở đây nhét NỐT từng
+  // clip user còn thừa vào KHOẢNG TRỐNG LỚN NHẤT còn lại: nới luật khớp-nội-dung
+  // (đặt theo chỗ trống, không theo lời) và luật cách-nhau — đổi độ-liên-quan lấy
+  // CHẮC CHẮN có mặt. CHỈ áp cho b-roll USER (`trongDuAn`), KHÔNG cho kho.
+  const conThua = trongDuAn.filter((asset) => !seen.has(asset.id));
+  if (conThua.length > 0) {
+    const GAP_MARGIN = 0.2; // chừa mép để clip không dính khít clip cạnh
+    const freeGaps = () => {
+      const busy = [...taken].sort((a, b) => a.start - b.start);
+      const gaps: Array<{ start: number; end: number }> = [];
+      let cursor = START_MARGIN_SECONDS;
+      for (const b of busy) {
+        if (b.start > cursor + 0.5)
+          gaps.push({ start: cursor, end: Math.min(b.start, spokenEnd) });
+        cursor = Math.max(cursor, b.end);
+      }
+      if (cursor < spokenEnd - 0.5) gaps.push({ start: cursor, end: spokenEnd });
+      return gaps;
+    };
+    for (const asset of conThua) {
+      // Khoảng RỘNG NHẤT còn lại — tính lại mỗi lần (đã trừ chỗ vừa chèn).
+      const gaps = freeGaps();
+      if (gaps.length === 0) break; // video đã kín thật
+      const gap = gaps.reduce((big, g) =>
+        g.end - g.start > big.end - big.start ? g : big,
+      );
+      const avail = gap.end - gap.start - 2 * GAP_MARGIN;
+      if (avail < 0.5) break; // khoảng lớn nhất cũng không đủ → dừng, số còn lại đành chịu
+      // Giữ full-length nếu vừa; chật thì gọt ĐÚNG chỗ trống (thà ngắn còn hơn rơi).
+      const clipLen =
+        asset.duration && asset.duration > 0.05 ? asset.duration : MIN_SECONDS;
+      const start = gap.start + GAP_MARGIN;
+      const end = start + Math.min(clipLen, avail);
+      // Khung theo tỉ lệ (như vòng chính).
+      const mediaAspect =
+        asset.width && asset.height ? asset.width / asset.height : null;
+      const fitting = brollLayouts.filter((id) =>
+        layoutFitsMedia(id, mediaAspect),
+      );
+      const pool = fitting.length ? fitting : brollLayouts;
+      const layout = pool.length ? pool[duyet.length % pool.length] : null;
+      // Từ neo gần mốc — cột cũ cho bảng sửa; mốc thật là GIÂY.
+      let lo = 0;
+      for (let i = 1; i < words.length; i += 1)
+        if (
+          Math.abs(words[i].start_sec - start) <
+          Math.abs(words[lo].start_sec - start)
+        )
+          lo = i;
+      let hi = lo;
+      while (hi + 1 < words.length && words[hi + 1].start_sec < end) hi += 1;
+      duyet.push({
+        fileId: asset.id,
+        loWordId: words[lo].id,
+        hiWordId: words[hi].id,
+        startSec: start,
+        endSec: end,
+        layout,
+      });
+      taken.push({ start, end });
+      seen.add(asset.id);
       placed += 1;
     }
   }
@@ -359,21 +455,16 @@ export async function placeInserts(projectId: string): Promise<{
       insert.run(
         newId("e"),
         projectId,
-        words[item.lo].id,
-        words[item.hi].id,
-        words[item.lo].start_sec,
-        words[item.hi].end_sec,
+        item.loWordId,
+        item.hiWordId,
+        item.startSec,
+        item.endSec,
         fileId,
         item.layout,
         revealForPack,
       );
       // Phụ đề chạm khung này → xuống dưới cho khỏi che khung.
-      pushCaptionsDown.run(
-        projectId,
-        projectId,
-        words[item.lo].start_sec,
-        words[item.hi].end_sec,
-      );
+      pushCaptionsDown.run(projectId, projectId, item.startSec, item.endSec);
     }
   })();
 

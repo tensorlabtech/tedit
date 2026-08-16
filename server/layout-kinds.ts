@@ -305,6 +305,28 @@ export function usableLayouts(hasInserts: boolean): LayoutSpec[] {
   return LAYOUT_SPECS.filter((spec) => !spec.needsInsert || hasInserts);
 }
 
+/** Tỉ lệ ô ĐỰNG TƯ LIỆU (slot `phu`) của một khung; thiếu thì `nguon` (bám nguồn). */
+export function insertSlotAspect(id: string | null | undefined): SlotAspect {
+  return findLayout(id).slots.find((slot) => slot.role === "phu")?.aspect ?? "nguon";
+}
+
+/**
+ * Khung này có ĐỰNG ĐƯỢC tư liệu tỉ lệ `mediaAspect` mà KHÔNG cắt hỏng không.
+ *
+ * Ô `nguon` bám tỉ lệ nguồn → hợp mọi thứ. Ô khai cứng (vuông/ngang) chỉ hợp khi
+ * tỉ lệ ấy nằm trong danh sách `allowedAspects` — nhét clip dọc vào ô ngang bỏ
+ * 68% khung hình (xem `allowedAspects`). Không biết tỉ lệ (null) thì đừng loại.
+ */
+export function layoutFitsMedia(
+  id: string | null | undefined,
+  mediaAspect: number | null,
+): boolean {
+  const aspect = insertSlotAspect(id);
+  if (aspect === "nguon") return true;
+  if (mediaAspect == null) return true;
+  return allowedAspects(mediaAspect).includes(aspect);
+}
+
 /**
  * Đổi một Ô sang điểm ảnh — TỈ LỆ BÁM NGUỒN.
  *
