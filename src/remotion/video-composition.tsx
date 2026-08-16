@@ -237,11 +237,17 @@ function Cells({
           const rect = slotPixels(slot, width, height, aspect);
           // Rung CHỈ cho ảnh b-roll (như ảnh dán tay); ô NGƯỜI đứng yên — người
           // wobble đọc ra giật, mất tự nhiên. Thẻ sạch (Prism): đứng im hẳn.
-          const jit = card ? { x: 0, y: 0 } : isBroll ? boil(frame, i) : { x: 0, y: 0 };
-          // Nghiêng "dán tay" CHỈ cho ảnh b-roll (như `jit` rung — người không dính).
-          // Ô NGƯỜI (kể cả toàn-khung / khung mờ) đứng thẳng: người nghiêng đọc ra
-          // "video bị nghiêng", không phải ảnh dán. Thẻ sạch (Prism) cũng không nghiêng.
-          const tilt = !card && isBroll ? TILT[i % 4] : 0;
+          // "DÁN TAY" (nghiêng + rung) CHỈ cho bộ có doodle — tức Phấn (bảng phấn,
+          // ảnh dán nguệch ngoạc). Nhịp-đen KHÔNG dán tay: nó là video-vào-Ô sắc
+          // nét trên nền lưới caro — nghiêng+rung đọc ra "khung bị vẹo" chứ không
+          // ra dụng ý. Trước đây gate bằng `!card` nên gộp nhầm cả Nhịp-đen với
+          // Phấn. Đọc `doodles` từ BLOCK đóng dấu (không đọc pack) — mỗi khung tự
+          // quyết look của chính nó.
+          const danTay = !card && Boolean(scene.frameBlock?.doodles);
+          const jit = danTay && isBroll ? boil(frame, i) : { x: 0, y: 0 };
+          // Ô NGƯỜI đứng thẳng (người nghiêng đọc ra "video bị nghiêng"); thẻ sạch
+          // (Prism) cũng không nghiêng; Nhịp-đen (không doodle) đứng thẳng.
+          const tilt = danTay && isBroll ? TILT[i % 4] : 0;
           // Bóng đổ mềm dưới thẻ sạch (bán kính theo cạnh ngắn của ô).
           const shadow = card
             ? Math.round(Math.min(rect.w, rect.h) * card.shadowShare)
@@ -258,9 +264,13 @@ function Cells({
           // vỡ ở Remotion hiện tại — render ra khung rỗng, nên tránh hẳn.)
           const trimBefore =
             ins?.in != null ? Math.max(0, Math.round(ins.in * fps)) : undefined;
-          // Chỉ LẶP khi CHƯA cắt (out ngầm): clip ngắn hơn khung thì lặp cho đủ.
-          // Đã cắt thì khung = cửa sổ nên phát một lần là vừa khít, khỏi lặp.
-          const brollLoop = ins?.out == null;
+          // LUÔN LẶP b-roll video. Trước đây tắt loop khi đã cắt (`out` set) với giả
+          // định "khung = cửa sổ nên vừa khít". Giả định đó vỡ khi cửa sổ [in,out]
+          // DÀI HƠN footage còn lại — clip ngắn hơn khối, hoặc `duration` chưa dò ra
+          // (clip=0) → hết phim mà không loop = KHỰNG ở khung cuối ("đứng im"). Loop
+          // với clip đủ dài không bao giờ chạm điểm lặp nên vô hại; với clip ngắn thì
+          // lặp lấp chỗ thay vì đơ. Kéo mép TRÁI đặt `in>0` nên hay dính lỗi này nhất.
+          const brollLoop = true;
           const borderW = Math.max(4, Math.round(Math.min(rect.w, rect.h) * 0.018));
           // MỌC LÊN / THU VỀ — thẻ sạch (KHÔNG toàn-khung) scale + trượt + mờ ở
           // đầu/cuối cảnh, chất "card grows in / shrinks out" của template. Toàn-
@@ -497,18 +507,26 @@ export function VideoComposition(payload: RemotionPayload) {
         <Audio src={staticFile(payload.voiceUrl)} />
       )}
       {payload.preview &&
-        payload.music.map((track, i) => (
-          <Sequence
-            key={i}
-            from={Math.round(track.start * fps)}
-            durationInFrames={Math.max(
-              1,
-              Math.round((track.end - track.start) * fps),
-            )}
-          >
-            <Audio src={staticFile(track.url)} volume={track.volume} />
-          </Sequence>
-        ))}
+        payload.music.map((track, i) => {
+          // Vào/ra ÊM — khớp export (`mixMusic` afade in/out, FADE=0.75s). Không
+          // fade thì nhạc bật/tắt phựt ở mép, preview kêu khác hẳn bản xuất. Fade
+          // kẹp ≤ 1/3 độ dài để bài ngắn không fade chồng lên nhau.
+          const lenFrames = Math.max(1, Math.round((track.end - track.start) * fps));
+          const fadeFrames = Math.min(Math.round(0.75 * fps), Math.floor(lenFrames / 3));
+          return (
+            <Sequence key={i} from={Math.round(track.start * fps)} durationInFrames={lenFrames}>
+              <Audio
+                src={staticFile(track.url)}
+                volume={(f) =>
+                  fadeFrames <= 0
+                    ? track.volume
+                    : track.volume *
+                      Math.min(1, f / fadeFrames, (lenFrames - f) / fadeFrames)
+                }
+              />
+            </Sequence>
+          );
+        })}
       {/* HẠT GIẤY: đốm ấm mờ (#8A7A4E, 28%) qua mặt nạ paper-grain — chỉ rõ trên
           nền sáng (trang Phấn), gần vô hình trên nền tối. Khớp export. */}
       {page && (

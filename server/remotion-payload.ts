@@ -324,7 +324,7 @@ export async function buildRemotionPayload(
   // `wordStarts` tương đối theo start GỐC nên reveal từng tiếng cũng sớm đúng bấy
   // nhiêu — cả cụm nhích sớm, không đổi dáng karaoke. Kẹp không lấn cụm TRƯỚC (đầu
   // này ≥ đuôi cụm trước) để không hiện chồng hai cụm.
-  const CAPTION_LEAD = 0.25;
+  const CAPTION_LEAD = 0.12;
   const textEls = resolveElements(projectId, kept)
     .filter((e) => e.kind === "text" && !!e.content)
     .sort((a, b) => a.start - b.start);
