@@ -10,13 +10,6 @@ import {
 import { Empty, EmptyDescription } from "@/components/ui/empty";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
@@ -24,7 +17,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { ProfileFields } from "@/components/profile-fields";
 import { api, type ApiSettings, type ApiStorage } from "@/lib/api";
-import { INSERT_SOURCE_LABELS } from "@/lib/insert-source-options";
 
 /**
  * CÀI ĐẶT — mặc định cho mọi dự án tạo về sau.
@@ -141,35 +133,6 @@ export function SettingsPage() {
               ten="Máy tự làm"
               y="Những việc máy tự lo khi dựng. Nhịp cắt, mật độ tư liệu và độ to nhạc giờ đi theo PHONG CÁCH của dự án, không chỉnh ở đây nữa."
             >
-              <Field>
-                <FieldLabel>Máy được lấy tư liệu ở đâu</FieldLabel>
-                <Select
-                  items={INSERT_SOURCE_LABELS}
-                  value={settings.insertSource}
-                  onValueChange={(value) =>
-                    doi({ insertSource: value as ApiSettings["insertSource"] })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(INSERT_SOURCE_LABELS).map(
-                      ([value, nhan]) => (
-                        <SelectItem key={value} value={value}>
-                          {nhan}
-                        </SelectItem>
-                      ),
-                    )}
-                  </SelectContent>
-                </Select>
-                <FieldDescription>
-                  Mấy clip dùng đi dùng lại — cảnh bàn phím, góc văn phòng — thì
-                  đánh dấu sao một lần, mọi dự án sau tự có. Chọn cả kho khi kho
-                  còn ít và mô tả đã viết kỹ.
-                </FieldDescription>
-              </Field>
-
               <Field orientation="horizontal">
                 <FieldLabel htmlFor="want-captions">
                   Tự sinh chữ từ lời

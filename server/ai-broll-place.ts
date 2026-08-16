@@ -1,25 +1,8 @@
 import { voiBoiCanh } from "./ai-context";
-import { copyIntoProject, libraryCandidates } from "./asset-library";
 import { db, newId } from "./db";
 import { findLayout, layoutFitsMedia, type LayoutKindId } from "./layout-kinds";
 import { ask, object } from "./llm";
-import { settingsForProject } from "./settings";
 import { readStylePack } from "./style-pack-store";
-
-/** Nguồn tư liệu đã chốt lúc tạo dự án; dự án cũ chưa có thì theo cài đặt. */
-function insertSourceOf(projectId: string) {
-  const row = db
-    .prepare("SELECT insert_source, owner_id FROM projects WHERE id=?")
-    .get(projectId) as
-    { insert_source: string | null; owner_id: string | null } | undefined;
-  const chot = row?.insert_source;
-  if (chot === "project" || chot === "starred" || chot === "library")
-    return { nguon: chot, ownerId: row?.owner_id ?? null };
-  return {
-    nguon: settingsForProject(projectId).insertSource,
-    ownerId: row?.owner_id ?? null,
-  };
-}
 
 /**
  * Đặt tư liệu chèn vào đúng chỗ lời đang nói về nó.
@@ -38,8 +21,6 @@ function insertSourceOf(projectId: string) {
  * nhận ra nó minh hoạ điều đang nói.
  */
 const MIN_SECONDS = 2.5;
-/** Tổng thời lượng bị tư liệu che, tính trên toàn video. */
-const MAX_SHARE = 0.3;
 /** Hai lần chèn liền nhau phải cách ngần này, không thì thành nhấp nháy. */
 const MIN_GAP_SECONDS = 3;
 /** Chừa đoạn mở: cắt cảnh ngay giây đầu là mất mặt người nói đúng lúc cần nhất. */
@@ -130,39 +111,11 @@ export async function placeInserts(projectId: string): Promise<{
         .all(projectId) as Array<{ media_file_id: string }>
     ).map((row) => row.media_file_id),
   );
+  // CHỈ tư liệu CỦA DỰ ÁN, và DÙNG HẾT (mỗi tệp một chỗ). Không còn kho tự-lấy
+  // (nguồn 3-nấc project/starred/library đã bỏ) — "chọn ở bước 2, dùng hết" (KISS).
+  // Người dùng thêm từ kho ở bước nạp thì nó đã thành tư liệu dự án ở đây.
   const trongDuAn = assets.filter((asset) => !used.has(asset.id));
-
-  /**
-   * Ứng viên TỪ KHO dùng chung, nếu người dùng cho phép.
-   *
-   * Chưa chép về dự án ở bước này: chép hết cả kho về rồi mô hình chỉ chọn ba cái
-   * là dự án phình ra hàng trăm tệp không ai dùng. Chỉ cái nào được CHỌN mới chép,
-   * ở dưới kia.
-   *
-   * Mã tạm mang tiền tố `kho:` để phân biệt với mã hàng thật trong `media_files` —
-   * mô hình chỉ trả lại đúng chuỗi ta đưa, nên tiền tố là đủ.
-   */
-  const { nguon, ownerId } = insertSourceOf(projectId);
-  const tuKho =
-    nguon === "project" || !ownerId
-      ? []
-      : libraryCandidates(
-          ownerId,
-          nguon === "library" ? "library" : "starred",
-        ).map(
-          (item): Asset => ({
-            id: `kho:${item.file}`,
-            name: item.title,
-            description: item.description,
-            // Chưa biết tỉ lệ/độ dài ở bước này — chép về mới có. Null → khung
-            // hợp mọi tỉ lệ + độ dài rơi về mặc định.
-            width: null,
-            height: null,
-            duration: null,
-          }),
-        );
-
-  const free = [...trongDuAn, ...tuKho];
+  const free = trongDuAn;
   if (free.length === 0) return { placed: 0, rejected: 0, why: "" };
 
   const words = db
@@ -174,30 +127,10 @@ export async function placeInserts(projectId: string): Promise<{
 
   const spokenEnd = words.at(-1)!.end_sec;
   const spokenSeconds = spokenEnd - words[0].start_sec;
-  // Mật độ do người dùng đặt ở trang Cài đặt. Đặt 0 nghĩa là "đừng tự chèn" —
-  // tôn trọng đúng nghĩa đó, không kẹp lên 1.
-  const moiPhut = settingsForProject(projectId).placesPerMinute;
-  if (moiPhut <= 0)
-    return { placed: 0, rejected: 0, why: "người dùng tắt tự chèn" };
-  // Không nhắm nhiều hơn số tư liệu đang có: bảo nó tìm 5 chỗ trong khi chỉ có 2
-  // tấm hình là mời nó đặt cùng một tấm hai lần, mà luật dưới kia sẽ gạt ngay.
   const pack = readStylePack(projectId);
-  // NHỊP của bộ dáng: mấy giây một lần chèn. Nó là con số, không phải enum —
-  // "nhanh" khác "êm" chủ yếu ở đây chứ không ở danh sách kiểu hiện ra.
-  //
-  // Lấy mức DÀY HƠN trong hai nguồn (cài đặt của người dùng và nhịp của bộ
-  // dáng), rồi vẫn kẹp bởi số tư liệu đang có: bảo mô hình tìm 5 chỗ trong khi
-  // chỉ có 2 tấm hình là mời nó đặt cùng một tấm hai lần.
-  const byUser = Math.round((spokenSeconds / 60) * moiPhut);
-  const byPack = Math.round(spokenSeconds / pack.rhythm.brollEverySec);
-  // LUẬT: DÙNG HẾT b-roll USER tự tải (`trongDuAn`) — họ chỉ thêm cái cần dùng.
-  // Số nhắm = MAX(số user, nhịp cài đặt, nhịp bộ dáng). KHO chỉ BÙ nếu user chưa
-  // đủ nhịp; đủ rồi thì không mời kho (khỏi lấp video bằng tư liệu tự-lấy).
-  const target = Math.max(trongDuAn.length, byUser, byPack);
-  const offered = [
-    ...trongDuAn,
-    ...tuKho.slice(0, Math.max(0, target - trongDuAn.length)),
-  ];
+  // Nhắm ĐÚNG số tư liệu dự án — mỗi tệp một chỗ. Bước "đặt nốt" ở cuối bảo đảm
+  // clip nào mô hình không tìm được chỗ vẫn được nhét vào khoảng trống.
+  const offered = trongDuAn;
   const want = Math.max(1, offered.length);
 
   // KIỂU KHUNG xoay vòng cho ĐA DẠNG (trước đây mọi chèn cùng một kiểu). Lấy các
@@ -222,7 +155,6 @@ export async function placeInserts(projectId: string): Promise<{
   });
 
   const index = new Map(words.map((word, at) => [word.id, at]));
-  let budget = spokenSeconds * MAX_SHARE;
 
   // `reveal` lấy từ bộ dáng thay vì chôn cứng `'none'`: đây là chỗ DUY NHẤT
   // sinh ra tư liệu chèn tự động, nên nó quyết định dáng của cả video. Người
@@ -312,13 +244,6 @@ export async function placeInserts(projectId: string): Promise<{
         reject("hết chỗ");
         continue;
       }
-      // B-roll USER tự tải MIỄN budget (luật: dùng hết cái họ đưa); chỉ tư liệu
-      // từ KHO (`kho:…`) mới bị trần 30% để khỏi lấp video bằng kho tự-lấy.
-      const isUserBroll = !asset.id.startsWith("kho:");
-      if (!isUserBroll && length > budget) {
-        reject("hết ngân sách");
-        continue;
-      }
       // Chồng nhau HOẶC sát nhau quá đều loại: hai lần cắt cảnh cách nhau một
       // giây đọc ra là lỗi kỹ thuật chứ không phải dụng ý.
       if (
@@ -359,7 +284,6 @@ export async function placeInserts(projectId: string): Promise<{
       });
       taken.push({ start, end });
       seen.add(asset.id);
-      budget -= length;
       placed += 1;
     }
   }
@@ -433,25 +357,9 @@ export async function placeInserts(projectId: string): Promise<{
     }
   }
 
-  // Giờ mới chép, và chỉ chép cái ĐÃ ĐƯỢC CHỌN.
-  const daChep = new Map<string, string>();
-  for (const item of duyet) {
-    if (!item.fileId.startsWith("kho:") || daChep.has(item.fileId)) continue;
-    const row = await copyIntoProject(projectId, item.fileId.slice(4));
-    if (row) daChep.set(item.fileId, String(row.id));
-  }
-
+  // Mọi tư liệu đều là tệp THẬT của dự án (không còn kho phải chép về) — ghi thẳng.
   db.transaction(() => {
     for (const item of duyet) {
-      // Tệp từ kho mà chép hỏng thì bỏ qua: neo phần tử vào mã `kho:…` là bàn
-      // dựng mở ra thấy một khối chèn không có tệp nào phía sau.
-      const fileId = item.fileId.startsWith("kho:")
-        ? daChep.get(item.fileId)
-        : item.fileId;
-      if (!fileId) {
-        placed -= 1;
-        continue;
-      }
       insert.run(
         newId("e"),
         projectId,
@@ -459,7 +367,7 @@ export async function placeInserts(projectId: string): Promise<{
         item.hiWordId,
         item.startSec,
         item.endSec,
-        fileId,
+        item.fileId,
         item.layout,
         revealForPack,
       );

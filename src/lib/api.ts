@@ -249,9 +249,7 @@ export type ApiLibraryAsset = {
 export type ApiSettings = {
   minSilence: number;
   secondsPerEffect: number;
-  placesPerMinute: number;
   musicVolume: number;
-  insertSource: "project" | "starred" | "library";
   wantCaptions: boolean;
   wantMusic: boolean;
   /** Ô "Thêm" tuỳ chọn — hồ sơ chính đã tách thành các trường cấu trúc dưới. */
@@ -305,8 +303,6 @@ export type ApiProject = {
     want_captions?: number | null;
     /** Như `want_captions`, cho chặng `music`. Cũng chưa có ô nào bật tắt. */
     want_music?: number | null;
-    /** Máy được lấy tư liệu ở đâu: project | starred | library */
-    insert_source?: string | null;
     /** Chiều nhấn zoom ở các chỗ nối đoạn: none | in | out */
     zoom_punch?: string | number;
     /**
@@ -521,7 +517,6 @@ export const api = {
       minSilence?: number;
       wantCaptions?: boolean;
       wantMusic?: boolean;
-      insertSource?: ApiSettings["insertSource"];
       /**
        * Mã bộ dáng chữ. Tên không có trong danh sách thì máy chủ trả 400 chứ
        * không lặng lẽ rơi về mặc định — màn chọn phải biết mình vừa lưu hụt.
@@ -540,7 +535,6 @@ export const api = {
       min_silence: number | null;
       want_captions: number | null;
       want_music: number | null;
-      insert_source: string | null;
       style_pack: string | null;
       headline: string | null;
     }>(`/api/projects/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),

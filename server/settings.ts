@@ -19,28 +19,12 @@ export type Settings = {
   minSilence: number;
   /** Trung bình bao nhiêu giây phim thì có một cú nhấn ở chỗ nối. Đọc ở `ai-effects.ts`. */
   secondsPerEffect: number;
-  /** Mỗi phút lời thì nhắm bao nhiêu lần chèn tư liệu. Đọc ở `ai-broll-place.ts`. */
-  placesPerMinute: number;
   /** Mức to nhất của nhạc nền dưới lời nói. Đọc ở `ai-music.ts`. */
   musicVolume: number;
   /** Có sinh chữ từ lời không. Đọc lúc tạo dự án. */
   wantCaptions: boolean;
   /** Có tự chọn nhạc nền không. Đọc ở chặng `music`. */
   wantMusic: boolean;
-  /**
-   * Chặng tự ghép tư liệu được phép lấy từ đâu.
-   *
-   * · `project` — chỉ tư liệu đã thêm vào dự án, như trước khi có kho.
-   * · `starred` — thêm cả tư liệu bạn đã đánh dấu sao. Đây là nấc dùng hàng ngày:
-   *   mấy clip bàn phím, cảnh văn phòng, con dấu công ty thì video nào cũng dùng,
-   *   gắn sao một lần là mọi dự án về sau tự có.
-   * · `library` — cả kho.
-   *
-   * Mặc định là `starred` chứ không phải `project`: kho mà máy không với tới được
-   * thì nó chỉ là một thư mục để nhìn. Và mặc định này KHÔNG bất ngờ — nó chỉ đụng
-   * tới thứ người dùng đã chủ động gắn sao, chưa gắn cái nào thì hành xử y như cũ.
-   */
-  insertSource: "project" | "starred" | "library";
   /**
    * LỜI DẶN CHUNG cho mọi dự án — tên riêng, thuật ngữ, cách xưng hô.
    *
@@ -66,9 +50,7 @@ export type Settings = {
 export const DEFAULTS: Settings = {
   minSilence: 0.8,
   secondsPerEffect: 10,
-  placesPerMinute: 3,
   musicVolume: 0.18,
-  insertSource: "starred",
   wantCaptions: true,
   wantMusic: true,
   profile: "",
@@ -95,17 +77,7 @@ function normalize(raw: Partial<Settings>): Settings {
       60,
       DEFAULTS.secondsPerEffect,
     ),
-    placesPerMinute: clamp(
-      raw.placesPerMinute,
-      0,
-      12,
-      DEFAULTS.placesPerMinute,
-    ),
     musicVolume: clamp(raw.musicVolume, 0.02, 0.4, DEFAULTS.musicVolume),
-    insertSource:
-      raw.insertSource === "project" || raw.insertSource === "library"
-        ? raw.insertSource
-        : DEFAULTS.insertSource,
     wantCaptions: raw.wantCaptions !== false,
     wantMusic: raw.wantMusic !== false,
     profile: String(raw.profile ?? "").slice(0, 600),

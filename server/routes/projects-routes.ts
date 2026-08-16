@@ -124,8 +124,8 @@ app.post("/api/projects", async (request) => {
     // `style_pack` set TƯỜNG MINH: cột này có `DEFAULT 'goc'` (bộ nay đã xoá), nên
     // không set thì dự án MỚI cũng dính bộ cũ không-bố-cục. Lấy bộ mặc định hiện
     // hành từ catalog để một chỗ đổi là mọi dự án mới theo.
-    `INSERT INTO projects (id, title, status, created_at, owner_id, profile, min_silence, want_captions, want_music, insert_source, style_pack)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO projects (id, title, status, created_at, owner_id, profile, min_silence, want_captions, want_music, style_pack)
+     VALUES (?,?,?,?,?,?,?,?,?,?)`,
   ).run(
     id,
     body.title?.trim() || "Dự án mới",
@@ -142,7 +142,6 @@ app.post("/api/projects", async (request) => {
     setting.minSilence,
     setting.wantCaptions ? 1 : 0,
     setting.wantMusic ? 1 : 0,
-    setting.insertSource,
     DEFAULT_STYLE_PACK_ID,
   );
   return { id };
@@ -163,7 +162,6 @@ app.patch("/api/projects/:id", async (request, reply) => {
     minSilence?: number;
     wantCaptions?: boolean;
     wantMusic?: boolean;
-    insertSource?: string;
     stylePack?: string;
     fontStyle?: string | null;
     headline?: string;
@@ -204,17 +202,6 @@ app.patch("/api/projects/:id", async (request, reply) => {
   if (typeof body.wantMusic === "boolean") {
     sets.push("want_music=?");
     values.push(body.wantMusic ? 1 : 0);
-  }
-  // Nguồn tư liệu chốt theo TỪNG dự án: video này toàn cảnh quay sẵn thì mở cả
-  // kho, video sau chỉ dùng đúng mấy tệp vừa nạp thì khoá lại — mà không phải
-  // sang trang Cài đặt đổi qua đổi lại.
-  if (
-    body.insertSource === "project" ||
-    body.insertSource === "starred" ||
-    body.insertSource === "library"
-  ) {
-    sets.push("insert_source=?");
-    values.push(body.insertSource);
   }
   // DÒNG TIÊU ĐỀ. Chuỗi rỗng là XOÁ — khác `title` (tên dự án), nơi rỗng phải
   // rơi về một tên mặc định: một dự án luôn cần tên để gọi, còn tiêu đề thì

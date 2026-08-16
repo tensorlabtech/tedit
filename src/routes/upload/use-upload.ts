@@ -7,7 +7,6 @@ import {
   api,
   isJobActive,
   queueLabel,
-  type ApiSettings,
 } from "@/lib/api";
 
 import type { StylePackId } from "../../../server/style-pack";
@@ -85,16 +84,6 @@ export function useUpload(openingProjectId?: string) {
       return DEFAULT_STYLE_PACK_ID;
     }
   });
-  /**
-   * Máy được lấy tư liệu ở đâu cho DỰ ÁN NÀY.
-   *
-   * `null` khi chưa nạp xong dự án — khác hẳn với "chỉ tư liệu của dự án". Vẽ ô
-   * chọn bằng một giá trị đoán trước rồi đổi khi dữ liệu về là ô nhảy một nhịp
-   * ngay trước mắt người dùng, và ai bấm đúng lúc đó thì ghi đè mất lựa chọn cũ.
-   */
-  const [insertSource, setInsertSource] = useState<
-    ApiSettings["insertSource"] | null
-  >(null);
   // Bản sao đồng bộ: `ensureProject` chạy trong một lời hứa đã đóng băng giá trị
   // của lượt dựng cũ, mà nó cần cái tên VỪA gõ.
   const titleRef = useRef(suggestedTitle());
@@ -360,10 +349,6 @@ export function useUpload(openingProjectId?: string) {
         // Dự án đang mở lại thì lấy phong cách CỦA NÓ, không lấy lựa chọn lần
         // trước — lựa chọn lần trước chỉ dành cho dự án mới.
         setStylePackState(findStylePack(data.project.style_pack).id);
-        setInsertSource(
-          (data.project.insert_source as ApiSettings["insertSource"]) ??
-            "starred",
-        );
         titleRef.current = data.project.title;
         setProfileState(data.project.profile ?? "");
         profileRef.current = data.project.profile ?? "";
@@ -858,28 +843,6 @@ export function useUpload(openingProjectId?: string) {
     });
   }, []);
 
-  /** Ghi nguồn tư liệu máy được lấy. Ô chọn nên ghi ngay, không có nhịp kéo nào. */
-  const saveInsertSource = useCallback(
-    async (next: ApiSettings["insertSource"]) => {
-      const truoc = insertSource;
-      setInsertSource(next);
-      const id = projectRef.current;
-      if (!id) return;
-      await api.updateProject(id, { insertSource: next }).catch(() => {
-        // Trả về giá trị CŨ khi ghi hỏng: để ô hiện lựa chọn mới trong khi máy
-        // chủ vẫn giữ cái cũ là nói dối, và lượt dựng sau sẽ không theo cái đang
-        // hiện trên màn.
-        setInsertSource(truoc);
-        toast.add({
-          title: "Không lưu được cài đặt",
-          description: "Máy chủ không trả lời — thử lại giúp mình",
-          type: "error",
-        });
-      });
-    },
-    [insertSource],
-  );
-
   /** Ghi tên dự án. Cũng chỉ ghi lúc RỜI Ô, cùng lý do như lời dặn. */
   /**
    * Chọn PHONG CÁCH ở màn nạp tệp — trước khi máy chạy.
@@ -1178,8 +1141,6 @@ export function useUpload(openingProjectId?: string) {
      */
     setMinSilenceDraft: setMinSilence,
     saveMinSilence,
-    insertSource,
-    saveInsertSource,
     /** Máy chép lời chạy xong mà không nghe ra câu nào */
     noSpeechFound: transcribe?.status === "done" && sentenceCount === 0,
     transcribe,
