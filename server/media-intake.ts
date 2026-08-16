@@ -130,18 +130,21 @@ export async function intakeMediaFile(options: {
     thumb = null;
   }
 
-  // "video có tiếng → cảnh chính" là phỏng đoán khi không ai nói rõ. Video chính
-  // là phần CÓ lời nói (bản chép dựng từ đó), nên "main" luôn đòi có tiếng: ý
-  // định "main" cho tệp câm là bất khả thi, rơi về chèn.
-  const canBeMain = isVideo && info.hasAudio;
+  // PHÂN VAI:
+  // · User CHỈ ĐỊNH "main" → tôn trọng cho MỌI video, kể cả video CÂM: cảnh diễn /
+  //   nhịp lặng / chèn ngang không lời là dụng ý thật, không phải lỗi. Video câm
+  //   làm cảnh chính = một quãng KHÔNG lời trong mạch (hệ thống đã chịu no-speech).
+  // · TỰ ĐOÁN (không ai nói rõ) → vẫn "video CÓ tiếng → main" để một clip stock
+  //   câm thả bừa không lặng lẽ chiếm vai chính.
+  // · Ảnh không bao giờ làm cảnh chính (không có khung động).
   const role =
     intendedRole === "insert"
       ? "insert"
       : intendedRole === "main"
-        ? canBeMain
+        ? isVideo
           ? "main"
           : "insert"
-        : canBeMain
+        : isVideo && info.hasAudio
           ? "main"
           : "insert";
   // Số của người dùng dùng chung cho CẢ HAI vai, nên trong một vai nó có thể
