@@ -336,11 +336,16 @@ export function MediaPickerDialog({
                     onSelect={() => {
                       if (tab === "project") setChonDuAn(item.key);
                       else
-                        setChonKho((cur) =>
-                          cur.includes(item.key)
-                            ? cur.filter((key) => key !== item.key)
-                            : [...cur, item.key],
-                        );
+                        setChonKho((cur) => {
+                          if (!cur.includes(item.key)) return [...cur, item.key];
+                          // Bỏ tích một tệp ĐÃ CÓ chỉ có nghĩa khi có đường gỡ nó
+                          // khỏi dự án. Thiếu `onDropFromProject` (vd hộp "Đổi tư
+                          // liệu" ở bàn dựng chỉ để CHỌN) thì bỏ tích là lời hứa
+                          // suông — xác nhận xong tệp vẫn còn. Giữ tích để không
+                          // nói dối; gỡ tư liệu làm ở bước Chuẩn bị.
+                          if (daCo.has(item.key) && !onDropFromProject) return cur;
+                          return cur.filter((key) => key !== item.key);
+                        });
                     }}
                     onUseNow={
                       tab === "project" && onUse
