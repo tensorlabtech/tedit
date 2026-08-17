@@ -513,7 +513,7 @@ export function VideoComposition(payload: RemotionPayload) {
   // KHUNG MỜ (defocus): cảnh đóng dấu `frameBlock.blur` → mờ người, ramp mềm hai
   // đầu cảnh cho vào/ra không giật. Chữ bên trên GIỮ NGUYÊN (không dời ra giữa):
   // mờ giờ là KHUNG chọn được, không dính caption. Thay cơ chế punchline-tự-động
-  // cũ (đọc `payload.punchDefocus` + `punchlineSet` lúc render).
+  // cũ (đo độ sáng toàn cảnh) — nay defocus là trục của KHUNG (frame_block.blur).
   const blurFrame = !!scene?.frameBlock?.blur;
   const blurRamp =
     blurFrame && scene

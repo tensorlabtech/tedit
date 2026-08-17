@@ -79,9 +79,6 @@ export function useTrimDrag({
     at: number;
     /** Mốc cũ, để hoàn tác */
     was: number;
-    /** Tư liệu chèn / ô người neo vào TỪ, nên mép của nó là một mã từ chứ không phải giây */
-    wordId?: string;
-    wasWordId?: string;
     /**
      * Có mặt khi lần kéo này BIẾN một hiệu ứng tự suy thành hàng thật. Hoàn tác
      * lúc ấy phải XOÁ hàng đi chứ không phải trả mép về chỗ cũ — trả mép thì còn
@@ -89,13 +86,6 @@ export function useTrimDrag({
      * sau đổi mặc định dự án thì chỗ này trơ ra.
      */
     wasKind?: JunctionId;
-    /**
-     * Ô NGƯỜI: chỉ số từ ở mép ĐỐI DIỆN (không kéo) và mốc XUẤT RA của khối
-     * liền kề — tính MỘT LẦN lúc bắt đầu kéo, giữ nguyên suốt lượt để khỏi trôi
-     * vì sai số làm tròn cộng dồn qua từng khung chuột.
-     */
-    fixedIndex?: number;
-    neighborLimit?: number;
     /**
      * B-ROLL kiểu CapCut: kéo mép khối = chọn CỬA SỔ nguồn. Đổi đồng thời vị trí
      * (start/end) và cửa sổ (mediaIn/mediaOut), giữ bất biến out−in == end−start.
@@ -119,11 +109,6 @@ export function useTrimDrag({
   const dragMove = useRef<{
     kind: TrimKind;
     id: string;
-    /** neo-từ (b-roll): mã từ mới hai mép + mã cũ để hoàn tác. */
-    fromWordId?: string;
-    toWordId?: string;
-    wasFromWordId?: string;
-    wasToWordId?: string;
     /** neo-giây: mốc mới + mốc cũ (để hoàn tác). */
     start?: number;
     end?: number;
@@ -259,19 +244,12 @@ export function useTrimDrag({
     setScenePreview(null); // hết nhiệm vụ dù dời loại nào
     if (!projectId || !pending) return;
     if (pending.kind === "scene") {
+      // KHUNG MỜ neo-giây: dời = ghi start/end NGUỒN (như b-roll).
       if (pending.start != null && pending.end != null) {
-        // KHUNG MỜ neo-giây: dời = ghi start/end NGUỒN (như b-roll).
         await api
           .updateElement(pending.id, {
             start: pending.start,
             end: pending.end,
-          })
-          .catch(boQuaLoi());
-      } else if (pending.fromWordId && pending.toWordId) {
-        await api
-          .updateElement(pending.id, {
-            fromWordId: pending.fromWordId,
-            toWordId: pending.toWordId,
           })
           .catch(boQuaLoi());
       }
@@ -653,35 +631,14 @@ export function useTrimDrag({
     if (!projectId || !pending) return;
 
     if (pending.kind === "scene") {
+      // KHUNG MỜ neo-giây: ghi start/end NGUỒN (như b-roll). Không undo — như b-roll.
       if (pending.insertStart != null && pending.insertEnd != null) {
-        // KHUNG MỜ neo-giây: ghi start/end NGUỒN (như b-roll). Không undo — như b-roll.
         await api
           .updateElement(pending.id, {
             start: pending.insertStart,
             end: pending.insertEnd,
           })
           .catch(boQuaLoi());
-        onSceneTrimmed?.();
-        return;
-      }
-      if (pending.wordId) {
-        await api
-          .updateElement(
-            pending.id,
-            pending.edge === "start"
-              ? { fromWordId: pending.wordId }
-              : { toWordId: pending.wordId },
-          )
-          .catch(boQuaLoi());
-      }
-      if (pending.wasWordId) {
-        pushUndo({
-          type: "scene-trim",
-          label: "Đổi khoảng ô người",
-          elementId: pending.id,
-          edge: pending.edge,
-          wordId: pending.wasWordId,
-        });
       }
       // Mép ô người đổi → xếp lại lịch màn để khối liền kề lấp đúng chỗ vừa co.
       onSceneTrimmed?.();

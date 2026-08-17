@@ -486,16 +486,6 @@ export type UndoEntry =
       mediaIn: number | null;
       mediaOut: number | null;
     }
-  // Ô NGƯỜI cũng neo theo từ như b-roll — cùng dữ liệu hoàn tác, chỉ khác chỗ
-  // không cần nạp lại `data` (lịch màn là state riêng, xem `use-scene-layout`).
-  | {
-      type: "scene-trim";
-      label: string;
-      elementId: string;
-      edge: "start" | "end";
-      /** Mã TỪ mà mép đang neo TRƯỚC khi kéo */
-      wordId: string;
-    }
   // Chữ TỰ DO neo theo giờ, nên hoàn tác trả lại một con GIÂY chứ không phải
   // một mã từ như `insert-trim`.
   | {

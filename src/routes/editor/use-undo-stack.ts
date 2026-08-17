@@ -243,20 +243,6 @@ export function useUndoStack({
       onInsertTrimmed?.();
       return;
     }
-    if (last.type === "scene-trim") {
-      // Ô người không nằm trong `data` — không cần nạp lại `shape(fresh)` như
-      // b-roll, chỉ cần ghi mã từ cũ rồi xếp lại lịch màn để đọc ra mốc mới.
-      await api
-        .updateElement(
-          last.elementId,
-          last.edge === "start"
-            ? { fromWordId: last.wordId }
-            : { toWordId: last.wordId },
-        )
-        .catch(boQuaLoi());
-      onSceneTrimmed?.();
-      return;
-    }
     if (last.type === "music-trim") {
       const row = await api
         .updateMusic(

@@ -15,7 +15,6 @@ const EMPTY_PAYLOAD: RemotionPayload = {
   seconds: 1,
   sourceAspect: null,
   personUrl: "",
-  maskUrl: null,
   basePage: null,
   pack: NHIP_DEN,
   scenes: [],

@@ -131,23 +131,6 @@ export async function makeThumbnail(
   ]);
 }
 
-/** Tách audio 16kHz mono — đúng thứ whisper cần, và nhẹ hơn video nhiều lần. */
-export async function extractAudio(source: string, target: string) {
-  await run("ffmpeg", [
-    "-y",
-    "-i",
-    source,
-    "-vn",
-    "-ac",
-    "1",
-    "-ar",
-    "16000",
-    "-c:a",
-    "pcm_s16le",
-    target,
-  ]);
-}
-
 /**
  * Đo bề rộng chữ THẬT bằng ImageMagick thay vì ước lượng theo số ký tự.
  *

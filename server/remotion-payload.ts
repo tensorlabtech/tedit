@@ -29,7 +29,6 @@ import {
 } from "./style-pack";
 import { readStylePack } from "./style-pack-store";
 import { stampBlocksFromPack } from "./stamp-blocks";
-import { subjectPath } from "./subject-mask";
 
 /**
  * CẦU DỮ LIỆU cho Remotion — một máy vẽ.
@@ -80,8 +79,6 @@ export type RemotionPayload = {
   sourceAspect: number | null;
   /** URL (tương đối `public/`) video người đã dựng. */
   personUrl: string;
-  /** Mặt nạ tách người (trắng=người), null nếu chưa có. */
-  maskUrl: string | null;
   /**
    * TIẾNG chỉ cho KHUNG XEM (preview). Bản XUẤT ghép tiếng bằng ffmpeg SAU khi
    * Remotion vẽ hình câm, nên hai trường này RỖNG ở export (`null`/`[]`) — không
@@ -95,17 +92,10 @@ export type RemotionPayload = {
    * CỤM) lên trên; KHÔNG được đọc trục LOOK khác của nó ở render (xem CLAUDE.md). */
   pack: StylePack;
   /**
-   * DEFOCUS toàn-khung — RESOLVE ở đây (lúc dựng payload) từ bộ dáng, KHÔNG để
-   * component render đọc `payload.pack.punchDefocus`. Cảnh toàn-khung là `scene ==
-   * null` (không có frame_block), nên defocus là giá trị cấp VIDEO, không phải trục
-   * của một khung — vì thế nó nằm ở payload chứ không trong block.
-   */
-  punchDefocus: StylePack["punchDefocus"];
-  /**
    * CƯỜNG ĐỘ CHỖ NỐI — RESOLVE ở đây từ bộ dáng, KHÔNG để `junctionCss` đọc
    * `payload.pack.intensity` lúc render (đó là render đọc pack cho phần NHÌN — cấm
    * theo CLAUDE.md). Là giá trị cấp VIDEO (xung quanh vết cắt), không phải trục
-   * của một khung, nên nằm ở payload như `punchDefocus`.
+   * của một khung, nên nằm ở payload chứ không trong block.
    */
   junctionIntensity: { punchScale: number; flashAmount: number };
   scenes: RemotionScene[];
@@ -253,17 +243,6 @@ export async function buildRemotionPayload(
     : personSrc;
   copyFileSync(personFinal, join(outDir, "person.mp4"));
   const personUrl = rel("person.mp4");
-
-  const cutMask = join(workDir(projectId), "cut-mask.mp4");
-  const rawMask = subjectPath(projectId);
-  let maskUrl: string | null = null;
-  if (existsSync(cutMask)) {
-    copyFileSync(cutMask, join(outDir, "mask.mp4"));
-    maskUrl = rel("mask.mp4");
-  } else if (existsSync(rawMask)) {
-    copyFileSync(rawMask, join(outDir, "mask.mp4"));
-    maskUrl = rel("mask.mp4");
-  }
 
   // TIẾNG cho KHUNG XEM (chỉ preview; export ghép bằng ffmpeg): giọng = tiếng của
   // video người ĐÃ CẮT (`personSrc`, khớp 1:1 output), nhạc = music_tracks đã đặt.
@@ -435,12 +414,10 @@ export async function buildRemotionPayload(
     sourceAspect:
       baseInfo.width && baseInfo.height ? baseInfo.width / baseInfo.height : null,
     personUrl,
-    maskUrl,
     voiceUrl,
     music,
     basePage: blocksFromPack(pack).frame.page,
     pack,
-    punchDefocus: pack.punchDefocus,
     junctionIntensity: {
       punchScale: pack.intensity.punchScale,
       flashAmount: pack.intensity.flashAmount,

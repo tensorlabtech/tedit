@@ -570,19 +570,6 @@ export async function resumeAfterCutReview(projectId: string) {
 export async function resumeAfterTextReview(projectId: string) {
   setStep(projectId, "review-text", "done", { result: "đã soát" });
   const preview = join(workDir(projectId), "preview.mp4");
-  /*
-   * `anchors` RỖNG ở luồng mới.
-   *
-   * Nó vốn để neo lại phần tử sau khi bảng từ bị thay. Mà `commitCut` đã xoá
-   * sạch phần tử ở pha hai, nên tới đây không còn gì để neo. Giữ biến để khối
-   * dưới không phải viết lại.
-   */
-  const anchors: Array<{
-    id: string;
-    kind: string;
-    from_sec: number;
-    to_sec: number;
-  }> = [];
 
   // Dựng đoạn ngay sau khi có lời: bàn dựng mở ra là đã thấy khối rõ ràng.
   markStepRunning(projectId, "captions");
@@ -601,77 +588,7 @@ export async function resumeAfterTextReview(projectId: string) {
     projectId,
   );
 
-  // Neo lại phần tử vào từ GẦN NHẤT theo thời gian. Lệch vài chục ms là chấp
-  // nhận được; mất hẳn chữ thì không.
-  const fresh = db
-    .prepare(
-      "SELECT id, start_sec, end_sec FROM words WHERE project_id=? ORDER BY start_sec",
-    )
-    .all(projectId) as Array<{
-    id: string;
-    start_sec: number;
-    end_sec: number;
-  }>;
-
-  let reanchored = 0;
-  let refreshed = 0;
-  if (fresh.length > 0 && anchors.length > 0) {
-    const nearest = (time: number, key: "start_sec" | "end_sec") =>
-      fresh.reduce((best, word) =>
-        Math.abs(word[key] - time) < Math.abs(best[key] - time) ? word : best,
-      );
-    const update = db.prepare(
-      "UPDATE elements SET from_word_id=?, to_word_id=? WHERE id=?",
-    );
-    /*
-     * Chép LẠI `content` của cụm chữ từ những từ vừa neo vào.
-     *
-     * `content` là một BẢN SAO của lời chứ không phải phép nối lúc dựng, nên
-     * neo lại thôi thì chữ trên video vẫn là lời của lần chép TRƯỚC. Đo thật:
-     * chặng sửa lời đã đổi "Fanandef" thành "frontend dev" trong bảng từ, mà
-     * video xuất ra vẫn hiện "Fanandef" — cả chặng sửa lời lẫn ô lời dặn thành
-     * ra vô nghĩa với đúng thứ người xem đọc được.
-     *
-     * Làm mới VÔ ĐIỀU KIỆN, không cố đoán xem người dùng đã sửa tay hay chưa:
-     *
-     * · Sửa chữ trên bàn dựng vốn đã ghi ngược vào bảng từ (`applyTextBackToWords`
-     *   ở `elements-routes.ts`). Hai bên vốn là một, không phải hai nguồn.
-     * · Mà chép lại lời thì xoá sạch bảng từ rồi ghi từ mới. Bản sửa tay ở mức
-     *   từ đã mất từ trước rồi; giữ riêng nó ở mức cụm chữ chỉ tạo ra một cụm
-     *   chữ nói khác hẳn lời bên dưới nó.
-     * · Và một khi đã lệch thì không tự lành: phép so "content có bằng lời cũ
-     *   không" hỏng ngay từ lượt chép thứ hai, nên cụm ấy giữ chữ sai VĨNH VIỄN.
-     */
-    const rewrite = db.prepare("UPDATE elements SET content=? WHERE id=?");
-    const textIn = db.prepare(
-      `SELECT group_concat(text, ' ') AS says FROM (
-         SELECT text FROM words
-          WHERE project_id=? AND start_sec>=? AND end_sec<=? ORDER BY start_sec)`,
-    );
-    db.transaction(() => {
-      for (const anchor of anchors) {
-        const from = nearest(anchor.from_sec, "start_sec");
-        const to = nearest(anchor.to_sec, "end_sec");
-        update.run(from.id, to.id, anchor.id);
-        reanchored += 1;
-        // Chỉ cụm CHỮ. Phần tử tư liệu chèn cũng neo vào từ nhưng `content` của
-        // nó không phải lời nói, ghi đè là xoá mất thứ người dùng đã đặt.
-        if (anchor.kind !== "text") continue;
-        const says = (
-          textIn.get(projectId, from.start_sec, to.end_sec) as {
-            says: string | null;
-          }
-        ).says;
-        if (says) {
-          rewrite.run(says, anchor.id);
-          refreshed += 1;
-        }
-      }
-    })();
-  }
-
-  // Dọn xác phần tử KHÔNG neo lại được — chỉ chạy sau khi đã neo xong, vì ngay
-  // sau `clearOld()` thì mọi phần tử đều đang trỏ vào từ đã xoá.
+  // Dọn xác phần tử trỏ vào từ đã biến mất sau khi chép lại lời.
   //
   // Gặp khi lần chép sau không ra chữ nào (video không có tiếng nói): phần tử
   // cũ trỏ vào một từ không còn tồn tại nên phép nối ở khâu xuất loại nó IM
