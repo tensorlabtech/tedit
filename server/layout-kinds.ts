@@ -149,6 +149,7 @@ export type LayoutKindId =
   | "o-vuong"
   | "broll-don"
   | "broll-vuong"
+  | "broll-full"
   | "hai-o"
   | "vuong-ngang"
   | "ngang-vuong"
@@ -225,6 +226,18 @@ export const LAYOUT_SPECS: LayoutSpec[] = [
     note: "Tư liệu b-roll một mình, ô VUÔNG (1:1) — cảnh cắt, không có người",
     slots: [
       { role: "phu", aspect: "vuong", areaShare: 0.5, anchor: { x: 0.5, y: 0.42 }, mask: "o-bo-goc", z: 0 },
+    ],
+    needsInsert: true,
+  },
+  {
+    id: "broll-full",
+    label: "B-roll phủ kín",
+    // Tư liệu PHỦ KÍN khung — cảnh cắt (voiceover), không có người, không ô. Dáng
+    // phụ đề cơ bản: talking-head rồi cắt sang footage toàn màn. Insert lấp cả
+    // khung nên không mặt nạ/bo góc; chữ đè lên trên.
+    note: "Tư liệu b-roll phủ kín màn — cảnh cắt, không có người",
+    slots: [
+      { role: "phu", areaShare: 1, anchor: { x: 0.5, y: 0.5 }, mask: null, z: 0 },
     ],
     needsInsert: true,
   },

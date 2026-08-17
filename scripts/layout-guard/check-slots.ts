@@ -378,23 +378,30 @@ check(
 );
 
 /*
- * ══ KHAI BỐ CỤC THÌ PHẢI KHAI NỀN TRANG ══
+ * ══ BỐ CỤC Ô THÌ PHẢI KHAI NỀN TRANG ══
  *
- * `render.ts` chỉ dựng lịch màn khi `pack.page` có — không có nền thì cả khối
- * bố cục bị bỏ qua. Nên một bộ khai `layouts` mà bỏ trống `page` là khai một
- * thứ KHÔNG BAO GIỜ CHẠY: catalog trông đầy đủ, video ra vẫn phủ kín khung, và
- * không ai báo gì.
+ * Bố cục Ô (ô người/b-roll nhỏ hơn khung) CHỪA nền lộ ra quanh ô — nền đó là
+ * `pack.page`. Bộ dùng bố cục ô mà bỏ trống `page` thì chỗ trống rơi về màu dự
+ * phòng tối trơn, mất đúng cái nền trang (lưới/tông) làm nên dáng.
  *
- * Đã suýt mắc: bộ "Lặng" thêm `layouts` trước, `page` sau.
+ * Bố cục PHỦ KÍN (`toan-khung`, `broll-full` — có slot `areaShare>=1`) lấp cả
+ * khung nên KHÔNG cần nền: một bộ chỉ dùng bố cục phủ kín được phép bỏ `page`.
+ *
+ * (Trước đây luật là "khai layouts thì phải có page" vì render ffmpeg bỏ qua cả
+ * khối khi thiếu page. Đường đó đã gỡ; Remotion xếp màn theo `layouts.length`,
+ * không theo `page` — nên luật nới về đúng chỗ nền THỰC SỰ lộ ra: bố cục ô.)
  */
-console.log("\nBộ dáng khai bố cục thì phải khai nền trang");
+console.log("\nBộ dáng dùng bố cục ô thì phải khai nền trang");
 const { STYLE_PACKS } = await import("../../server/style-pack-catalog");
+const coversFrame = (id: string) =>
+  findLayout(id).slots.some((slot) => slot.areaShare >= 1);
 for (const pack of STYLE_PACKS) {
-  if (pack.layouts.length === 0) continue;
+  const usesCells = pack.layouts.some((id) => !coversFrame(id));
+  if (!usesCells) continue; // chỉ bố cục phủ kín → không có nền để lộ
   check(
-    `"${pack.label}" khai ${pack.layouts.length} bố cục và có nền trang`,
+    `"${pack.label}" dùng bố cục ô nên phải có nền trang`,
     pack.page !== null,
-    "khai bố cục mà không có nền — cả khối sẽ bị bỏ qua khi dựng",
+    "bố cục ô chừa nền mà `page` trống — chỗ trống rơi về màu dự phòng, mất dáng nền",
   );
 }
 

@@ -507,7 +507,34 @@ export const PRISM_PRO: StylePack = {
   ],
 };
 
-export const STYLE_PACKS: StylePack[] = [NHIP_DEN, PHAN, PRISM_PRO];
+/**
+ * CƠ BẢN — phụ đề chuẩn: nhỏ, căn GIỮA, hiện CẢ cụm; tiếng ĐANG nói trắng ĐẶC,
+ * tiếng chưa nói trắng MỜ; nền đen mờ bo tròn. B-roll PHỦ KÍN màn. Không nhận-dạng
+ * cầu kỳ — dáng caption phổ thông (CapCut/YouTube), dựng HOÀN TOÀN bằng axis có sẵn.
+ */
+export const CO_BAN: StylePack = {
+  ...BASE,
+  id: "co-ban",
+  label: "Cơ bản",
+  fonts: { voice: FONT.lexend, accent: FONT.lexend },
+  letterCase: "as-typed",
+  // Trắng-MỜ cho tiếng CHƯA nói; `highlight` tô TRẮNG ĐẶC tiếng ĐANG nói (karaoke).
+  color: {
+    main: { color: "#FFFFFF", alpha: 0.5 },
+    dim: { color: "#FFFFFF", alpha: 0.4 },
+    key: { color: "#FFFFFF", alpha: 1 },
+  },
+  highlight: { tone: { color: "#FFFFFF", alpha: 1 }, box: null },
+  // Nền đen mờ bo tròn sau chữ (per-tiếng; `padShare` rộng cho các ô liền thành dải).
+  box: { tone: { color: "#000000", alpha: 0.5 }, padShare: 0.16, cornerShare: 0.3 },
+  // NHỎ — cỡ caption phổ thông ~6,5% bề rộng khung.
+  density: { ...BASE.density, maxScale: 0.065 },
+  // Người TOÀN-KHUNG hoặc b-roll PHỦ KÍN — không thẻ/ô.
+  layouts: ["toan-khung", "broll-full"],
+  defaults: { ...BASE.defaults, align: "center", emphasis: "even", reveal: "none" },
+};
+
+export const STYLE_PACKS: StylePack[] = [NHIP_DEN, PHAN, PRISM_PRO, CO_BAN];
 
 export const DEFAULT_STYLE_PACK_ID: StylePackId = "prism-pro";
 

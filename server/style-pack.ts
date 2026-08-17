@@ -73,7 +73,7 @@ export type Tone = { color: string; alpha: number };
  * cột lưu kiểu `string` (không phải `StylePackId`) đúng vì lý do đó — xem
  * `projects-routes.ts`/`elements-routes.ts`.
  */
-export type StylePackId = "nhip-den" | "phan" | "prism-pro";
+export type StylePackId = "nhip-den" | "phan" | "prism-pro" | "co-ban";
 
 /**
  * NHÓM Ý ĐỒ — người dùng chọn theo "video của tôi thuộc loại gì".
@@ -310,7 +310,7 @@ export type StylePack = {
    * Góc VUÔNG, không bo: `drawtext` chỉ cho góc vuông, bo tròn phải vẽ lớp riêng
    * và ngốn bằng cả ba trục khác cộng lại. Góc vuông vốn đã là dáng bản tin.
    */
-  box: { tone: Tone; padShare: number } | null;
+  box: { tone: Tone; padShare: number; cornerShare?: number } | null;
   /**
    * MẢNG MÀU đặc — dải màu chiếm một phần khung. `null` là không có.
    *

@@ -361,9 +361,12 @@ function Syllable({
           ? {
               backgroundColor: cssColor(pack.box.tone),
               padding: `${pack.box.padShare}em ${pack.box.padShare * 1.4}em`,
-              // Góc vuông: `drawtext` chỉ cho góc vuông, bo ở đây là trang xem
-              // đẹp hơn bản xuất — đúng lỗi cả hệ này chống.
-              borderRadius: 0,
+              // Bo góc theo `cornerShare` (đơn vị em, theo cỡ chữ). Trước đây khoá
+              // vuông vì `drawtext` chỉ vẽ góc vuông — nay chỉ còn Remotion/CSS nên
+              // bo được; opt-in để bộ dáng cũ giữ nguyên vuông.
+              borderRadius: pack.box.cornerShare
+                ? `${pack.box.cornerShare}em`
+                : 0,
             }
           : null),
         // TÔ SÁNG tiếng đang được nói — kiểu karaoke.
