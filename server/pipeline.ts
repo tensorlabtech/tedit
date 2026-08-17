@@ -667,7 +667,17 @@ export async function resumeAfterTextReview(projectId: string) {
   });
 
 
-  await runAiWaves(projectId, ["keywords", "place", "layout", "effects", "music"]);
+  // Bộ dáng KHÔNG nhấn (`defaults.emphasis === "even"`, vd Cơ bản) thì BỎ QUA lượt
+  // `keywords`: emphasis suy từ số từ-khoá (`keywords>0 → keyword-large`), nên có
+  // từ-khoá là caption phóng to — trái với "phụ đề đều, không nhấn". Karaoke tô-sáng
+  // tiếng đang nói chạy bằng mốc thời gian (`wordStarts`), không cần từ-khoá.
+  const evenPack = readStylePack(projectId).defaults.emphasis === "even";
+  await runAiWaves(
+    projectId,
+    evenPack
+      ? ["place", "layout", "effects", "music"]
+      : ["keywords", "place", "layout", "effects", "music"],
+  );
   // KHUNG MỜ ở cụm-chốt — đặt SAU `keywords` (cần từ khoá để chọn) + `place` (cần
   // biết b-roll để né). Chỉ bộ có defocus (Prism). Người dùng thêm/bỏ sau tuỳ ý.
   placeBlurFrames(projectId, pack);
