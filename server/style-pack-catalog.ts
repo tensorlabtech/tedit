@@ -481,7 +481,7 @@ export const PRISM_PRO: StylePack = {
   layouts: ["toan-khung", "o-vuong", "broll-don", "broll-vuong", "hai-o"],
   // Máy quay dồn MƯỢT, nhẹ — chất cinematic bình tĩnh, trên một phần ba số màn.
   scenePush: { ratePerSecond: 0.03, share: 0.35 },
-  density: { ...BASE.density, maxScale: 0.13, lineHeight: 1.15, wordGap: 0.14 },
+  density: { ...BASE.density, maxScale: 0.12, lineHeight: 1.15, wordGap: 0.14 },
   // Chuyển cảnh MỀM (mờ chồng) — KHÔNG dùng junction `defocus`: scheduler đặt nó
   // dài bất định (đo được 15s!) làm blur cả đoạn = "nhập nhằng". Defocus của Prism
   // đi qua `punchDefocus` (kiểm soát: chỉ ở cụm-nhấn, giữ đúng cụm, ramp mượt).

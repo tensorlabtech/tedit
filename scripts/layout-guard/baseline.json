@@ -484,24 +484,24 @@
   "font": "assets/fonts/Lexend-Bold.ttf",
   "case": 0,
   "rows": 1,
-  "minScale": 0.1296,
+  "minScale": 0.1204,
   "top": 0.1198,
-  "bottom": 0.2036,
-  "maxRight": 0.2943,
-  "wordTop": 0.1375,
-  "wordBottom": 0.2104
+  "bottom": 0.1979,
+  "maxRight": 0.2811,
+  "wordTop": 0.1365,
+  "wordBottom": 0.2042
  },
  {
   "pack": "prism-pro",
   "font": "assets/fonts/Lexend-Bold.ttf",
   "case": 1,
   "rows": 2,
-  "minScale": 0.0519,
-  "top": 0.4417,
-  "bottom": 0.5589,
-  "maxRight": 0.5804,
-  "wordTop": 0.4448,
-  "wordBottom": 0.5516
+  "minScale": 0.0481,
+  "top": 0.4453,
+  "bottom": 0.5547,
+  "maxRight": 0.5714,
+  "wordTop": 0.4484,
+  "wordBottom": 0.5479
  },
  {
   "pack": "prism-pro",
@@ -509,11 +509,11 @@
   "case": 2,
   "rows": 3,
   "minScale": 0.0611,
-  "top": 0.5281,
+  "top": 0.5375,
   "bottom": 0.7302,
-  "maxRight": 0.8196,
-  "wordTop": 0.5391,
-  "wordBottom": 0.7365
+  "maxRight": 0.8203,
+  "wordTop": 0.5469,
+  "wordBottom": 0.7354
  },
  {
   "pack": "prism-pro",
@@ -545,35 +545,35 @@
   "case": 5,
   "rows": 2,
   "minScale": 0.038,
-  "top": 0.6219,
+  "top": 0.6276,
   "bottom": 0.7302,
   "maxRight": 0.7855,
-  "wordTop": 0.6276,
-  "wordBottom": 0.7354
+  "wordTop": 0.6333,
+  "wordBottom": 0.7349
  },
  {
   "pack": "prism-pro",
   "font": "assets/fonts/Lexend-Bold.ttf",
   "case": 6,
   "rows": 1,
-  "minScale": 0.1296,
+  "minScale": 0.1204,
   "top": 0.1198,
-  "bottom": 0.2036,
-  "maxRight": 0.5924,
-  "wordTop": 0.1375,
-  "wordBottom": 0.2104
+  "bottom": 0.1979,
+  "maxRight": 0.5857,
+  "wordTop": 0.1365,
+  "wordBottom": 0.2042
  },
  {
   "pack": "prism-pro",
   "font": "assets/fonts/Lexend-Bold.ttf",
   "case": 7,
   "rows": 3,
-  "minScale": 0.0407,
-  "top": 0.4281,
-  "bottom": 0.5724,
-  "maxRight": 0.8202,
-  "wordTop": 0.4302,
-  "wordBottom": 0.5766
+  "minScale": 0.038,
+  "top": 0.4333,
+  "bottom": 0.5672,
+  "maxRight": 0.82,
+  "wordTop": 0.4354,
+  "wordBottom": 0.5708
  },
  {
   "pack": "prism-pro",
@@ -594,10 +594,10 @@
   "rows": 2,
   "minScale": 0.0204,
   "top": 0.1198,
-  "bottom": 0.2167,
+  "bottom": 0.2109,
   "maxRight": 0.8172,
   "wordTop": 0.1214,
-  "wordBottom": 0.2234
+  "wordBottom": 0.2172
  },
  {
   "pack": "prism-pro",
@@ -605,11 +605,11 @@
   "case": 10,
   "rows": 3,
   "minScale": 0.0593,
-  "top": 0.4042,
-  "bottom": 0.5958,
+  "top": 0.4063,
+  "bottom": 0.5943,
   "maxRight": 0.7842,
-  "wordTop": 0.4094,
-  "wordBottom": 0.5948
+  "wordTop": 0.4115,
+  "wordBottom": 0.5932
  },
  {
   "pack": "prism-pro",
@@ -617,35 +617,35 @@
   "case": 11,
   "rows": 3,
   "minScale": 0.0352,
-  "top": 0.599,
+  "top": 0.6031,
   "bottom": 0.7302,
   "maxRight": 0.8047,
-  "wordTop": 0.6047,
-  "wordBottom": 0.7344
+  "wordTop": 0.6089,
+  "wordBottom": 0.7339
  },
  {
   "pack": "prism-pro",
   "font": "assets/fonts/Lexend-Bold.ttf",
   "case": 12,
   "rows": 1,
-  "minScale": 0.1296,
+  "minScale": 0.1204,
   "top": 0.1198,
-  "bottom": 0.2036,
-  "maxRight": 0.8896,
-  "wordTop": 0.1375,
-  "wordBottom": 0.2104
+  "bottom": 0.1979,
+  "maxRight": 0.8894,
+  "wordTop": 0.1365,
+  "wordBottom": 0.2042
  },
  {
   "pack": "prism-pro",
   "font": "assets/fonts/Lexend-Bold.ttf",
   "case": 13,
   "rows": 2,
-  "minScale": 0.0519,
-  "top": 0.4417,
-  "bottom": 0.5589,
-  "maxRight": 0.3785,
-  "wordTop": 0.4448,
-  "wordBottom": 0.5516
+  "minScale": 0.0481,
+  "top": 0.4453,
+  "bottom": 0.5547,
+  "maxRight": 0.3621,
+  "wordTop": 0.4484,
+  "wordBottom": 0.5479
  },
  {
   "pack": "prism-pro",
@@ -653,11 +653,11 @@
   "case": 14,
   "rows": 3,
   "minScale": 0.0611,
-  "top": 0.5281,
+  "top": 0.5375,
   "bottom": 0.7302,
   "maxRight": 0.8191,
-  "wordTop": 0.5391,
-  "wordBottom": 0.7365
+  "wordTop": 0.5469,
+  "wordBottom": 0.7354
  },
  {
   "pack": "prism-pro",
@@ -689,34 +689,34 @@
   "case": 17,
   "rows": 2,
   "minScale": 0.038,
-  "top": 0.6219,
+  "top": 0.6276,
   "bottom": 0.7302,
-  "maxRight": 0.8198,
-  "wordTop": 0.6276,
-  "wordBottom": 0.7354
+  "maxRight": 0.8199,
+  "wordTop": 0.6333,
+  "wordBottom": 0.7349
  },
  {
   "pack": "prism-pro",
   "font": "assets/fonts/Lexend-Bold.ttf",
   "case": 18,
   "rows": 1,
-  "minScale": 0.1296,
+  "minScale": 0.1204,
   "top": 0.1198,
-  "bottom": 0.2036,
-  "maxRight": 0.2943,
-  "wordTop": 0.1375,
-  "wordBottom": 0.2104
+  "bottom": 0.1979,
+  "maxRight": 0.2811,
+  "wordTop": 0.1365,
+  "wordBottom": 0.2042
  },
  {
   "pack": "prism-pro",
   "font": "assets/fonts/Lexend-Bold.ttf",
   "case": 19,
   "rows": 3,
-  "minScale": 0.0407,
-  "top": 0.4281,
-  "bottom": 0.5724,
-  "maxRight": 0.398,
-  "wordTop": 0.4302,
-  "wordBottom": 0.5766
+  "minScale": 0.038,
+  "top": 0.4333,
+  "bottom": 0.5672,
+  "maxRight": 0.3845,
+  "wordTop": 0.4354,
+  "wordBottom": 0.5708
  }
 ]
