@@ -414,7 +414,11 @@ function CaptionSeq({
         config={{
           text: c.content,
           align: c.align ?? "left",
-          emphasis: c.emphasis ?? "even",
+          // CỠ suy THẲNG từ từ-nhấn: có tiếng nhấn → cụm PHÓNG TO tiếng đó
+          // (keyword-large); không có → cả cụm ĐỀU cỡ. Không còn "kiểu nhấn"
+          // riêng — nhờ vậy đánh dấu tiếng nào là tiếng đó nổi, ở MỌI cụm (kể cả
+          // cụm máy tự gieo), khỏi lệch giữa "Từ nhấn" và cái hiện ra.
+          emphasis: (c.keywords?.length ?? 0) > 0 ? "keyword-large" : "even",
           band: (bandOverride ?? c.band ?? "bottom") as BandId,
           keywords: c.keywords ?? [],
           insert: { kind: "none", shape: "wide" },

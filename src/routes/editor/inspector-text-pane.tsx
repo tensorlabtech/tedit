@@ -40,12 +40,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
-import {
-  BANDS,
-  EMPHASES,
-  type BandId,
-  type EmphasisId,
-} from "@/dev/overlays/overlay-model";
+import { BANDS, type BandId, type EmphasisId } from "@/dev/overlays/overlay-model";
 import {
   applyFontStyle,
   findStylePack,
@@ -311,8 +306,9 @@ export function TextPane({
               </FieldDescription>
             )}
 
-            {/* TỪ NHẤN: chọn tiếng nào đổi màu, rồi chọn màu. Chữ giữ nguyên cỡ
-                (dáng "even" của phong cách), chỉ tiếng đánh dấu đổi MÀU. */}
+            {/* TỪ NHẤN: chọn tiếng nào NỔI BẬT — tiếng đánh dấu PHÓNG TO. Bấm
+                tiếng nào tiếng đó to; bỏ hết thì cả cụm đều cỡ. MỘT núm duy nhất,
+                luôn nhìn thấy — không còn "Kiểu nhấn" riêng để phải chọn. */}
             <Field>
               <FieldLabel>Từ nhấn</FieldLabel>
               <ToggleGroup
@@ -320,11 +316,17 @@ export function TextPane({
                 size="sm"
                 className="flex-wrap"
                 value={element.keywords}
-                onValueChange={(value) =>
+                onValueChange={(value) => {
+                  const keywords = value as string[];
                   editor.updateTextElement(element.id, {
-                    keywords: value as string[],
-                  })
-                }
+                    keywords,
+                    // CỠ đi thẳng theo việc bấm: có tiếng nhấn → cụm PHÓNG TO tiếng
+                    // đó (keyword-large); bỏ hết → cả cụm ĐỀU cỡ (even). Không còn
+                    // trục "kiểu nhấn" để chọn — bấm là thấy, khỏi nghĩ.
+                    emphasis: keywords.length > 0 ? "keyword-large" : "even",
+                  });
+                  playPreview();
+                }}
               >
                 {syllable.map((word, index) => (
                   <ToggleGroupItem key={`${word}-${index}`} value={word}>
@@ -332,40 +334,6 @@ export function TextPane({
                   </ToggleGroupItem>
                 ))}
               </ToggleGroup>
-            </Field>
-
-            {/* KIỂU NHẤN — máy seed sẵn theo phong cách, người dùng đổi được.
-                Cần vì hai kiểu (Từ khoá to / Xen cỡ) PHÓNG TO tiếng đã đánh dấu ở
-                "Từ nhấn", còn hai kiểu kia (Đều nhau / Dẫn nhỏ) chỉ đổi MÀU — nên
-                đánh dấu từ nhấn trên cụm "Dẫn nhỏ" trông như không ăn. Bày kiểu ra
-                để người dùng biết vì sao, và tự đổi sang kiểu phóng-to nếu muốn. */}
-            <Field>
-              <FieldLabel>Kiểu nhấn</FieldLabel>
-              <ToggleGroup
-                size="sm"
-                className="flex-wrap"
-                // Base UI ToggleGroup: `value` LUÔN là mảng, kể cả chọn-một
-                // (không `multiple`). Bọc kiểu hiện tại thành mảng một phần tử.
-                value={[element.emphasis]}
-                onValueChange={(value) => {
-                  // Trả về mảng; chọn-một nên nhiều nhất một phần tử. Bấm lại nút
-                  // đang chọn ra mảng RỖNG — giữ nguyên kiểu cũ (mọi cụm phải có
-                  // một kiểu), không cho về rỗng.
-                  const next = value[0] as EmphasisId | undefined;
-                  if (!next) return;
-                  editor.updateTextElement(element.id, { emphasis: next });
-                  playPreview();
-                }}
-              >
-                {EMPHASES.map((mode) => (
-                  <ToggleGroupItem key={mode.id} value={mode.id}>
-                    {mode.label}
-                  </ToggleGroupItem>
-                ))}
-              </ToggleGroup>
-              <FieldDescription>
-                {EMPHASES.find((mode) => mode.id === element.emphasis)?.note}
-              </FieldDescription>
             </Field>
 
             {/* PHONG CÁCH CHỮ — text-look bình đẳng: mượn của MỌI style, không

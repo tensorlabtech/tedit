@@ -1464,7 +1464,9 @@ export async function burnElements(
       text.content!,
       text.keywords ?? [],
       text.align ?? "center",
-      text.emphasis ?? "even",
+      // CỠ suy THẲNG từ từ-nhấn (khớp preview): có tiếng nhấn → PHÓNG TO tiếng đó
+      // (keyword-large), không → ĐỀU cỡ. Bỏ trục "kiểu nhấn"; đánh dấu là nổi.
+      (text.keywords?.length ?? 0) > 0 ? "keyword-large" : "even",
       text.band ?? "top",
       rect.w,
       rect.h,
