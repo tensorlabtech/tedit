@@ -514,7 +514,7 @@ export function visibleJunction(kind: string): JunctionId {
 }
 
 /** Chỗ nối CHUYỂN ĐỘNG phải đủ dài để THẤY — dưới mức này thì nới lên. */
-const MIN_MOTION_SECONDS = 2;
+const MIN_MOTION_SECONDS = 2.5;
 /** Trục CHUYỂN ĐỘNG/NHOÈ (nới được). Sáng/màu/tương-phản là xung ngắn, chừa. */
 const MOTION_KEYS = ["zoom", "dichX", "dichY", "xoay", "nhoe", "vien"] as const;
 

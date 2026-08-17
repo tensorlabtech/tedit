@@ -43,8 +43,6 @@ const SECONDS_PER_EFFECT = 10;
 const SHOWCASE_SECONDS = 30;
 /** Hai hiệu ứng gần nhau quá thì đọc ra là giật, không phải nhịp. */
 const MIN_GAP_SECONDS = 2.5;
-/** Cú nhấn ngắn hơn ngần này đọc ra là GIẬT — nới cho đủ nhìn (trong chỗ còn). */
-const MIN_EFFECT = 0.45;
 /**
  * `junctionShare` của bộ THAM CHIẾU — mốc để quy các bộ khác thành hệ số nhân.
  *
@@ -57,6 +55,22 @@ const MIN_EFFECT = 0.45;
  */
 const NHIP_GOC = 0.5;
 
+/**
+ * Kho kiểu cho hiệu ứng ở RANH GIỚI Ý — chỉ chuyển động MƯỢT, tự dài ≥2,5s.
+ *
+ * Người dùng muốn mỗi cú nhấn ≥2–3s. Kiểu ánh-sáng/màu (flash, dip, hue-shift,
+ * saturate, vignette) giữ ngắn 0,4s theo thiết kế của `junctionHalves` (kéo dài =
+ * nhức mắt); kiểu sắc ngắn (punch/whip/shake/tilt) nới lên 2,5s thì đọc ra kỳ.
+ * Năm kiểu dưới đây đều CÓ chuyển động và tự dài: zoom 2,5s; push-in/drift 4–5s.
+ */
+const IDEA_EFFECT_KINDS = [
+  "zoom-in",
+  "zoom-out",
+  "push-in",
+  "drift",
+  "zoom-blur",
+] as const;
+
 type Proposal = {
   picks: Array<{ index: number; kind: string }>;
 };
@@ -68,12 +82,13 @@ const SCHEMA = object({
       index: { type: "integer" },
       kind: {
         type: "string",
-        // CHỈ kiểu NHẤN (không có `cross`): ranh giới ý là một mạch nói liền, KHÔNG
-        // có khe cắt để hoà tan hai cảnh, nên "chuyển cảnh thật" (cross-*) không
-        // dựng được ở đây — bỏ khỏi lựa chọn để AI khỏi chọn thứ sẽ vỡ.
-        enum: JUNCTION_SPECS.filter(
-          (spec) => spec.id !== "none" && !spec.cross,
-        ).map((spec) => spec.id),
+        // CHỈ NĂM kiểu MƯỢT-DÀI (≥2,5s). Bỏ (1) cross-* — ranh giới ý là mạch liền,
+        // không có khe cắt để hoà tan hai cảnh; (2) kiểu ÁNH SÁNG/MÀU ngắn (flash,
+        // dip, hue-shift…) — chúng giữ 0,4s theo thiết kế (kéo dài thành nhức mắt),
+        // mà người dùng muốn mỗi cú nhấn ≥2–3s; (3) kiểu SẮC ngắn (punch/whip/shake/
+        // tilt) — nới tới 2,5s thì "rung 2,5 giây" đọc ra kỳ. Còn lại là chuyển
+        // động mượt, tự dài 2–5s, hợp chuyển mạch êm ở ranh giới ý.
+        enum: IDEA_EFFECT_KINDS,
       },
     }),
   },
@@ -85,35 +100,20 @@ Video là một mạch nói liền. Mỗi ứng viên là ranh giới giữa hai
 lời NGAY TRƯỚC và NGAY SAU nó. Chỉ nhấn ở chỗ MỞ MỘT ĐOẠN Ý MỚI — chuyển chủ đề,
 sang một bước kể mới, đổi mạch rõ rệt. KHÔNG nhấn giữa những câu CÙNG một ý.
 
-Chọn theo mạch chuyển. Mỗi kiểu có một CẢM GIÁC riêng:
+Chỉ dùng NĂM kiểu MƯỢT, MỖI CÚ DÀI KHOẢNG 2–3 GIÂY — đủ để mắt cảm nhận là một
+CHUYỂN ĐỘNG có chủ đích, không phải một cái giật. Ranh giới Ý là chỗ chuyển mạch
+êm, hợp chuyển động mượt hơn là cú loé/rung ngắn:
 
-MẠNH — dùng cho chỗ đổi ý gắt, lên cao trào:
-- punch: nảy một cái rất ngắn, nhấn mà không kéo dài
-- zoom-blur: phóng kèm nhoè, cú nhấn mạnh nhất — dùng dè
-- flash-hard: loé và đanh cùng lúc, hợp nhịp nhạc mạnh
-- whip-left / whip-right / whip-up: khung lia một nhát, như máy quay hất đi
+- zoom-in: phóng nhẹ VÀO — sau ranh giới là ý mạnh hơn, dồn hơn, đáng chú ý hơn
+- zoom-out: nới RA — hạ nhịp, khép một đoạn, lùi lại nhìn rộng
+- push-in: phóng dần suốt cả đoạn rồi hạ về — dồn dần vào người nói; hợp đoạn kể
+  chuyện, tâm sự, chỗ cần người xem nghiêng vào nghe
+- drift: khung trôi chậm sang ngang — cứu đoạn người nói ngồi yên, hình tĩnh mà
+  lời vẫn đang chạy
+- zoom-blur: phóng kèm nhoè nhẹ — cú nhấn ĐẬM hơn, dùng dè cho chỗ đổi ý gắt
 
-VỪA — dùng cho đổi ý bình thường:
-- zoom-in: sau chỗ nối là ý mạnh hơn, dồn hơn, đáng chú ý hơn
-- zoom-out: sau chỗ nối là hạ nhịp, kết đoạn, lùi lại nhìn rộng
-- flash: chuyển ý đột ngột, tương phản hẳn với vế trước
-- shake: rung một nhịp, nhấn mà không đổi khuôn hình
-- tilt: nghiêng rồi thẳng lại, chệch nhịp một chút cho có duyên
-- saturate: màu bừng lên, nhấn mà không đụng sáng tối
-
-ÊM — dùng cho chuyển đoạn, hạ giọng, sang chương mới:
-- dip: chuyển hẳn sang chủ đề khác, như sang một chương mới
-- desaturate: xám đi một nhịp rồi có màu lại, hợp lúc hạ giọng
-- vignette: bốn góc sụp tối rồi mở, dồn mắt vào giữa khung
-- hue-shift: màu trượt sắc một nhát — cú nhiễu nhẹ, dùng rất dè
-- push-in: phóng dần suốt cả đoạn rồi hạ về, dồn dần vào người nói — hợp đoạn
-  kể chuyện, tâm sự, chỗ cần người xem nghiêng vào nghe
-- drift: khung trôi chậm sang ngang — cứu một cảnh người nói ngồi yên không động
-  đậy, chỗ hình tĩnh mà lời vẫn đang chạy
-
-ĐỪNG dùng một kiểu quá hai lần trong cùng một video, trừ zoom-in và zoom-out.
-Lặp một kiểu lạ ba bốn lần thì nó thành tật của video chứ không còn là điểm nhấn.
-Và ĐỪNG rải kiểu MẠNH liên tiếp — mạnh chỉ mạnh khi quanh nó có chỗ êm.
+ĐỪNG dùng một kiểu quá hai lần (trừ zoom-in / zoom-out). Xen zoom với push-in /
+drift cho đỡ đơn điệu.
 
 Bạn được cho một SỐ LƯỢNG cần nhắm. Chọn đúng chừng ấy chỗ MỞ ĐOẠN Ý RÕ NHẤT —
 những mốc mà chủ đề/mạch kể thật sự SANG TRANG. Không rải đều cho đủ số, cũng
@@ -219,7 +219,11 @@ export async function pickEffects(
 
   // Kho ưu tiên của bộ dáng — THIÊN LỆCH, không phải hàng rào: mô hình vẫn được
   // chọn kiểu ngoài kho khi mạch chuyển đòi thế, và bảng sửa vẫn bày đủ mọi kiểu.
-  const preferred = pack.effectBias.junction;
+  // Thiên lệch của bộ dáng — LỌC còn kiểu trong kho ranh-giới-ý (bias có thể trỏ
+  // cross-* hay kiểu ngắn không còn được phép chọn; giữ chúng lại là gợi ý hão).
+  const preferred = pack.effectBias.junction.filter((k) =>
+    (IDEA_EFFECT_KINDS as readonly string[]).includes(k),
+  );
   const biasLine =
     preferred.length > 0
       ? `\n\nDáng của video này thiên về: ${preferred.join(", ")}. Ưu tiên mấy kiểu đó khi hai lựa chọn ngang nhau, nhưng đừng ép nếu mạch chuyển đòi kiểu khác.`
@@ -273,26 +277,26 @@ export async function pickEffects(
         continue;
       }
       const [before, after] = junctionHalves(normalizeJunction(pick.kind));
-      // Không đủ chỗ cho CẢ HAI nửa thì bỏ mối nối này, không đặt một cú nhấn
-      // cụt. Một cú zoom 0,65 giây nhồi vào một đoạn giữ 0,15 giây thì trên
-      // video nó chỉ là một cái giật không ai đọc ra là chủ ý — mà budget lại
-      // mất một suất cho nó.
-      if (join.roomBefore < before || join.roomAfter < after) {
+      const target = before + after;
+      // Cần TỔNG chỗ hai câu kề đủ chứa cú nhấn — KHÔNG cần mỗi bên đủ, vì phân bổ
+      // LỆCH được (câu trước ngắn thì dồn cú nhấn về câu sau). Thiếu cả tổng thì bỏ:
+      // thà không có còn hơn một cú CỤT dưới mức nhìn ra là chuyển động.
+      if (join.roomBefore + join.roomAfter < target) {
         rejected += 1;
         continue;
       }
-      // MIN ĐỘ DÀI: cú quá ngắn (chớp 0,12s / dip 0,18s) đọc ra như GIẬT, không
-      // ra nhịp. Nới đều hai nửa cho tổng ≥ MIN_EFFECT, NHƯNG chỉ trong phần đoạn
-      // giữ còn (không lấn vùng đã bỏ — cùng lý do với chặn "không đủ chỗ").
-      let bef = before;
-      let aft = after;
-      if (bef + aft < MIN_EFFECT) {
-        const grow = (MIN_EFFECT - before - after) / 2;
-        bef = Math.min(join.roomBefore, before + grow);
-        aft = Math.min(join.roomAfter, after + grow);
+      // Phân bổ trước/sau: lấy tối đa theo tỉ lệ tự nhiên của kiểu, bên nào chạm
+      // trần chỗ thì dồn phần thiếu sang bên còn chỗ — giữ đủ tổng độ dài (2,5–5s).
+      let bef = Math.min(join.roomBefore, before);
+      let aft = Math.min(join.roomAfter, after);
+      let thieu = target - bef - aft;
+      if (thieu > 0) {
+        const themB = Math.min(join.roomBefore - bef, thieu);
+        bef += themB;
+        thieu -= themB;
+        aft += Math.min(join.roomAfter - aft, thieu);
       }
-      // Quãng vắt QUA vết cắt: nửa trước nằm ở đoạn trước, nửa sau ở đoạn sau.
-      // Đặt gọn một bên thì đỉnh xung không rơi đúng chỗ nối.
+      // Quãng vắt QUA ranh giới: nửa trước ở câu trước, nửa sau ở câu sau.
       const start = Math.max(0, join.cut - bef);
       const end = join.resume + aft;
       // NÉ KHUNG: cú nhấn CHẠM một khung (b-roll/ô người) đọc ra là lỗi, không ra
