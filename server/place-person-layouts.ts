@@ -55,19 +55,29 @@ export function placePersonLayouts(projectId: string): { placed: number } {
   ).n;
   if (existing > 0) return { placed: 0 };
 
+  // Độ dài VIDEO THẬT (trục đã cắt), KHÔNG phải tổng độ dài NGUỒN.
+  //
+  // Hàm chạy ở pha 3 SAU commit-cut: phim đã nướng còn `video_seconds`, thường
+  // ngắn hơn nhiều tổng `media_files.duration` (nguồn chưa cắt, có thể còn số cũ
+  // gấp đôi). Lấy tổng nguồn thì `target` phình lên gấp bội và ô người bị gieo
+  // dày kín — mất "đặt thưa". `brollTime`/`used` bên dưới đo trên trục đã cắt nên
+  // phải khớp bằng cách lấy đúng độ dài đã cắt ở đây.
   const total = (
     db
-      .prepare(
-        "SELECT COALESCE(SUM(duration),0) AS t FROM media_files WHERE project_id=? AND role='main'",
-      )
+      .prepare("SELECT COALESCE(video_seconds,0) AS t FROM projects WHERE id=?")
       .get(projectId) as { t: number }
   ).t;
   if (total <= 0) return { placed: 0 };
 
-  // B-roll đã đặt (giây gốc) — ô người tránh đè lên.
+  // B-roll đã đặt — ô người tránh đè lên. Đọc mốc THẬT của khối
+  // (`start_sec/end_sec` neo-giây mà `placeInserts` ghi), lùi về mốc-theo-từ chỉ
+  // khi thiếu. `placeInserts` cho `end_sec = min(start+clipLen, …)` thường DÀI
+  // hơn `w2.end_sec`; đọc theo từ thì bỏ sót đuôi b-roll, ô người rơi trúng đuôi
+  // đó rồi bị `scheduleScenes` loại im lặng — gieo được mà không lên hình.
   const broll = db
     .prepare(
-      `SELECT w1.start_sec AS start, w2.end_sec AS end
+      `SELECT COALESCE(e.start_sec, w1.start_sec) AS start,
+              COALESCE(e.end_sec,   w2.end_sec)   AS end
          FROM elements e
          JOIN words w1 ON w1.id = e.from_word_id
          JOIN words w2 ON w2.id = e.to_word_id

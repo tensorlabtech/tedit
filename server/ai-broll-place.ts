@@ -378,27 +378,42 @@ export async function placeInserts(projectId: string): Promise<{
       return gaps;
     };
     for (const asset of conThua) {
-      // Khoảng RỘNG NHẤT còn lại — tính lại mỗi lần (đã trừ chỗ vừa chèn).
-      const gaps = freeGaps();
-      if (gaps.length === 0) break; // video đã kín thật
-      const gap = gaps.reduce((big, g) =>
-        g.end - g.start > big.end - big.start ? g : big,
-      );
-      const winStart = gap.start + GAP_MARGIN;
-      const winEnd = gap.end - GAP_MARGIN;
-      if (winEnd - winStart < 0.5) break; // khoảng lớn nhất cũng không đủ → dừng
+      // Khoảng RỘNG NHẤT ĐẶT ĐƯỢC còn lại — tính lại mỗi lần (đã trừ chỗ vừa chèn).
+      //
+      // Xét các khoảng theo bề rộng GIẢM DẦN và lấy khoảng lớn nhất mà VỪA đủ
+      // rộng VỪA có từ để neo. Bản trước chỉ lấy khoảng lớn nhất rồi `break` cả
+      // vòng nếu nó quá hẹp hoặc TOÀN LẶNG (không từ) — bỏ oan mọi clip còn thừa
+      // dù các khoảng nhỏ hơn vẫn neo được. Giờ chỉ dừng khi KHÔNG khoảng nào đặt
+      // được.
+      //
       // NEO MÉP VÀO TỪ trong khoảng trống — TUYỆT ĐỐI không đặt theo giây thô của
       // `gap.start`. Giây thô có thể rơi đúng một HỞ giữa hai đoạn (breath-pause);
       // bước dựng lịch BỎ hở đó (`keptRanges`) nên element neo vào hở map ra null →
-      // RỚT KHỎI VIDEO (khung không hiện, ra người). Mép của một TỪ luôn nằm trong
-      // vùng GIỮ, nên neo vào từ thì không bao giờ rớt.
+      // RỚT KHỎI VIDEO. Mép của một TỪ luôn nằm trong vùng GIỮ, nên neo vào từ thì
+      // không bao giờ rớt.
+      const gaps = freeGaps().sort(
+        (a, b) => b.end - b.start - (a.end - a.start),
+      );
+      let winStart = 0;
+      let winEnd = 0;
       let lo = -1;
-      for (let i = 0; i < words.length; i += 1)
-        if (words[i].start_sec >= winStart && words[i].start_sec < winEnd) {
-          lo = i;
-          break;
-        }
-      if (lo < 0) break; // khoảng trống toàn lặng, không từ nào để neo
+      for (const g of gaps) {
+        const ws = g.start + GAP_MARGIN;
+        const we = g.end - GAP_MARGIN;
+        if (we - ws < 0.5) continue; // khoảng này quá hẹp → thử khoảng kế
+        let i0 = -1;
+        for (let i = 0; i < words.length; i += 1)
+          if (words[i].start_sec >= ws && words[i].start_sec < we) {
+            i0 = i;
+            break;
+          }
+        if (i0 < 0) continue; // khoảng toàn lặng, không từ để neo → thử khoảng kế
+        winStart = ws;
+        winEnd = we;
+        lo = i0;
+        break;
+      }
+      if (lo < 0) break; // không còn khoảng nào đặt được → dừng thật
       const clipLen =
         asset.duration && asset.duration > 0.05 ? asset.duration : MIN_SECONDS;
       const targetEnd = Math.min(words[lo].start_sec + clipLen, winEnd);

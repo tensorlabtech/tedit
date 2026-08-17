@@ -380,11 +380,18 @@ export async function buildRemotionPayload(
   )
     .map((r) => {
       const kind = normalizeJunction(r.kind);
-      const start = mapToOutput(kept, r.start_sec) ?? 0;
-      const end = mapToOutput(kept, r.end_sec) ?? 0;
+      // Mốc rơi vào vùng ĐÃ BỎ → `null`. Trước đây `?? 0` biến nó thành hiệu ứng
+      // MA ở giây 0 dù vết cắt của nó đã bị người dùng bỏ. Bỏ hẳn junction nếu
+      // bất kỳ đầu nào không map được (như cách `resolveElements` bỏ phần tử neo
+      // vùng removed).
+      const start = mapToOutput(kept, r.start_sec);
+      const end = mapToOutput(kept, r.end_sec);
+      if (start === null || end === null) return null;
       return { start, end, peak: effectPeak(start, end, kind), kind };
     })
-    .filter((j) => j.end > j.start);
+    .filter(
+      (j): j is NonNullable<typeof j> => j !== null && j.end > j.start,
+    );
 
   return {
     fps: FPS,
