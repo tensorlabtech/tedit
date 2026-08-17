@@ -11,8 +11,7 @@ import { existsSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 
 import { listMusic } from "./music-tracks";
-import {buildMaster, buildPreview, type CrossAt, cutRanges, keptBefore, mixMusic, mapToOutput, type KeptRange, normalizeReveal, OUT_HEIGHT, OUT_WIDTH, type RenderElement} from "./render";
-import {CROSS_SECONDS, findJunction, normalizeJunction, type JunctionId} from "./junction-kinds";
+import {buildMaster, buildPreview, cutRanges, keptBefore, mixMusic, mapToOutput, type KeptRange, normalizeReveal, OUT_HEIGHT, OUT_WIDTH, type RenderElement} from "./render";
 import { keptFromSegments, listSegments } from "./segments";
 import { seedSegmentsByCaption } from "./segment-seed";
 import { buildAsrPrompt } from "./asr-bias";
@@ -755,40 +754,6 @@ function mergeAdjacent(ranges: KeptRange[]): KeptRange[] {
   return out;
 }
 
-/** Hiệu ứng đặt tay, quãng theo giây BẢN GỐC. */
-type ManualEffect = { start: number; end: number; kind: JunctionId };
-
-/**
- * Chỗ nối nào dựng được CHUYỂN CẢNH THẬT, và mượn đệm ở đâu.
- *
- * Kiểu hai luồng cần hai cảnh cùng hiện một lúc, mà hình cho phần chồng ấy phải
- * lấy từ chính quãng vừa bị cắt bỏ — nên quãng đó phải đủ dài. Đo trên 98 chỗ
- * nối thật: quãng bỏ trung vị 2,36 giây và 76% chỗ nối đủ.
- *
- * Chỗ không đủ (người dùng cắt thẳng, không bỏ gì ở giữa) thì KHÔNG dựng, và nơi
- * gọi để nó rơi về hiệu ứng một luồng. Đúng kiểu người dùng chọn thì không còn,
- * nhưng có một cú nhấn vẫn hơn là không có gì xảy ra ở chỗ hình vừa đứt.
- *
- * Tách khỏi `runExport` để phép kiểm gọi được mà không cần cả cơ sở dữ liệu lẫn
- * ffmpeg — thứ cần kiểm ở đây chỉ là số học của việc mượn đệm.
- */
-export function buildCrossAt(
-  kept: KeptRange[],
-  manual: ManualEffect[],
-  defaultKind: JunctionId,
-): CrossAt[] {
-  const out: CrossAt[] = [];
-  for (let index = 0; index < kept.length - 1; index++) {
-    const at = kept[index].end;
-    const tay = manual.find((item) => item.start <= at && at <= item.end);
-    const spec = findJunction(tay?.kind ?? defaultKind);
-    if (!spec.cross) continue;
-    if (kept[index + 1].start - at < CROSS_SECONDS) continue;
-    out.push({ sau: index, transition: spec.cross, dem: CROSS_SECONDS / 2 });
-  }
-  return out;
-}
-
 /**
  * Từ khoá ĐẮT NHẤT của cả video. `null` khi chưa nhấn gì.
  *
@@ -931,38 +896,10 @@ export async function runExport(projectId: string, signal?: AbortSignal) {
 
   const baseInfo = await probe(base);
   const kept = keptRanges(projectId, baseInfo.duration);
-  // Mốc các chỗ nối trên dải ĐÃ CẮT: cộng dồn độ dài các khoảng giữ lại. Chỗ nối
-  // đầu tiên (giây 0) không tính — không có gì để chuyển từ đó.
-  // `zoom_punch` lưu kiểu MẶC ĐỊNH của dự án (tên cột giữ nguyên cho dữ liệu cũ).
-  const defaultKind = normalizeJunction(
-    (
-      db
-        .prepare("SELECT zoom_punch FROM projects WHERE id=?")
-        .get(projectId) as { zoom_punch: string | number | null } | undefined
-    )?.zoom_punch,
-  );
-  // Hiệu ứng người dùng ĐẶT TAY — quãng theo giây bản gốc, quy sang dải đã cắt.
-  const manual = (
-    db
-      .prepare(
-        "SELECT start_sec, end_sec, kind FROM effects WHERE project_id=? ORDER BY start_sec",
-      )
-      .all(projectId) as Array<{
-      start_sec: number;
-      end_sec: number;
-      kind: string;
-    }>
-  ).map((row) => ({
-    start: row.start_sec,
-    end: row.end_sec,
-    kind: normalizeJunction(row.kind),
-  }));
-
-  const crossAt = buildCrossAt(kept, manual, defaultKind);
 
   stop();
   setJob(projectId, "export", "running", 35, "Đang bỏ các đoạn đã gạch");
-  const cut = await cutRanges(projectId, baseVideo, kept, crossAt);
+  const cut = await cutRanges(projectId, baseVideo, kept);
   // CHỐT số sửa NGAY TRƯỚC render (sau mọi bước đóng dấu/chuẩn bị): đây là "phiên
   // bản nội dung" mà bản dựng ghi lại. Set vào `exported_rev` khi xong → sửa gì
   // SAU thời điểm này (content_rev tăng tiếp) tự thành "cũ".

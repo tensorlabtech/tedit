@@ -316,42 +316,20 @@ export async function buildMaster(projectId: string, sources: string[]) {
  * `dem` là số giây mượn thêm ở MỖI bên, lấy từ chính quãng vừa bị cắt bỏ. Nơi
  * gọi đã kiểm quãng đó đủ dài — ở đây chỉ việc dùng.
  */
-export type CrossAt = { sau: number; transition: string; dem: number };
-
 export async function cutRanges(
   projectId: string,
   base: string,
   kept: KeptRange[],
-  crossAt: CrossAt[] = [],
   /**
-   * Tên tệp ra. Đổi khi cần cắt một luồng KHÁC theo cùng bộ khoảng.
-   *
-   * Ca thật: mặt nạ người dựng trên `base.mp4` chưa cắt, mà bản xuất thì đã bỏ
-   * hai mươi sáu giây — hai trục lệch nhau, và cái viền bám dáng người rơi vào
-   * một tư thế cách đó mấy giây. Cắt mặt nạ bằng CHÍNH hàm này, cùng `kept`,
-   * cùng `crossAt`, là cách duy nhất bảo đảm chúng không lệch một khung nào.
+   * Tên tệp ra. Đổi khi cần cắt một luồng KHÁC theo cùng bộ khoảng — cùng `kept`
+   * là cách duy nhất bảo đảm hai luồng không lệch một khung nào.
    */
   outName = "cut.mp4",
 ) {
   const target = join(workDir(projectId), outName);
   if (kept.length === 0) throw new Error("Không còn đoạn nào để xuất");
 
-  const cross = new Map(crossAt.map((item) => [item.sau, item]));
-
-  /*
-   * Biên CẮT khác biên GIỮ: chỗ nối nào có chuyển cảnh thì hai đoạn được kéo dài
-   * về phía nhau, lấn vào quãng vừa bỏ.
-   *
-   * `kept` gốc KHÔNG được đụng tới — mọi phép quy mốc chữ, tư liệu và nhạc đều
-   * đọc nó, sửa ở đây là lệch hết. Bảng dưới chỉ sống trong hàm này.
-   */
-  const bounds = kept.map((range) => ({ ...range }));
-  for (const [sau, item] of cross) {
-    bounds[sau].end += item.dem;
-    bounds[sau + 1].start -= item.dem;
-  }
-
-  const parts = bounds
+  const parts = kept
     .map((range, index) => {
       // Vuốt 8ms ở hai đầu mỗi mẩu tiếng.
       //
@@ -359,85 +337,37 @@ export async function cutRanges(
       // ra tiếng "bụp" ngay chỗ cắt. Đo một bản cắt thẳng: mức rơi từ −28dB
       // xuống −62dB trong đúng một ô 10ms. Vuốt ngắn hơn một khung hình thì
       // không ai nghe thấy là đã vuốt, mà bước nhảy thì biến mất.
-      //
-      // Ranh giới có chuyển cảnh thì `acrossfade` lo phần nối, nên không vuốt
-      // thêm ở đầu ấy — vuốt chồng lên nhau thành một lỗ thủng nghe rõ.
       const duration = Math.max(0, range.end - range.start);
       const fade = Math.min(0.008, duration / 4);
-      const vuotDau = fade > 0 && !cross.has(index - 1);
-      const vuotCuoi = fade > 0 && !cross.has(index);
       const fadeOut =
-        (vuotDau ? `afade=t=in:st=0:d=${fade.toFixed(3)},` : "") +
-        (vuotCuoi
-          ? `afade=t=out:st=${Math.max(0, duration - fade).toFixed(3)}:d=${fade.toFixed(3)},`
-          : "");
-      /*
-       * `settb=AVTB` — chỉ đặt khi bản dựng CÓ chuyển cảnh, và bắt buộc khi có.
-       *
-       * `concat` trả ra luồng ở thang thời gian 1/1000000, còn `trim` giữ nguyên
-       * thang của tệp gốc (1/15360 với video điện thoại đo được). Chuỗi nối trộn
-       * hai loại ấy, nên tới chỗ `xfade` nhận một luồng từ `concat` và một luồng
-       * từ `trim` là nó từ chối thẳng: "input link timebases do not match", và cả
-       * lệnh dựng chết.
-       *
-       * Kéo mọi luồng về cùng một thang trước khi nối thì hết. Không đặt khi
-       * không có chuyển cảnh: đường ấy đang chạy đúng, không có lý do đụng vào.
-       */
-      const tb = cross.size > 0 ? ",settb=AVTB" : "";
+        fade > 0
+          ? `afade=t=in:st=0:d=${fade.toFixed(3)},` +
+            `afade=t=out:st=${Math.max(0, duration - fade).toFixed(3)}:d=${fade.toFixed(3)},`
+          : "";
       return (
         `[0:v]trim=start=${range.start.toFixed(3)}:end=${range.end.toFixed(3)},` +
-        `setpts=PTS-STARTPTS${tb}[v${index}];` +
+        `setpts=PTS-STARTPTS[v${index}];` +
         `[0:a]atrim=start=${range.start.toFixed(3)}:end=${range.end.toFixed(3)},` +
-        `asetpts=PTS-STARTPTS${tb ? ",asettb=AVTB" : ""},${fadeOut}` +
-        `anull[a${index}]`
+        `asetpts=PTS-STARTPTS,${fadeOut}anull[a${index}]`
       );
     })
     .join(";");
 
-  /*
-   * Nối TỪNG CẶP một thay vì `concat` cả loạt.
-   *
-   * `xfade` chỉ ăn đúng hai luồng, và nó phải biết `offset` — mốc bắt đầu hoà,
-   * tính trên luồng bên trái đã dài bao nhiêu. Nên phải xâu chuỗi và đi kèm một
-   * bộ đếm độ dài; `concat` một phát không cho chỗ nào chen việc đó vào.
-   *
-   * Ranh giới không có chuyển cảnh vẫn dùng `concat`, chỉ là dạng hai luồng.
-   */
+  // Nối từng CẶP bằng `concat` hai luồng, xâu chuỗi các mẩu lại thành một dải.
   const joins: string[] = [];
   let vTruoc = "[v0]";
   let aTruoc = "[a0]";
-  let duration = bounds[0].end - bounds[0].start;
-
-  for (let index = 1; index < bounds.length; index++) {
-    const item = cross.get(index - 1);
-    const vRa = index === bounds.length - 1 ? "[vout]" : `[vc${index}]`;
-    const aRa = index === bounds.length - 1 ? "[aout]" : `[ac${index}]`;
-    const daiNay = bounds[index].end - bounds[index].start;
-
-    if (item) {
-      const d = item.dem * 2;
-      // `offset` đo từ đầu luồng TRÁI: hoà bắt đầu sớm hơn mép cuối đúng bằng
-      // thời lượng hoà, để nó kết thúc vừa lúc luồng trái hết.
-      const offset = Math.max(0, duration - d);
-      joins.push(
-        `${vTruoc}[v${index}]xfade=transition=${item.transition}:` +
-          `duration=${d.toFixed(3)}:offset=${offset.toFixed(3)}${vRa}`,
-      );
-      joins.push(`${aTruoc}[a${index}]acrossfade=d=${d.toFixed(3)}${aRa}`);
-      // Gối nhau `d` giây nên tổng ngắn đi đúng `d` — và `d` cũng đúng bằng
-      // phần vừa mượn thêm ở hai bên. Hai số triệt tiêu nhau, độ dài không đổi.
-      duration = duration + daiNay - d;
-    } else {
-      joins.push(`${vTruoc}[v${index}]concat=n=2:v=1:a=0${vRa}`);
-      joins.push(`${aTruoc}[a${index}]concat=n=2:v=0:a=1${aRa}`);
-      duration += daiNay;
-    }
+  for (let index = 1; index < kept.length; index++) {
+    const vRa = index === kept.length - 1 ? "[vout]" : `[vc${index}]`;
+    const aRa = index === kept.length - 1 ? "[aout]" : `[ac${index}]`;
+    joins.push(`${vTruoc}[v${index}]concat=n=2:v=1:a=0${vRa}`);
+    joins.push(`${aTruoc}[a${index}]concat=n=2:v=0:a=1${aRa}`);
     vTruoc = vRa;
     aTruoc = aRa;
   }
 
   // Một đoạn duy nhất thì không có gì để nối — vẫn phải đặt tên đầu ra.
-  if (bounds.length === 1) {
+  if (kept.length === 1) {
     joins.push("[v0]null[vout]", "[a0]anull[aout]");
   }
 

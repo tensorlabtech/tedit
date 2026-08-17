@@ -89,7 +89,7 @@ export async function commitCut(
    * `base.mp4` dựng lại được từ tệp người dùng tải lên, nên đè lên nó là an
    * toàn — bản gốc không nằm ở đây.
    */
-  const staged = await cutRanges(projectId, base, kept, [], "base-chot.mp4");
+  const staged = await cutRanges(projectId, base, kept, "base-chot.mp4");
   await rename(staged, base);
 
   // Dựng lại MỌI tệp DẪN XUẤT trên trục MỚI — hệt chặng chuẩn bị. `base.mp4` giờ
