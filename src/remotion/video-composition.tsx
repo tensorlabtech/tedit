@@ -346,20 +346,33 @@ function Cells({
                       }}
                     />
                   ) : (
-                    // B-roll VIDEO: phát từ điểm vào (`trimBefore`); lặp chỉ khi
-                    // chưa cắt (xem `brollLoop`). Bề rộng khối = cửa sổ nên tự dừng
-                    // đúng điểm ra, khỏi `trimAfter` (vốn vỡ ở Remotion hiện tại).
-                    <Video
-                      src={staticFile(src)}
-                      muted
-                      loop={brollLoop}
-                      trimBefore={trimBefore}
-                      style={{
-                        width: "100%",
-                        height: "100%",
-                        objectFit: "cover",
-                      }}
-                    />
+                    // B-roll VIDEO: RESET frame theo CẢNH bằng <Sequence>. Không có
+                    // nó, `<Video>` đọc frame TOÀN CỤC nên clip NGẮN đặt ở giây muộn
+                    // phát nhầm đoạn (frame video ≈ scene.start, quá độ dài clip → loop
+                    // lung tung: "phát đoạn cuối xong lại từ đầu"). Trong Sequence,
+                    // frame về 0 ở đầu cảnh → `trimBefore` (điểm vào) đúng, phát trọn
+                    // [in, in+cửa-sổ]. Bề rộng khối = out−in nên tự dừng đúng điểm ra
+                    // (khỏi `trimAfter` vốn vỡ ở Remotion hiện tại); `loop` chỉ lấp
+                    // chỗ khi cửa sổ dài hơn footage còn lại.
+                    <Sequence
+                      from={Math.round(scene.start * fps)}
+                      durationInFrames={
+                        Math.ceil((scene.end - scene.start) * fps) + 2
+                      }
+                      layout="none"
+                    >
+                      <Video
+                        src={staticFile(src)}
+                        muted
+                        loop={brollLoop}
+                        trimBefore={trimBefore}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "cover",
+                        }}
+                      />
+                    </Sequence>
                   )
                 ) : (
                   // NGƯỜI = OffthreadVideo: trích frame chính xác → HẾT giật.
