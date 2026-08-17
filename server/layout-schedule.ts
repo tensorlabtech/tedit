@@ -48,7 +48,7 @@ export function scheduleScenes(
   segments: readonly PlacedSegment[],
 ): ScheduledScene[] {
   if (total <= 0) return [];
-  return segments
+  const clean = segments
     .map((seg) => ({
       start: Math.max(0, seg.start),
       end: Math.min(total, seg.end),
@@ -58,9 +58,21 @@ export function scheduleScenes(
       frameBlock: seg.frameBlock,
     }))
     .filter((seg) => seg.end > seg.start)
-    .sort((a, b) => a.start - b.start)
-    .filter((seg, i, arr) => i === 0 || seg.start >= arr[i - 1].end)
-    .map(
+    .sort((a, b) => a.start - b.start);
+  // So chồng với cảnh GIỮ cuối, KHÔNG với phần tử mảng liền trước.
+  //
+  // Bản trước dùng `arr[i-1].end` — mà `arr[i-1]` có thể là cảnh VỪA BỊ BỎ vì
+  // chồng, và đuôi nó thường xa hơn. Hệ quả: một cảnh HỢP LỆ (không đè cảnh nào
+  // đang giữ) bị bỏ oan chỉ vì đứng sau một cảnh bị loại có đuôi dài. Ví dụ
+  // A[0-3] giữ, B[2-10] bỏ (đè A), C[5-8] KHÔNG đè A nhưng `5>=B.end(10)` sai →
+  // C rớt. Giữ mốc đuôi của cảnh GIỮ CUỐI thì C được so đúng với A và ở lại.
+  const kept: typeof clean = [];
+  for (const seg of clean) {
+    if (kept.length === 0 || seg.start >= kept[kept.length - 1].end) {
+      kept.push(seg);
+    }
+  }
+  return kept.map(
       (seg): ScheduledScene => ({
         start: seg.start,
         end: seg.end,
