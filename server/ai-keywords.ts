@@ -44,17 +44,24 @@ const SCHEMA = object({
   },
 });
 
-const INSTRUCTIONS = `Bạn chọn từ đáng nhấn cho phụ đề video tiếng Việt.
+const INSTRUCTIONS = `Bạn chọn TỪ đáng nhấn cho phụ đề video tiếng Việt.
 
-Mỗi dòng là một cụm phụ đề hiện lên màn hình. Chọn từ mang TIN MỚI của cụm —
-con số, tên riêng, động từ quyết định, thứ người xem cần nhớ.
+Mỗi dòng là một cụm phụ đề hiện lên màn hình. Chọn TỪ mang TIN MỚI của cụm —
+con số, tên riêng, danh/động từ quyết định, thứ người xem cần nhớ.
 
-KHÔNG chọn: từ nối, đại từ, từ đệm, từ vừa nhấn ở cụm ngay trước.
+★ NHẤN CẢ TỪ, KHÔNG nhấn một tiếng lẻ. Tiếng Việt viết rời từng tiếng nhưng nhiều
+TỪ gồm 2–3 tiếng: "phần mềm", "chuyển cảnh", "hiệu ứng", "cao trào", "thời gian",
+"nội dung". Nhấn thì trả HẾT các tiếng của từ ấy dưới dạng nhiều phần tử —
+["phần","mềm"] — TUYỆT ĐỐI không chỉ một tiếng giữa từ ("phần"). Nhấn lẻ một tiếng
+giữa từ ghép ("chuyển" của "chuyển cảnh") đọc ra rất vô duyên.
+
+KHÔNG chọn: từ nối, đại từ; từ đệm ("tất nhiên", "thực ra", "thế thì", "à thì");
+từ vừa nhấn ở cụm ngay trước.
 KHÔNG chọn từ chỉ lượng chung chung: "một", "vài", "nhiều", "mấy", "các", "những".
 Con số CÓ NGHĨA thì được ("30 tuổi", "3 tệp") — chỉ cấm từ đếm không mang tin.
 Chọn dàn trải cả video, đừng dồn hết vào một đoạn.
 
-Từ trả về phải chép ĐÚNG NGUYÊN VĂN như trong cụm, không đổi dấu, không chia lại.
+Mỗi tiếng trả về phải chép ĐÚNG NGUYÊN VĂN như trong cụm, không đổi dấu.
 Cụm không có gì đáng nhấn thì đừng đưa vào kết quả.`;
 
 /**
@@ -74,6 +81,20 @@ const norm = (value: string) =>
     .toLowerCase()
     .replace(/^[^\p{L}\p{N}]+/gu, "")
     .replace(/[^\p{L}\p{N}]+$/gu, "");
+
+/**
+ * HƯ TỪ / ĐỆM — tiếng KHÔNG mang tin, để heuristic KHÔNG gom chúng vào từ nhấn.
+ *
+ * Không cần đầy đủ ngữ pháp: chỉ cần cắt được các tiếng đệm hay xen giữa để phần
+ * còn lại là một chuỗi tiếng-nội-dung liền nhau (một TỪ / cụm có nghĩa).
+ */
+const STOP = new Set([
+  "một","các","những","mấy","vài","nhiều","cái","là","và","của","cho","với","thì","mà",
+  "đã","sẽ","đang","này","đó","kia","nó","mình","ta","tôi","bạn","thế","ở","ra",
+  "vào","lên","cũng","rất","quá","được","có","không","chưa","đây","ấy","à","ừ",
+  "ờ","nhé","nhỉ","thôi","chỉ","vẫn","còn","nữa","hay","hoặc","nhưng","vì","nên",
+  "để","khi","lúc","rồi","đi","về","thật","tự","làm",
+]);
 
 const nhamTiLe = (share: number) =>
   `\n\nNhắm khoảng ${Math.round(share * 100)}% số cụm có từ nhấn. Đây là NHỊP của video, ` +
@@ -142,9 +163,10 @@ export async function pickKeywords(projectId: string): Promise<{
 /**
  * Chọn từ nhấn KHÔNG cần mô hình — sàn cho khi AI gạt sạch.
  *
- * Lấy TIẾNG DÀI NHẤT trong cụm (bỏ tiếng dưới 3 chữ cái): danh/động từ mang tin
- * thường dài hơn từ nối/đại từ/từ đệm ngắn. Thô nhưng đủ cho một sàn, và luôn là
- * tiếng CÓ THẬT trong cụm nên khâu dựng chữ tìm ra được (khớp bằng chuỗi).
+ * Lấy CHUỖI TIẾNG NỘI DUNG LIỀN NHAU DÀI NHẤT (bỏ hư từ ở `STOP`) — tức cả một TỪ
+ * có nghĩa ("phần mềm", "chuyển cảnh"), KHÔNG phải một tiếng lẻ giữa từ ghép
+ * ("phần"). Thô nhưng đủ cho một sàn, và mỗi tiếng đều CÓ THẬT trong cụm nên khâu
+ * dựng chữ khớp lại được (bằng chuỗi).
  */
 function heuristicFill(projectId: string, room: number): number {
   if (room <= 0) return 0;
@@ -162,14 +184,22 @@ function heuristicFill(projectId: string, room: number): number {
   db.transaction(() => {
     for (const row of rows) {
       if (filled >= room) break;
-      const best = (row.content ?? "")
-        .split(/\s+/)
-        .filter(Boolean)
-        .map((word) => ({ raw: word, key: norm(word) }))
-        .filter((item) => item.key.length >= 3)
-        .sort((a, b) => b.key.length - a.key.length)[0];
-      if (!best) continue;
-      update.run(best.raw, row.id);
+      const syl = (row.content ?? "").split(/\s+/).filter(Boolean);
+      // Chuỗi TIẾNG NỘI DUNG liền nhau DÀI NHẤT (bỏ hư từ) → cả TỪ, không lẻ.
+      let best: string[] = [];
+      let cur: string[] = [];
+      for (const w of syl) {
+        const k = norm(w);
+        if (k.length >= 2 && !STOP.has(k)) {
+          cur.push(w);
+          if (cur.length > best.length) best = [...cur];
+        } else {
+          cur = [];
+        }
+      }
+      if (best.length === 0) continue;
+      // Cắt còn tối đa 4 tiếng — nhấn cả một cụm rất dài đọc ra nặng.
+      update.run(best.slice(0, 4).join("|"), row.id);
       filled += 1;
     }
   })();
