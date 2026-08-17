@@ -56,20 +56,15 @@ const MIN_GAP_SECONDS = 2.5;
 const NHIP_GOC = 0.5;
 
 /**
- * Kho kiểu cho hiệu ứng ở RANH GIỚI Ý — chỉ chuyển động MƯỢT, tự dài ≥2,5s.
+ * Kho kiểu cho hiệu ứng ở RANH GIỚI Ý — chỉ họ ZOOM AN TOÀN, tự dài ≥2,5s.
  *
- * Người dùng muốn mỗi cú nhấn ≥2–3s. Kiểu ánh-sáng/màu (flash, dip, hue-shift,
- * saturate, vignette) giữ ngắn 0,4s theo thiết kế của `junctionHalves` (kéo dài =
- * nhức mắt); kiểu sắc ngắn (punch/whip/shake/tilt) nới lên 2,5s thì đọc ra kỳ.
- * Năm kiểu dưới đây đều CÓ chuyển động và tự dài: zoom 2,5s; push-in/drift 4–5s.
+ * Người dùng muốn mỗi cú nhấn ≥2–3s VÀ chỉ kiểu quen thuộc (sợ kiểu lạ phản tác
+ * dụng). Kiểu ánh-sáng/màu ngắn (flash, dip, hue-shift…) bị loại vì giữ ngắn 0,4s;
+ * kiểu sắc ngắn (punch/whip/shake) nới lên 2,5s thì kỳ; kiểu LẠ (drift trôi ngang,
+ * zoom-blur nhoè) dễ đọc ra "cố tình" → cũng bỏ. Còn ba kiểu ZOOM mượt, quen mắt,
+ * tự dài: zoom-in/out 2,5s; push-in 4–5s (phóng chậm cả đoạn).
  */
-const IDEA_EFFECT_KINDS = [
-  "zoom-in",
-  "zoom-out",
-  "push-in",
-  "drift",
-  "zoom-blur",
-] as const;
+const IDEA_EFFECT_KINDS = ["zoom-in", "zoom-out", "push-in"] as const;
 
 type Proposal = {
   picks: Array<{ index: number; kind: string }>;
@@ -82,12 +77,11 @@ const SCHEMA = object({
       index: { type: "integer" },
       kind: {
         type: "string",
-        // CHỈ NĂM kiểu MƯỢT-DÀI (≥2,5s). Bỏ (1) cross-* — ranh giới ý là mạch liền,
+        // CHỈ NĂM họ ZOOM AN TOÀN (≥2,5s). Bỏ (1) cross-* — ranh giới ý là mạch liền,
         // không có khe cắt để hoà tan hai cảnh; (2) kiểu ÁNH SÁNG/MÀU ngắn (flash,
-        // dip, hue-shift…) — chúng giữ 0,4s theo thiết kế (kéo dài thành nhức mắt),
-        // mà người dùng muốn mỗi cú nhấn ≥2–3s; (3) kiểu SẮC ngắn (punch/whip/shake/
-        // tilt) — nới tới 2,5s thì "rung 2,5 giây" đọc ra kỳ. Còn lại là chuyển
-        // động mượt, tự dài 2–5s, hợp chuyển mạch êm ở ranh giới ý.
+        // dip, hue-shift…) ngắn 0,4s; kiểu SẮC ngắn (punch/whip/shake — nới 2,5s thì
+        // kỳ); và kiểu LẠ (drift trôi ngang, zoom-blur nhoè — dễ phản tác dụng). Còn
+        // lại là họ ZOOM an toàn, quen mắt, tự dài 2–5s.
         enum: IDEA_EFFECT_KINDS,
       },
     }),
@@ -100,20 +94,16 @@ Video là một mạch nói liền. Mỗi ứng viên là ranh giới giữa hai
 lời NGAY TRƯỚC và NGAY SAU nó. Chỉ nhấn ở chỗ MỞ MỘT ĐOẠN Ý MỚI — chuyển chủ đề,
 sang một bước kể mới, đổi mạch rõ rệt. KHÔNG nhấn giữa những câu CÙNG một ý.
 
-Chỉ dùng NĂM kiểu MƯỢT, MỖI CÚ DÀI KHOẢNG 2–3 GIÂY — đủ để mắt cảm nhận là một
-CHUYỂN ĐỘNG có chủ đích, không phải một cái giật. Ranh giới Ý là chỗ chuyển mạch
-êm, hợp chuyển động mượt hơn là cú loé/rung ngắn:
+Chỉ dùng BA kiểu ZOOM mượt, quen mắt, MỖI CÚ DÀI KHOẢNG 2–3 GIÂY — đủ để mắt cảm
+nhận là một CHUYỂN ĐỘNG có chủ đích, không phải một cái giật. Ranh giới Ý là chỗ
+chuyển mạch êm; giữ AN TOÀN, đừng cầu kỳ:
 
 - zoom-in: phóng nhẹ VÀO — sau ranh giới là ý mạnh hơn, dồn hơn, đáng chú ý hơn
 - zoom-out: nới RA — hạ nhịp, khép một đoạn, lùi lại nhìn rộng
-- push-in: phóng dần suốt cả đoạn rồi hạ về — dồn dần vào người nói; hợp đoạn kể
-  chuyện, tâm sự, chỗ cần người xem nghiêng vào nghe
-- drift: khung trôi chậm sang ngang — cứu đoạn người nói ngồi yên, hình tĩnh mà
-  lời vẫn đang chạy
-- zoom-blur: phóng kèm nhoè nhẹ — cú nhấn ĐẬM hơn, dùng dè cho chỗ đổi ý gắt
+- push-in: phóng dần CHẬM suốt cả đoạn rồi hạ về — dồn dần vào người nói; hợp đoạn
+  kể chuyện, tâm sự, chỗ cần người xem nghiêng vào nghe
 
-ĐỪNG dùng một kiểu quá hai lần (trừ zoom-in / zoom-out). Xen zoom với push-in /
-drift cho đỡ đơn điệu.
+Xen zoom-in / zoom-out / push-in cho đỡ đơn điệu; zoom-in và zoom-out là chủ lực.
 
 Bạn được cho một SỐ LƯỢNG cần nhắm. Chọn đúng chừng ấy chỗ MỞ ĐOẠN Ý RÕ NHẤT —
 những mốc mà chủ đề/mạch kể thật sự SANG TRANG. Không rải đều cho đủ số, cũng
