@@ -226,15 +226,7 @@ export async function buildRemotionPayload(
   const dir = opts?.scrubProxy ? "remotion-preview" : "remotion";
   const outDir = join(process.cwd(), "public", dir, projectId);
   mkdirSync(outDir, { recursive: true });
-  // Đính PHIÊN BẢN theo mtime của tệp: đổi NỘI DUNG tệp (commit-cut ghi đè
-  // preview.mp4, đổi tệp b-roll giữ nguyên tên…) làm ĐỔI URL → Player remount
-  // <video>/<audio> và tải lại đúng bản mới. URL cố định thì trình duyệt phát lại
-  // HÌNH CŨ từ cache trong khi dải/phụ đề đã theo bản mới (hình một nẻo, chữ một nẻo).
-  const rel = (name: string) => {
-    const dest = join(outDir, name);
-    const v = existsSync(dest) ? Math.round(statSync(dest).mtimeMs) : 0;
-    return `${dir}/${projectId}/${name}?v=${v}`;
-  };
+  const rel = (name: string) => `${dir}/${projectId}/${name}`;
 
   // Người: dùng base.mp4 (cắt tối thiểu ở dự án thử; bản production sẽ cắt đúng
   // theo `kept`). Mặt nạ: cut-mask nếu có, không thì subject gốc.
