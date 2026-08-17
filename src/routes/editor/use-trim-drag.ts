@@ -4,60 +4,13 @@ import { api, type ApiSegment } from "@/lib/api";
 import type { JunctionId } from "@/dev/overlays/overlay-model";
 import type { ScheduledScene } from "../../../server/timing";
 import { shape, toMusicTrack } from "./shape-project";
-import type { UndoEntry, Word } from "./editor-data";
+import type { UndoEntry } from "./editor-data";
 import { boQuaLoi } from "./ignore-error";
 import { MIN_EFFECT_LENGTH, MIN_MUSIC_LENGTH, MIN_SEGMENT, MIN_TEXT_LENGTH } from "./editor-limits";
 import type { TrimKind } from "./use-timeline-drag";
 
 type Shaped = ReturnType<typeof shape>;
 type EffectRow = { id: string; start: number; end: number; kind: JunctionId };
-
-/** Tìm chỉ số TỪ gần `target` nhất trong đoạn [from, to], đo theo `metric`. */
-function nearestWordIndex(
-  words: readonly Word[],
-  from: number,
-  to: number,
-  target: number,
-  metric: (word: Word) => number,
-): number {
-  let best = from;
-  for (let i = from; i <= to; i += 1) {
-    if (
-      Math.abs(metric(words[i]) - target) <
-      Math.abs(metric(words[best]) - target)
-    ) {
-      best = i;
-    }
-  }
-  return best;
-}
-
-/**
- * Thu hẹp biên tìm từ theo mốc XUẤT RA của khối LIỀN KỀ — không cho mép ô
- * người vượt qua khối đó (không đè lên b-roll hay ô người khác).
- */
-function clampSearchBound(
-  words: readonly Word[],
-  toOutput: (at: number) => number,
-  fixedIndex: number,
-  toward: "start" | "end",
-  limitOutput: number,
-  metric: (word: Word) => number,
-): number {
-  let bound = fixedIndex;
-  if (toward === "start") {
-    for (let i = fixedIndex; i >= 0; i -= 1) {
-      if (toOutput(metric(words[i])) < limitOutput - 0.001) break;
-      bound = i;
-    }
-  } else {
-    for (let i = fixedIndex; i < words.length; i += 1) {
-      if (toOutput(metric(words[i])) > limitOutput + 0.001) break;
-      bound = i;
-    }
-  }
-  return bound;
-}
 
 /**
  * KÉO MÉP một khối trên dải thời gian.
@@ -79,7 +32,6 @@ export function useTrimDrag({
   pushUndo,
   applySegmentsRef,
   effectsRef,
-  dataRef,
   sceneScheduleRef,
   timeMapRef,
   onInsertTrimmed,
@@ -90,9 +42,7 @@ export function useTrimDrag({
   pushUndo: (entry: UndoEntry) => void;
   applySegmentsRef: React.RefObject<(rows: ApiSegment[]) => void>;
   effectsRef: React.RefObject<EffectRow[]>;
-  /** Bản `data` mới nhất — nhánh "scene" cần `words` mà không đụng `current` của `setData`. */
-  dataRef: React.RefObject<Shaped | null>;
-  /** LỊCH MÀN mới nhất — ô người không nằm trong `data`, tra ở đây mốc hiện tại + khối liền kề. */
+  /** LỊCH MÀN mới nhất — khung không nằm trong `data`, tra ở đây mốc hiện tại + khối liền kề. */
   sceneScheduleRef: React.RefObject<readonly ScheduledScene[]>;
   /** Quy đổi nguồn ⇄ xuất ra — ô người neo theo từ (mốc nguồn) nhưng schedule vẽ theo mốc XUẤT RA. */
   timeMapRef: React.RefObject<{
@@ -182,61 +132,28 @@ export function useTrimDrag({
   } | null>(null);
 
   const move = useCallback((kind: TrimKind, id: string, targetStart: number) => {
-    // KHUNG NGƯỜI: không sống trong `data` — lịch màn là state riêng. Dời cả khối
-    // = snap mép ĐẦU vào từ gần `targetStart`, giữ nguyên SỐ TIẾNG. Vẽ tạm qua
-    // `scenePreview` (mốc XUẤT RA) như nhánh scene của `trim`.
+    // KHUNG (ô người / toàn khung / khung mờ) = FREE, neo-GIÂY như b-roll: dời cả
+    // khối theo GIÂY, KHÔNG snap vào từ. Ghi start/end NGUỒN — render ưu tiên đọc
+    // giây (layout-segments), nên vẫn bám nội dung khi cắt thêm mà kéo mượt. Không
+    // undo — nhất quán b-roll. Khung sống ở lịch màn (state riêng), không trong `data`.
     if (kind === "scene") {
       const schedule = sceneScheduleRef.current;
       const scene = schedule.find(
         (item) => item.elementId === id && item.insert === undefined,
       );
-      const words = dataRef.current?.words ?? [];
-      if (!scene || words.length === 0) return;
-      const { toOutput, toSource } = timeMapRef.current;
-
-      // KHUNG MỜ = FREE (neo-giây như b-roll): dời cả khối theo GIÂY, KHÔNG snap
-      // vào từ. Đóng dấu start/end NGUỒN — render ưu tiên đọc giây (layout-segments),
-      // nên bám nội dung khi cắt thêm mà vẫn kéo mượt. Không undo — như b-roll.
-      if (scene.frameBlock?.blur) {
-        const len = scene.end - scene.start;
-        const outStart = Math.max(0, targetStart);
-        dragMove.current = {
-          kind: "scene",
-          id,
-          start: toSource(outStart),
-          end: toSource(outStart + len),
-          wasStart: dragMove.current?.wasStart ?? toSource(scene.start),
-          wasEnd: dragMove.current?.wasEnd ?? toSource(scene.end),
-        };
-        setScenePreview({ elementId: id, start: outStart, end: outStart + len });
-        return;
-      }
-
-      const fromIdx = nearestWordIndex(
-        words, 0, words.length - 1, toSource(scene.start), (w) => w.start,
-      );
-      const toIdx = nearestWordIndex(
-        words, 0, words.length - 1, toSource(scene.end), (w) => w.end,
-      );
-      const span = toIdx - fromIdx;
-      let newFrom = nearestWordIndex(
-        words, 0, Math.max(0, words.length - 1 - span), targetStart, (w) => w.start,
-      );
-      newFrom = Math.max(0, Math.min(newFrom, words.length - 1 - span));
-      const newTo = newFrom + span;
+      if (!scene) return;
+      const { toSource } = timeMapRef.current;
+      const len = scene.end - scene.start;
+      const outStart = Math.max(0, targetStart);
       dragMove.current = {
         kind: "scene",
         id,
-        fromWordId: words[newFrom].id,
-        toWordId: words[newTo].id,
-        wasFromWordId: dragMove.current?.wasFromWordId ?? words[fromIdx].id,
-        wasToWordId: dragMove.current?.wasToWordId ?? words[toIdx].id,
+        start: toSource(outStart),
+        end: toSource(outStart + len),
+        wasStart: dragMove.current?.wasStart ?? toSource(scene.start),
+        wasEnd: dragMove.current?.wasEnd ?? toSource(scene.end),
       };
-      setScenePreview({
-        elementId: id,
-        start: toOutput(words[newFrom].start),
-        end: toOutput(words[newTo].end),
-      });
+      setScenePreview({ elementId: id, start: outStart, end: outStart + len });
       return;
     }
     setData((current) => {
@@ -393,147 +310,38 @@ export function useTrimDrag({
         const scene = schedule.find(
           (item) => item.elementId === id && item.insert === undefined,
         );
-        const words = dataRef.current?.words ?? [];
-        if (!scene || words.length === 0) return;
-        const { toOutput, toSource } = timeMapRef.current;
+        if (!scene) return;
+        const { toSource } = timeMapRef.current;
 
-        // KHUNG MỜ = FREE (neo-giây): kéo mép theo GIÂY, không snap vào từ. Vẫn né
-        // khối liền kề (khỏi đè → bị lịch màn loại). Ghi start/end NGUỒN lúc thả.
-        if (scene.frameBlock?.blur) {
-          const MIN = 0.3;
-          const nb =
-            edge === "end"
-              ? schedule
-                  .filter((s) => s.elementId !== id && s.start >= scene.end - 0.001)
-                  .reduce((m, s) => Math.min(m, s.start), Number.POSITIVE_INFINITY)
-              : schedule
-                  .filter((s) => s.elementId !== id && s.end <= scene.start + 0.001)
-                  .reduce((m, s) => Math.max(m, s.end), 0);
-          let outStart = scene.start;
-          let outEnd = scene.end;
-          if (edge === "start") {
-            outStart = Math.min(Math.max(nb, nextTime), scene.end - MIN);
-          } else {
-            outEnd = Math.max(Math.min(nb, nextTime), scene.start + MIN);
-          }
-          dragTrim.current = {
-            kind: "scene",
-            id,
-            edge,
-            at: 0,
-            was: 0,
-            insertStart: toSource(outStart),
-            insertEnd: toSource(outEnd),
-          };
-          setScenePreview({ elementId: id, start: outStart, end: outEnd });
-          return;
-        }
-
-        const cache =
-          dragTrim.current?.kind === "scene" && dragTrim.current.id === id
-            ? dragTrim.current
-            : null;
-
-        // Mép ĐỐI DIỆN đứng yên suốt lượt kéo.
-        const fixedIndex =
-          cache?.fixedIndex ??
-          nearestWordIndex(
-            words,
-            0,
-            words.length - 1,
-            toSource(edge === "start" ? scene.end : scene.start),
-            edge === "start" ? (w) => w.end : (w) => w.start,
-          );
-
-        // Mốc XUẤT RA của khối liền kề ở phía đang kéo — không cho mép vượt
-        // qua, đúng luật "không đè lên b-roll/ô người khác".
-        const neighborLimit =
-          cache?.neighborLimit ??
-          (edge === "end"
+        // MỌI KHUNG = FREE (neo-giây như b-roll): kéo mép theo GIÂY, KHÔNG snap vào
+        // từ. Vẫn né khối liền kề (khỏi đè → bị lịch màn loại). Ghi start/end NGUỒN
+        // lúc thả — render ưu tiên đọc giây, bám nội dung khi cắt thêm.
+        const MIN = 0.3;
+        const nb =
+          edge === "end"
             ? schedule
-                .filter(
-                  (item) =>
-                    item.elementId !== id && item.start >= scene.end - 0.001,
-                )
-                .reduce(
-                  (min, item) => Math.min(min, item.start),
-                  Number.POSITIVE_INFINITY,
-                )
+                .filter((s) => s.elementId !== id && s.start >= scene.end - 0.001)
+                .reduce((m, s) => Math.min(m, s.start), Number.POSITIVE_INFINITY)
             : schedule
-                .filter(
-                  (item) =>
-                    item.elementId !== id && item.end <= scene.start + 0.001,
-                )
-                .reduce((max, item) => Math.max(max, item.end), 0));
-
-        const wasWordId =
-          cache?.wasWordId ??
-          words[
-            nearestWordIndex(
-              words,
-              0,
-              words.length - 1,
-              toSource(edge === "start" ? scene.start : scene.end),
-              edge === "start" ? (w) => w.start : (w) => w.end,
-            )
-          ].id;
-
-        let pick: number;
+                .filter((s) => s.elementId !== id && s.end <= scene.start + 0.001)
+                .reduce((m, s) => Math.max(m, s.end), 0);
+        let outStart = scene.start;
+        let outEnd = scene.end;
         if (edge === "start") {
-          const bound = clampSearchBound(
-            words,
-            toOutput,
-            fixedIndex,
-            "start",
-            neighborLimit,
-            (w) => w.start,
-          );
-          pick = nearestWordIndex(
-            words,
-            bound,
-            fixedIndex,
-            nextTime,
-            (w) => w.start,
-          );
-          // Giữ ít nhất một tiếng — hai mép trùng nhau là khối rộng 0.
-          if (pick >= fixedIndex) pick = Math.max(bound, fixedIndex - 1);
+          outStart = Math.min(Math.max(nb, nextTime), scene.end - MIN);
         } else {
-          const bound = clampSearchBound(
-            words,
-            toOutput,
-            fixedIndex,
-            "end",
-            neighborLimit,
-            (w) => w.end,
-          );
-          pick = nearestWordIndex(
-            words,
-            fixedIndex,
-            bound,
-            nextTime,
-            (w) => w.end,
-          );
-          if (pick <= fixedIndex) pick = Math.min(bound, fixedIndex + 1);
+          outEnd = Math.max(Math.min(nb, nextTime), scene.start + MIN);
         }
-        const word = words[pick];
-
         dragTrim.current = {
           kind: "scene",
           id,
           edge,
-          at: edge === "start" ? toOutput(word.start) : toOutput(word.end),
-          was: cache?.was ?? (edge === "start" ? scene.start : scene.end),
-          wordId: word.id,
-          wasWordId,
-          fixedIndex,
-          neighborLimit,
+          at: 0,
+          was: 0,
+          insertStart: toSource(outStart),
+          insertEnd: toSource(outEnd),
         };
-
-        setScenePreview({
-          elementId: id,
-          start: edge === "start" ? toOutput(word.start) : scene.start,
-          end: edge === "end" ? toOutput(word.end) : scene.end,
-        });
+        setScenePreview({ elementId: id, start: outStart, end: outEnd });
         return;
       }
 

@@ -1261,7 +1261,6 @@ export function useEditor(projectId: string | undefined) {
     pushUndo,
     applySegmentsRef,
     effectsRef,
-    dataRef,
     sceneScheduleRef,
     timeMapRef,
     onInsertTrimmed: bumpLayoutReload,
