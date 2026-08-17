@@ -140,6 +140,9 @@ console.log("\nBất biến: đổi bộ dáng không đụng bảng elements");
 const ALLOWED_DEFAULTS_READERS = [
   // GHI — nơi duy nhất, lúc sinh chữ.
   "server/caption-elements.ts",
+  // ĐỌC lúc DỰNG (không ghi vào element): bộ even bỏ qua lượt `keywords`. Quyết
+  // định của luồng dựng, chạy TRƯỚC render nên không đè bố cục người dùng.
+  "server/pipeline.ts",
   // VẼ — ô mẫu bày bố cục của từng bộ dáng, không lưu gì.
   "src/routes/pipeline/style-preview-tile.tsx",
   // Nơi khai báo: `BASE.defaults` và `defaults:` của từng bộ.
