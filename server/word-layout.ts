@@ -194,7 +194,9 @@ async function buildRows(
     const after = from >= 0 ? pieces.slice(last + 1) : [];
     const heroText = hero.map((piece) => piece.text).join(" ");
     const heroScale = await fitRow(heroText, usable, 1, videoWidth, pack);
-    const small = Math.min(heroScale * 0.4, 0.075);
+    // Cùng số với `overlay-render.tsx` (trang xem): tỉ lệ 0,48 và trần 0,085 cho
+    // dòng dẫn đọc rõ hơn. Trước để 0,4/0,075 nên bản xuất có dòng dẫn bé hơn preview.
+    const small = Math.min(heroScale * 0.48, 0.085);
     // Dòng dẫn (before/after) là MỘT hàng cấm bẻ. Cỡ-dẫn cố định làm dòng dài
     // (vd cụm tiếng Anh "personal branding") chạy ra ngoài mép khung. Lấy cỡ nhỏ
     // hơn giữa cỡ-dẫn và cỡ-vừa-khung của CHÍNH hàng đó → không bao giờ tràn.
