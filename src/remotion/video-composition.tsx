@@ -44,7 +44,9 @@ function boil(frame: number, seed: number) {
 function junctionCss(
   t: number,
   junctions: RemotionPayload["junctions"],
-  pack: RemotionPayload["pack"],
+  // Cường độ RESOLVE sẵn ở payload (không đọc `pack.intensity` — render đọc pack
+  // cho phần NHÌN là cấm theo CLAUDE.md).
+  intensity: RemotionPayload["junctionIntensity"],
 ): { transform: string; filter: string } | null {
   const acc: Record<string, number> = {
     zoom: 0,
@@ -75,8 +77,8 @@ function junctionCss(
   // KHÔNG junction nào active tại t → trả null: nơi gọi KHÔNG bọc lớp filter/
   // transform. CSS filter (kể cả identity) ép lớp GPU trên video → giật khi tua.
   if (Object.values(acc).every((v) => Math.abs(v) < 1e-4)) return null;
-  const punch = pack.intensity.punchScale;
-  const flash = pack.intensity.flashAmount;
+  const punch = intensity.punchScale;
+  const flash = intensity.flashAmount;
   return {
     transform:
       `scale(${(1 + punch * acc.zoom).toFixed(4)}) ` +
@@ -114,6 +116,16 @@ function HandDrawnBorder({
 }) {
   const id = `hd-${seed}`;
   const pad = w * 1.2;
+  // Chuẩn hoá TẦN SỐ nhiễu theo bề rộng composition.
+  //
+  // `baseFrequency` là chu-kỳ trên mỗi ĐƠN VỊ toạ độ (= pixel composition). Preview
+  // dựng ở 540, export ở 1080 (remotion-payload đặt `width` theo `scrubProxy`), nên
+  // cùng số 0.018 cho GẤP ĐÔI chu kỳ trên toàn viền ở export → viền vẽ tay rung dày/
+  // răng cưa hơn hẳn preview, lệch đúng cái bản-sắc đang KHOÁ. Nhân nghịch theo width
+  // để SỐ chu kỳ trên toàn viền BẤT BIẾN giữa hai độ phân giải (0.018 chỉnh ở 1080).
+  const EXPORT_WIDTH = 1080;
+  const { width: compW } = useVideoConfig();
+  const baseFrequency = (0.018 * (EXPORT_WIDTH / compW)).toFixed(4);
   return (
     <svg
       width={cw}
@@ -124,7 +136,7 @@ function HandDrawnBorder({
         <filter id={id} x="-15%" y="-15%" width="130%" height="130%">
           <feTurbulence
             type="fractalNoise"
-            baseFrequency="0.018"
+            baseFrequency={baseFrequency}
             numOctaves={2}
             seed={seed * 11 + 5}
             result="n"
@@ -494,7 +506,7 @@ export function VideoComposition(payload: RemotionPayload) {
   // đã che gần hết nên fade/nhoè ở đó không ai thấy, chỉ tổ giật. Chỗ nối để dành
   // cho đoạn người-toàn-khung nơi nó thật sự đọc ra được.
   const jStyle = fullPerson
-    ? junctionCss(t, payload.junctions, payload.pack)
+    ? junctionCss(t, payload.junctions, payload.junctionIntensity)
     : null;
 
   return (
