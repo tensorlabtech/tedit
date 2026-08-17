@@ -315,6 +315,12 @@ export function useUndoStack({
             reveal: original.reveal,
             shape: original.shape,
             keywords: original.keywords,
+            // Look per-cụm — thiếu thì cụm khôi phục mất màu/phong-cách-chữ/hộp.
+            letterCase: original.letterCase,
+            keyColor: original.keyColor,
+            fontStyle: original.fontStyle,
+            captionBlock: original.captionBlock,
+            captionPreset: original.captionPreset,
           })
           .catch(boQuaLoi());
         const fresh = await api.getProject(projectId ?? "").catch(() => null);

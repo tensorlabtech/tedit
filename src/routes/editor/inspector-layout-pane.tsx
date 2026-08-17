@@ -188,7 +188,14 @@ export function LayoutKhungPane({
         editor.setSegmentLayout(elementId, nextLayout, frameBlock, framePreset);
       replay();
     } else if (media) {
-      void editor.convertBrollToPerson(elementId, nextLayout); // 2 ô → 1 ô: gỡ tư liệu.
+      // 2 ô → 1 ô: gỡ tư liệu, MANG THEO look khung vừa nhặt (nếu không, cảnh về
+      // preset dự án — Khung mờ ra không mờ, mất look preset khi trộn).
+      void editor.convertBrollToPerson(
+        elementId,
+        nextLayout,
+        frameBlock,
+        framePreset,
+      );
     } else {
       editor.setSegmentLayout(elementId, nextLayout, frameBlock, framePreset);
       replay();

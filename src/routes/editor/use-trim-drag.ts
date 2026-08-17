@@ -608,10 +608,11 @@ export function useTrimDrag({
           // loop). Mép trái giữ end/out, đổi start→in; mép phải giữ start/in, đổi
           // end→out. TRẦN là độ dài clip (in≥0, out≤clipDuration) → "kéo tới max
           // thì dừng". Cửa sổ chưa cắt (null) coi như [0, độ dài khối].
-          const clipDur =
-            insert.clipDuration ??
-            insert.mediaOut ??
-            insert.end - insert.start;
+          // TRẦN là độ dài clip. Thiếu `clipDuration` (chưa đo được) thì BỎ trần
+          // thay vì lấy `mediaOut` (điểm ra HIỆN TẠI) — lấy mediaOut khoá cứng ở
+          // chỗ đã cắt, không cho kéo lại phần footage đã bỏ. Chưa biết độ dài thì
+          // cho kéo tự do tới khi có số thật, hơn là chặn oan.
+          const clipDur = insert.clipDuration ?? Number.POSITIVE_INFINITY;
           const inS = insert.mediaIn ?? 0;
           const outS =
             insert.mediaOut ?? Math.min(clipDur, inS + (insert.end - insert.start));

@@ -267,7 +267,15 @@ export function TextPane({
               }
               onBlur={(event) => {
                 const clean = event.target.value.trim();
-                if (clean) void editor.commitTextContent(element.id, clean);
+                if (clean) {
+                  void editor.commitTextContent(element.id, clean);
+                } else {
+                  // Xoá trắng rồi rời ô: KHÔNG ghi chữ rỗng (mất cụm), nhưng phải
+                  // LÙI cả ô nhập lẫn state/preview về nội dung cũ — không thì màn
+                  // hình trống trong khi máy chủ vẫn giữ chữ, hai nơi nói ngược nhau.
+                  event.target.value = element.content;
+                  editor.draftTextContent(element.id, element.content);
+                }
               }}
             />
 

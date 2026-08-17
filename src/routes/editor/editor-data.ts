@@ -529,5 +529,12 @@ export type UndoEntry =
         reveal?: string;
         shape?: string;
         keywords?: string[];
+        // Look per-cụm — không có thì hoàn tác gộp/tách trả cụm về mặc định dự án.
+        // `captionBlock` giữ dạng JSON (như API nhận), không phải object.
+        letterCase?: "as-typed" | "upper" | null;
+        keyColor?: string | null;
+        fontStyle?: string | null;
+        captionBlock?: string | null;
+        captionPreset?: string | null;
       };
     };

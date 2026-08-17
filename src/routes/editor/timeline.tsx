@@ -171,8 +171,19 @@ export function Timeline({
                 const block = (
                   event.target as HTMLElement
                 ).closest<HTMLElement>("[data-block][data-kind]");
-                const kind = block?.dataset.kind;
+                const rawKind = block?.dataset.kind;
                 const id = block?.dataset.blockId;
+                // Khối bố cục (b-roll VÀ ô người) đều phát `data-kind='layout'` —
+                // mà không nhánh menu nào tên 'layout' nên bảng ra RỖNG. Quy về
+                // đúng loại Selection: có trong `inserts` → b-roll ('insert', có
+                // mục "Gỡ tư liệu này"); còn lại là ô người, không có mục riêng →
+                // coi như chỗ trống (bảng chỉ hướng dẫn), KHÔNG bày menu rỗng.
+                let kind = rawKind;
+                if (rawKind === "layout" && id) {
+                  kind = editor.inserts.some((i) => i.id === id)
+                    ? "insert"
+                    : undefined;
+                }
                 // Bàn dựng: đoạn phim KHÔNG phải mục chuột phải — mục duy nhất
                 // của nó là "Bỏ đoạn" (cắt), mà việc cắt đã ở bước riêng. Coi
                 // như bấm chỗ trống để bảng chỉ hiện câu hướng dẫn.

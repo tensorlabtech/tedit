@@ -579,6 +579,7 @@ export function useEditor(projectId: string | undefined) {
     async (id: string, direction: -1 | 1) => {
       const current = dataRef.current;
       if (!current || !projectId) return;
+      setExportDirty(true); // sửa nội dung sau khi xuất → bản dựng thành cũ
       const element = current.textElements.find((item) => item.id === id);
       const insert = current.inserts.find((item) => item.id === id);
       const anchor = element?.fromWordId ?? insert?.fromWordId;
@@ -607,40 +608,45 @@ export function useEditor(projectId: string | undefined) {
    */
   const updateTextElement = useCallback(
     (id: string, patch: Partial<TextElement>) => {
-      setData((current) => {
-        if (!current) return current;
-        void api
-          .updateElement(id, {
-            band: patch.position,
-            align: patch.align,
-            emphasis: patch.emphasis,
-            keywords: patch.keywords,
-            // `null` phải đi qua được: nó nghĩa là BỎ ĐÈ, quay về theo bộ dáng.
-            // Dùng `??` ở đây là nuốt mất chính cái ý đó.
-            letterCase: patch.letterCase,
-            keyColor: patch.keyColor,
-            fontStyle: patch.fontStyle,
-            // Look chữ đóng dấu: cụm giữ OBJECT, API nhận JSON. `null` = bỏ đè.
-            captionBlock:
-              patch.captionBlock !== undefined
-                ? patch.captionBlock === null
-                  ? null
-                  : JSON.stringify(patch.captionBlock)
-                : undefined,
-            captionPreset: patch.captionPreset,
-          })
-          // Ghi xong mới DỰNG LẠI payload preview: đổi dải/căn/nhấn/màu... đều ảnh
-          // hưởng HÌNH, mà khung xem đọc payload từ máy chủ nên phải refetch thì
-          // Player mới thấy (vd đổi Trên/Giữa/Dưới hiện ngay).
-          .then(() => bumpLayoutReload())
-          .catch(boQuaLoi());
-        return {
-          ...current,
-          textElements: current.textElements.map((item) =>
-            item.id === id ? { ...item, ...patch } : item,
-          ),
-        };
-      });
+      // Cập nhật lạc quan trên màn NGAY (thuần state, không phụ thuộc mạng).
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              textElements: current.textElements.map((item) =>
+                item.id === id ? { ...item, ...patch } : item,
+              ),
+            }
+          : current,
+      );
+      // Gọi máy chủ NGOÀI updater của setData: đặt lời gọi API bên trong updater
+      // là side-effect trong reducer — React ở StrictMode chạy updater HAI LẦN nên
+      // bắn PATCH đôi, và bấm nhanh (từ-nhấn) thành một tràng ghi trùng.
+      void api
+        .updateElement(id, {
+          band: patch.position,
+          align: patch.align,
+          emphasis: patch.emphasis,
+          keywords: patch.keywords,
+          // `null` phải đi qua được: nó nghĩa là BỎ ĐÈ, quay về theo bộ dáng.
+          // Dùng `??` ở đây là nuốt mất chính cái ý đó.
+          letterCase: patch.letterCase,
+          keyColor: patch.keyColor,
+          fontStyle: patch.fontStyle,
+          // Look chữ đóng dấu: cụm giữ OBJECT, API nhận JSON. `null` = bỏ đè.
+          captionBlock:
+            patch.captionBlock !== undefined
+              ? patch.captionBlock === null
+                ? null
+                : JSON.stringify(patch.captionBlock)
+              : undefined,
+          captionPreset: patch.captionPreset,
+        })
+        // Ghi xong mới DỰNG LẠI payload preview: đổi dải/căn/nhấn/màu... đều ảnh
+        // hưởng HÌNH, mà khung xem đọc payload từ máy chủ nên phải refetch thì
+        // Player mới thấy (vd đổi Trên/Giữa/Dưới hiện ngay).
+        .then(() => bumpLayoutReload())
+        .catch(boQuaLoi());
     },
     [bumpLayoutReload],
   );
@@ -669,6 +675,7 @@ export function useEditor(projectId: string | undefined) {
   const commitTextContent = useCallback(
     async (id: string, content: string) => {
       if (!projectId) return;
+      setExportDirty(true); // sửa nội dung sau khi xuất → bản dựng thành cũ
       await api.updateElement(id, { content }).catch(boQuaLoi());
       const fresh = await api.getProject(projectId).catch(() => null);
       if (fresh) {
@@ -734,6 +741,7 @@ export function useEditor(projectId: string | undefined) {
     async (id: string) => {
       const current = dataRef.current;
       if (!projectId || !current) return;
+      setExportDirty(true); // sửa nội dung sau khi xuất → bản dựng thành cũ
       const chu = current.textElements.find((item) => item.id === id);
       if (!chu || chu.byTime) return;
 
@@ -770,6 +778,25 @@ export function useEditor(projectId: string | undefined) {
         .catch(boQuaLoi());
 
       if (created) {
+        // ĐÓNG DẤU LOOK của cụm gốc lên nửa sau. createElement chỉ nhận band, nên
+        // thiếu bước này nửa sau về look mặc định dự án (mất màu/phong-cách-chữ/
+        // kiểu-nhấn/căn…) — hai nửa cùng câu trông khác hẳn nhau. keywords lọc
+        // còn những tiếng nằm trong nửa sau.
+        const secondSyllables = new Set(syllables.slice(cut));
+        await api
+          .updateElement(created.id, {
+            align: chu.align,
+            emphasis: chu.emphasis,
+            keywords: chu.keywords.filter((kw) => secondSyllables.has(kw)),
+            letterCase: chu.letterCase,
+            keyColor: chu.keyColor,
+            fontStyle: chu.fontStyle,
+            captionBlock: chu.captionBlock
+              ? JSON.stringify(chu.captionBlock)
+              : undefined,
+            captionPreset: chu.captionPreset,
+          })
+          .catch(boQuaLoi());
         pushUndoRef.current({
           type: "element",
           label: "Tách chữ",
@@ -806,6 +833,7 @@ export function useEditor(projectId: string | undefined) {
       fontStyle?: string | null;
     }) => {
       if (!projectId) return 0;
+      setExportDirty(true); // đổi kiểu cả video sau khi xuất → bản dựng thành cũ
       const saved = await api
         .applyTextStyleToAll(projectId, style)
         .catch(boQuaLoi());
@@ -827,6 +855,7 @@ export function useEditor(projectId: string | undefined) {
     async (id: string) => {
       const current = dataRef.current;
       if (!projectId || !current) return;
+      setExportDirty(true); // sửa nội dung sau khi xuất → bản dựng thành cũ
       const element = current.textElements.find((item) => item.id === id);
       if (!element || element.byTime) return;
       // Cụm KẾ TIẾP theo thời gian, và phải là chữ chạy theo lời như nó: chữ tự
@@ -851,6 +880,14 @@ export function useEditor(projectId: string | undefined) {
           align: next.align,
           emphasis: next.emphasis,
           keywords: next.keywords,
+          // Look per-cụm để hoàn tác trả đúng dáng cụm bị gộp (không về mặc định).
+          letterCase: next.letterCase,
+          keyColor: next.keyColor,
+          fontStyle: next.fontStyle,
+          captionBlock: next.captionBlock
+            ? JSON.stringify(next.captionBlock)
+            : undefined,
+          captionPreset: next.captionPreset,
         },
       });
 
@@ -895,6 +932,7 @@ export function useEditor(projectId: string | undefined) {
     if (!projectId || !data) return;
     const end = Math.min(time + TEXT_DEFAULT_LENGTH, data.duration);
     if (end - time < MIN_TEXT_LENGTH) return;
+    setExportDirty(true); // thêm chữ sau khi xuất → bản dựng thành cũ
 
     const created = await api.createElement(projectId, {
       kind: "text",
@@ -956,6 +994,7 @@ export function useEditor(projectId: string | undefined) {
       if (!projectId || !data) return;
       const span = data.words.slice(0, Math.min(8, data.words.length));
       if (span.length === 0) return;
+      setExportDirty(true); // thêm chữ sau khi xuất → bản dựng thành cũ
 
       const created = await api.createElement(projectId, {
         kind: "text",
@@ -1007,6 +1046,7 @@ export function useEditor(projectId: string | undefined) {
   const addInsertAtPlayhead = useCallback(
     async (mediaFileId: string) => {
       if (!projectId || !data) return;
+      setExportDirty(true); // chèn tư liệu sau khi xuất → bản dựng thành cũ
       const sentence =
         data.sentences.find((item) => time >= item.start && time < item.end) ??
         data.sentences[0];
@@ -1781,7 +1821,12 @@ export function useEditor(projectId: string | undefined) {
    * chính cặp từ b-roll đang neo), rồi xoá b-roll cũ.
    */
   const convertBrollToPerson = useCallback(
-    async (brollId: string, layout: string) => {
+    async (
+      brollId: string,
+      layout: string,
+      frameBlock?: string,
+      framePreset?: string,
+    ) => {
       if (!projectId) return;
       const insert = dataRef.current?.inserts.find((i) => i.id === brollId);
       if (!insert) return;
@@ -1791,6 +1836,14 @@ export function useEditor(projectId: string | undefined) {
         toWordId: insert.toWordId,
         insertLayout: layout,
       });
+      // Đóng dấu LOOK của khung vừa nhặt lên cảnh mới (createElement không nhận
+      // field look). Thiếu bước này thì cảnh về preset dự án — "Khung mờ" ra
+      // không mờ, chọn khung Nhịp-đen khi dự án Prism thì mất look Nhịp-đen.
+      if (frameBlock !== undefined) {
+        await api
+          .updateElement(created.id, { frameBlock, framePreset })
+          .catch(boQuaLoi());
+      }
       await api.deleteElement(brollId).catch(boQuaLoi());
       const fresh = await api.getProject(projectId).catch(() => null);
       if (fresh) setData(shape(fresh));
@@ -1834,13 +1887,16 @@ export function useEditor(projectId: string | undefined) {
 
   /** Đổi bố cục của một segment (ô người) — PATCH + nạp lại lịch. */
   const setSegmentLayout = useCallback(
-    (
+    async (
       elementId: string,
       layout: string,
       frameBlock?: string | null,
       framePreset?: string | null,
     ) => {
-      void api
+      // AWAIT PATCH rồi mới nạp lại lịch: `bumpLayoutReload` kích khung xem dựng
+      // lại payload TỪ MÁY CHỦ, chạy trước khi ghi xong thì nó đọc trạng thái CŨ
+      // (khung/look mới chưa vào DB) — đúng lỗi race của setSegmentMedia đã sửa.
+      await api
         .updateElement(elementId, {
           insertLayout: layout,
           frameBlock,
@@ -1849,7 +1905,7 @@ export function useEditor(projectId: string | undefined) {
         .catch(boQuaLoi());
       bumpLayoutReload();
     },
-    [],
+    [bumpLayoutReload],
   );
 
   /**
