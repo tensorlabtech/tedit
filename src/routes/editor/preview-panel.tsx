@@ -12,7 +12,6 @@ import { revealCss, shapeBox, type BandId } from "@/dev/overlays/overlay-model";
 import {
   ContentRect,
   graphicUrl,
-  Headline,
   OverlayTextBlock,
 } from "@/dev/overlays/overlay-render";
 import { StyleSweep } from "@/dev/overlays/style-sweep";
@@ -431,9 +430,6 @@ export function PreviewPanel({
                 vẽ khi đang có MÀN (`cell`): lịch thưa để trống chỗ mặc định, mà ở
                 chỗ ấy khung phải là video phủ kín, không phải nền trang trơ. */}
               {pageScene && <ScenePage page={pageNow} />}
-              {/* Tiêu đề đứng ở tầng KHUNG, vẽ một lần — không đi theo từng cụm
-                phụ đề như `OverlayTextBlock`. */}
-              <Headline text={editor.headline} pack={projectPack} />
               {editor.projectId && editor.duration > 0 && !(pageScene && !cell) && (
                 // Ô video: phủ kín khung khi không có màn (`cell` rỗng — khoảng
                 // trống hoặc bộ phủ kín); thu vào ô khi đang có màn. CẢNH b-roll

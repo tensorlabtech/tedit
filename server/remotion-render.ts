@@ -77,6 +77,10 @@ export async function renderViaRemotion(
       composition,
       serveUrl,
       codec: "h264",
+      // CHỐT định dạng điểm ảnh: trình duyệt (Chrome/Safari/Firefox) không giải mã
+      // được `yuv444p`/`gbrp` — chốt `yuv420p` để mọi bộ dáng ra cùng một định dạng
+      // phát được, thay vì để bộ mã tự đàm phán. `check:style-pack` canh dòng này.
+      pixelFormat: "yuv420p",
       outputLocation: silent,
       inputProps: payload as unknown as Record<string, unknown>,
       concurrency: null,

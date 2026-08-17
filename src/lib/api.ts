@@ -312,8 +312,6 @@ export type ApiProject = {
     style_pack?: string | null;
     /** PHONG CÁCH CHỮ mặc định cả video — chỉ đổi dáng chữ, `null` = theo `style_pack`. */
     font_style?: string | null;
-    /** Dòng tiêu đề của cả video — một cột trên `projects`, không nằm trong `elements`. */
-    headline?: string | null;
     /** Đếm sửa nội dung (bump mỗi lần đổi elements/nhạc) + số lúc XUẤT gần nhất.
         Khác nhau = bản dựng trên đĩa CŨ so với nội dung hiện tại. */
     content_rev?: number;
@@ -524,8 +522,6 @@ export const api = {
       stylePack?: StylePackId;
       /** PHONG CÁCH CHỮ mặc định cả video. `null` = xoá đè (theo `stylePack`). */
       fontStyle?: StylePackId | null;
-      /** Dòng tiêu đề của cả video. Chuỗi rỗng là XOÁ, không phải "giữ nguyên". */
-      headline?: string;
     },
   ) =>
     request<{
@@ -536,7 +532,6 @@ export const api = {
       want_captions: number | null;
       want_music: number | null;
       style_pack: string | null;
-      headline: string | null;
     }>(`/api/projects/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
 
   /** Chạy lại ĐÚNG MỘT chặng AI — không dựng lại cả mạch từ đầu. */

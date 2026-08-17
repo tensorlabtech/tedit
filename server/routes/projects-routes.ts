@@ -164,7 +164,6 @@ app.patch("/api/projects/:id", async (request, reply) => {
     wantMusic?: boolean;
     stylePack?: string;
     fontStyle?: string | null;
-    headline?: string;
   };
   const sets: string[] = [];
   const values: Array<string | number | null> = [];
@@ -202,17 +201,6 @@ app.patch("/api/projects/:id", async (request, reply) => {
   if (typeof body.wantMusic === "boolean") {
     sets.push("want_music=?");
     values.push(body.wantMusic ? 1 : 0);
-  }
-  // DÒNG TIÊU ĐỀ. Chuỗi rỗng là XOÁ — khác `title` (tên dự án), nơi rỗng phải
-  // rơi về một tên mặc định: một dự án luôn cần tên để gọi, còn tiêu đề thì
-  // không có mới là mặc định.
-  //
-  // Trần 200 ký tự ở đây rộng hơn trần 80 lúc VẼ (`HEADLINE_MAX_CHARS`), và cố
-  // ý: chữ người dùng gõ vào là của họ, phần gọt chỉ thuộc về lúc vẽ. Gọt lúc
-  // lưu thì họ gõ dài rồi xoá bớt cũng không lấy lại được.
-  if (body.headline !== undefined) {
-    sets.push("headline=?");
-    values.push(body.headline.trim().slice(0, 200));
   }
   if (body.stylePack !== undefined) {
     const pack = STYLE_PACKS.find((item) => item.id === body.stylePack);
@@ -256,7 +244,7 @@ app.patch("/api/projects/:id", async (request, reply) => {
   }
   return db
     .prepare(
-      "SELECT id, title, profile, min_silence, want_captions, want_music, insert_source, style_pack, font_style, headline FROM projects WHERE id=?",
+      "SELECT id, title, profile, min_silence, want_captions, want_music, insert_source, style_pack, font_style FROM projects WHERE id=?",
     )
     .get(id);
 });

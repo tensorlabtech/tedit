@@ -18,19 +18,15 @@ import { join } from "node:path";
 
 import { db, newId } from "./db";
 import { DATA_ROOT } from "./paths";
-import { layoutHeadline } from "./headline";
 import {
-  HEADLINE_MAX_CHARS,
   contentRect,
-  headlineRoom,
   packForElement,
-  withFontRole,
   type StylePack,
   type StylePackId,
   type Tone,
 } from "./style-pack";
 import { DEFAULT_STYLE_PACK_ID, NHIP_DEN, STYLE_PACKS, findStylePack } from "./style-pack-catalog";
-import { SAFE, textWidth, usableWidthOf } from "./text-layout";
+import { SAFE, textWidth } from "./text-layout";
 import { readStylePack } from "./style-pack-store";
 
 if (!process.env.TEDDIT_DATA_ROOT) {
@@ -708,10 +704,10 @@ for (const pack of STYLE_PACKS) {
   }
 }
 
-console.log("\nĐường xuất video chốt định dạng, không để đồ thị tự đàm phán");
+console.log("\nĐường xuất video chốt định dạng, không để bộ mã tự đàm phán");
 /*
- * Không chốt thì định dạng đầu ra là thứ chuỗi lọc TÌNH CỜ đàm phán được, và nó
- * đổi theo từng bộ dáng. Đo thật trên chính repo này trước khi sửa:
+ * Không chốt thì định dạng đầu ra là thứ bộ mã TÌNH CỜ chọn được. Đo thật trên
+ * chính repo này (thời còn dựng bằng ffmpeg) trước khi sửa:
  *
  * - phần lớn bộ ra `yuv444p` → **H.264 High 4:4:4 Predictive**, mà Chrome,
  *   Safari và Firefox đều KHÔNG giải mã được
@@ -721,19 +717,17 @@ console.log("\nĐường xuất video chốt định dạng, không để đồ 
  * Cả hai không có triệu chứng ở máy phát triển: `ffprobe` báo tệp hợp lệ, thời
  * lượng đúng, QuickTime mở được. Chỉ người xem bằng trình duyệt mới thấy.
  *
- * Quét mã nguồn chứ không dựng thử: dựng một video để kiểm mất vài phút, mà đây
- * là ràng buộc về CHỖ GỌI — một dòng trong chuỗi lọc.
+ * Nay bản cuối do Remotion dựng (`renderMedia`), nên ràng buộc chuyển sang đó:
+ * chốt `pixelFormat: "yuv420p"` tường minh thay vì dựa vào mặc định của Remotion.
  */
 {
-  const source = stripComments(readFileSync(join(projectRoot, "server/render.ts"), "utf8"));
-  check(
-    "chuỗi lọc có bước chuẩn hoá `format=yuv420p`",
-    /scale=out_range=tv,format=yuv420p/.test(source),
-    "thiếu nó thì mỗi bộ dáng ra một định dạng khác nhau",
+  const source = stripComments(
+    readFileSync(join(projectRoot, "server/remotion-render.ts"), "utf8"),
   );
   check(
-    "đầu ra chốt `-pix_fmt yuv420p`",
-    /"-pix_fmt",\s*\n?\s*"yuv420p"/.test(source),
+    "đường Remotion chốt `pixelFormat: yuv420p`",
+    /pixelFormat:\s*"yuv420p"/.test(source),
+    "thiếu nó thì bản xuất rơi về định dạng trình duyệt không phát được",
   );
 }
 
@@ -784,84 +778,6 @@ for (const pack of STYLE_PACKS) {
     pack.title
       ? `tiêu đề ở dải ${pack.title.band}, mảng màu ở dải ${pack.plate.band}`
       : "có mảng màu mà không khai tiêu đề — mảng sẽ trống",
-  );
-}
-
-console.log("\nDòng tiêu đề: rỗng không vẽ, dài không vỡ");
-{
-  const probeTitle: StylePack = {
-    ...NHIP_DEN,
-    plate: { band: "bottom", heightShare: 0.12, tone: { color: "#2B5CE6", alpha: 1 } },
-    title: {
-      font: "voice",
-      sizeShare: 0.09,
-      band: "bottom",
-      tone: { color: "#FFFFFF", alpha: 1 },
-      bleed: false,
-    },
-  };
-  const shown = withFontRole(probeTitle, probeTitle.title!.font);
-  const W = 1080;
-  const H = 1920;
-
-  check(
-    "bộ không khai `title` thì không vẽ gì",
-    (await layoutHeadline("Có chữ hẳn hoi", withFontRole(NHIP_DEN, "voice"), W, H)) === null,
-  );
-  for (const empty of ["", "   ", null, undefined]) {
-    check(
-      `tiêu đề rỗng (${JSON.stringify(empty)}) thì không vẽ gì`,
-      (await layoutHeadline(empty, shown, W, H)) === null,
-    );
-  }
-
-  // Dài BẤT THƯỜNG: chốt một hành vi rồi kiểm đúng cái đã chốt. Ở đây là THU CỠ
-  // — mất một tiếng trong sáu tiếng là mất một phần sáu ý, còn nhỏ đi 15% thì
-  // không ai nhận ra. Trần ký tự chỉ chặn ca bệnh hoạn trước khi tới phép thu.
-  const long =
-    "Ba năm mới hiểu ra một điều mà đáng lẽ ai cũng nên biết từ rất sớm rồi";
-  const drawn = (await layoutHeadline(long, shown, W, H))!;
-  check("tiêu đề dài vẫn vẽ ra được", Boolean(drawn));
-  check(
-    "tiêu đề dài bị THU CỠ, không bị cắt giữa tiếng",
-    drawn.shrunk && !drawn.text.endsWith("…") && long.startsWith(drawn.text),
-    `"${drawn.text}"`,
-  );
-  const room = headlineRoom(probeTitle.title!, W, usableWidthOf("top", W));
-  const drawnWidth = await textWidth(drawn.text, drawn.fontSize, shown);
-  check(
-    `tiêu đề dài nằm trong chỗ nó có (${Math.round(drawnWidth)} ≤ ${Math.round(room)})`,
-    drawnWidth <= room + 1,
-  );
-
-  /*
-   * HAI phép chặn, và chúng giữ hai thứ khác nhau — nên kiểm riêng từng cái:
-   *
-   * - `HEADLINE_MAX_CHARS` chặn SỐ KÝ TỰ. Nó là hàng rào chống lạm dụng, cắt ở
-   *   biên giới tiếng. Câu 69 ký tự ở trên nằm dưới trần nên nó KHÔNG bị cắt —
-   *   đó là chỗ chứng minh phép thu cỡ đứng một mình cũng đủ.
-   * - Phép thu cỡ chặn BỀ RỘNG PIXEL. Trần ký tự không thay được nó: một câu 20
-   *   ký tự toàn chữ hoa ở bộ dáng khai `sizeShare` lớn vẫn tràn.
-   */
-  check(
-    "câu dưới trần ký tự thì KHÔNG bị cắt chữ nào",
-    drawn.text === long,
-    `${drawn.text.length}/${long.length} ký tự`,
-  );
-  const abuse = `${long} ${long} ${long}`;
-  const cut = (await layoutHeadline(abuse, shown, W, H))!;
-  check(
-    "câu vượt trần ký tự bị cắt ở BIÊN GIỚI TIẾNG",
-    cut.text.length <= HEADLINE_MAX_CHARS &&
-      abuse.startsWith(cut.text) &&
-      abuse[cut.text.length] === " ",
-    `"${cut.text}"`,
-  );
-  check(
-    "tiêu đề nằm giữa mảng màu, không nằm ngoài",
-    drawn.y >= H * (1 - probeTitle.plate!.heightShare) - 1 &&
-      drawn.y + drawn.fontSize <= H + 1,
-    `y=${drawn.y} cỡ=${drawn.fontSize}, mảng bắt đầu ở ${Math.round(H * 0.88)}`,
   );
 }
 

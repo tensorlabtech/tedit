@@ -1170,24 +1170,6 @@ export function trimHeadline(text: string): string {
   const lastSpace = cut.lastIndexOf(" ");
   return (lastSpace > 0 ? cut.slice(0, lastSpace) : cut).trim();
 }
-
-/**
- * Bao lâu thì tiêu đề tắt.
- *
- * Bản trước vẽ nó SUỐT video, với lý do "tiêu đề đại diện cho cả video". Lý do
- * ấy sai ở khổ dọc: một dòng chữ đứng yên hai phút rưỡi thì sau mười giây đầu
- * mắt thôi nhìn nó, còn nó thì vẫn chiếm chỗ và vẫn che mặt người nói. Tiêu đề
- * là câu MỞ — nó có việc ở đúng mấy giây người xem quyết định ở lại hay lướt.
- *
- * Thời gian giữ theo SỐ KÝ TỰ chứ không cố định: "Video số 1" với một tiêu đề
- * mười tiếng cần thời gian đọc khác hẳn nhau, mà trần là 80 ký tự nên khoảng
- * chênh không nhỏ.
- */
-/** Ký tự mỗi giây. Chậm hơn phụ đề vì tiêu đề bị đọc bằng mắt LIẾC, không đọc chăm. */
-const HEADLINE_CPS = 10;
-/** Ngắn hơn thì chưa kịp nhận ra là có chữ; dài hơn thì thành ra đứng mãi. */
-const HEADLINE_MIN_HOLD = 2.5;
-const HEADLINE_MAX_HOLD = 5;
 /**
  * Tắt phụt là một cú giật. Mờ dần thì mắt không bị gọi về chỗ nó vừa biến mất.
  *
@@ -1240,12 +1222,6 @@ export function behindPhrase(text: string | null | undefined): string | null {
   const cut = clean.slice(0, BEHIND_MAX_CHARS);
   const lastSpace = cut.lastIndexOf(" ");
   return (lastSpace > 0 ? cut.slice(0, lastSpace) : cut).trim() || null;
-}
-
-/** Giây cuối cùng tiêu đề còn ĐỦ đậm, trước khi bắt đầu mờ dần. */
-export function headlineHold(text: string): number {
-  const chars = trimHeadline(text).length;
-  return Math.min(HEADLINE_MAX_HOLD, Math.max(HEADLINE_MIN_HOLD, chars / HEADLINE_CPS));
 }
 
 /**

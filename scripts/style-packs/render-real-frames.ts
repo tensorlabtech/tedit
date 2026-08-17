@@ -15,7 +15,6 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { db } from "../../server/db";
-import { layoutHeadline } from "../../server/headline";
 import { ffmpeg } from "../../server/media-tools";
 import { wrapMeta } from "../../server/graphics-manifest";
 import { GRAPHICS_DIR, resolvePackFont, workDir } from "../../server/paths";
@@ -33,26 +32,17 @@ import {
   plateFilter,
   type StylePack,
   packForElement,
-  withFontRole,
 } from "../../server/style-pack";
 import { STYLE_PACKS } from "../../server/style-pack-catalog";
 import type { AlignId, Band, EmphasisId } from "../../server/style-pack";
 import { textWidth } from "../../server/text-layout";
 import { placeWords } from "../../server/word-layout";
 
-const [projectId, outputDir, headlineArg] = process.argv.slice(2);
+const [projectId, outputDir] = process.argv.slice(2);
 if (!projectId || !outputDir) {
-  console.error("Cần: <projectId> <thư mục ra> [dòng tiêu đề]");
+  console.error("Cần: <projectId> <thư mục ra>");
   process.exit(1);
 }
-/**
- * Dòng tiêu đề dùng cho cả bảng.
- *
- * Nhận qua dòng lệnh chứ không đọc `projects.headline`: bảng này để SO MƯỜI BỘ,
- * nên mọi ô phải mang đúng một chuỗi chữ. Đọc từ dự án thì bảng đo được "bộ nào
- * hợp với tiêu đề này", chứ không đo được "mười bộ khác nhau ở đâu".
- */
-const headlineText = headlineArg ?? "Ba năm mới hiểu";
 
 type Row = {
   content: string;
@@ -276,23 +266,6 @@ async function render(pack: StylePack, pick: (typeof picks)[number]) {
   const grade = gradeFilter(pack.grade);
   // `false`: khung tĩnh nên lấy trạng thái ĐÃ YÊN — xem `render-pack-sheets.ts`.
   const plate = plateFilter(pack, rect, false);
-  /*
-   * DÒNG TIÊU ĐỀ nằm trong chuỗi nền, sau mảng màu và trước lớp chữ — cùng thứ
-   * tự lớp với `render.ts`. Thiếu nó thì bảng so bày ra một nửa chữ ký của ba bộ
-   * mới, và ai nhìn bảng cũng kết luận trên dữ liệu thiếu.
-   */
-  let headlineStep: string | null = null;
-  if (pack.title) {
-    const titlePack = withFontRole(pack, pack.title.font);
-    const drawn = await layoutHeadline(headlineText, titlePack, OUT_WIDTH, OUT_HEIGHT);
-    if (drawn) {
-      headlineStep =
-        `drawtext=fontfile='${resolvePackFont(titlePack.font.file)}':` +
-        `text='${drawn.text.replace(/'/g, "\\\\\\'").replace(/:/g, "\\:")}':` +
-        `fontsize=${drawn.fontSize}:x=${drawn.x}:y=${drawn.y}:` +
-        `fontcolor=${drawn.tone.color}:alpha=${drawn.tone.alpha}`;
-    }
-  }
   // Khung đứng NGAY SAU nắn màu và trước mọi thứ bộ dáng vẽ — cùng thứ tự
   // lớp với `render.ts`.
   /*
@@ -306,7 +279,6 @@ async function render(pack: StylePack, pick: (typeof picks)[number]) {
   const before = [grade, frameFilter(pack, rect, OUT_WIDTH, OUT_HEIGHT)]
     .filter(Boolean)
     .join(",");
-  const after = [headlineStep].filter(Boolean).join(",");
   const gfx = graphicsSteps(pack, GRAPHICS_DIR, OUT_WIDTH, OUT_HEIGHT, null, false, []);
 
   const bits: string[] = [];
@@ -326,10 +298,6 @@ async function render(pack: StylePack, pick: (typeof picks)[number]) {
     bits.push(plate.chain);
     bits.push(`${bg}${plate.label}overlay=${plate.x}:${plate.yExpr}[bgp]`);
     bg = "[bgp]";
-  }
-  if (after) {
-    bits.push(`${bg}${after}[bgc]`);
-    bg = "[bgc]";
   }
   // Hình bám chữ vẽ SAU mảng màu và tiêu đề, TRƯỚC lớp chữ — cùng `render.ts`.
   bits.push(...wrapBits);
