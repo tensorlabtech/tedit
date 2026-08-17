@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
 import { arrangementFor } from "./caption-arrangement";
+import { findStylePack } from "./style-pack-catalog";
 import { CROSS_TO_VISIBLE } from "./junction-kinds";
 import { DB_PATH } from "./paths";
 
@@ -814,7 +815,10 @@ db.prepare("UPDATE elements SET kind='layout' WHERE kind='insert'").run();
     "UPDATE elements SET emphasis=?, align=? WHERE id=?",
   );
   for (const cap of flat) {
-    const recipe = arrangementFor(cap.caption_preset ?? "prism-pro", cap.from_word_id);
+    const recipe = arrangementFor(
+      findStylePack(cap.caption_preset ?? "prism-pro").arrangementRecipes,
+      cap.from_word_id,
+    );
     if (recipe) applyRecipe.run(recipe.emphasis, recipe.align, cap.id);
   }
 }

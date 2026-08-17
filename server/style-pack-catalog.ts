@@ -494,6 +494,17 @@ export const PRISM_PRO: StylePack = {
   // NHẤN BẰNG CỠ: cụm từ khoá phóng to (phần dẫn nhỏ lên trên, phần sau nhỏ xuống
   // dưới) — bố cục chữ sáng tạo thay cho đổi font. `align: left` để khối bám lề.
   defaults: { ...BASE.defaults, align: "left", emphasis: "keyword-large" },
+  // Bộ công thức editorial: mỗi câu bốc một tổ hợp cỡ + rải ngang theo hạt-giống
+  // ổn định. Chỉ dùng `keyword-large` (từ khoá to) và `taper` (dẫn nhỏ-mờ trên, ý
+  // to dưới); rải ngang đổi lệch-trái / so-le / bậc-thang cho đa dạng.
+  arrangementRecipes: [
+    { emphasis: "keyword-large", align: "left" },
+    { emphasis: "keyword-large", align: "stagger" },
+    { emphasis: "keyword-large", align: "stair" },
+    { emphasis: "taper", align: "left" },
+    { emphasis: "keyword-large", align: "left" },
+    { emphasis: "taper", align: "stagger" },
+  ],
 };
 
 export const STYLE_PACKS: StylePack[] = [NHIP_DEN, PHAN, PRISM_PRO];

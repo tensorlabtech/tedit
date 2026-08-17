@@ -43,7 +43,10 @@ for (const project of projects) {
   let changed = 0;
   db.transaction(() => {
     for (const row of rows) {
-      const recipe = arrangementFor(project.style_pack as string, row.from_word_id);
+      const recipe = arrangementFor(
+        findStylePack(project.style_pack as string).arrangementRecipes,
+        row.from_word_id,
+      );
       if (!recipe) continue; // bộ dáng không có công thức → để nguyên
       update.run(recipe.align, recipe.emphasis, row.id);
       changed += 1;

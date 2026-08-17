@@ -60,6 +60,9 @@ export type AlignId = "left" | "center" | "right" | "stair" | "stagger";
 /** Trục NHẤN: trong cụm, tiếng nào to hơn tiếng nào. */
 export type EmphasisId = "even" | "keyword-large" | "mixed-size" | "taper";
 
+/** Một công thức bố cục cho một câu: tổ hợp CỠ (`emphasis`) và RẢI NGANG (`align`). */
+export type Arrangement = { align: AlignId; emphasis: EmphasisId };
+
 /** Màu tách khỏi độ đục: `drawtext` nhận hai thứ đó ở hai tham số khác nhau. */
 export type Tone = { color: string; alpha: number };
 
@@ -737,6 +740,13 @@ export type StylePack = {
    * cùng một thứ.
    */
   defaults: { align: AlignId; emphasis: EmphasisId; reveal: RevealId };
+  /**
+   * BỘ CÔNG THỨC BỐ CỤC editorial — mỗi câu BỐC một công thức (cỡ + rải ngang)
+   * theo hạt-giống ổn định, cho dáng "hợp ý mà random". Rỗng/thiếu = mọi câu dùng
+   * `defaults`. Đây là trục data-driven: thêm bộ dáng có chất editorial = điền
+   * mảng này, KHÔNG sửa map theo id ở `caption-arrangement.ts`.
+   */
+  arrangementRecipes?: Arrangement[];
 };
 
 /*

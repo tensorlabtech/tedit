@@ -32,7 +32,7 @@ function insertCaptionGroups(
     const id = newId("e");
     // Bố cục theo BỘ CÔNG THỨC của bộ dáng (rải ngang + cỡ, ổn định theo câu);
     // bộ nào không có công thức thì rơi về `defaults`.
-    const recipe = arrangementFor(pack.id, group.words[0].id);
+    const recipe = arrangementFor(pack.arrangementRecipes, group.words[0].id);
     insert.run(
       id,
       projectId,
