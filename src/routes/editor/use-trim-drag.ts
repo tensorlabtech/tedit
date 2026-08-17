@@ -144,7 +144,21 @@ export function useTrimDrag({
       if (!scene) return;
       const { toSource } = timeMapRef.current;
       const len = scene.end - scene.start;
-      const outStart = Math.max(0, targetStart);
+      // KẸP-VÀO-MÉP: khối trượt trong ĐÚNG khoảng trống hiện tại, chạm mép khối
+      // liền kề (b-roll hay khung khác — cả hai đều trong `schedule`) thì DỪNG.
+      // Không cho đè → không bị lịch màn loại (biến mất). `prevEnd`/`nextStart` là
+      // đuôi/đầu khối kề hai bên khoảng đang chứa khối này.
+      const others = schedule.filter((s) => s.elementId !== id);
+      const prevEnd = others
+        .filter((s) => s.end <= scene.start + 0.001)
+        .reduce((m, s) => Math.max(m, s.end), 0);
+      const nextStart = others
+        .filter((s) => s.start >= scene.end - 0.001)
+        .reduce((m, s) => Math.min(m, s.start), Number.POSITIVE_INFINITY);
+      const outStart = Math.max(
+        prevEnd,
+        Math.min(Math.max(0, targetStart), nextStart - len),
+      );
       dragMove.current = {
         kind: "scene",
         id,
