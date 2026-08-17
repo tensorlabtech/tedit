@@ -1,4 +1,11 @@
-import { copyFileSync, existsSync, mkdirSync, statSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  statSync,
+  unlinkSync,
+} from "node:fs";
 import { extname, join } from "node:path";
 
 import { buildPlacedSegments } from "./layout-segments";
@@ -289,8 +296,21 @@ export async function buildRemotionPayload(
     });
   }
 
+  // Dọn file b-roll CŨ trước khi ghi lại. Tên đặt theo NỘI DUNG (`mediaId`) bên
+  // dưới, nên đổi tài liệu là ra tên khác → file cũ thành mồ côi. Xoá đi cho khỏi
+  // phình ổ (và để trình duyệt không giữ cache một URL không còn ai trỏ tới).
+  for (const f of readdirSync(outDir)) {
+    if (f.startsWith("insert-")) {
+      try {
+        unlinkSync(join(outDir, f));
+      } catch {
+        /* tệp đang bị giữ hoặc đã mất — kệ, không chặn dựng payload */
+      }
+    }
+  }
+
   const inserts = await Promise.all(
-    media.map(async (item, i) => {
+    media.map(async (item) => {
       const isVid = VIDEO.test(item.name);
       // Khung xem: proxy tua-tức-thì cho b-roll VIDEO (ảnh tĩnh không cần).
       // Cache proxy theo `mediaId` (DANH TÍNH tệp) chứ KHÔNG theo chỉ số vị trí:
@@ -305,7 +325,13 @@ export async function buildRemotionPayload(
             )
           : item.path;
       const ext = isVid ? ".mp4" : extname(item.path) || ".jpg";
-      const name = `insert-${i}${ext}`;
+      // TÊN THEO NỘI DUNG (`mediaId`), KHÔNG theo chỉ số vị trí. Đặt theo index thì
+      // kéo đổi thứ tự / đổi tài liệu làm `insert-0.mp4` chứa clip KHÁC nhưng URL
+      // y nguyên → trình duyệt phát bản CŨ từ cache. Theo mediaId thì mỗi clip một
+      // URL bền: đổi tài liệu ra URL mới (tải lại đúng), đổi thứ tự chỉ đổi tham
+      // chiếu (file giữ nguyên, không phát nhầm). Remotion mã hoá path an toàn với
+      // tên file (khác `?v=` — dấu ? bị mã thành %3F làm hỏng video).
+      const name = `insert-${item.mediaId}${ext}`;
       copyFileSync(src, join(outDir, name));
       // Tỉ lệ đo từ NGUỒN gốc (proxy giữ tỉ lệ) — chính xác hơn.
       const info = await probe(item.path).catch(() => null);
