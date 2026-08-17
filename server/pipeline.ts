@@ -1655,19 +1655,17 @@ function aiJobs(projectId: string): AiJob[] {
     {
       key: "effects",
       run: async () => {
-        // Hiệu ứng phải chạy SAU `cuts`: chỗ nối chỉ sinh ra ở nơi đã cắt, nên
-        // chạy trước thì gần như không có chỗ nào để chọn.
-        const total = (
-          db
-            .prepare(
-              "SELECT COALESCE(SUM(duration),0) AS total FROM media_files WHERE project_id=? AND role='main'",
-            )
-            .get(projectId) as { total: number }
-        ).total;
-        const { applied, rejected } = await pickEffects(
-          projectId,
-          keptRanges(projectId, total),
-        );
+        // Hiệu ứng NHẤN đặt ở RANH GIỚI Ý (giữa các CÂU), KHÔNG ở vết cắt. Sau
+        // `commit-cut` vết cắt đã nướng vào phim (mất khỏi dữ liệu), và video quay
+        // một mạch thì không có vết cắt nào — nên buộc vào vết cắt là video phẳng
+        // lì không nhịp. Câu thì LUÔN có, rải khắp phim (trục ĐÃ CẮT); AI chọn các
+        // chỗ mở ĐOẠN Ý mới để nhấn. Effects chạy SAU `layout` nên khung đã có để né.
+        const sentences = db
+          .prepare(
+            "SELECT start_sec AS start, end_sec AS end FROM sentences WHERE project_id=? AND removed=0 ORDER BY start_sec",
+          )
+          .all(projectId) as Array<{ start: number; end: number }>;
+        const { applied, rejected } = await pickEffects(projectId, sentences);
         return (
           `đặt ${applied} chỗ` + (rejected > 0 ? ` · gạt ${rejected}` : "")
         );

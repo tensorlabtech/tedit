@@ -8,12 +8,15 @@ import { settingsForProject } from "./settings";
 import { readStylePack } from "./style-pack-store";
 
 /**
- * Chọn kiểu hiệu ứng cho từng chỗ nối.
+ * Chọn hiệu ứng NHẤN cho các RANH GIỚI Ý của video.
  *
- * Chỗ nối là chỗ hai đoạn dán vào nhau vì đã cắt mất phần ở giữa. Không đặt gì
- * thì chúng đều rơi về mặc định của dự án — cả video một kiểu, và đúng chỗ đáng
- * nhấn thì cũng nhấn y như chỗ chỉ nối cho liền.
+ * Ứng viên là ranh giới giữa các CÂU (không phải vết cắt). Buộc hiệu ứng vào vết
+ * cắt là sai hai đường: (1) sau `commit-cut` vết cắt nướng vào phim, biến mất khỏi
+ * dữ liệu — không còn mốc nào để đặt; (2) video quay MỘT MẠCH không cắt thì chẳng
+ * có vết cắt nào, nên phẳng lì không nhịp. Ranh giới câu thì LUÔN có, rải khắp
+ * video, và AI chọn những chỗ MỞ ĐOẠN Ý MỚI (chuyển chủ đề) để nhấn.
  *
+ * Chỉ NHẤN (không "chuyển cảnh thật"): mạch liền không có khe để hoà tan hai cảnh.
  * Chỉ ghi vào chỗ CHƯA ai đặt tay. Người dùng đã chọn thì đó là lựa chọn của họ.
  */
 
@@ -65,20 +68,22 @@ const SCHEMA = object({
       index: { type: "integer" },
       kind: {
         type: "string",
-        // Vốn từ lấy thẳng từ bảng khai báo — thêm một kiểu ở đó là AI dùng
-        // được ngay, không phải nhớ sửa thêm chỗ này.
-        enum: JUNCTION_SPECS.filter((spec) => spec.id !== "none").map(
-          (spec) => spec.id,
-        ),
+        // CHỈ kiểu NHẤN (không có `cross`): ranh giới ý là một mạch nói liền, KHÔNG
+        // có khe cắt để hoà tan hai cảnh, nên "chuyển cảnh thật" (cross-*) không
+        // dựng được ở đây — bỏ khỏi lựa chọn để AI khỏi chọn thứ sẽ vỡ.
+        enum: JUNCTION_SPECS.filter(
+          (spec) => spec.id !== "none" && !spec.cross,
+        ).map((spec) => spec.id),
       },
     }),
   },
 });
 
-const INSTRUCTIONS = `Bạn chọn hiệu ứng cho các chỗ nối trong một video nói tiếng Việt.
+const INSTRUCTIONS = `Bạn chọn hiệu ứng NHẤN cho các RANH GIỚI Ý trong một video nói tiếng Việt.
 
-Mỗi chỗ nối là nơi đã cắt mất một quãng, hai bên dán lại. Bạn được xem lời NGAY
-TRƯỚC và NGAY SAU chỗ nối đó.
+Video là một mạch nói liền. Mỗi ứng viên là ranh giới giữa hai CÂU; bạn được xem
+lời NGAY TRƯỚC và NGAY SAU nó. Chỉ nhấn ở chỗ MỞ MỘT ĐOẠN Ý MỚI — chuyển chủ đề,
+sang một bước kể mới, đổi mạch rõ rệt. KHÔNG nhấn giữa những câu CÙNG một ý.
 
 Chọn theo mạch chuyển. Mỗi kiểu có một CẢM GIÁC riêng:
 
@@ -106,45 +111,25 @@ VỪA — dùng cho đổi ý bình thường:
 - drift: khung trôi chậm sang ngang — cứu một cảnh người nói ngồi yên không động
   đậy, chỗ hình tĩnh mà lời vẫn đang chạy
 
-CHUYỂN CẢNH THẬT — hai cảnh gặp nhau, khác hẳn nhóm trên (chỉ nhấn vào chỗ cắt).
-Chọn nhóm này khi chỗ nối là một BƯỚC NGOẶT, không phải một cú nhấn:
-- cross-fade: cảnh cũ mờ dần thành cảnh mới — êm nhất, hợp mọi chỗ chuyển ý
-- cross-black: chìm hẳn vào đen rồi mở — dấu chấm hết một chương
-- cross-gray: bạc màu rồi có màu lại — lùi về kể chuyện cũ
-- cross-circle: cảnh mới nở ra từ giữa khung
-- cross-smooth: mép lau nhoè, nhẹ hơn lau ngang một bậc
-- cross-slide-left / cross-slide-right: cảnh mới đẩy cảnh cũ đi — như lật trang
-- cross-wipe: một mép chạy ngang qua khung
-- cross-radial: quét vòng quanh tâm — hợp lúc sang mốc thời gian khác
-- cross-blur: hai cảnh nhoè ngang rồi rõ lại
-- cross-pixel: hình rã thành ô vuông rồi kết lại — phá mạnh nhất, dùng rất dè
-- cross-slice: hình xé thành dải rồi trượt sang
-- cross-wind: cảnh cũ bị thổi tan sang ngang
-
-Chuyển cảnh thật CHỈ dựng được ở chỗ nối đã cắt bỏ một quãng đủ dài. Chỗ nào
-không đủ, máy tự đổi sang một kiểu nhấn cùng nhóm cảm giác — nên cứ chọn theo
-mạch chuyện, đừng đoán chỗ nào đủ.
-
 ĐỪNG dùng một kiểu quá hai lần trong cùng một video, trừ zoom-in và zoom-out.
 Lặp một kiểu lạ ba bốn lần thì nó thành tật của video chứ không còn là điểm nhấn.
 Và ĐỪNG rải kiểu MẠNH liên tiếp — mạnh chỉ mạnh khi quanh nó có chỗ êm.
 
-Bạn được cho một SỐ LƯỢNG cần nhắm. Chọn đúng chừng ấy chỗ ĐỔI MẠCH RÕ NHẤT —
-không rải đều cho đủ số, cũng đừng dè dặt trả về một hai cái rồi thôi. Thiếu chỗ
-xứng đáng thì trả ít hơn, nhưng phải là vì đọc hết rồi mà không có, chứ không
-phải vì ngại chọn.`;
+Bạn được cho một SỐ LƯỢNG cần nhắm. Chọn đúng chừng ấy chỗ MỞ ĐOẠN Ý RÕ NHẤT —
+những mốc mà chủ đề/mạch kể thật sự SANG TRANG. Không rải đều cho đủ số, cũng
+đừng dè dặt trả về một hai cái rồi thôi. Thiếu chỗ xứng đáng thì trả ít hơn, nhưng
+phải là vì đọc hết rồi mà không có, chứ không phải vì ngại chọn.`;
 
 /**
- * `kept` do NƠI GỌI truyền vào, không tự đi lấy.
- *
- * `keptRanges` nằm trong `pipeline.ts`, mà `pipeline.ts` lại gọi hàm này — tự
- * lấy là thành vòng import. Nơi gọi vốn đã có sẵn danh sách ấy.
+ * `spans` = các đơn vị Ý liền nhau (CÂU) trên trục ĐÃ CẮT; ranh giới giữa hai
+ * span kề nhau là một ứng viên "chỗ nối". Nơi gọi truyền vào (nó có sẵn danh
+ * sách câu) — tự đọc ở đây thành vòng import.
  */
 export async function pickEffects(
   projectId: string,
-  kept: KeptRange[],
+  spans: KeptRange[],
 ): Promise<{ applied: number; rejected: number }> {
-  if (kept.length < 2) return { applied: 0, rejected: 0 };
+  if (spans.length < 2) return { applied: 0, rejected: 0 };
 
   const words = db
     .prepare(
@@ -165,21 +150,17 @@ export async function pickEffects(
       .map((word) => word.text)
       .join(" ");
 
-  const joins = kept.slice(0, -1).map((range, index) => ({
+  const joins = spans.slice(0, -1).map((range, index) => ({
     index,
     cut: range.end,
-    resume: kept[index + 1].start,
+    resume: spans[index + 1].start,
     before: around(range.end, "before"),
-    after: around(kept[index + 1].start, "after"),
-    // Chỗ TRỐNG hai bên mối nối — bao nhiêu giây còn vào video nằm sát nó.
-    //
-    // Cần vì hai nửa của cú nhấn phải nằm TRONG phần giữ lại. Đoạn giữ trước
-    // mối nối chỉ dài 0,15 giây thì nửa "trước" 0,5 giây của một cú zoom nằm
-    // phần lớn trong vùng đã bỏ: nó biến mất khỏi video, còn lại một vệt 0,1
-    // giây trên dải. Đo trên một dự án thật: 4/5 cú nhấn mất từ 0,12 tới 0,50
-    // giây theo đúng cách đó.
+    after: around(spans[index + 1].start, "after"),
+    // Chỗ TRỐNG hai bên ranh giới — độ dài câu hai bên. Hai nửa của cú nhấn phải
+    // nằm TRONG câu kề: câu quá ngắn thì nửa "trước" 0,5s của một cú zoom tràn
+    // sang câu khác, nên bên dưới bóp cú nhấn vừa với câu ngắn hơn.
     roomBefore: range.end - range.start,
-    roomAfter: kept[index + 1].end - kept[index + 1].start,
+    roomAfter: spans[index + 1].end - spans[index + 1].start,
   }));
 
   const existing = db
@@ -206,7 +187,7 @@ export async function pickEffects(
 
   // Độ dài phim SẼ XUẤT RA, không phải độ dài bản gốc: mật độ nhịp là thứ người
   // xem cảm nhận trên bản đã cắt.
-  const outputSeconds = kept.reduce(
+  const outputSeconds = spans.reduce(
     (total, range) => total + (range.end - range.start),
     0,
   );
@@ -263,7 +244,7 @@ export async function pickEffects(
         .map(
           (join) =>
             `${join.index}|${join.cut < SHOWCASE_SECONDS ? "[ĐẦU]" : ""} ` +
-            `…${join.before} ⟨CẮT⟩ ${join.after}…`,
+            `…${join.before} ⟨│⟩ ${join.after}…`,
         )
         .join("\n"),
     schemaName: "effects",
