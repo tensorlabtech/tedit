@@ -394,7 +394,6 @@ export async function placeInserts(projectId: string): Promise<{
       const gaps = freeGaps().sort(
         (a, b) => b.end - b.start - (a.end - a.start),
       );
-      let winStart = 0;
       let winEnd = 0;
       let lo = -1;
       for (const g of gaps) {
@@ -408,7 +407,6 @@ export async function placeInserts(projectId: string): Promise<{
             break;
           }
         if (i0 < 0) continue; // khoảng toàn lặng, không từ để neo → thử khoảng kế
-        winStart = ws;
         winEnd = we;
         lo = i0;
         break;

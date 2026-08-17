@@ -1,5 +1,4 @@
 import { voiBoiCanh } from "./ai-context";
-import { JUNCTION_SPECS } from "./junction-kinds";
 import { db, newId } from "./db";
 import { ask, object } from "./llm";
 import {type KeptRange} from "./render";

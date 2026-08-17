@@ -11,16 +11,13 @@ import { existsSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 
 import { listMusic } from "./music-tracks";
-import {buildMaster, buildPreview, burnElements, type CrossAt, cutRanges, keptBefore, mixMusic, mapToOutput, type KeptRange, normalizeReveal, OUT_HEIGHT, OUT_WIDTH, type RenderElement} from "./render";
-import {CROSS_SECONDS, findJunction, junctionHalves, normalizeJunction, type JunctionId} from "./junction-kinds";
+import {buildMaster, buildPreview, type CrossAt, cutRanges, keptBefore, mixMusic, mapToOutput, type KeptRange, normalizeReveal, OUT_HEIGHT, OUT_WIDTH, type RenderElement} from "./render";
+import {CROSS_SECONDS, findJunction, normalizeJunction, type JunctionId} from "./junction-kinds";
 import { keptFromSegments, listSegments } from "./segments";
 import { seedSegmentsByCaption } from "./segment-seed";
 import { buildAsrPrompt } from "./asr-bias";
 import { pickCaptionBand } from "./caption-band";
-import { buildSubjectMask, emptiestBand, hasSubject, subjectPath } from "./subject-mask";
-import { fillFullFrame, scheduleScenes } from "./layout-schedule";
-import { buildPlacedSegments } from "./layout-segments";
-import { PICKABLE_LAYOUTS } from "./layout-kinds";
+import { buildSubjectMask } from "./subject-mask";
 import { proposeCuts } from "./ai-cuts";
 import { fixTranscript } from "./ai-fix-transcript";
 import { trimSilence, trimWordlessIslands } from "./auto-trim-silence";
@@ -966,192 +963,6 @@ export async function runExport(projectId: string, signal?: AbortSignal) {
   stop();
   setJob(projectId, "export", "running", 35, "Đang bỏ các đoạn đã gạch");
   const cut = await cutRanges(projectId, baseVideo, kept, crossAt);
-  /*
-   * Cắt MẶT NẠ theo đúng bộ khoảng ấy.
-   *
-   * Mặt nạ dựng trên `base.mp4` chưa cắt. Nạp thẳng nó vào đồ thị lọc thì nó
-   * chạy theo trục của bản ĐÃ cắt, và hai bên lệch đúng bằng phần đã bỏ — đo
-   * được trên một bản: bỏ 26 giây, và cái viền bám dáng người ôm một tư thế của
-   * mấy giây trước đó.
-   */
-  const maskCut = hasSubject(projectId)
-    ? await cutRanges(projectId, subjectPath(projectId), kept, crossAt, "cut-mask.mp4")
-    : null;
-
-  setJob(projectId, "export", "running", 60, "Đang in chữ và chèn tư liệu");
-  const elements = resolveElements(projectId, kept);
-
-  // Mỗi vết cắt được TỰ SUY một hiệu ứng theo mặc định của dự án — trừ chỗ đã có
-  // hiệu ứng đặt tay phủ lên. Có cả hai thì hai xung cùng kiểu chồng nhau ở cùng
-  // một chỗ, mà `max` của chúng chỉ nhô lên đúng một lần: người dùng kéo dài
-  // quãng ra mà thấy y như cũ, không hiểu vì sao.
-  const junctions: Array<{ start: number; end: number; kind: JunctionId }> = [];
-  const [before, after] = junctionHalves(defaultKind);
-
-  // Mốc của MỌI vết cắt trên dải đã cắt, kể cả chỗ sẽ bỏ qua vì đã có hiệu ứng
-  // đặt tay: cần đủ danh sách thì mới biết một hiệu ứng được phép lấn tới đâu.
-  const cutMarks: number[] = [];
-  /**
-   * Cùng những vết cắt ấy nhưng đo trên dải GỐC.
-   *
-   * Phải giữ cả hai thang: quãng hiệu ứng tính trên dải đã cắt, còn `manual` lưu
-   * mốc gốc nên muốn biết một vết cắt đã có hiệu ứng đặt tay hay chưa thì phải
-   * hỏi bằng mốc gốc. Đem mốc đã cắt đi so với mốc gốc thì chỗ nối có hiệu ứng
-   * tay vẫn bị chồng thêm một hiệu ứng tự suy, và `max` của hai xung cùng kiểu
-   * chỉ nhô lên một lần — người dùng kéo dài quãng ra mà thấy y như cũ.
-   */
-  const cutMarksSource: number[] = [];
-  let running = 0;
-  for (const range of kept.slice(0, -1)) {
-    running += range.end - range.start;
-    cutMarks.push(running);
-    cutMarksSource.push(range.end);
-  }
-  const keptTotal = kept.reduce((sum, r) => sum + (r.end - r.start), 0);
-
-  const crossFadedAudio = new Set(crossAt.map((item) => item.sau));
-
-  /*
-   * KẸP quãng hiệu ứng vào chỗ nó được phép chạy.
-   *
-   * Hai nửa của một kiểu êm dài tới 2,2–2,6 giây mỗi bên, mà công cụ này cắt im
-   * lặng nên đoạn còn lại thường ngắn hơn thế nhiều. Không kẹp thì ra hai hỏng
-   * nhìn thấy được:
-   *
-   * · Chỗ nối gần đầu video cho quãng bắt đầu ở số ÂM. Xung tính theo `t` nên
-   *   ngay khung hình đầu tiên nó đã ở lưng chừng — video mở ra đã phóng to sẵn
-   *   rồi mới hạ về, ở đúng cảnh người xem nhìn đầu tiên.
-   *
-   * · Hai chỗ nối gần nhau cho hai quãng CHỒNG nhau, và `max` của hai xung
-   *   không bao giờ về 0 ở giữa. Hình không còn trở lại tỉ lệ thật giữa hai
-   *   nhịp, nó cứ phóng dở suốt.
-   *
-   * Đo trên một dải bốn đoạn ngắn (9 giây): kiểu `push-in` cho ba quãng
-   * [−1,2 · 3,2] [0,8 · 5,2] [1,8 · 6,2] — một quãng âm và hai quãng chồng.
-   *
-   * Quãng bị giới hạn trong nửa đường tới hai chỗ nối bên cạnh, và CO ĐỀU hai
-   * nửa thay vì cắt cụt bên nào chật.
-   *
-   * Cắt cụt một bên là đổi tỉ lệ giữa hai nửa, mà đỉnh xung lại được tính LẠI
-   * theo đúng tỉ lệ ấy (`effectPeak`) — nên đỉnh trượt khỏi vết cắt và cú nhấn
-   * rơi vào chỗ hình đang chạy liền, không phải chỗ hình đứt. Co đều thì tỉ lệ
-   * giữ nguyên, đỉnh vẫn đúng chỗ, hiệu ứng chỉ gọn lại.
-   */
-  for (const [index, cutAt] of cutMarks.entries()) {
-    const at = cutMarksSource[index];
-    if (manual.some((item) => item.start <= at && at <= item.end)) continue;
-    // Chỗ nối đã dựng chuyển cảnh thật thì thôi: chồng một cú phóng lên một cú
-    // hoà tan là hai thứ giành nhau, và cái nhìn thấy chỉ là hình vừa mờ vừa
-    // giật — không ra kiểu nào cả.
-    if (crossFadedAudio.has(index)) continue;
-    // Ranh giới là NỬA ĐƯỜNG tới vết cắt bên cạnh, không phải chính vết cắt đó:
-    // cho chạy tới tận vết cắt sau thì quãng này và quãng của chỗ nối ấy vẫn
-    // giẫm lên nhau, vì quãng kia được phép bắt đầu từ vết cắt trước — tức từ
-    // đây. Gặp nhau ở giữa thì hai bên chạm mép mà không chồng.
-    const sanTruoc = index > 0 ? (cutMarks[index - 1] + cutAt) / 2 : 0;
-    const sanSau =
-      index + 1 < cutMarks.length
-        ? (cutAt + cutMarks[index + 1]) / 2
-        : keptTotal;
-    // Nửa dài 0 giây không đòi chỗ nào — để nguyên `Infinity` thì nó không tham
-    // gia quyết định hệ số co, thay vì thành 0/0.
-    const coTruoc = before > 0 ? (cutAt - sanTruoc) / before : Infinity;
-    const coSau = after > 0 ? (sanSau - cutAt) / after : Infinity;
-    const co = Math.min(1, coTruoc, coSau);
-    const start = cutAt - before * co;
-    const end = cutAt + after * co;
-    // Quãng bị bóp còn quá ngắn thì bỏ hẳn: một cú nhấn dưới một phần mười giây
-    // không đọc ra là hiệu ứng, chỉ đọc ra là hình bị giật.
-    if (end - start > 0.1) junctions.push({ start, end, kind: defaultKind });
-  }
-
-  // Quy quãng đặt tay sang dải đã cắt. Quãng nằm gọn trong một phần bị bỏ thì
-  // biến mất theo — nó không còn chỗ nào để chạy.
-  for (const item of manual) {
-    const start = keptBefore(kept, item.start);
-    const end = keptBefore(kept, item.end);
-    if (end > start) junctions.push({ start, end, kind: item.kind });
-  }
-
-
-  /*
-   * Dải ít người nhất — đo một lần ở GIỮA phim.
-   *
-   * Giữa phim chứ không đầu: mấy giây đầu hay là lúc người ta còn chỉnh máy, và
-   * một khung ở đó không đại diện cho chỗ họ ngồi suốt phần còn lại.
-   */
-  const behindPack = readStylePack(projectId);
-  /*
-   * Chữ chạy sau người lấy từ TỪ KHOÁ, không lấy từ dòng tiêu đề.
-   *
-   * Tiêu đề là một câu; cắt mấy tiếng đầu của nó ra được "Thị trường" — đúng
-   * ngữ pháp mà không mang gì. Thiết bị này vẽ MỘT từ ở cỡ bằng một phần năm
-   * bề rộng khung, chồng ba tầng: nó cần từ ĐẮT nhất của video, không cần chủ
-   * ngữ của câu đầu.
-   *
-   * Chặng `keywords` đã chọn sẵn những từ ấy rồi. Lấy từ được nhấn NHIỀU LẦN
-   * nhất: lặp lại là dấu hiệu rõ nhất rằng cả video xoay quanh nó.
-   */
-  // Chữ-nền giờ SỐNG trong một element (gieo một lần nếu chưa có). Đọc chữ từ
-  // element thay vì tính chớp — element là nơi người dùng sửa/tắt (ô trống = tắt).
-  const behindEl = behindPack.behindText ? behindElement(projectId) : null;
-  const behindLine = behindEl?.content.trim() ? behindEl.content : null;
-  const behindBand = behindLine
-    ? ((await emptiestBand(projectId, baseInfo.duration / 2))?.index ?? 0)
-    : 0;
-
-  /*
-   * LỊCH MÀN — chỉ xếp khi bộ dáng khai bố cục.
-   *
-   * Mốc nắn lấy từ mép cụm chữ đã quy sang trục ĐÃ CẮT, cùng hệ với mọi thứ
-   * `burnElements` vẽ. Lấy mốc gốc là lệch đúng bằng phần đã bỏ — lỗi tôi đã
-   * mắc một lần với mặt nạ người.
-   */
-  const layoutPack = readStylePack(projectId);
-  /*
-   * LỊCH MÀN + tư liệu — MỘT nguồn `buildPlacedSegments`, cùng đường với khung xem
-   * trước (`scene-schedule.ts`). B-roll và ô người đọc từ cùng bảng `elements`,
-   * neo theo từ → giây đã cắt. Vắng segment = toàn-khung (không sinh màn).
-   */
-  const { segments: placedSegments, media: placedMedia } = buildPlacedSegments(
-    projectId,
-    kept,
-    PICKABLE_LAYOUTS,
-    layoutPack.layouts,
-  );
-  const insertPaths = placedMedia.map((item) => item.path);
-  // Lấp khoảng trống bằng toàn-khung: `layoutPlan` lấy nền trang làm nền, nên chỗ
-  // trống phải có một màn phủ kín để ra video, không ra nền trang trơ. (`keptTotal`
-  // = độ dài phim đã cắt, tính ở trên.)
-  const schedule =
-    layoutPack.layouts.length > 0
-      ? fillFullFrame(scheduleScenes(keptTotal, placedSegments), keptTotal)
-      : [];
-  /*
-   * Tỉ lệ nguồn và chỗ người đứng — hai số làm ô ôm đúng người.
-   *
-   * Đo một lần: tỉ lệ nguồn quyết khổ ô, mà tỉ lệ thì không đổi giữa chừng.
-   */
-  const sourceAspect =
-    baseInfo.width && baseInfo.height ? baseInfo.width / baseInfo.height : undefined;
-  /*
-   * Tỉ lệ TỪNG tệp tư liệu — ô phụ đo theo số này, không theo video chính.
-   *
-   * Cả bốn tệp của dự án thử nghiệm là 720×1280 (dọc 9:16) trong khi ô phụ khai
-   * `ngang` (16:9): nhét dọc vào ngang bỏ mất 68% khung hình. Bố cục không biết
-   * trước người dùng nạp gì, nên nó không được chốt cứng tỉ lệ của ô đựng thứ ấy.
-   */
-  const insertAspects = await Promise.all(
-    insertPaths.map(async (path) => {
-      const info = await probe(path).catch(() => null);
-      return info?.width && info?.height ? info.width / info.height : 1;
-    }),
-  );
-
-  // CỜ ENGINE: Remotion là MÁY VẼ MẶC ĐỊNH (một-engine). Đặt `TEDDIT_ENGINE=ffmpeg`
-  // để quay lại `burnElements` (ffmpeg) làm ĐƯỜNG LÙI nếu Remotion hỏng ca nào đó.
-  const engine =
-    process.env.TEDDIT_ENGINE === "ffmpeg" ? "ffmpeg" : "remotion";
   // CHỐT số sửa NGAY TRƯỚC render (sau mọi bước đóng dấu/chuẩn bị): đây là "phiên
   // bản nội dung" mà bản dựng ghi lại. Set vào `exported_rev` khi xong → sửa gì
   // SAU thời điểm này (content_rev tăng tiếp) tự thành "cũ".
@@ -1161,60 +972,24 @@ export async function runExport(projectId: string, signal?: AbortSignal) {
       | undefined
   )?.r ?? 0;
   stop();
-  if (engine === "remotion")
-    setJob(projectId, "export", "running", 40, "Đang dựng hình (Remotion)");
-  const finalPath =
-    engine === "remotion"
-      ? await renderViaRemotion(
-          projectId,
-          cut,
-          join(outDir(projectId), "final.mp4"),
-          {
-            signal,
-            // Khâu Remotion (0..1) trải lên quãng 40→80 của tiến trình xuất —
-            // đây là khâu LÂU nhất; nối vào để thanh chạy mượt thay vì đứng ở 40.
-            onProgress: (ratio) =>
-              setJob(
-                projectId,
-                "export",
-                "running",
-                40 + Math.round(ratio * 40),
-                "Đang dựng hình (Remotion)",
-              ),
-          },
-        )
-      : await burnElements(
+  setJob(projectId, "export", "running", 40, "Đang dựng hình (Remotion)");
+  const finalPath = await renderViaRemotion(
     projectId,
     cut,
-    elements,
-    // Đọc MỘT LẦN lúc bắt đầu chặng xuất. Đổi bộ dáng giữa chừng chỉ ảnh hưởng
-    // lượt sau — bản đang dựng dở không tự đổi dáng ở nửa sau video.
-    readStylePack(projectId),
-    junctions,
-    // Đọc cùng lúc với bộ dáng, cùng lý do: bản đang dựng dở không đổi tiêu đề
-    // ở nửa sau video khi người dùng sửa ô nhập giữa chừng.
-    (
-      db.prepare("SELECT headline FROM projects WHERE id=?").get(projectId) as
-        | { headline: string | null }
-        | undefined
-    )?.headline ?? null,
-    // Độ đục hình dán lấy điểm giữa xác định (không còn đo độ sáng khung hình).
-    null,
-    maskCut,
-    /*
-     * Chữ chạy sau người dùng lại chính DÒNG TIÊU ĐỀ.
-     *
-     * Không thêm một ô nhập nữa: người dùng đã gõ một câu đại diện cho video
-     * rồi, và bắt họ gõ câu thứ hai cho một thiết bị của bộ dáng là bắt họ học
-     * bộ dáng. Bộ nào có `behindText` thì câu ấy được vẽ theo lối này; bộ nào
-     * không thì nó vẫn là dòng tiêu đề như cũ.
-     */
-    behindLine,
-    behindBand,
-    schedule,
-    insertPaths,
-    insertAspects,
-    sourceAspect,
+    join(outDir(projectId), "final.mp4"),
+    {
+      signal,
+      // Khâu Remotion (0..1) trải lên quãng 40→80 của tiến trình xuất — đây là
+      // khâu LÂU nhất; nối vào để thanh chạy mượt thay vì đứng ở 40.
+      onProgress: (ratio) =>
+        setJob(
+          projectId,
+          "export",
+          "running",
+          40 + Math.round(ratio * 40),
+          "Đang dựng hình (Remotion)",
+        ),
+    },
   );
 
   // Nhạc đặt theo thời gian NGUỒN trên dải, nên phải quy sang dải ĐÃ CẮT: bỏ
