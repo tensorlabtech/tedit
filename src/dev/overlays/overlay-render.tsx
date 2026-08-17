@@ -163,13 +163,18 @@ export function buildRows(config: OverlayConfig, pack: ShownPack = BASE_SHOWN): 
     // Chữ KHÔNG nhấn (dẫn nhỏ) trước đây bị hãm 0,075 nên bé hẳn so với hero. Nâng
     // tỉ lệ 0,4→0,48 và trần 0,075→0,085 cho đọc rõ hơn, vẫn nhỏ hơn hero rõ rệt.
     const small = Math.min(heroSize * 0.48, 0.085);
-    const secondary = (list: string[]): Row =>
-      list.map((word) => ({
+    const secondary = (list: string[]): Row => {
+      // Dòng dẫn là MỘT hàng cấm bẻ — cỡ-dẫn cố định làm dòng dài (vd cụm tiếng
+      // Anh) tràn mép khung. Lấy cỡ nhỏ hơn giữa cỡ-dẫn và cỡ-vừa-khung của CHÍNH
+      // hàng đó → không bao giờ tràn. Cùng luật với `word-layout.ts` máy chủ.
+      const size = Math.min(small, fitRow(list.join(" "), avail, 1, pack));
+      return list.map((word) => ({
         text: word,
-        size: small,
+        size,
         bold: false,
         color: COLOR.dim,
       }));
+    };
     return [
       ...(before.length > 0 ? [secondary(before)] : []),
       // MÀU theo từ khoá THẬT, CỠ theo trục nhấn — cùng luật với máy chủ. Cụm

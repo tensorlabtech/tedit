@@ -183,6 +183,24 @@ async function buildRows(
     const heroText = hero.map((piece) => piece.text).join(" ");
     const heroScale = await fitRow(heroText, usable, 1, videoWidth, pack);
     const small = Math.min(heroScale * 0.4, 0.075);
+    // Dòng dẫn (before/after) là MỘT hàng cấm bẻ. Cỡ-dẫn cố định làm dòng dài
+    // (vd cụm tiếng Anh "personal branding") chạy ra ngoài mép khung. Lấy cỡ nhỏ
+    // hơn giữa cỡ-dẫn và cỡ-vừa-khung của CHÍNH hàng đó → không bao giờ tràn.
+    const fitSmall = async (list: Piece[]) =>
+      list.length > 0
+        ? Math.min(
+            small,
+            await fitRow(
+              list.map((piece) => piece.text).join(" "),
+              usable,
+              1,
+              videoWidth,
+              pack,
+            ),
+          )
+        : small;
+    const smallBefore = await fitSmall(before);
+    const smallAfter = await fitSmall(after);
     const row = (list: Piece[], scale: number, tone: Tone) =>
       list.map((piece) => ({
         text: piece.text,
@@ -201,9 +219,9 @@ async function buildRows(
       ...(piece.keyword ? key : main),
     }));
     return [
-      ...(before.length > 0 ? [row(before, small, dim)] : []),
+      ...(before.length > 0 ? [row(before, smallBefore, dim)] : []),
       heroRow,
-      ...(after.length > 0 ? [row(after, small, dim)] : []),
+      ...(after.length > 0 ? [row(after, smallAfter, dim)] : []),
     ];
   }
 
