@@ -193,6 +193,25 @@ export function useTrimDrag({
       const words = dataRef.current?.words ?? [];
       if (!scene || words.length === 0) return;
       const { toOutput, toSource } = timeMapRef.current;
+
+      // KHUNG MỜ = FREE (neo-giây như b-roll): dời cả khối theo GIÂY, KHÔNG snap
+      // vào từ. Đóng dấu start/end NGUỒN — render ưu tiên đọc giây (layout-segments),
+      // nên bám nội dung khi cắt thêm mà vẫn kéo mượt. Không undo — như b-roll.
+      if (scene.frameBlock?.blur) {
+        const len = scene.end - scene.start;
+        const outStart = Math.max(0, targetStart);
+        dragMove.current = {
+          kind: "scene",
+          id,
+          start: toSource(outStart),
+          end: toSource(outStart + len),
+          wasStart: dragMove.current?.wasStart ?? toSource(scene.start),
+          wasEnd: dragMove.current?.wasEnd ?? toSource(scene.end),
+        };
+        setScenePreview({ elementId: id, start: outStart, end: outStart + len });
+        return;
+      }
+
       const fromIdx = nearestWordIndex(
         words, 0, words.length - 1, toSource(scene.start), (w) => w.start,
       );
@@ -309,7 +328,15 @@ export function useTrimDrag({
     setScenePreview(null); // hết nhiệm vụ dù dời loại nào
     if (!projectId || !pending) return;
     if (pending.kind === "scene") {
-      if (pending.fromWordId && pending.toWordId) {
+      if (pending.start != null && pending.end != null) {
+        // KHUNG MỜ neo-giây: dời = ghi start/end NGUỒN (như b-roll).
+        await api
+          .updateElement(pending.id, {
+            start: pending.start,
+            end: pending.end,
+          })
+          .catch(boQuaLoi());
+      } else if (pending.fromWordId && pending.toWordId) {
         await api
           .updateElement(pending.id, {
             fromWordId: pending.fromWordId,
@@ -369,6 +396,38 @@ export function useTrimDrag({
         const words = dataRef.current?.words ?? [];
         if (!scene || words.length === 0) return;
         const { toOutput, toSource } = timeMapRef.current;
+
+        // KHUNG MỜ = FREE (neo-giây): kéo mép theo GIÂY, không snap vào từ. Vẫn né
+        // khối liền kề (khỏi đè → bị lịch màn loại). Ghi start/end NGUỒN lúc thả.
+        if (scene.frameBlock?.blur) {
+          const MIN = 0.3;
+          const nb =
+            edge === "end"
+              ? schedule
+                  .filter((s) => s.elementId !== id && s.start >= scene.end - 0.001)
+                  .reduce((m, s) => Math.min(m, s.start), Number.POSITIVE_INFINITY)
+              : schedule
+                  .filter((s) => s.elementId !== id && s.end <= scene.start + 0.001)
+                  .reduce((m, s) => Math.max(m, s.end), 0);
+          let outStart = scene.start;
+          let outEnd = scene.end;
+          if (edge === "start") {
+            outStart = Math.min(Math.max(nb, nextTime), scene.end - MIN);
+          } else {
+            outEnd = Math.max(Math.min(nb, nextTime), scene.start + MIN);
+          }
+          dragTrim.current = {
+            kind: "scene",
+            id,
+            edge,
+            at: 0,
+            was: 0,
+            insertStart: toSource(outStart),
+            insertEnd: toSource(outEnd),
+          };
+          setScenePreview({ elementId: id, start: outStart, end: outEnd });
+          return;
+        }
 
         const cache =
           dragTrim.current?.kind === "scene" && dragTrim.current.id === id
@@ -772,6 +831,17 @@ export function useTrimDrag({
     if (!projectId || !pending) return;
 
     if (pending.kind === "scene") {
+      if (pending.insertStart != null && pending.insertEnd != null) {
+        // KHUNG MỜ neo-giây: ghi start/end NGUỒN (như b-roll). Không undo — như b-roll.
+        await api
+          .updateElement(pending.id, {
+            start: pending.insertStart,
+            end: pending.insertEnd,
+          })
+          .catch(boQuaLoi());
+        onSceneTrimmed?.();
+        return;
+      }
       if (pending.wordId) {
         await api
           .updateElement(
