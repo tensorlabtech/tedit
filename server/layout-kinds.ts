@@ -162,6 +162,12 @@ export type LayoutSpec = {
   slots: Slot[];
   /** Cần tư liệu chèn mới dựng được. */
   needsInsert: boolean;
+  /**
+   * Bố cục ĐẶC BIỆT — không bày trong picker chọn-khung-cho-một-khoảnh-khắc.
+   * `toan-khung` là mặc định khi vắng segment (chọn qua nút "Bỏ khung");
+   * `trang-chu` là khung không-video (chỉ chữ). Bố cục người/b-roll thường để trống.
+   */
+  special?: boolean;
 };
 
 export const LAYOUT_SPECS: LayoutSpec[] = [
@@ -172,6 +178,7 @@ export const LAYOUT_SPECS: LayoutSpec[] = [
     slots: [{ role: "chinh", areaShare: 1, anchor: { x: 0.5, y: 0.5 }, mask: null, z: 0 }],
     // Chữ đứng đâu trong khung cũng được; `text-layout.ts` lo dải trên/dưới.
     needsInsert: false,
+    special: true,
   },
   {
     id: "o-don",
@@ -270,6 +277,7 @@ export const LAYOUT_SPECS: LayoutSpec[] = [
     note: "Không có video — cả khung là nền trang với chữ và hình vẽ",
     slots: [],
     needsInsert: false,
+    special: true,
   },
 ];
 
@@ -282,10 +290,9 @@ export const LAYOUT_SPECS: LayoutSpec[] = [
  * nào. Trừ `toan-khung` (là MẶC ĐỊNH khi vắng segment, chọn qua nút "Bỏ khung").
  */
 export const PICKABLE_LAYOUTS: LayoutKindId[] = LAYOUT_SPECS.filter(
-  // `toan-khung` (mặc định khi vắng segment) và `trang-chu` (khung KHÔNG video,
-  // chỉ chữ) là hai ca đặc biệt, không phải khung người/b-roll thường — không bày
-  // trong picker chọn-khung-cho-một-khoảnh-khắc-video.
-  (spec) => spec.id !== "toan-khung" && spec.id !== "trang-chu",
+  // Bỏ bố cục ĐẶC BIỆT (đánh dấu `special`) — không phải khung người/b-roll
+  // thường. Thêm bố cục đặc biệt sau này chỉ cần đặt cờ, không sửa danh sách này.
+  (spec) => !spec.special,
 ).map((spec) => spec.id);
 
 const BY_ID = new Map(LAYOUT_SPECS.map((spec) => [spec.id, spec]));
