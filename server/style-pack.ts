@@ -263,6 +263,12 @@ export type StylePack = {
    */
   highlight: { tone: Tone; box: Tone | null } | null;
   /**
+   * NỀN MỘT-DẢI sau CẢ khối chữ — một hình chữ nhật bo tròn ôm sát cụm (khác
+   * `box` per-tiếng và `plate` phủ-ngang-mép). Dáng phụ đề phổ thông: chữ trắng
+   * trên một dải tối mờ bo tròn. `null` = không có.
+   */
+  captionBg: { tone: Tone; padShare: number; cornerShare: number } | null;
+  /**
    * Luật CHIA CỤM — "một lúc hiện mấy tiếng".
    *
    * Đây là trục quyết định dáng phụ đề mạnh không kém font, mà trước đây nó là
@@ -785,6 +791,7 @@ export type CaptionBlock = Pick<
   | "edge"
   | "glow"
   | "box"
+  | "captionBg"
   | "highlight"
   | "plate"
   | "wrap"
@@ -821,6 +828,7 @@ export function blocksFromPack(pack: StylePack): StyleBlocks {
       edge: pack.edge,
       glow: pack.glow,
       box: pack.box,
+      captionBg: pack.captionBg,
       highlight: pack.highlight,
       plate: pack.plate,
       wrap: pack.wrap,

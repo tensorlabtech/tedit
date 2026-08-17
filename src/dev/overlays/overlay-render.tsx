@@ -170,7 +170,9 @@ export function buildRows(config: OverlayConfig, pack: ShownPack = BASE_SHOWN): 
     const hero = from >= 0 ? words.slice(from, last + 1) : [words[0]];
     const before = from >= 0 ? words.slice(0, from) : words.slice(1);
     const after = from >= 0 ? words.slice(last + 1) : [];
-    const heroSize = fitRow(hero.join(" "), avail, 1, pack);
+    // Cỡ nhấn = 75% mức vừa-khung: chữ hero to hết cỡ đọc ra "hét", giảm còn 3/4
+    // cho nó nổi mà không lấn. Dòng dẫn (small) suy từ đây nên co theo cùng tỉ lệ.
+    const heroSize = fitRow(hero.join(" "), avail, 1, pack) * 0.75;
     // Chữ KHÔNG nhấn (dẫn nhỏ) trước đây bị hãm 0,075 nên bé hẳn so với hero. Nâng
     // tỉ lệ 0,4→0,48 và trần 0,075→0,085 cho đọc rõ hơn, vẫn nhỏ hơn hero rõ rệt.
     const small = Math.min(heroSize * 0.48, 0.085);
@@ -506,6 +508,17 @@ export function OverlayTextBlock({
           flexDirection: "column",
           alignItems: items,
           position: "relative",
+          // NỀN MỘT DẢI: container co về bề rộng chữ (`fit-content`) rồi tự căn
+          // giữa; `fontSize` = cỡ caption (cqw) làm mốc `em`. Nền THẬT là lớp tuyệt
+          // đối phía sau (dưới), KHÔNG padding vào đây — thêm padding sẽ ĐẨY chữ,
+          // lệch chỗ so với bản dựng. Nền chỉ ôm SAU chữ, chữ đứng nguyên.
+          ...(pack.captionBg
+            ? {
+                fontSize: `${(rows[0]?.[0]?.size ?? 0.05) * 100}cqw`,
+                width: "fit-content",
+                marginInline: "auto",
+              }
+            : null),
           /*
            * HÌNH BÁM CHỮ — `-webkit-mask-box-image` là phép cắt ba lát của CSS,
            * đúng cùng mô hình với ba `overlay` bên máy chủ: hai đầu giữ nguyên
@@ -522,6 +535,21 @@ export function OverlayTextBlock({
           ...wrapMaskStyle(pack),
         }}
       >
+        {pack.captionBg && (
+          <div
+            data-caption-bg=""
+            style={{
+              position: "absolute",
+              top: `-${pack.captionBg.padShare}em`,
+              bottom: `-${pack.captionBg.padShare}em`,
+              left: `-${pack.captionBg.padShare * 1.6}em`,
+              right: `-${pack.captionBg.padShare * 1.6}em`,
+              backgroundColor: cssColor(pack.captionBg.tone),
+              borderRadius: `${pack.captionBg.cornerShare}em`,
+              zIndex: -1,
+            }}
+          />
+        )}
         {rows.map((row, index) => {
           const shift = indentOf(config.align, index, rows.length) * 100;
           return (

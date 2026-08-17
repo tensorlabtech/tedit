@@ -163,6 +163,7 @@ const BASE = {
   edge: { share: 0.022, tone: { color: "#000000", alpha: 0.7 } },
   glow: { opacity: 0.9, radiusPx: 10, cssBlurShare: 12 },
   box: null,
+  captionBg: null,
   // Mảng màu: hai bộ hiện có đều chưa dùng — trục này để hạ tầng chờ bộ dáng
   // THIẾT BỊ tiếp theo, cùng lối `Phấn`/`Nhịp đen`.
   plate: null,
@@ -525,8 +526,9 @@ export const CO_BAN: StylePack = {
     key: { color: "#FFFFFF", alpha: 1 },
   },
   highlight: { tone: { color: "#FFFFFF", alpha: 1 }, box: null },
-  // Nền đen mờ bo tròn sau chữ (per-tiếng; `padShare` rộng cho các ô liền thành dải).
-  box: { tone: { color: "#000000", alpha: 0.5 }, padShare: 0.16, cornerShare: 0.3 },
+  // Nền MỘT DẢI đen mờ bo tròn ôm cả cụm (không phải pill từng tiếng) — dáng phụ
+  // đề phổ thông. `padShare`/`cornerShare` theo em của cỡ chữ caption.
+  captionBg: { tone: { color: "#000000", alpha: 0.55 }, padShare: 0.45, cornerShare: 0.35 },
   // NHỎ — cỡ caption phổ thông ~6,5% bề rộng khung.
   density: { ...BASE.density, maxScale: 0.065 },
   // Người TOÀN-KHUNG hoặc b-roll PHỦ KÍN — không thẻ/ô.

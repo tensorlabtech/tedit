@@ -137,9 +137,9 @@ export const BANDS: Array<{
     // một tấm bìa đè lên b-roll — nhưng nói rõ giá của nó ngay tại chỗ chọn.
     note: "Che mặt người nói — chỉ dùng khi thật sự cần",
   },
-  // Mép DƯỚI khối ở 73% chiều cao — khớp `BAND_ANCHOR.bottom` của `text-layout.ts`
-  // (máy chủ). Trước để 0.8 nên preview vẽ dải dưới thấp hơn bản xuất 7% khung.
-  { id: "bottom", label: "Dưới", edge: "bottom", at: 0.73 },
+  // Mép DƯỚI khối ở 80% — vị trí phụ đề CHUẨN (sát lề an toàn dưới), khớp
+  // `BAND_ANCHOR.bottom` của `text-layout.ts`.
+  { id: "bottom", label: "Dưới", edge: "bottom", at: 0.8 },
 ];
 
 /**

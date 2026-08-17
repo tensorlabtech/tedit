@@ -193,7 +193,9 @@ async function buildRows(
     const before = from >= 0 ? pieces.slice(0, from) : pieces.slice(1);
     const after = from >= 0 ? pieces.slice(last + 1) : [];
     const heroText = hero.map((piece) => piece.text).join(" ");
-    const heroScale = await fitRow(heroText, usable, 1, videoWidth, pack);
+    // Cỡ nhấn = 75% mức vừa-khung (khớp `overlay-render.tsx`): hero to hết cỡ đọc
+    // ra "hét"; 3/4 cho nổi mà không lấn. Dòng dẫn suy từ đây nên co theo cùng tỉ lệ.
+    const heroScale = (await fitRow(heroText, usable, 1, videoWidth, pack)) * 0.75;
     // Cùng số với `overlay-render.tsx` (trang xem): tỉ lệ 0,48 và trần 0,085 cho
     // dòng dẫn đọc rõ hơn. Trước để 0,4/0,075 nên bản xuất có dòng dẫn bé hơn preview.
     const small = Math.min(heroScale * 0.48, 0.085);
