@@ -170,7 +170,19 @@ async function buildRows(
   const px = (scale: number) => Math.round(videoWidth * scale);
   const { main, dim, key } = pack.color;
 
-  if (emphasis === "keyword-large") {
+  // Kiểu "hero khổng lồ" chỉ phóng to được MỘT cụm nhấn liền nhau. Đánh dấu ≥2 cụm
+  // rời thì cụm sau bị bỏ rơi ở dòng dẫn nhỏ — người dùng bấm nhấn mà không thấy
+  // nhấn. Nên ≥2 cụm → "xen cỡ": mọi tiếng nhấn đều to hơn tiếng thường. Khớp
+  // `overlay-render.tsx` của trang xem.
+  const markedRuns = pieces.reduce(
+    (n, piece, i) =>
+      n + (piece.keyword && !(i > 0 && pieces[i - 1].keyword) ? 1 : 0),
+    0,
+  );
+  const eff: EmphasisId =
+    emphasis === "keyword-large" && markedRuns > 1 ? "mixed-size" : emphasis;
+
+  if (eff === "keyword-large") {
     // Đoạn từ khoá LIỀN NHAU phóng to, phần trước lên trên, phần sau xuống dưới.
     // Bốc riêng tiếng từ khoá dài nhất ra giữa là đảo thứ tự chữ của người dùng.
     const marked = pieces.map((piece) => piece.keyword);
@@ -225,7 +237,7 @@ async function buildRows(
     ];
   }
 
-  if (emphasis === "mixed-size") {
+  if (eff === "mixed-size") {
     const SMALL = pack.density.mixedSmallRatio;
     // Chưa đánh dấu tiếng nào thì XEN THEO THỨ TỰ — cùng luật với trang xem.
     // Không có bước này thì cả cụm ra một cỡ nhỏ, đúng cái tên hứa ngược lại.
@@ -273,7 +285,7 @@ async function buildRows(
     return out;
   }
 
-  if (emphasis === "even") {
+  if (eff === "even") {
     // Cỡ đều: bẻ dòng theo bề rộng rồi dùng CHUNG một cỡ — dáng phụ đề khổ lớn.
     // Vẫn trả về từng tiếng chứ không trả cả dòng, vì hiệu ứng hiện ra chạy theo
     // TIẾNG. Gộp dòng lại thì cả dòng bật ra một lượt, mất đúng thứ làm nên nhịp.

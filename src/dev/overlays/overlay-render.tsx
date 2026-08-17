@@ -140,7 +140,18 @@ export function buildRows(config: OverlayConfig, pack: ShownPack = BASE_SHOWN): 
   // `even`: bẻ dòng + một cỡ LỚN chung, thay vì nhồi hết vào MỘT hàng hero (câu
   // dài sẽ nhỏ đi). Nhờ vậy "tô hết = to hết" đúng như người dùng nghĩ.
   const allKeywords = words.every(isKey);
-  if (config.emphasis === "even" || allKeywords) {
+  // Đếm số CỤM nhấn rời nhau. Kiểu "hero khổng lồ" chỉ phóng to được MỘT cụm liền
+  // nhau; đánh dấu ≥2 cụm rời thì cụm sau bị bỏ rơi ở dòng nhỏ — bấm nhấn mà không
+  // nhấn. Nên ≥2 cụm → chuyển sang "xen cỡ": mọi tiếng nhấn đều to hơn tiếng thường.
+  const markedRuns = words.reduce(
+    (n, word, i) => n + (isKey(word) && !(i > 0 && isKey(words[i - 1])) ? 1 : 0),
+    0,
+  );
+  const emphasis =
+    config.emphasis === "keyword-large" && markedRuns > 1
+      ? "mixed-size"
+      : config.emphasis;
+  if (emphasis === "even" || allKeywords) {
     // Bẻ dòng theo bề rộng rồi dùng CHUNG một cỡ — dáng phụ đề khổ lớn. Truyền
     // `isKey` để ĐO mỗi tiếng bằng đúng font vai (per-word) → không tràn khung.
     const { lines, size } = fitGroup(words.join(" "), avail, pack, isKey);
@@ -149,7 +160,7 @@ export function buildRows(config: OverlayConfig, pack: ShownPack = BASE_SHOWN): 
     );
   }
 
-  if (config.emphasis === "keyword-large") {
+  if (emphasis === "keyword-large") {
     // Lấy đoạn từ khoá LIỀN NHAU làm tiếng khổng lồ, phần trước lên trên, phần sau
     // xuống dưới. Bốc riêng một tiếng ra giữa thì câu đọc lộn thứ tự.
     const marked = words.map(isKey);
@@ -192,7 +203,7 @@ export function buildRows(config: OverlayConfig, pack: ShownPack = BASE_SHOWN): 
     ];
   }
 
-  if (config.emphasis === "mixed-size") {
+  if (emphasis === "mixed-size") {
     const SMALL = pack.density.mixedSmallRatio;
     // Chưa đánh dấu tiếng nào thì XEN THEO THỨ TỰ. Không có bước này, "xen cỡ"
     // không từ khoá cho ra cả cụm cùng một cỡ nhỏ — đúng cái tên hứa ngược lại,
