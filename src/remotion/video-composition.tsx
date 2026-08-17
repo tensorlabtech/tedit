@@ -305,6 +305,16 @@ function Cells({
               animY = -14 * (1 - p); // thu về + trượt lên
             }
           }
+          // KEN BURNS: b-roll (video + ảnh) PHÓNG/NỚI chậm suốt cảnh → footage tĩnh
+          // hay cảnh "ngồi yên" vẫn có chuyển động, video b-roll-dày không chết cứng
+          // (~70% thời lượng "có gì đó"). Nhẹ (±9%), XEN chiều theo thứ tự cho đỡ đơn
+          // điệu. Áp lên MEDIA trong ô cắt — khác `animScale` (mọc/thu của cả THẺ).
+          let kenBurns = 1;
+          if (isBroll) {
+            const dur = Math.max(0.1, scene.end - scene.start);
+            const p = Math.min(1, Math.max(0, (t - scene.start) / dur));
+            kenBurns = i % 2 === 0 ? 1 + 0.09 * p : 1.09 - 0.09 * p;
+          }
           return (
             <div
               key={i}
@@ -343,6 +353,7 @@ function Cells({
                         width: "100%",
                         height: "100%",
                         objectFit: "cover",
+                        transform: `scale(${kenBurns})`,
                       }}
                     />
                   ) : (
@@ -370,6 +381,7 @@ function Cells({
                           width: "100%",
                           height: "100%",
                           objectFit: "cover",
+                          transform: `scale(${kenBurns})`,
                         }}
                       />
                     </Sequence>
