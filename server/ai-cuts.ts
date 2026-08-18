@@ -52,15 +52,10 @@ CHỈ chọn những quãng bỏ đi mà người xem KHÔNG mất thông tin n�
 - e-a: tiếng đệm ("ừm", "à", "ờ", "kiểu là") không mang nghĩa
 - vap: nói vấp rồi nói lại chính ý đó ngay sau
 - lap: lặp nguyên một ý vừa nói xong
-- bo-do: câu bỏ dở giữa chừng rồi làm lại. DẤU HIỆU CHẮC CHẮN: một từ kết thúc
-  bằng "--" (bị ngắt, vd "cái--", "phần--"), HOẶC một cụm nói dở rồi NGAY SAU nói
-  LẠI (restart).
-  QUY TẮC CẮT — cắt TRỌN lần nói ĐẦU (lần hỏng), TỪ tiếng ĐẦU TIÊN của nó cho tới
-  chỗ ngắt, GỒM cả những tiếng bị LẶP ở đầu. Chỉ chừa lần nói lại hoàn chỉnh.
-  Ví dụ: "Các bạn có thể, ờ, duyệt những cái--" [rồi] "các bạn có thể duyệt bản
-  chép lời" → cắt HẾT "Các bạn có thể, ờ, duyệt những cái--" (KỂ CẢ "Các bạn có
-  thể," lặp ở đầu), chỉ giữ "các bạn có thể duyệt bản chép lời". Mạnh tay như
-  ngoai-canh — ĐỪNG chỉ cắt khúc sát "--" mà bỏ sót phần đầu lặp lại.
+- bo-do: câu bỏ dở rồi làm lại. Dấu hiệu: một từ bị ngắt giữa chừng (kết thúc bằng
+  "--"), hoặc một cụm nói dở rồi ngay sau nói LẠI cùng ý. Cắt TRỌN lần nói ĐẦU (lần
+  hỏng) — từ tiếng đầu tới chỗ ngắt, KỂ CẢ những tiếng lặp ở đầu — chỉ giữ lần nói
+  lại hoàn chỉnh, đừng chỉ cắt khúc đuôi.
 - lac-de: lạc hẳn khỏi mạch, bỏ đi vẫn liền
 
 TUYỆT ĐỐI KHÔNG cắt: ý chính, ví dụ minh hoạ, câu chuyển mạch, câu mở, câu chốt,
