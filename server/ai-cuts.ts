@@ -52,11 +52,15 @@ CHỈ chọn những quãng bỏ đi mà người xem KHÔNG mất thông tin n�
 - e-a: tiếng đệm ("ừm", "à", "ờ", "kiểu là") không mang nghĩa
 - vap: nói vấp rồi nói lại chính ý đó ngay sau
 - lap: lặp nguyên một ý vừa nói xong
-- bo-do: câu bỏ dở giữa chừng rồi làm lại hoặc chuyển ý. HAI DẤU HIỆU CHẮC CHẮN:
-  (a) một từ kết thúc bằng "--" (bị ngắt giữa chừng, vd "cái--", "phần--");
-  (b) một cụm nói dở rồi NGAY SAU nói lại gần như cùng chữ (vd "Các bạn có thể,
-  ờ, duyệt những cái--" rồi restart "Các bạn có..."). Gặp một trong hai thì cắt
-  CẢ cụm dẫn tới chỗ ngắt (gồm cả tiếng đệm bên trong), mạnh tay như ngoai-canh.
+- bo-do: câu bỏ dở giữa chừng rồi làm lại. DẤU HIỆU CHẮC CHẮN: một từ kết thúc
+  bằng "--" (bị ngắt, vd "cái--", "phần--"), HOẶC một cụm nói dở rồi NGAY SAU nói
+  LẠI (restart).
+  QUY TẮC CẮT — cắt TRỌN lần nói ĐẦU (lần hỏng), TỪ tiếng ĐẦU TIÊN của nó cho tới
+  chỗ ngắt, GỒM cả những tiếng bị LẶP ở đầu. Chỉ chừa lần nói lại hoàn chỉnh.
+  Ví dụ: "Các bạn có thể, ờ, duyệt những cái--" [rồi] "các bạn có thể duyệt bản
+  chép lời" → cắt HẾT "Các bạn có thể, ờ, duyệt những cái--" (KỂ CẢ "Các bạn có
+  thể," lặp ở đầu), chỉ giữ "các bạn có thể duyệt bản chép lời". Mạnh tay như
+  ngoai-canh — ĐỪNG chỉ cắt khúc sát "--" mà bỏ sót phần đầu lặp lại.
 - lac-de: lạc hẳn khỏi mạch, bỏ đi vẫn liền
 
 TUYỆT ĐỐI KHÔNG cắt: ý chính, ví dụ minh hoạ, câu chuyển mạch, câu mở, câu chốt,
@@ -115,9 +119,7 @@ export async function proposeCuts(projectId: string): Promise<{
   let applied = 0;
   let rejected = 0;
 
-  // Xếp theo mốc GIẢM DẦN rồi mới bỏ: `removeRange` tách đoạn nên bỏ từ cuối
-  // lên đầu thì các mốc phía trước chưa bị đụng tới.
-  const spans = proposal.cuts
+  const valid = proposal.cuts
     .map((cut) => ({
       from: index.get(cut.fromWordId),
       to: index.get(cut.toWordId),
@@ -130,18 +132,24 @@ export async function proposeCuts(projectId: string): Promise<{
       start: words[span.from].start_sec,
       end: words[span.to].end_sec,
     }))
-    .sort((a, b) => b.start - a.start);
+    .sort((a, b) => a.start - b.start);
 
-  const taken: Array<{ start: number; end: number }> = [];
+  // GỘP đề xuất CHỒNG nhau thành một khoảng. Model hay tách một câu bỏ-dở thành
+  // hai đề xuất chồng nhau (khúc đầu LẶP + khúc đuôi "--"). Trước đây loại cái
+  // chồng nên cái bắt đầu MUỘN hơn thắng → cắt cụt, bỏ sót phần đầu lặp. Gộp thì
+  // cắt TRỌN cả câu hỏng.
+  const spans: Array<{ start: number; end: number }> = [];
+  for (const s of valid) {
+    const last = spans[spans.length - 1];
+    if (last && s.start <= last.end) last.end = Math.max(last.end, s.end);
+    else spans.push({ ...s });
+  }
+  // Bỏ từ CUỐI lên ĐẦU: `removeRange` tách đoạn, làm xuôi thì mốc sau trôi hết.
+  spans.sort((a, b) => b.start - a.start);
+
   for (const span of spans) {
     const length = span.end - span.start;
     if (length < MIN_SECONDS || length > MAX_SECONDS) {
-      rejected += 1;
-      continue;
-    }
-    // Chồng lên quãng đã nhận thì bỏ: hai lần bỏ chồng nhau làm `removeRange`
-    // tách đoạn ở những mốc không còn tồn tại.
-    if (taken.some((item) => span.start < item.end && item.start < span.end)) {
       rejected += 1;
       continue;
     }
@@ -152,9 +160,8 @@ export async function proposeCuts(projectId: string): Promise<{
       rejected += 1;
       continue;
     }
-    taken.push(span);
     applied += 1;
   }
 
-  return { applied, rejected: rejected + (proposal.cuts.length - spans.length) };
+  return { applied, rejected: rejected + (proposal.cuts.length - valid.length) };
 }

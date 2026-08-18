@@ -20,6 +20,7 @@ import { buildSubjectMask } from "./subject-mask";
 import { proposeCuts } from "./ai-cuts";
 import { fixTranscript } from "./ai-fix-transcript";
 import { trimSilence, trimWordlessIslands } from "./auto-trim-silence";
+import { trimFalseStarts } from "./trim-false-starts";
 import { detectSpeech, readSpeech } from "./vad";
 import { describeInserts } from "./ai-broll-describe";
 import { placeInserts } from "./ai-broll-place";
@@ -1252,11 +1253,14 @@ function aiJobs(projectId: string): AiJob[] {
       key: "cuts",
       run: async () => {
         const { applied, rejected } = await proposeCuts(projectId);
-        // SAU ai-cuts: dọn ĐẢO GIỮ không-lời (VAD báo nhầm tiếng gõ/ồn thành
-        // giọng, ai-cuts không đụng được vì không có chữ). Bản chép giờ đã chốt.
+        // SAU ai-cuts: pass TẤT ĐỊNH bắt câu bỏ-dở-rồi-nói-lại mà mô hình hay để
+        // sót phần đầu lặp (dấu "--" + restart cùng chữ).
+        const falseStart = trimFalseStarts(projectId);
+        // SAU cùng: dọn ĐẢO GIỮ không-lời (VAD báo nhầm tiếng gõ/ồn thành giọng,
+        // ai-cuts không đụng được vì không có chữ). Bản chép giờ đã chốt.
         const island = trimWordlessIslands(projectId);
         return (
-          `bỏ ${applied + island.trimmed} chỗ` +
+          `bỏ ${applied + falseStart.trimmed + island.trimmed} chỗ` +
           (rejected > 0 ? ` · gạt ${rejected}` : "")
         );
       },
