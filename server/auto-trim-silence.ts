@@ -35,9 +35,11 @@ const SILENCE_MIN = 0.3;
 /** Mặc định khi dự án chưa đặt `min_silence` (bản cũ). */
 const MIN_SILENCE = 0.8;
 
-/** Chừa nhịp thở quanh giọng — VAD đánh mép khá sát nên không cần chừa nhiều. */
-const KEEP_TAIL = 0.1;
-const KEEP_ONSET = 0.15;
+/** Chừa nhịp thở quanh giọng — VAD đánh mép khá sát nên chừa rất ít; nới thêm thì
+ * khoảng lặng ngắn (~0,5–0,8s) lọt gọn trong một đoạn bị teo dưới ngưỡng chẻ và
+ * không cắt được. */
+const KEEP_TAIL = 0.05;
+const KEEP_ONSET = 0.05;
 
 /** Chừa hai đầu video (với tay bật/tắt máy quay). */
 const HEAD = 0.35;

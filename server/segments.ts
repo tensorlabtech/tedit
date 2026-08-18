@@ -10,7 +10,9 @@ export type Segment = {
   removed: number;
 };
 
-const MIN_LENGTH = 0.3;
+// Mẩu nhỏ nhất khi CHIA đoạn — đủ nhỏ để chẻ được khoảng lặng ngắn lọt trong một
+// đoạn, vẫn đủ lớn để dải không đầy khối vụn không bấm nổi.
+const MIN_LENGTH = 0.15;
 
 export function listSegments(projectId: string): Segment[] {
   return db
@@ -35,7 +37,7 @@ function insert(
 /**
  * Mẩu nhỏ nhất khi người dùng CHỈ ĐÍCH DANH một mốc.
  *
- * `MIN_LENGTH` (0,3 giây) là để dải không đẻ ra những khối vụn không bấm nổi —
+ * `MIN_LENGTH` là để dải không đẻ ra những khối vụn không bấm nổi —
  * đúng cho việc chia đoạn. Nhưng khi người dùng kéo mép một khoảng cắt tới đúng
  * chỗ họ nghe thấy, mẩu còn lại nhỏ bao nhiêu không quan trọng: nó chỉ là phần
  * phim còn giữ, không phải một khối để bấm. Nửa khung hình ở 30 hình/giây.
