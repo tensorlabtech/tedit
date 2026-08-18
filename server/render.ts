@@ -212,10 +212,12 @@ export async function buildPreview(projectId: string, sources: string[]) {
     "veryfast",
     "-crf",
     "28",
-    // Khung khoá mỗi giây: tua tới đâu hiện tới đó. Mặc định của x264 là 250
-    // khung (hơn 8 giây), và kéo thanh thời gian trên đó thì hình giật.
+    // TOÀN khung khoá (`-g 1`): mọi frame giải mã ĐỘC LẬP nên tua / nhảy chỗ cắt
+    // hiện NGAY. Mỗi-giây (`-g FPS`) vẫn phải giải tới ~1s hình mỗi lần seek — màn
+    // "Cắt đoạn lỗi" nhảy hàng chục chỗ nên thấy GIẬT. All-intra to hơn nhưng đây
+    // chỉ là proxy xem trước (540p), đổi lấy tua mượt là đáng.
     "-g",
-    String(FPS),
+    "1",
     // `moov` lên đầu tệp để trình duyệt phát được ngay từ byte đầu.
     "-movflags",
     "+faststart",
