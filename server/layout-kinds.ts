@@ -141,6 +141,12 @@ export type Slot = {
   anchor: { x: number; y: number };
   mask: string | null;
   z: number;
+  /**
+   * Cách tư liệu LẤP ô: `cover` (mặc định) phủ kín, CẮT phần thừa — đẹp với
+   * footage; `contain` VỪA trọn khung, chừa **nền đen** hai bên — giữ nguyên
+   * thông tin, hợp ảnh chụp màn hình / có chữ (không cắt mất).
+   */
+  fit?: "cover" | "contain";
 };
 
 export type LayoutKindId =
@@ -150,6 +156,7 @@ export type LayoutKindId =
   | "broll-don"
   | "broll-vuong"
   | "broll-full"
+  | "broll-fit"
   | "hai-o"
   | "vuong-ngang"
   | "ngang-vuong"
@@ -238,6 +245,17 @@ export const LAYOUT_SPECS: LayoutSpec[] = [
     note: "Tư liệu b-roll phủ kín màn — cảnh cắt, không có người",
     slots: [
       { role: "phu", areaShare: 1, anchor: { x: 0.5, y: 0.5 }, mask: null, z: 0 },
+    ],
+    needsInsert: true,
+  },
+  {
+    id: "broll-fit",
+    label: "B-roll vừa khung",
+    // Tư liệu VỪA TRỌN khung (không cắt), chừa nền đen hai bên — cho ảnh chụp màn
+    // hình / có chữ, tránh cắt mất thông tin. Cùng khổ full nhưng `fit: contain`.
+    note: "Tư liệu b-roll vừa khung, nền đen — không cắt thông tin",
+    slots: [
+      { role: "phu", areaShare: 1, anchor: { x: 0.5, y: 0.5 }, mask: null, z: 0, fit: "contain" },
     ],
     needsInsert: true,
   },

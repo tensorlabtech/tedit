@@ -61,6 +61,13 @@ const FONT = {
     cssWeight: 700,
     italic: false,
   },
+  // Lexend MEDIUM (500) — phụ đề KHÔNG bold, đọc nhẹ nhàng (bộ Cơ bản).
+  lexendMedium: {
+    file: "assets/fonts/Lexend-Medium.ttf",
+    cssStack: "Lexend, sans-serif",
+    cssWeight: 500,
+    italic: false,
+  },
   // Ba họ dưới đây KHÔNG phải sans — chúng chỉ tồn tại cho vai `accent`. Tám họ
   // trên đều là sans đậm, nên hai vai chọn trong đó thì chúng khác nhau về độ
   // đậm chứ không khác về nhóm chữ, và ở khổ điện thoại đó là không khác gì.
@@ -517,7 +524,7 @@ export const CO_BAN: StylePack = {
   ...BASE,
   id: "co-ban",
   label: "Cơ bản",
-  fonts: { voice: FONT.lexend, accent: FONT.lexend },
+  fonts: { voice: FONT.lexendMedium, accent: FONT.lexendMedium },
   letterCase: "as-typed",
   // Trắng-MỜ cho tiếng CHƯA nói; `highlight` tô TRẮNG ĐẶC tiếng ĐANG nói (karaoke).
   color: {
@@ -530,9 +537,9 @@ export const CO_BAN: StylePack = {
   // đề phổ thông. `padShare`/`cornerShare` theo em của cỡ chữ caption.
   captionBg: { tone: { color: "#000000", alpha: 0.55 }, padShare: 0.45, cornerShare: 0.35 },
   // NHỎ — cỡ caption phổ thông ~6,5% bề rộng khung.
-  density: { ...BASE.density, maxScale: 0.07 },
+  density: { ...BASE.density, maxScale: 0.04 },
   // Người TOÀN-KHUNG hoặc b-roll PHỦ KÍN — không thẻ/ô.
-  layouts: ["toan-khung", "broll-full"],
+  layouts: ["toan-khung", "broll-fit"],
   defaults: { ...BASE.defaults, align: "center", emphasis: "even", reveal: "none" },
 };
 

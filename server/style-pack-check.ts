@@ -843,8 +843,8 @@ console.log("\nBộ dáng nằm trong dải cho phép");
 for (const pack of STYLE_PACKS) {
   const { maxScale, lineHeight } = pack.density;
   check(
-    `"${pack.label}" maxScale trong [0.07, 0.16] và lineHeight trong [1.0, 1.4]`,
-    maxScale >= 0.07 &&
+    `"${pack.label}" maxScale trong [0.04, 0.16] và lineHeight trong [1.0, 1.4]`,
+    maxScale >= 0.04 &&
       maxScale <= 0.16 &&
       lineHeight >= 1 &&
       lineHeight <= 1.4,

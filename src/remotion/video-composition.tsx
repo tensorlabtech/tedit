@@ -336,6 +336,9 @@ function Cells({
                   // dán tay (không có card) giữ bo tròn nhẹ như cũ. `?? 0` để
                   // block cũ (stamp trước khi có cornerShare) không ra NaN.
                   borderRadius: card ? width * (card.cornerShare ?? 0) : width * 0.03,
+                  // VỪA-KHUNG (`fit:contain`) chừa nền ĐEN hai bên — letterbox, giữ
+                  // trọn thông tin (ảnh có chữ / chụp màn hình không bị cắt).
+                  backgroundColor: slot.fit === "contain" ? "#000" : undefined,
                   // Bóng đổ mềm dưới thẻ sạch — chất "thẻ nổi" editorial.
                   boxShadow: shadow
                     ? `0 ${Math.round(shadow * 0.5)}px ${shadow}px rgba(0,0,0,0.5)`
@@ -351,8 +354,10 @@ function Cells({
                       style={{
                         width: "100%",
                         height: "100%",
-                        objectFit: "cover",
-                        transform: `scale(${kenBurns})`,
+                        objectFit: slot.fit ?? "cover",
+                        // Vừa-khung KHÔNG Ken Burns: zoom sẽ cắt vào ảnh, mất đúng
+                        // cái "không cắt" mà chế độ này để làm.
+                        transform: `scale(${slot.fit === "contain" ? 1 : kenBurns})`,
                       }}
                     />
                   ) : (
@@ -379,8 +384,8 @@ function Cells({
                         style={{
                           width: "100%",
                           height: "100%",
-                          objectFit: "cover",
-                          transform: `scale(${kenBurns})`,
+                          objectFit: slot.fit ?? "cover",
+                          transform: `scale(${slot.fit === "contain" ? 1 : kenBurns})`,
                         }}
                       />
                     </Sequence>

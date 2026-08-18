@@ -56,6 +56,15 @@
   font-style: normal;
   font-display: block;
 }
+/* Lexend MEDIUM (500) — bản static đông cứng từ font variable (fonttools instancer),
+   cho phụ đề KHÔNG bold, đọc nhẹ (vd bộ Cơ bản). */
+@font-face {
+  font-family: "Lexend";
+  src: url("../assets/fonts/Lexend-Medium.ttf") format("truetype");
+  font-weight: 500;
+  font-style: normal;
+  font-display: block;
+}
 
 @font-face {
   font-family: "Montserrat";
