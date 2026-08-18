@@ -5,13 +5,13 @@ import { listSegments, removeRange, removedCount } from "./segments";
 /**
  * Tìm chỗ nên bỏ: ề à, vấp, lặp lại, câu bỏ dở.
  *
- * Mô hình chỉ ĐỀ XUẤT theo mã từ; mọi ràng buộc do code giữ. Bảo mô hình tự
- * nhớ "đừng bỏ quá nhiều, đừng bỏ trùng nhau, đừng bỏ hết một câu" thì mỗi lần
- * nó quên một điều là ra một bản dựng cụt lủn, mà lỗi ấy chỉ lộ ở khâu xuất.
+ * Mô hình chỉ ĐỀ XUẤT theo mã từ; ràng buộc HÌNH DẠNG (độ dài mỗi quãng, không
+ * trùng nhau) do code giữ — bảo mô hình tự nhớ thì mỗi lần quên là ra cắt hỏng,
+ * lỗi chỉ lộ ở khâu xuất. KHÔNG chặn SỐ LƯỢNG: người dùng soát mọi cắt ở màn
+ * "Cắt đoạn lỗi" trước khi chốt, nên video nhiều lời thừa cắt được bao nhiêu tuỳ
+ * nội dung — không có trần %.
  */
 
-/** Không bao giờ bỏ quá ngần này lời — quá tay thì video mất mạch. */
-const MAX_SHARE = 0.25;
 /** Quãng ngắn hơn thì cắt ra nghe cộc, dài hơn thì gần như chắc chắn cắt nhầm. */
 const MIN_SECONDS = 0.25;
 const MAX_SECONDS = 6;
@@ -112,8 +112,6 @@ export async function proposeCuts(projectId: string): Promise<{
   });
 
   const index = new Map(words.map((word, at) => [word.id, at]));
-  const total = words.at(-1)!.end_sec - words[0].start_sec;
-  let budget = total * MAX_SHARE;
   let applied = 0;
   let rejected = 0;
 
@@ -141,10 +139,6 @@ export async function proposeCuts(projectId: string): Promise<{
       rejected += 1;
       continue;
     }
-    if (length > budget) {
-      rejected += 1;
-      continue;
-    }
     // Chồng lên quãng đã nhận thì bỏ: hai lần bỏ chồng nhau làm `removeRange`
     // tách đoạn ở những mốc không còn tồn tại.
     if (taken.some((item) => span.start < item.end && item.start < span.end)) {
@@ -159,7 +153,6 @@ export async function proposeCuts(projectId: string): Promise<{
       continue;
     }
     taken.push(span);
-    budget -= length;
     applied += 1;
   }
 
