@@ -55,10 +55,9 @@ export const BAND_ANCHOR: Record<
   top: { edge: "top", at: 0.12 },
   // Giữa neo bằng TÂM khối, nên nó tự căn giữa dù cao mấy dòng.
   middle: { edge: "center", at: 0.5 },
-  // Đáy khối chữ ở 80% — SÁT lề an toàn dưới (`SAFE.bottom` 20%), tức vị trí phụ
-  // đề CHUẨN (thấp, ngay trên vùng UI nền tảng). 73% trước đó nằm cao giữa khung,
-  // đọc ra "chữ lơ lửng" chứ không ra phụ đề.
-  bottom: { edge: "bottom", at: 0.8 },
+  // Đáy khối chữ ở 86% — phụ đề nằm THẤP, ngay trên vùng UI nền tảng (kiểu
+  // TikTok/Reels). 73% trước đó nằm cao giữa khung, đọc ra "chữ lơ lửng".
+  bottom: { edge: "bottom", at: 0.86 },
 };
 
 /**

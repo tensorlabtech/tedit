@@ -295,7 +295,20 @@ export async function placeInserts(projectId: string): Promise<{
       layoutFitsMedia(id, mediaAspect),
     );
     const pool = fitting.length ? fitting : brollLayouts;
-    const layout = pool.length ? pool[duyet.length % pool.length] : null;
+    // Khung PHỦ KÍN (cover, cắt) vs VỪA-KHUNG (contain, nền đen): chọn theo tỉ lệ
+    // clip, KHÔNG xoay vòng — clip NGANG (screen recording) letterbox cho khỏi cắt
+    // mất thông tin; clip DỌC/VUÔNG phủ kín cho khỏi viền đen thừa. Chỉ khi pool có
+    // cả hai và biết tỉ lệ; còn lại (ô chia, tỉ lệ ẩn) xoay vòng như cũ cho đa dạng.
+    const hasFullFit =
+      pool.includes("broll-full") && pool.includes("broll-fit");
+    const layout =
+      hasFullFit && mediaAspect != null
+        ? mediaAspect > 1
+          ? "broll-fit"
+          : "broll-full"
+        : pool.length
+          ? pool[duyet.length % pool.length]
+          : null;
 
     // `to_word_id`: từ cuối cùng bắt đầu trước mép ra — cột neo cũ, đủ để bảng
     // sửa hiển thị; mốc thật là GIÂY ở trên.

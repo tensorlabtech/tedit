@@ -137,9 +137,9 @@ export const BANDS: Array<{
     // một tấm bìa đè lên b-roll — nhưng nói rõ giá của nó ngay tại chỗ chọn.
     note: "Che mặt người nói — chỉ dùng khi thật sự cần",
   },
-  // Mép DƯỚI khối ở 80% — vị trí phụ đề CHUẨN (sát lề an toàn dưới), khớp
-  // `BAND_ANCHOR.bottom` của `text-layout.ts`.
-  { id: "bottom", label: "Dưới", edge: "bottom", at: 0.8 },
+  // Mép DƯỚI khối ở 86% — phụ đề nằm THẤP, ngay trên vùng UI nền tảng (kiểu
+  // TikTok/Reels), khớp `BAND_ANCHOR.bottom` của `text-layout.ts`.
+  { id: "bottom", label: "Dưới", edge: "bottom", at: 0.86 },
 ];
 
 /**

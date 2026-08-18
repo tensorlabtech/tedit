@@ -536,14 +536,15 @@ export const CO_BAN: StylePack = {
   // Nền MỘT DẢI đen mờ bo tròn ôm cả cụm (không phải pill từng tiếng) — dáng phụ
   // đề phổ thông. `padShare`/`cornerShare` theo em của cỡ chữ caption.
   captionBg: { tone: { color: "#000000", alpha: 0.55 }, padShare: 0.45, cornerShare: 0.35 },
-  // NHỎ — cỡ phụ-đề, dưới sàn "chú thích" 9%; `fitGroup`/`fitLines` để `maxScale`
-  // làm sàn khi nó thấp hơn `MIN_SCALE` nên con số này mới có hiệu lực thật.
-  density: { ...BASE.density, maxScale: 0.03 },
+  // Cỡ phụ-đề — dưới sàn "chú thích" 9%; `fitGroup`/`fitLines` để `maxScale` làm
+  // sàn khi nó thấp hơn `MIN_SCALE` nên con số này mới có hiệu lực thật.
+  density: { ...BASE.density, maxScale: 0.05 },
   // Hiện CẢ cụm một lượt, KHÔNG chạy từng tiếng — `revealStyle` đọc `motion.reveal`,
   // và `...BASE` mang "per-word" nên phải đè "none" ở đây (khác trục `defaults.reveal`).
   motion: { ...BASE.motion, reveal: "none" },
-  // Người TOÀN-KHUNG hoặc b-roll PHỦ KÍN — không thẻ/ô.
-  layouts: ["toan-khung", "broll-fit"],
+  // Người TOÀN-KHUNG, b-roll PHỦ KÍN (cover, cắt mép) hoặc VỪA-KHUNG (contain, nền
+  // đen) — không thẻ/ô. Lúc đặt tự chọn theo tỉ lệ clip: ngang→vừa-khung, dọc→phủ-kín.
+  layouts: ["toan-khung", "broll-full", "broll-fit"],
   defaults: { ...BASE.defaults, align: "center", emphasis: "even", reveal: "none" },
 };
 
