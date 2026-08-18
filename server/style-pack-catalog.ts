@@ -530,7 +530,7 @@ export const CO_BAN: StylePack = {
   // đề phổ thông. `padShare`/`cornerShare` theo em của cỡ chữ caption.
   captionBg: { tone: { color: "#000000", alpha: 0.55 }, padShare: 0.45, cornerShare: 0.35 },
   // NHỎ — cỡ caption phổ thông ~6,5% bề rộng khung.
-  density: { ...BASE.density, maxScale: 0.065 },
+  density: { ...BASE.density, maxScale: 0.07 },
   // Người TOÀN-KHUNG hoặc b-roll PHỦ KÍN — không thẻ/ô.
   layouts: ["toan-khung", "broll-full"],
   defaults: { ...BASE.defaults, align: "center", emphasis: "even", reveal: "none" },

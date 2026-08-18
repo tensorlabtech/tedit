@@ -736,36 +736,36 @@
   "font": "assets/fonts/Lexend-Bold.ttf",
   "case": 1,
   "rows": 2,
-  "minScale": 0.0231,
-  "top": 0.4797,
-  "bottom": 0.5203,
-  "maxRight": 0.5082,
-  "wordTop": 0.4802,
-  "wordBottom": 0.5208
+  "minScale": 0.025,
+  "top": 0.4781,
+  "bottom": 0.5219,
+  "maxRight": 0.5119,
+  "wordTop": 0.4786,
+  "wordBottom": 0.5224
  },
  {
   "pack": "co-ban",
   "font": "assets/fonts/Lexend-Bold.ttf",
   "case": 2,
   "rows": 3,
-  "minScale": 0.0361,
-  "top": 0.7068,
+  "minScale": 0.0389,
+  "top": 0.699,
   "bottom": 0.8,
-  "maxRight": 0.8198,
-  "wordTop": 0.7104,
-  "wordBottom": 0.8068
+  "maxRight": 0.8203,
+  "wordTop": 0.7031,
+  "wordBottom": 0.8073
  },
  {
   "pack": "co-ban",
   "font": "assets/fonts/Lexend-Bold.ttf",
   "case": 3,
   "rows": 3,
-  "minScale": 0.0204,
+  "minScale": 0.0222,
   "top": 0.1198,
-  "bottom": 0.1823,
-  "maxRight": 0.6532,
+  "bottom": 0.1875,
+  "maxRight": 0.6904,
   "wordTop": 0.1203,
-  "wordBottom": 0.1906
+  "wordBottom": 0.1964
  },
  {
   "pack": "co-ban",
@@ -784,11 +784,11 @@
   "font": "assets/fonts/Lexend-Bold.ttf",
   "case": 5,
   "rows": 2,
-  "minScale": 0.0231,
-  "top": 0.7594,
+  "minScale": 0.025,
+  "top": 0.7563,
   "bottom": 0.8,
-  "maxRight": 0.5051,
-  "wordTop": 0.762,
+  "maxRight": 0.536,
+  "wordTop": 0.7589,
   "wordBottom": 0.8057
  },
  {
@@ -796,24 +796,24 @@
   "font": "assets/fonts/Lexend-Bold.ttf",
   "case": 6,
   "rows": 1,
-  "minScale": 0.0648,
+  "minScale": 0.0704,
   "top": 0.1198,
-  "bottom": 0.1563,
-  "maxRight": 0.5467,
-  "wordTop": 0.126,
-  "wordBottom": 0.1625
+  "bottom": 0.1594,
+  "maxRight": 0.5499,
+  "wordTop": 0.1266,
+  "wordBottom": 0.1661
  },
  {
   "pack": "co-ban",
   "font": "assets/fonts/Lexend-Bold.ttf",
   "case": 7,
   "rows": 3,
-  "minScale": 0.0204,
-  "top": 0.4688,
-  "bottom": 0.5313,
-  "maxRight": 0.8195,
-  "wordTop": 0.4688,
-  "wordBottom": 0.5365
+  "minScale": 0.0222,
+  "top": 0.4661,
+  "bottom": 0.5339,
+  "maxRight": 0.8199,
+  "wordTop": 0.4661,
+  "wordBottom": 0.5396
  },
  {
   "pack": "co-ban",
@@ -834,34 +834,34 @@
   "rows": 2,
   "minScale": 0.0213,
   "top": 0.1198,
-  "bottom": 0.1594,
+  "bottom": 0.1615,
   "maxRight": 0.799,
   "wordTop": 0.1203,
-  "wordBottom": 0.1656
+  "wordBottom": 0.1682
  },
  {
   "pack": "co-ban",
   "font": "assets/fonts/Lexend-Bold.ttf",
   "case": 10,
   "rows": 3,
-  "minScale": 0.0361,
-  "top": 0.4536,
-  "bottom": 0.5469,
-  "maxRight": 0.5081,
-  "wordTop": 0.4542,
-  "wordBottom": 0.549
+  "minScale": 0.0389,
+  "top": 0.4495,
+  "bottom": 0.5505,
+  "maxRight": 0.5397,
+  "wordTop": 0.45,
+  "wordBottom": 0.5531
  },
  {
   "pack": "co-ban",
   "font": "assets/fonts/Lexend-Bold.ttf",
   "case": 11,
   "rows": 3,
-  "minScale": 0.0204,
-  "top": 0.7375,
+  "minScale": 0.0222,
+  "top": 0.7323,
   "bottom": 0.8,
-  "maxRight": 0.6572,
-  "wordTop": 0.7396,
-  "wordBottom": 0.8052
+  "maxRight": 0.6727,
+  "wordTop": 0.7349,
+  "wordBottom": 0.8057
  },
  {
   "pack": "co-ban",
@@ -880,36 +880,36 @@
   "font": "assets/fonts/Lexend-Bold.ttf",
   "case": 13,
   "rows": 2,
-  "minScale": 0.0231,
-  "top": 0.4797,
-  "bottom": 0.5203,
-  "maxRight": 0.2359,
-  "wordTop": 0.4802,
-  "wordBottom": 0.5208
+  "minScale": 0.025,
+  "top": 0.4781,
+  "bottom": 0.5219,
+  "maxRight": 0.2425,
+  "wordTop": 0.4786,
+  "wordBottom": 0.5224
  },
  {
   "pack": "co-ban",
   "font": "assets/fonts/Lexend-Bold.ttf",
   "case": 14,
   "rows": 3,
-  "minScale": 0.0361,
-  "top": 0.7068,
+  "minScale": 0.0389,
+  "top": 0.699,
   "bottom": 0.8,
-  "maxRight": 0.5688,
-  "wordTop": 0.7104,
-  "wordBottom": 0.8068
+  "maxRight": 0.5982,
+  "wordTop": 0.7031,
+  "wordBottom": 0.8073
  },
  {
   "pack": "co-ban",
   "font": "assets/fonts/Lexend-Bold.ttf",
   "case": 15,
   "rows": 3,
-  "minScale": 0.0204,
+  "minScale": 0.0222,
   "top": 0.1198,
-  "bottom": 0.1823,
-  "maxRight": 0.6045,
+  "bottom": 0.1875,
+  "maxRight": 0.6448,
   "wordTop": 0.1203,
-  "wordBottom": 0.1906
+  "wordBottom": 0.1964
  },
  {
   "pack": "co-ban",
@@ -928,11 +928,11 @@
   "font": "assets/fonts/Lexend-Bold.ttf",
   "case": 17,
   "rows": 2,
-  "minScale": 0.0231,
-  "top": 0.7594,
+  "minScale": 0.025,
+  "top": 0.7563,
   "bottom": 0.8,
-  "maxRight": 0.82,
-  "wordTop": 0.762,
+  "maxRight": 0.8194,
+  "wordTop": 0.7589,
   "wordBottom": 0.8057
  },
  {
@@ -940,23 +940,23 @@
   "font": "assets/fonts/Lexend-Bold.ttf",
   "case": 18,
   "rows": 1,
-  "minScale": 0.0648,
+  "minScale": 0.0704,
   "top": 0.1198,
-  "bottom": 0.1563,
-  "maxRight": 0.2022,
-  "wordTop": 0.126,
-  "wordBottom": 0.1625
+  "bottom": 0.1594,
+  "maxRight": 0.2101,
+  "wordTop": 0.1266,
+  "wordBottom": 0.1661
  },
  {
   "pack": "co-ban",
   "font": "assets/fonts/Lexend-Bold.ttf",
   "case": 19,
   "rows": 3,
-  "minScale": 0.0204,
-  "top": 0.4688,
-  "bottom": 0.5313,
-  "maxRight": 0.2982,
-  "wordTop": 0.4688,
-  "wordBottom": 0.5365
+  "minScale": 0.0222,
+  "top": 0.4661,
+  "bottom": 0.5339,
+  "maxRight": 0.3054,
+  "wordTop": 0.4661,
+  "wordBottom": 0.5396
  }
 ]

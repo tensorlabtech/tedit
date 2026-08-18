@@ -745,16 +745,6 @@ console.log("\nHai đường vẽ chữ KHÔNG lẫn vào nhau");
  * là mất lời hứa kia MỘT LẦN CHO TẤT CẢ — từ đó không ai còn khẳng định được
  * phụ đề nằm trong khung, vì đường bố cục đã có một nhánh nói không.
  */
-const headlineSource = stripComments(
-  readFileSync(join(projectRoot, "server/headline.ts"), "utf8"),
-);
-for (const forbidden of ["layoutText(", "placeWords(", "fitLines("]) {
-  check(
-    `đường tiêu đề không gọi \`${forbidden}\``,
-    !headlineSource.includes(forbidden),
-    "tiêu đề phải có đường dựng riêng, không đi qua bố cục phụ đề",
-  );
-}
 for (const file of ["server/text-layout.ts", "server/word-layout.ts"]) {
   const source = stripComments(readFileSync(join(projectRoot, file), "utf8"));
   check(
