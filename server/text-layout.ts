@@ -176,7 +176,9 @@ export async function layoutText(
 
   // Hệ Oversize: chữ TO đến mức gần tràn mép, không phải chữ vừa khít trong lề.
   let fontSize = Math.round(videoWidth * maxScale);
-  const minSize = Math.round(videoWidth * MIN_SCALE);
+  // Sàn không vượt trần (xem `fitGroup`/`fitLines`): `maxScale` dưới `MIN_SCALE`
+  // là chọn cỡ phụ-đề cố ý, không bị kéo về sàn.
+  const minSize = Math.round(videoWidth * Math.min(MIN_SCALE, maxScale));
 
   // Đo từng từ một lần, rồi dò cỡ bằng phép tính — không gọi lại ImageMagick.
   const measured = await measureWords(content, pack);
@@ -335,16 +337,19 @@ export async function fitLines(
   if (measured.words.length === 0)
     return { lines: [], scale: maxScale, needsSplit: false };
   const room = usable * 0.98;
-  for (let scale = maxScale; scale >= MIN_SCALE - 0.0001; scale -= 0.005) {
+  // Sàn không vượt trần: bộ nào đặt `maxScale` dưới `MIN_SCALE` là cố ý chọn cỡ
+  // phụ-đề — kẹp sàn lên trần thì cụm luôn nhảy về `MIN_SCALE`. Khớp `fitGroup`.
+  const floor = Math.min(MIN_SCALE, maxScale);
+  for (let scale = maxScale; scale >= floor - 0.0001; scale -= 0.005) {
     const lines = wrapAtSize(measured, scale * videoWidth, room, wordGap, padPerWord);
     if (lines && lines.length <= MAX_LINES)
       return { lines, scale, needsSplit: false };
   }
   const lines =
-    wrapAtSize(measured, MIN_SCALE * videoWidth, room, wordGap, padPerWord) ?? [content];
+    wrapAtSize(measured, floor * videoWidth, room, wordGap, padPerWord) ?? [content];
   return {
     lines: lines.slice(0, MAX_LINES),
-    scale: MIN_SCALE,
+    scale: floor,
     needsSplit: lines.length > MAX_LINES,
   };
 }

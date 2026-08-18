@@ -253,6 +253,10 @@ export function fitGroup(
   keyOf?: (word: string) => boolean,
 ): Fitted {
   const maxScale = pack.density.maxScale;
+  // Sàn không được cao hơn trần: một bộ đặt `maxScale` DƯỚI `MIN_SCALE` là cố ý
+  // chọn cỡ phụ-đề (nhỏ hơn ngưỡng "chú thích" thường). Kẹp sàn lên trần thì cụm
+  // luôn nhảy về `MIN_SCALE` và mọi `maxScale` nhỏ bị nuốt — chữ to bất kể chỉnh.
+  const floor = Math.min(MIN_SCALE, maxScale);
   const words = text.trim().split(/\s+/).filter(Boolean);
   if (words.length === 0)
     return { lines: [], size: maxScale, needsSplit: false };
@@ -264,13 +268,13 @@ export function fitGroup(
   // nó ĐO bằng font thật chứ không ước theo số ký tự nữa. Giữ 3% chỉ còn là một
   // con số lệch 1% so với máy chủ mà không đổi lấy gì.
   const room = avail * 0.98;
-  for (let size = maxScale; size >= MIN_SCALE; size -= 0.005) {
+  for (let size = maxScale; size >= floor; size -= 0.005) {
     const lines = wrapAt(words, size, room, pack, keyOf);
     if (lines.length <= MAX_LINES) return { lines, size, needsSplit: false };
   }
   return {
-    lines: wrapAt(words, MIN_SCALE, room, pack, keyOf).slice(0, MAX_LINES),
-    size: MIN_SCALE,
+    lines: wrapAt(words, floor, room, pack, keyOf).slice(0, MAX_LINES),
+    size: floor,
     needsSplit: true,
   };
 }
