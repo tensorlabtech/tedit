@@ -1,31 +1,55 @@
 import { db } from "./db";
-import { listSegments, removeRange, removedCount } from "./segments";
+import { listSegments, removeRange } from "./segments";
 
 /**
  * Bỏ CÂU BỎ DỞ RỒI NÓI LẠI — pass TẤT ĐỊNH, chạy sau `ai-cuts`.
  *
- * Mô hình cắt được khúc rác rõ ("ờ, duyệt những cái--") nhưng HAY để sót phần ĐẦU
- * LẶP ("Các bạn có thể,") vì nó trông như câu mở thật. Kết quả đọc ra lắp: "Các
- * bạn có thể, các bạn có thể duyệt...". Prompt không sửa nổi vì mô hình không tất
+ * Mô hình cắt được khúc rác rõ ("ờ, duyệt những cái--") nhưng HAY để sót lần nói
+ * ĐẦU khi nó trông như câu hoàn chỉnh ("Và mình đã quay video," rồi "và mình quay
+ * video này để test..."). Đọc ra lắp. Prompt không sửa nổi vì mô hình không tất
  * định ở chỗ này.
  *
- * Nhưng có hai TÍN HIỆU CHẮC do máy nghe để lại:
- *  1. Một từ kết thúc "--" = bị ngắt giữa chừng (lần nói HỎNG).
- *  2. Ngay sau đó (bỏ qua chỗ đã cắt/lặng) nói LẠI bằng đúng chữ mở đầu.
- * Đủ hai thì cắt TRỌN lần nói hỏng — từ tiếng đầu của nó tới chỗ "--".
+ * Cách bắt CHẮC: một "lần nói" (chuỗi từ liền mạch, NGĂN hai đầu bằng chỗ đã
+ * cắt/khoảng nghỉ) mà NGAY SAU nó nói LẠI gần như y hệt phần đầu — tức lần đầu là
+ * bản nháp bị bỏ. Đo bằng ĐỘ TRÙNG chuỗi con (LCS) giữa lần đầu và đầu lần sau.
  *
- * An toàn: chỉ nổ khi CẢ HAI đúng; một mình "--" hay một mình lặp chữ đều không cắt.
+ * ══ VÌ SAO AN TOÀN (không cắt nhầm cấu trúc song song) ══
+ *
+ * "Các bạn có thể DUYỆT lời / Các bạn có thể CHỌN style" trùng phần đầu "Các bạn
+ * có thể" rồi RẼ khác — LCS thấp (chỉ 4/8), không nổ. Nhấn mạnh lặp liền ("Rất
+ * quan trọng, rất quan trọng đấy") nói LIỀN không nghỉ nên nằm CÙNG một lần nói,
+ * không thành hai để so. Chỉ nổ khi: (1) hai lần nói TÁCH nhau bằng cut/nghỉ,
+ * (2) lần đầu NGẮN, (3) LCS cao (bản sau lặp gần trọn phần đầu bản trước).
  */
 
 type Word = { text: string; start_sec: number; end_sec: number };
 
-/** Bỏ dấu câu + hạ thường để so hai tiếng có "cùng chữ" không. */
 const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+const isInterrupted = (w: Word) => /--\s*$/.test(w.text); // ASR đánh dấu bị ngắt
 
-/** Lần nói hỏng dài nhất cho phép cắt — dài hơn thì gần như chắc không phải bỏ-dở. */
-const MAX_ATTEMPT_SECONDS = 6;
-/** Khoảng nghỉ tự nhiên trong một lần nói; rộng hơn coi như sang ý khác. */
+/** Lần nói đầu dài hơn (giây / số tiếng) thì gần như chắc không phải bản nháp. */
+const MAX_ATTEMPT_SECONDS = 3;
+const MAX_ATTEMPT_WORDS = 9;
+/** Khoảng nghỉ trong MỘT lần nói; rộng hơn coi như tách lần nói. */
 const MAX_GAP_SECONDS = 0.8;
+/** Bản sau phải lặp lại ngần này phần đầu bản trước mới coi là "nói lại". */
+const REPEAT_RATIO = 0.75;
+/** Có dấu "--" (chắc chắn bị ngắt) thì hạ ngưỡng lặp. */
+const REPEAT_RATIO_INTERRUPTED = 0.5;
+
+/** Độ dài chuỗi con chung dài nhất giữa hai mảng tiếng (đã chuẩn hoá). */
+function lcs(a: string[], b: string[]): number {
+  const dp = Array.from({ length: a.length + 1 }, () =>
+    new Array<number>(b.length + 1).fill(0),
+  );
+  for (let i = 1; i <= a.length; i += 1)
+    for (let j = 1; j <= b.length; j += 1)
+      dp[i][j] =
+        a[i - 1] === b[j - 1]
+          ? dp[i - 1][j - 1] + 1
+          : Math.max(dp[i - 1][j], dp[i][j - 1]);
+  return dp[a.length][b.length];
+}
 
 export function trimFalseStarts(projectId: string): { trimmed: number } {
   const words = db
@@ -37,44 +61,62 @@ export function trimFalseStarts(projectId: string): { trimmed: number } {
     .filter((s) => s.removed)
     .map((s) => ({ start: s.start_sec, end: s.end_sec }));
   const inRemoved = (t: number) => removed.some((r) => r.start <= t && t < r.end);
-  /** Câu ĐÃ TRỌN — đừng lùi lấn sang nó. (Không dùng chỗ-đã-cắt để chặn: lần nói
-   * hỏng thường ĐÃ bị AI cắt một phần nên các từ của nó nằm trong đoạn removed —
-   * lấy đó làm ranh giới thì dừng ngay tại chỗ "--".) */
-  const SENT_END = /[.!?…]\s*$/;
+  /** Có chỗ đã cắt trong khe giữa hai từ, hoặc khoảng nghỉ rộng → tách lần nói. */
+  const breakBetween = (endPrev: number, startNext: number) =>
+    startNext - endPrev > MAX_GAP_SECONDS ||
+    removed.some((r) => r.start < startNext && r.end > endPrev);
+
+  // Gom từ GIỮ thành các "lần nói" (run) liền mạch.
+  const runs: Word[][] = [];
+  for (const w of words) {
+    if (inRemoved(w.start_sec)) continue;
+    const run = runs[runs.length - 1];
+    const prev = run?.[run.length - 1];
+    if (run && prev && !breakBetween(prev.end_sec, w.start_sec)) run.push(w);
+    else runs.push([w]);
+  }
 
   const cuts: Array<{ start: number; end: number }> = [];
-  for (let i = 0; i < words.length; i += 1) {
-    if (!/--\s*$/.test(words[i].text)) continue; // từ bị ngắt
+  for (let i = 0; i + 1 < runs.length; i += 1) {
+    const a = runs[i];
+    const b = runs[i + 1];
+    const dur = a[a.length - 1].end_sec - a[0].start_sec;
+    if (a.length > MAX_ATTEMPT_WORDS || dur > MAX_ATTEMPT_SECONDS) continue;
 
-    // Lần nói HỎNG = chuỗi từ liền mạch kết thúc ở từ "--". Lùi tới khi gặp câu đã
-    // trọn (dấu chấm), khoảng nghỉ rộng, hoặc chạm trần độ dài.
-    let a = i;
-    while (a > 0) {
-      if (SENT_END.test(words[a - 1].text)) break;
-      const gap = words[a].start_sec - words[a - 1].end_sec;
-      if (gap > MAX_GAP_SECONDS) break;
-      if (words[i].end_sec - words[a - 1].start_sec > MAX_ATTEMPT_SECONDS) break;
-      a -= 1;
-    }
-
-    // Lần nói LẠI = từ GIỮ đầu tiên sau từ "--" (bỏ qua chỗ đã cắt/lặng).
-    let r = i + 1;
-    while (r < words.length && inRemoved(words[r].start_sec)) r += 1;
-    if (r >= words.length) continue;
-
-    // Cùng chữ mở đầu → là nói lại → cắt trọn lần nói hỏng.
-    if (norm(words[a].text) && norm(words[a].text) === norm(words[r].text)) {
-      cuts.push({ start: words[a].start_sec, end: words[i].end_sec });
+    // Bản sau lặp lại phần đầu bản trước tới đâu (so đầu-B đúng độ dài A + đệm).
+    const aWords = a.map((w) => norm(w.text)).filter(Boolean);
+    const bHead = b
+      .slice(0, a.length + 3)
+      .map((w) => norm(w.text))
+      .filter(Boolean);
+    if (aWords.length === 0) continue;
+    const ratio = lcs(aWords, bHead) / aWords.length;
+    const need = a.some(isInterrupted)
+      ? REPEAT_RATIO_INTERRUPTED
+      : REPEAT_RATIO;
+    if (ratio >= need) {
+      cuts.push({ start: a[0].start_sec, end: a[a.length - 1].end_sec });
     }
   }
+
+  // Đếm theo THỜI LƯỢNG bỏ, KHÔNG theo số đoạn: cắt này hay gộp với đoạn lặng kề
+  // (`coalesceRemoved`) làm số đoạn không đổi dù đã bỏ thêm — đếm đoạn thì báo hụt.
+  const removedSec = () =>
+    (
+      db
+        .prepare(
+          "SELECT COALESCE(SUM(end_sec-start_sec),0) AS s FROM segments WHERE project_id=? AND removed=1",
+        )
+        .get(projectId) as { s: number }
+    ).s;
 
   // Bỏ từ CUỐI lên ĐẦU: `removeRange` tách đoạn, làm xuôi thì mốc sau trôi.
   cuts.sort((x, y) => y.start - x.start);
   let trimmed = 0;
   for (const c of cuts) {
-    const was = removedCount(projectId);
+    const was = removedSec();
     removeRange(projectId, c.start, c.end);
-    if (removedCount(projectId) !== was) trimmed += 1;
+    if (removedSec() > was + 0.01) trimmed += 1;
   }
   return { trimmed };
 }
