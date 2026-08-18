@@ -528,7 +528,7 @@ export const CO_BAN: StylePack = {
   letterCase: "as-typed",
   // Trắng-MỜ cho tiếng CHƯA nói; `highlight` tô TRẮNG ĐẶC tiếng ĐANG nói (karaoke).
   color: {
-    main: { color: "#FFFFFF", alpha: 0.82 },
+    main: { color: "#FFFFFF", alpha: 1 },
     dim: { color: "#FFFFFF", alpha: 0.4 },
     key: { color: "#FFFFFF", alpha: 1 },
   },
