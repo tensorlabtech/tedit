@@ -52,7 +52,11 @@ CHỈ chọn những quãng bỏ đi mà người xem KHÔNG mất thông tin n�
 - e-a: tiếng đệm ("ừm", "à", "ờ", "kiểu là") không mang nghĩa
 - vap: nói vấp rồi nói lại chính ý đó ngay sau
 - lap: lặp nguyên một ý vừa nói xong
-- bo-do: câu bỏ dở giữa chừng rồi chuyển ý khác
+- bo-do: câu bỏ dở giữa chừng rồi làm lại hoặc chuyển ý. HAI DẤU HIỆU CHẮC CHẮN:
+  (a) một từ kết thúc bằng "--" (bị ngắt giữa chừng, vd "cái--", "phần--");
+  (b) một cụm nói dở rồi NGAY SAU nói lại gần như cùng chữ (vd "Các bạn có thể,
+  ờ, duyệt những cái--" rồi restart "Các bạn có..."). Gặp một trong hai thì cắt
+  CẢ cụm dẫn tới chỗ ngắt (gồm cả tiếng đệm bên trong), mạnh tay như ngoai-canh.
 - lac-de: lạc hẳn khỏi mạch, bỏ đi vẫn liền
 
 TUYỆT ĐỐI KHÔNG cắt: ý chính, ví dụ minh hoạ, câu chuyển mạch, câu mở, câu chốt,
@@ -60,8 +64,9 @@ lời chào, lời kêu gọi theo dõi.
 KHÔNG cắt một vế của câu ghép: bỏ vế "Nếu…" thì vế "Thì…" còn lại trơ ra vô
 nghĩa. Muốn bỏ thì bỏ CẢ HAI vế, hoặc không bỏ gì.
 
-Với "ngoai-canh" và "chep-hong" thì cứ mạnh tay — chúng không mang tin gì cả.
-Với bốn loại còn lại, không chắc thì bỏ qua.
+Với "ngoai-canh", "chep-hong", và "bo-do" có dấu ngắt "--" hoặc restart thì cứ
+mạnh tay — chúng không mang tin gì cả.
+Với các trường hợp còn lại, không chắc thì bỏ qua.
 Mỗi quãng phải nằm gọn trong một câu.`;
 
 /**
