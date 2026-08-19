@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { normalizeJunction } from "../junction-kinds";
+import { restyleProject } from "../restyle-project";
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { basename, join } from "node:path";
@@ -484,6 +485,24 @@ app.get("/api/projects/:id", async (request, reply) => {
  * hỏi xác nhận rồi mới gửi `force`). Không force mà có viết-lại → trả 409 để UI
  * hỏi. Sau khi chia lại, ép dựng lại đoạn ở GET kế bằng cách hạ `segments_by_caption`.
  */
+/**
+ * ĐỔI VIBE (bộ dáng) TOÀN DIỆN — dựng lại STYLE, giữ CONTENT. Xem `restyle-project.ts`.
+ * Khác `PATCH …{stylePack}` (chỉ đổi cột, nhìn vẫn cũ): route này GHI ĐÈ look block
+ * + re-pick khung b-roll + ô người theo bộ mới.
+ */
+app.post("/api/projects/:id/restyle", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const body = (request.body ?? {}) as { stylePack?: string };
+  if (!body.stylePack)
+    return reply.code(400).send({ error: "Thiếu bộ dáng" });
+  try {
+    restyleProject(id, body.stylePack);
+  } catch (error) {
+    return reply.code(400).send({ error: (error as Error).message });
+  }
+  return { ok: true };
+});
+
 app.post("/api/projects/:id/rechunk", async (request, reply) => {
   const { id } = request.params as { id: string };
   const force = (request.body as { force?: boolean } | undefined)?.force === true;

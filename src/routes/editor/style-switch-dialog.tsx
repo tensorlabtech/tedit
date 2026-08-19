@@ -160,7 +160,7 @@ export function StyleSwitchDialog({
             <p className="text-sm text-muted-foreground">
               {moment === "truoc-khi-dung"
                 ? "Máy sẽ chọn nhạc, hiệu ứng, mật độ tư liệu và nhịp cắt theo phong cách này."
-                : "Đổi ở đây chỉ vẽ lại chữ. Nhạc và hiệu ứng đã đặt xong thì giữ nguyên — muốn đặt lại theo nhịp mới thì bấm lời mời ở “Cần bạn xem”."}
+                : "Dựng lại TOÀN BỘ phong cách: look chữ, khung b-roll, ô người theo bộ mới. Giữ nguyên nội dung (cắt, chữ, tư liệu). Chỉnh-tay về phong cách sẽ bị ghi đè — đổi về bộ cũ để hoàn tác."}
             </p>
             {!preview && (
               // Nói rõ khung bên trái đang vẽ chữ ví dụ. Không nói thì người

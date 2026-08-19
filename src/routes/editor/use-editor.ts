@@ -2001,9 +2001,18 @@ export function useEditor(projectId: string | undefined) {
     async (next: StylePackId) => {
       if (!projectId) return;
       setStylePackState(next);
-      await api.updateProject(projectId, { stylePack: next }).catch(boQuaLoi());
-      // Lấy lại lịch màn theo bộ dáng MỚI — sau khi PATCH xong, không thì server
-      // đọc cột cũ và trả lịch của bộ trước.
+      // ĐỔI VIBE TOÀN DIỆN: server GHI ĐÈ look block + re-pick khung b-roll + ô
+      // người theo bộ mới (không chỉ đổi cột như PATCH cũ — đó là "chưa tới").
+      await api.restyleProject(projectId, next).catch(boQuaLoi());
+      // Nạp lại DỮ LIỆU element — block look đã đổi ở server, không nạp lại thì
+      // khung xem vẫn vẽ look CŨ. + lịch màn theo bộ mới.
+      const fresh = await api.getProject(projectId).catch(() => null);
+      if (fresh) {
+        const shaped = shape(fresh);
+        durationRef.current = shaped.duration;
+        setData(shaped);
+        setSelection(null);
+      }
       bumpLayoutReload();
     },
     [projectId],

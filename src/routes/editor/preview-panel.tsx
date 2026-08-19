@@ -42,9 +42,8 @@ import { activeScene, sceneCells } from "./scene-layout-geometry";
  */
 
 /**
- * TẠM ẨN nút đổi phong cách: đổi phong cách cả video là thao tác nhiều rủi ro
- * (ghi lại chữ, có thể lệch nhịp/hiệu ứng đã đặt tay). Bật lại bằng cách đặt cờ
- * này `true` khi luồng đổi phong cách đã chắc.
+ * Đổi vibe sống ở bước BÀN DỰNG (`studio-step.tsx`), không phải màn Soát lời này.
+ * Giữ cờ tắt ở đây để không bày nút đổi phong cách giữa lúc soát chữ.
  */
 const SHOW_STYLE_SWITCH = false;
 

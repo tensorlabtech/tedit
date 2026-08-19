@@ -534,6 +534,16 @@ export const api = {
       style_pack: string | null;
     }>(`/api/projects/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
 
+  /**
+   * ĐỔI VIBE TOÀN DIỆN — server ghi đè look block + re-pick khung b-roll + ô người
+   * theo bộ mới (giữ content). Khác `updateProject({stylePack})` chỉ đổi cột.
+   */
+  restyleProject: (projectId: string, stylePack: StylePackId) =>
+    request<{ ok: boolean }>(`/api/projects/${projectId}/restyle`, {
+      method: "POST",
+      body: JSON.stringify({ stylePack }),
+    }),
+
   /** Chạy lại ĐÚNG MỘT chặng AI — không dựng lại cả mạch từ đầu. */
   retryStep: (projectId: string, key: string) =>
     request<{ status: string }>(

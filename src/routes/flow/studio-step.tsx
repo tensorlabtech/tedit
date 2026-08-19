@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { PlayerRef } from "@remotion/player";
+import { SparklesIcon } from "lucide-react";
 
 import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { Button } from "@/components/ui/button";
@@ -10,6 +11,7 @@ import { Spinner } from "@/components/ui/spinner";
 
 import { RemotionPreview } from "@/routes/editor/remotion-preview";
 import { RightPanel } from "@/routes/editor/right-panel";
+import { StyleSwitchDialog } from "@/routes/editor/style-switch-dialog";
 import { Timeline } from "@/routes/editor/timeline";
 import { useEditor, type EditorState } from "@/routes/editor/use-editor";
 import { useEditorGuards } from "@/routes/editor/use-editor-guards";
@@ -38,6 +40,8 @@ export function StudioStep({ projectId }: { projectId: string | undefined }) {
   const editor = useEditor(projectId);
   // Player LÀ đồng hồ (thay thẻ <video> cũ). SPACE bật/tắt phát; kéo dải thì dừng.
   const playerRef = useRef<PlayerRef>(null);
+  // ĐỔI VIBE: mở hộp chọn bộ dáng. `setStylePack` dựng lại toàn bộ style ở server.
+  const [styleOpen, setStyleOpen] = useState(false);
   // Phát tự do (Cách) → BỎ mốc tự-dừng của lần xem-thử trước, kẻo đang phát lại
   // khựng ở mốc cũ.
   const togglePlay = () => {
@@ -103,7 +107,26 @@ export function StudioStep({ projectId }: { projectId: string | undefined }) {
       <div className="grid gap-2 lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_34rem]">
         {/* KHUNG XEM = Remotion Player (chính VideoComposition của export) → preview
             khớp export từng pixel. Rebuild payload khi lịch màn đổi. */}
-        <Card className="min-h-80 min-w-0 lg:min-h-0">
+        <Card className="relative min-h-80 min-w-0 lg:min-h-0">
+          {editor.duration > 0 && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setStyleOpen(true)}
+              className="absolute right-3 top-3 z-20 gap-1.5"
+            >
+              <SparklesIcon />
+              Đổi phong cách
+            </Button>
+          )}
+          <StyleSwitchDialog
+            open={styleOpen}
+            onOpenChange={setStyleOpen}
+            value={editor.stylePack}
+            onAccept={(next) => void editor.setStylePack(next)}
+            poster={editor.posterUrl}
+            preview={null}
+          />
           <CardContent className="flex min-h-0 flex-1 flex-col">
             <AspectRatio ratio={9 / 16} className="mx-auto min-h-0 flex-1">
               {editor.projectId && (
