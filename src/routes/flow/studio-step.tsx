@@ -42,6 +42,9 @@ export function StudioStep({ projectId }: { projectId: string | undefined }) {
   const playerRef = useRef<PlayerRef>(null);
   // ĐỔI VIBE: mở hộp chọn bộ dáng. `setStylePack` dựng lại toàn bộ style ở server.
   const [styleOpen, setStyleOpen] = useState(false);
+  // Dựng lại style tốn một nhịp (ghi đè block + re-place ô người + nạp lại) — che
+  // lại kẻo user tưởng đơ hoặc chưa ăn.
+  const [restyling, setRestyling] = useState(false);
   // Phát tự do (Cách) → BỎ mốc tự-dừng của lần xem-thử trước, kẻo đang phát lại
   // khựng ở mốc cũ.
   const togglePlay = () => {
@@ -123,10 +126,27 @@ export function StudioStep({ projectId }: { projectId: string | undefined }) {
             open={styleOpen}
             onOpenChange={setStyleOpen}
             value={editor.stylePack}
-            onAccept={(next) => void editor.setStylePack(next)}
+            onAccept={async (next) => {
+              setRestyling(true);
+              try {
+                await editor.setStylePack(next);
+              } finally {
+                setRestyling(false);
+              }
+            }}
             poster={editor.posterUrl}
             preview={null}
           />
+          {restyling && (
+            <div className="absolute inset-0 z-30 grid place-items-center rounded-xl bg-background/75 backdrop-blur-sm">
+              <div className="flex flex-col items-center gap-2">
+                <Spinner />
+                <span className="text-sm text-muted-foreground">
+                  Đang dựng lại phong cách…
+                </span>
+              </div>
+            </div>
+          )}
           <CardContent className="flex min-h-0 flex-1 flex-col">
             <AspectRatio ratio={9 / 16} className="mx-auto min-h-0 flex-1">
               {editor.projectId && (
