@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { normalizeJunction } from "../junction-kinds";
+import { pickEffects } from "../ai-effects";
 import { restyleProject } from "../restyle-project";
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
@@ -499,6 +500,22 @@ app.post("/api/projects/:id/restyle", async (request, reply) => {
     restyleProject(id, body.stylePack);
   } catch (error) {
     return reply.code(400).send({ error: (error as Error).message });
+  }
+  // Re-pick HIỆU ỨNG theo nhịp/effectBias bộ mới — đặt ở ranh giới CÂU như pipeline
+  // (`effects` step). Best-effort: không có model hoặc lỗi thì GIỮ effect cũ, đừng
+  // xoá trơ. Effects chạy SAU khi restyle đã dựng khung → có khung để né.
+  if (hasModel()) {
+    const sentences = db
+      .prepare(
+        "SELECT start_sec AS start, end_sec AS end FROM sentences WHERE project_id=? AND removed=0 ORDER BY start_sec",
+      )
+      .all(id) as Array<{ start: number; end: number }>;
+    try {
+      db.prepare("DELETE FROM effects WHERE project_id=?").run(id);
+      await pickEffects(id, sentences);
+    } catch {
+      /* AI lỗi thì thôi — restyle look/khung đã xong, effect để lần sau */
+    }
   }
   return { ok: true };
 });
