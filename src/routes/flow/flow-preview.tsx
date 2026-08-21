@@ -22,6 +22,7 @@ export function FlowPreview({
   onToggle,
   onPlay,
   onPause,
+  onReady,
   playLabel = "Phát",
   children,
 }: {
@@ -33,6 +34,8 @@ export function FlowPreview({
   onPlay: () => void;
   onPause: () => void;
   /** Nhãn nút phát lúc đang dừng — mỗi bước một việc ("Phát bản đã cắt"…). */
+  /** Nguồn mới đã nạp đủ để tua/phát — màn Cắt đổi nguồn nên cần mốc này. */
+  onReady?: () => void;
   playLabel?: string;
   /** Chữ bên phải nút phát trên dải điều khiển. */
   children?: ReactNode;
@@ -54,9 +57,18 @@ export function FlowPreview({
               ref={videoRef}
               src={src}
               className="h-full w-full object-cover"
+              // NẠP SẴN cả tệp: màn cắt nhảy qua các quãng bỏ bằng cách seek, mà
+              // seek tới chỗ chưa nạp thì trình duyệt phải xin thêm một dải byte
+              // rồi mới phát tiếp — đúng cú vấp người dùng thấy ở mỗi mối nối.
+              // Bản xem trước nhẹ (16MB cho 82 giây) nên nạp sẵn là rẻ.
+              preload="auto"
+              // iOS Safari mặc định phát toàn màn; ở đây khung xem là một phần bố
+              // cục nên phải giữ nó trong khung.
+              playsInline
               onPlay={onPlay}
               onPause={onPause}
               onClick={onToggle}
+              onLoadedData={onReady}
               onError={() => setFailed(true)}
             />
             <div className="absolute inset-x-0 bottom-0 z-20 flex items-center gap-2 bg-gradient-to-t from-black/70 to-transparent p-2 pt-8">

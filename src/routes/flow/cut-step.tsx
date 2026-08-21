@@ -7,8 +7,13 @@ import { formatDuration } from "@/lib/format-duration";
 
 import { TimelineSideRail } from "../editor/timeline-side-rail";
 import { useSpacePlayPause } from "../editor/use-space-play-pause";
+import { useCutPlayback } from "./use-cut-playback";
 import { ZOOM_STEP, useTimelineZoom } from "../editor/timeline-zoom";
 import { CutLane, type Span } from "./cut-lane";
+import { api } from "@/lib/api";
+
+import { cutToSrc, srcToCut } from "./cut-time-map";
+
 import { FlowPreview } from "./flow-preview";
 import { useCutEdit } from "./use-cut-edit";
 
@@ -99,6 +104,15 @@ export function CutStep({
     }
   };
   useEffect(() => clearAuditTimeout, []);
+  // Gỡ màn giữa lúc thẻ B đang cầm tiếng thì trả tiếng cho thẻ A, không thì lượt
+  // sau mở lại là thẻ đang hiện có `volume = 0` và người dùng tưởng mất tiếng.
+  useEffect(
+    () => () => {
+      const v = videoRef.current;
+      if (v) v.volume = 1;
+    },
+    [],
+  );
   /**
    * Mốc phát THẬT, cập nhật mỗi khung (60fps) cho dải trôi mượt mà không phải đẩy
    * state 60fps. `CutLane` đọc nó trong vòng rAF riêng để lái `transform` trực
@@ -112,7 +126,12 @@ export function CutStep({
     // có mép nào chặn lại. Đúng lỗi "kéo được clip xa khỏi Stick".
     const bounded = Math.max(0, Math.min(total, at));
     const video = videoRef.current;
-    if (video) video.currentTime = bounded;
+    // Mốc vào ra ở đây LUÔN là trục gốc (dải, khoảng bỏ, vạch đều theo nó); chỉ
+    // riêng thẻ video chạy trục đã cắt khi đang phát bản ghép.
+    if (video)
+      video.currentTime = dungBanCat
+        ? srcToCut(cutSrc!.kept, bounded)
+        : bounded;
     liveTimeRef.current = bounded;
     setTime(bounded);
   };
@@ -127,75 +146,101 @@ export function CutStep({
    * Trong mỗi khung: nếu vạch rơi vào chỗ đã bỏ (mà không phải chỗ đang cố ý
    * nghe) thì NHẢY tới cuối khoảng — đó là điểm của "phát bản đã cắt".
    */
+  /*
+   * BẢN ĐÃ CẮT ghép sẵn — thứ làm cho phát mượt như một video liền mạch.
+   *
+   * Ba trạng thái, và ranh giới giữa chúng là chỗ dễ sai nhất:
+   *
+   * · `null` — đang phát TỆP GỐC, vòng phát nhảy qua từng khoảng bỏ (lối cũ).
+   * · có `kept` — đang phát bản ghép; vòng phát không nhảy gì, chỉ quy mốc.
+   * · vừa sửa khoảng cắt — bản ghép cũ KHÔNG còn đúng, phải bỏ NGAY (không đợi
+   *   bản mới), nếu không người dùng xem một bản cắt khác với thứ họ vừa sửa.
+   */
+  const [cutSrc, setCutSrc] = useState<{
+    url: string;
+    kept: Array<{ start: number; end: number }>;
+  } | null>(null);
+  /**
+   * Đang phát bản ghép hay tệp gốc.
+   *
+   * Bản ghép KHÔNG chứa các đoạn đã bỏ, nên mọi lượt "nghe thử khoảng bỏ" buộc
+   * phải quay về tệp gốc — không phải vì tiện, mà vì thứ cần nghe không tồn tại
+   * trong bản ghép.
+   */
+  const [nguon, setNguon] = useState<"cat" | "goc">("cat");
+  /** Việc cần làm NGAY khi nguồn mới nạp xong (đổi `src` là một lượt tải lại). */
+  const sauKhiNap = useRef<{ at: number; play: boolean } | null>(null);
+  /**
+   * Bản ghép hiện tại, đọc được từ trong effect.
+   *
+   * Không đọc `cutSrc` qua hàm cập nhật của `setCutSrc`: hàm ấy phải THUẦN (React
+   * gọi nó hai lần ở chế độ nghiêm ngặt), mà ghi `sauKhiNap` trong đó là một tác
+   * dụng phụ — chạy hai lần thì mốc ghi lần sau đè lần trước bằng số đã cũ.
+   */
+  const cutSrcRef = useRef<typeof cutSrc>(null);
+  cutSrcRef.current = cutSrc;
+  /** Nguồn đang dùng, đọc được từ trong effect (cùng lý do với `cutSrcRef`). */
+  const nguonRef = useRef(nguon);
+  nguonRef.current = nguon;
+  /** Vân tay các khoảng bỏ — đổi là bản ghép cũ hết hạn. */
+  const vanTaySpans = spans
+    .map((x) => `${x.start.toFixed(2)}-${x.end.toFixed(2)}`)
+    .join("|");
   useEffect(() => {
-    if (!playing) return;
-    let frame = 0;
-    // Đọc `currentTime` MỖI khung: ghi vào `liveTimeRef` để `CutLane` lái dải trôi
-    // 60fps (mượt, khớp tiếng), CÒN đẩy vào state chỉ ~20 lần/giây — state giờ chỉ
-    // lo đồng hồ + cửa sổ dựng ảnh, mà mỗi lần đẩy vẫn dựng lại phần đó nên 60fps
-    // thì phí. Tách hai nhịp: hình trôi 60fps, dữ liệu 20fps.
-    const PUSH_EVERY_MS = 50;
-    let lastPush = 0;
-    // ĐỒNG HỒ MEDIA NỘI SUY. `video.currentTime` chỉ nhích theo khung hình video
-    // (~30fps, lại không đều) nên đọc thẳng thì dải TRÔI BẬC: có khung đứng rồi
-    // khung sau bù gấp đôi — "thi thoảng giật". Neo một mốc (media, đồng hồ tường)
-    // rồi chạy mượt rate 1 giữa các nấc; chỉ neo lại khi NHẢY chỗ cắt, tua lùi, hay
-    // lệch xa (video khựng). Nhờ vậy dải trôi đều 60fps mà vẫn bám đúng tiếng.
-    let anchorAt = 0;
-    let anchorPerf = 0;
-    let anchored = false;
-    const tick = (now: number) => {
-      const video = videoRef.current;
-      if (video) {
-        let at = video.currentTime;
-        const here = spans.find((span) => at >= span.start && at < span.end);
-        // Bỏ chủ ý nghe khi ĐÃ QUA hết khoảng ấy — từ đó các khoảng bỏ khác lại
-        // nhảy qua như thường. KHÔNG bỏ chỉ vì `here` rỗng: quãng đệm dẫn vào
-        // (ngay TRƯỚC khoảng) vốn là chỗ còn giữ nên `here` rỗng ở đó; bỏ cờ tại
-        // đấy thì tới khoảng cần nghe lại bị nhảy mất — hụt đúng thứ muốn nghe.
-        const active = auditing.current
-          ? spans.find((span) => span.id === auditing.current)
-          : null;
-        if (active && at >= active.end) auditing.current = null;
-        let jumped = false;
-        if (here && auditing.current !== here.id) {
-          // Khoảng bỏ CHẠM cuối bản — không còn khung GIỮ nào phía sau. Nhảy tới
-          // `here.end` (= khung cuối video gốc) sẽ đứng ở khung của đoạn ĐÃ BỎ rồi
-          // đơ luôn ở đó. Thay vào đó DỪNG phát ngay đầu khoảng bỏ — khung giữ cuối.
-          if (here.end >= total - 0.01) {
-            video.currentTime = here.start;
-            video.pause();
-            liveTimeRef.current = here.start;
-            setTime(here.start);
-            return;
-          }
-          video.currentTime = here.end;
-          at = here.end;
-          jumped = true;
-        }
-        // Mốc cho dải trôi — NỘI SUY để mượt: chạy tiếp từ neo bằng đồng hồ tường,
-        // neo lại khi lần đầu / nhảy chỗ cắt / tua lùi / lệch > 0,2s (video khựng).
-        const predicted = anchorAt + (now - anchorPerf) / 1000;
-        if (!anchored || jumped || at < anchorAt - 0.02 || Math.abs(at - predicted) > 0.2) {
-          anchorAt = at;
-          anchorPerf = now;
-          anchored = true;
-          liveTimeRef.current = at;
-        } else {
-          liveTimeRef.current = predicted;
-        }
-        // Nhảy qua chỗ bỏ thì ĐẨY NGAY để đồng hồ bật tới chỗ mới không trễ; phát
-        // trơn thì gộp về 20fps cho khỏi dựng lại dữ liệu quá dày.
-        if (jumped || now - lastPush >= PUSH_EVERY_MS) {
-          lastPush = now;
-          setTime(at);
-        }
+    // Bản ghép cũ hết hạn ngay khi khoảng cắt đổi. Ghi lại chỗ đang đứng (trục
+    // GỐC) để lượt nạp tệp gốc tiếp theo trả người dùng về đúng đó — không ghi
+    // thì đổi `src` là video quay về giây 0 giữa lúc họ đang xem.
+    const dangGhep = cutSrcRef.current;
+    const v = videoRef.current;
+    // CHỈ khi thẻ video đang thật sự phát bản ghép: lúc ấy bỏ nó đi mới làm `src`
+    // đổi, tức mới có lượt nạp lại để mà giữ chỗ. Đang ở tệp gốc (vừa nghe thử)
+    // thì `src` không đổi, ghi mốc ở đây là để lại một mốc treo — và nó sẽ nhảy
+    // vào lần đổi nguồn sau, kéo người dùng về một chỗ chẳng liên quan.
+    if (dangGhep && v && nguonRef.current === "cat") {
+      sauKhiNap.current = {
+        at: cutToSrc(dangGhep.kept, v.currentTime),
+        play: !v.paused,
+      };
+    }
+    setCutSrc(null);
+    if (!projectId) return;
+    let alive = true;
+    // Đợi người dùng NGỪNG sửa rồi mới ghép: mỗi lần kéo mép là một vân tay mới,
+    // ghép ngay thì máy chủ dựng cả chục bản chẳng ai xem.
+    const timer = window.setTimeout(async () => {
+      const info = await api.cutPreview(projectId).catch(() => null);
+      if (!alive || !info?.ready) return;
+      // Đổi sang bản ghép cũng là một lượt NẠP LẠI tệp — phải giữ chỗ y như lúc
+      // bỏ bản ghép, không thì người dùng vừa kéo xong bấm phát là video nhảy về
+      // đầu. Mốc ở đây đang trên trục GỐC (đang phát tệp gốc), `onReady` sẽ tự quy
+      // sang trục đã cắt.
+      // Cũng chỉ giữ chỗ khi `src` sắp đổi thật: đang ở tệp gốc vì vừa nghe thử
+      // thì bản ghép mới chỉ nằm chờ, chưa ai phát nó cả.
+      const v = videoRef.current;
+      if (v && nguonRef.current === "cat") {
+        sauKhiNap.current = { at: v.currentTime, play: !v.paused };
       }
-      frame = requestAnimationFrame(tick);
+      setCutSrc({ url: api.cutPreviewUrl(projectId, info.version), kept: info.kept });
+    }, 900);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
     };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [playing, spans, total]);
+  }, [projectId, vanTaySpans]);
+
+  /** Có đang thật sự phát bản ghép không — cần cả hai điều kiện. */
+  const dungBanCat = nguon === "cat" && !!cutSrc;
+
+  useCutPlayback({
+    playing,
+    spans,
+    total,
+    kept: dungBanCat ? cutSrc!.kept : null,
+    videoRef,
+    liveTimeRef,
+    auditing,
+    setTime,
+  });
 
   const togglePlay = () => {
     const video = videoRef.current;
@@ -203,6 +248,15 @@ export function CutStep({
     // Phát/dừng TAY thì bỏ hẹn giờ của lần nghe thử trước — không thì nó vẫn nổ
     // đúng lúc và dừng phát tự do ngoài ý muốn.
     clearAuditTimeout();
+    // Vừa nghe thử xong (đang ở tệp gốc) mà bấm phát: quay về bản ghép cho mượt,
+    // giữ nguyên chỗ đang đứng. Bỏ luôn cờ nghe-thử, vì lượt phát này là phát bản
+    // đã cắt chứ không phải nghe lại đoạn bỏ.
+    if (video.paused && nguon === "goc" && cutSrc) {
+      auditing.current = null;
+      sauKhiNap.current = { at: video.currentTime, play: true };
+      setNguon("cat");
+      return;
+    }
     if (video.paused) void video.play();
     else video.pause();
   };
@@ -260,6 +314,13 @@ export function CutStep({
     clearAuditTimeout();
     setSelectedId(span.id);
     auditing.current = span.id;
+    // Bản ghép KHÔNG có đoạn này (nó vừa bị bỏ mà) — muốn nghe thì phải về tệp
+    // gốc. Đổi `src` là một lượt tải lại, nên việc tua+phát dời sang `onReady`.
+    if (dungBanCat) {
+      sauKhiNap.current = { at: Math.max(0, span.start - SEAM), play: true };
+      setNguon("goc");
+      return;
+    }
     video.currentTime = Math.max(0, span.start - SEAM);
     void video.play();
     // Dừng ngay sau khi qua hết khoảng: không dừng thì nó chạy tiếp hết video
@@ -268,6 +329,38 @@ export function CutStep({
       auditTimeout.current = null;
       video.pause();
     }, (span.end - span.start + SEAM * 2) * 1000);
+  };
+
+  /**
+   * Nghe MỐI NỐI — câu trước chắp vào câu sau nghe có xuôi không.
+   *
+   * Khác hẳn `audit` ở trên, và đây mới là câu hỏi thật của người đang cắt: họ
+   * không cần biết phần bỏ đi nghe ra sao (họ vừa quyết bỏ nó), họ cần biết chỗ
+   * NỐI có hụt hơi, có cụt đầu chữ, có chồng tiếng thở hay không.
+   *
+   * Cách làm: KHÔNG treo quãng (`auditing.current = null`) nên vòng phát nhảy qua
+   * đúng như bản đã cắt sẽ phát. Nghe một nhịp trước mép và một nhịp sau mép, tức
+   * đúng hai giây thật — phần giữa bị nhảy nên không tính vào hẹn giờ.
+   */
+  const auditSeam = (span: Span) => {
+    const video = videoRef.current;
+    if (!video) return;
+    clearAuditTimeout();
+    setSelectedId(span.id);
+    auditing.current = null;
+    // Nghe CHỖ NỐI cũng cần tệp gốc: chỗ nối chỉ tồn tại như một cú nhảy trên
+    // tệp gốc; trong bản ghép nó đã liền lại và không còn gì để nghe thử.
+    if (dungBanCat) {
+      sauKhiNap.current = { at: Math.max(0, span.start - SEAM), play: true };
+      setNguon("goc");
+      return;
+    }
+    video.currentTime = Math.max(0, span.start - SEAM);
+    void video.play();
+    auditTimeout.current = window.setTimeout(() => {
+      auditTimeout.current = null;
+      video.pause();
+    }, SEAM * 2 * 1000);
   };
 
   return (
@@ -281,7 +374,18 @@ export function CutStep({
         {/* Khung xem dùng chung với các bước khác — nút phát chồng lên video. */}
         <FlowPreview
           videoRef={videoRef}
-          src={previewUrl}
+          src={dungBanCat ? cutSrc!.url : previewUrl}
+          onReady={() => {
+            const viec = sauKhiNap.current;
+            sauKhiNap.current = null;
+            if (!viec) return;
+            const v = videoRef.current;
+            if (!v) return;
+            v.currentTime = dungBanCat
+              ? srcToCut(cutSrc!.kept, viec.at)
+              : viec.at;
+            if (viec.play) void v.play();
+          }}
           playing={playing}
           onToggle={togglePlay}
           onPlay={() => setPlaying(true)}
@@ -348,6 +452,7 @@ export function CutStep({
                 setSelectedId(null);
               }}
               onAudit={audit}
+              onAuditSeam={auditSeam}
             />
             <TimelineSideRail
               pxPerSecond={zoom.pxPerSecond}

@@ -85,6 +85,7 @@ export function CutLane({
   onAddAt,
   onDelete,
   onAudit,
+  onAuditSeam,
 }: {
   clips: CutClip[];
   strip: { url: string; seconds: number; nativeSecondWidth: number };
@@ -119,6 +120,8 @@ export function CutLane({
   onDelete: (id: string) => void;
   /** Nghe thử một khoảng — vì bản đã-cắt vốn nhảy qua nó. */
   onAudit: (span: Span) => void;
+  /** Nghe MỐI NỐI: câu trước chắp vào câu sau, đúng như bản xuất ra sẽ nghe. */
+  onAuditSeam: (span: Span) => void;
 }) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
@@ -134,6 +137,8 @@ export function CutLane({
    * chỗ nó đang đứng. `null` là chưa bắt đầu kéo mép nào.
    */
   const trimGrab = useRef<number | null>(null);
+  /** Cùng vai trò `trimGrab` nhưng cho cú KÉO DỜI cả khối: chênh giữa con trỏ và mép ĐẦU. */
+  const moveGrab = useRef<number | null>(null);
   /**
    * Mốc của cú CHUỘT PHẢI vừa rồi — để "Thêm tại đây" thêm ĐÚNG chỗ bấm.
    *
@@ -243,6 +248,33 @@ export function CutLane({
         const next = dragRef.current;
         dragRef.current = null;
         trimGrab.current = null;
+        setDragSpan(null);
+        if (next) onResize(next.id, next.start, next.end);
+      },
+      /*
+       * KÉO DỜI cả khoảng — giữ nguyên ĐỘ DÀI, chỉ đổi chỗ đứng.
+       *
+       * Kẹp vào `[0, total − độ dài]` chứ không kẹp từng mép: kẹp từng mép thì
+       * khoảng bị BÓP NGẮN LẠI khi đụng biên, mà người dùng đang dời chứ không
+       * gọt — độ dài co lại lúc chạm mép đọc ra là lỗi.
+       */
+      move: (_kind, id, at) => {
+        const base =
+          dragRef.current?.id === id
+            ? dragRef.current
+            : spans.find((span) => span.id === id);
+        if (!base) return;
+        if (moveGrab.current === null) moveGrab.current = at - base.start;
+        const span = base.end - base.start;
+        const start = clamp(at - moveGrab.current, 0, Math.max(0, total - span));
+        const next = { ...base, start, end: start + span };
+        dragRef.current = next;
+        setDragSpan(next);
+      },
+      commitMove: () => {
+        const next = dragRef.current;
+        dragRef.current = null;
+        moveGrab.current = null;
         setDragSpan(null);
         if (next) onResize(next.id, next.start, next.end);
       },
@@ -444,9 +476,13 @@ export function CutLane({
                       }
                     />
                     <ContextMenuContent>
+                      <ContextMenuItem onClick={() => onAuditSeam(span)}>
+                        <PlayIcon />
+                        Nghe chỗ nối
+                      </ContextMenuItem>
                       <ContextMenuItem onClick={() => onAudit(span)}>
                         <PlayIcon />
-                        Nghe khoảng này
+                        Nghe khoảng bỏ
                       </ContextMenuItem>
                       {/* "Giữ lại" bỏ khoảng cắt = trả đoạn phim về. Icon hoàn tác,
                           KHÔNG phải thùng rác: đây là việc an toàn, ngược với huỷ. */}

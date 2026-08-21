@@ -115,10 +115,39 @@ const TRONG: Snapshot = {
   unsureCount: 0,
 };
 
+/**
+ * Hai ảnh chụp tiến độ có GIỐNG NHAU không — để khỏi dựng lại cây khi máy chủ
+ * chẳng đổi gì.
+ *
+ * So nông cho các trường vô hướng, còn `steps` và `cut` so bằng JSON: chúng là
+ * mảng/đối tượng nhỏ (vài chặng, vài con số) nên tuần tự hoá rẻ hơn nhiều so với
+ * một lượt dựng lại cả bước.
+ */
+function giongNhau(a: Snapshot, b: Snapshot): boolean {
+  return (
+    a.hasMain === b.hasMain &&
+    a.hasBrief === b.hasBrief &&
+    a.stage === b.stage &&
+    a.settled === b.settled &&
+    a.started === b.started &&
+    a.unsureCount === b.unsureCount &&
+    JSON.stringify(a.steps) === JSON.stringify(b.steps) &&
+    JSON.stringify(a.cut) === JSON.stringify(b.cut)
+  );
+}
+
 export function FlowPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const [snap, setSnap] = useState<Snapshot>(TRONG);
+  /**
+   * Bản mới nhất của `snap` cho vòng hẹn giờ đọc.
+   *
+   * Vòng ấy sống qua nhiều lượt hỏi mà không nằm trong `deps`, nên nó nhìn thấy
+   * `snap` của lần dựng đầu tiên — đọc thẳng state ở đó là đọc số cũ mãi mãi.
+   */
+  const snapRef = useRef<Snapshot>(TRONG);
+  snapRef.current = snap;
   const [loading, setLoading] = useState(true);
   /**
    * Lượt hỏi máy chủ gần nhất hỏng — chuỗi là câu lỗi để bày, `null` là ổn.
@@ -175,7 +204,7 @@ export function FlowPage() {
         const blocked = steps.find(
           (item) => item.status === "failed" && item.required,
         );
-        setSnap({
+        const moi = {
           hasMain: data.files.some((file) => file.role === "main"),
           hasBrief: Boolean(data.project.profile?.trim()),
           stage: (active ?? blocked)?.key ?? null,
@@ -186,14 +215,26 @@ export function FlowPage() {
           unsureCount: (data.words ?? []).filter(
             (row) => (row.confidence ?? 1) < 0.6,
           ).length,
-        });
+        };
+        /*
+         * CHỈ ghi state khi thật sự có gì đổi.
+         *
+         * Nhịp hỏi này chạy suốt những bước CHỜ NGƯỜI (cắt, soát lời) — mà ở đó
+         * máy chủ không đổi gì cả. Ghi một object mới mỗi 1,5 giây thì React dựng
+         * lại cả cây bước, kể cả lúc người dùng đang PHÁT: đó là cú giật đều đặn
+         * ~40 lần mỗi phút, dễ tưởng nhầm là video vấp vì nó rơi bất kỳ đâu, kể cả
+         * ngay sau một mối nối.
+         *
+         * So NÔNG là đủ: mọi trường đều là số/chuỗi/bool, trừ `steps` và `cut` —
+         * hai cái ấy so bằng chuỗi JSON, chúng nhỏ (vài chặng, vài con số).
+         */
+        setSnap((cu) => (giongNhau(cu, moi) ? cu : moi));
         setLoadError(null);
-        // Đã tới bàn dựng thì không còn chặng nào đổi nữa — hỏi tiếp mỗi 1,5s
-        // là hỏi cho có, tốn một lượt gọi mạng mỗi giây rưỡi suốt lúc người
-        // dùng ngồi sửa ở bàn dựng.
-        if (data.pipeline?.settled && timer !== undefined) {
-          window.clearInterval(timer);
-        }
+        // Trả THẲNG cho vòng hẹn giờ: `snapRef` chỉ đổi lúc React dựng lại, mà
+        // vòng ấy chạy ngay sau `await` — đọc ref ở đó là đọc số của lượt trước.
+        return moi;
+        // Đã tới bàn dựng thì không còn chặng nào đổi nữa; vòng hẹn giờ tự dừng
+        // khi thấy `settled` (xem `hen()` bên dưới).
       } catch (err) {
         // KHÔNG bắt là lỗi cũ: một lượt 500 ném thẳng xuống, `snap` đứng
         // nguyên ở giá trị RỖNG ban đầu, và trang bày khung thả tệp cho một
@@ -208,14 +249,20 @@ export function FlowPage() {
       } finally {
         if (alive) setLoading(false);
       }
+      return null;
     };
     void pull();
     // Hỏi lại đều đặn: bước máy đổi mà không có ai báo, nên trang phải tự nhìn.
-    // Dừng lại khi đã `settled` — xem nhánh trong `pull()`.
-    timer = window.setInterval(() => void pull(), 1500);
+    timer = window.setInterval(async () => {
+      const moi = await pull();
+      // Tới bàn dựng thì không còn chặng nào đổi — dừng hẳn, khỏi hỏi cho có.
+      if ((moi ?? snapRef.current).settled && timer !== undefined) {
+        window.clearInterval(timer);
+      }
+    }, 1500);
     return () => {
       alive = false;
-      window.clearInterval(timer);
+      if (timer !== undefined) window.clearInterval(timer);
     };
   }, [projectId, retryTick]);
 
@@ -597,6 +644,8 @@ export function FlowPage() {
               stylePack={upload.stylePack}
               onTitle={(v) => void upload.saveTitle(v)}
               onBrief={(v) => void upload.saveProfile(v)}
+              directive={upload.directive}
+              onDirective={(v) => void upload.saveDirective(v)}
               onStylePack={(id) => void upload.saveStylePack(id)}
             />
           ) : at === "main-footage" ? (

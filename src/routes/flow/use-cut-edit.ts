@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { api, type ApiSegment } from "@/lib/api";
 import { toast } from "@/components/ui/toast";
@@ -214,7 +214,20 @@ export function useCutEdit(projectId: string | undefined) {
     clips.at(-1)?.end ?? 0,
     segments.at(-1)?.end_sec ?? 0,
   );
-  const spans: Span[] = removedSpans(segments);
+  /*
+   * GIỮ NGUYÊN THAM CHIẾU khi `segments` không đổi — không phải để tiết kiệm vài
+   * phép lọc, mà vì `spans` là DEPS của vòng phát.
+   *
+   * Màn cắt đẩy đồng hồ vào state 20 lần/giây, nên thân hook này chạy lại 20 lần
+   * mỗi giây. Gọi thẳng `removedSpans(...)` ở đây là sinh một MẢNG MỚI mỗi lượt,
+   * và `useCutPlayback` thấy deps đổi → huỷ rồi dựng lại vòng `requestAnimationFrame`
+   * 20 lần mỗi giây, mỗi lần reset luôn mốc nội suy của dải.
+   *
+   * Đo trên trang thử (`scripts/cut-preview/?fresh=1` mô phỏng đúng cảnh này):
+   * mối nối từ 19ms vọt lên 33-66ms. `CutLane` cũng nhận mảng mới nên mọi lớp memo
+   * bên trong nó mất tác dụng theo.
+   */
+  const spans: Span[] = useMemo(() => removedSpans(segments), [segments]);
 
   /**
    * Trả một khoảng về video và xoá hai lằn chia của nó.
