@@ -13,9 +13,10 @@ import {
 import { OverlayTextBlock } from "@/dev/overlays/overlay-render";
 import type { BandId } from "@/dev/overlays/overlay-model";
 import { BehindTextPreview } from "@/routes/editor/behind-text-preview";
-import { findLayout, slotPixels } from "../../server/layout-kinds";
+import { findLayout, layoutWithOptions, slotPixels } from "../../server/layout-kinds";
 import { findJunction } from "../../server/junction-kinds";
-import { packForElement } from "../../server/style-pack";
+import { handmadeTiltAt } from "../../server/handmade-tilt";
+import { packForElement, TEXT_SIZE_STEP } from "../../server/style-pack";
 import type {
   RemotionCaption,
   RemotionPayload,
@@ -29,11 +30,29 @@ import type {
  * Phụ đề/hiệu ứng thêm ở milestone sau.
  */
 
-const TILT = [-4, 3.5, -2.5, 3];
-function boil(frame: number, seed: number) {
-  const s = Math.floor(frame / 6);
-  // Biên độ nhỏ (2px) — chỉ "thở" nhẹ, không giật.
-  return { x: Math.sin(s * 1.7 + seed) * 2, y: Math.sin(s * 2.3 + seed * 1.9) * 2 };
+/**
+ * RUNG ô dán tay — HAI tầng, và tách tầng mới là chỗ ăn thua.
+ *
+ * Bản trước chỉ có một tầng giữ-khung: vị trí đứng im 6 khung rồi nhảy một phát.
+ * Ở 30 khung/giây đó là 5 nhịp/giây, mà bước góc lại lớn nên mỗi nhịp nhảy gần
+ * trọn biên độ — mắt không đọc ra "giấy sống", nó đọc ra VIDEO TỤT KHUNG.
+ *
+ * · TRÔI: chạy theo từng khung, mang phần lớn biên độ. Đây là thứ làm ô "thở"
+ *   mà không giật, và nó đo bằng GIÂY nên đổi nhịp khung không đổi cảm giác.
+ * · GIẤY: tầng giữ-khung kiểu vẽ tay, giữ lại chất stop-motion — nhưng 10
+ *   nhịp/giây (ngưỡng dưới của hoạt hình vẽ tay) và biên độ nhỏ, nên nó là hạt
+ *   lấm tấm trên chuyển động chứ không phải chính chuyển động.
+ */
+function boil(frame: number, seed: number, fps: number) {
+  const t = frame / fps;
+  const driftX = Math.sin(t * 2.1 + seed) * 1.6;
+  const driftY = Math.sin(t * 1.7 + seed * 1.9) * 1.6;
+  const step = Math.max(1, Math.round(fps / 10));
+  const s = Math.floor(frame / step);
+  return {
+    x: driftX + Math.sin(s * 5.1 + seed) * 0.6,
+    y: driftY + Math.sin(s * 4.3 + seed * 1.3) * 0.6,
+  };
 }
 
 /**
@@ -115,7 +134,12 @@ function HandDrawnBorder({
   ch: number;
 }) {
   const id = `hd-${seed}`;
-  const pad = w * 1.2;
+  // Đặt đường viền NGAY TRÊN mép ảnh (không thụt vào) → nét vẽ tay rung QUA biên,
+  // nửa trong nửa ngoài, đóng khung đúng mép như khung ảnh dán tay. Thụt vào (cũ:
+  // w*1.2) để lộ dải ảnh NGOÀI viền → mép ảnh trông không có khung ("không thấy
+  // viền ảnh"). Đệm mỏng = nửa nét để tâm nét trùng biên, phần ló ra dùng vùng
+  // filter (x=-15%…130%) + overflow:visible của svg.
+  const pad = 0;
   // Chuẩn hoá TẦN SỐ nhiễu theo bề rộng composition.
   //
   // `baseFrequency` là chu-kỳ trên mỗi ĐƠN VỊ toạ độ (= pixel composition). Preview
@@ -172,7 +196,9 @@ function Cells({
 }) {
   const { width, height, fps } = useVideoConfig();
   const t = frame / fps;
-  const spec = findLayout(scene.layout);
+  // Bố cục ĐÃ ÁP tuỳ chọn của chính cảnh này (tỉ lệ ô, phủ-kín/lọt-trọn, đảo trên
+  // dưới) — cùng một lời gọi với bàn dựng, nên xem sao thì xuất ra vậy.
+  const spec = layoutWithOptions(scene.layout, scene.layoutOptions);
   const edge = scene.frameBlock?.subjectEdge ?? null;
   // THẺ SẠCH đọc theo BLOCK của cảnh (block-pool): khung Prism mang thẻ sạch, khung
   // Phấn/Nhịp-đen mang `null` → lối "dán tay" (nghiêng+rung). Nhờ vậy trộn preset
@@ -256,10 +282,10 @@ function Cells({
           // Phấn. Đọc `doodles` từ BLOCK đóng dấu (không đọc pack) — mỗi khung tự
           // quyết look của chính nó.
           const danTay = !card && Boolean(scene.frameBlock?.doodles);
-          const jit = danTay && isBroll ? boil(frame, i) : { x: 0, y: 0 };
+          const jit = danTay && isBroll ? boil(frame, i, fps) : { x: 0, y: 0 };
           // Ô NGƯỜI đứng thẳng (người nghiêng đọc ra "video bị nghiêng"); thẻ sạch
           // (Prism) cũng không nghiêng; Nhịp-đen (không doodle) đứng thẳng.
-          const tilt = danTay && isBroll ? TILT[i % 4] : 0;
+          const tilt = danTay && isBroll ? handmadeTiltAt(i) : 0;
           // Bóng đổ mềm dưới thẻ sạch (bán kính theo cạnh ngắn của ô).
           const shadow = card
             ? Math.round(Math.min(rect.w, rect.h) * card.shadowShare)
@@ -378,7 +404,14 @@ function Cells({
                     >
                       <Video
                         src={staticFile(src)}
-                        muted
+                        /*
+                         * CÂM theo mặc định, mở tiếng khi khối được đánh dấu MANG
+                         * NỘI DUNG. Phần lớn tư liệu là cảnh minh hoạ — tiếng nền
+                         * của nó chồng lên giọng người nói là nhiễu thuần tuý. Còn
+                         * clip demo có lời giải thích thì tắt tiếng là vứt mất nửa
+                         * nội dung, và đó là thứ không có cách nào bù lại ở khâu sau.
+                         */
+                        muted={!ins?.keepAudio}
                         loop={brollLoop}
                         trimBefore={trimBefore}
                         style={{
@@ -443,11 +476,14 @@ function CaptionSeq({
         config={{
           text: c.content,
           align: c.align ?? "left",
-          // CỠ suy THẲNG từ từ-nhấn: có tiếng nhấn → cụm PHÓNG TO tiếng đó
-          // (keyword-large); không có → cả cụm ĐỀU cỡ. Không còn "kiểu nhấn"
-          // riêng — nhờ vậy đánh dấu tiếng nào là tiếng đó nổi, ở MỌI cụm (kể cả
-          // cụm máy tự gieo), khỏi lệch giữa "Từ nhấn" và cái hiện ra.
-          emphasis: (c.keywords?.length ?? 0) > 0 ? "keyword-large" : "even",
+          // NHẤN theo BỘ DÁNG: mỗi bộ khai kiểu nhấn riêng (`emphasis` đóng dấu trên
+          // element) — Prism phóng-to keyword (keyword-large), Phấn/Cơ-bản/Nhịp-đen
+          // nhấn bằng MÀU cùng cỡ (even), bám đúng bản gốc từng bộ. Keyword vẫn nổi ở
+          // MỌI kiểu: even thì nổi bằng màu+đậm (độc lập với cỡ), keyword-large thì
+          // thêm phóng-to. Fallback (cụm chưa đóng dấu emphasis): suy từ từ-nhấn.
+          emphasis:
+            c.emphasis ??
+            ((c.keywords?.length ?? 0) > 0 ? "keyword-large" : "even"),
           band: (bandOverride ?? c.band ?? "bottom") as BandId,
           keywords: c.keywords ?? [],
           insert: { kind: "none", shape: "wide" },
@@ -461,6 +497,10 @@ function CaptionSeq({
         seconds={frame / fps}
         wordStarts={c.wordStarts}
         span={c.span}
+        // Cỡ/chỗ đứng người dùng đè cho riêng cụm. Cùng một lời gọi với bàn dựng
+        // nên xem sao xuất vậy.
+        sizeStep={c.textOpts?.size ? TEXT_SIZE_STEP[c.textOpts.size] : undefined}
+        posY={c.textOpts?.posY ?? null}
       />
     </div>
   );

@@ -270,6 +270,11 @@ export const PHAN: StylePack = {
   id: "phan",
   label: "Phấn",
   theme: "ke-chuyen",
+  // Nghiêng CẢ DÒNG caption (dốc lên phải) — bám bản gốc Chalk dán chữ tay. Cùng
+  // BIÊN ĐỘ với ô b-roll nghiêng (`TILT` ở `video-composition.tsx`): chữ và ảnh
+  // dán trên cùng một trang thì phải lệch cùng một mức, lệch hơn là đọc ra hai
+  // bàn tay. -8° trước đây nghiêng quá, chữ khó đọc. Chỉ Phấn; bộ khác đứng thẳng.
+  captionTilt: -2,
   fonts: { voice: FONT.patrickHand, accent: FONT.patrickHand },
   color: {
     ...BASE.color,

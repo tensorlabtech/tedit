@@ -9,6 +9,7 @@ import {
   withFontRole,
   type ShownPack,
   type StylePack,
+  MIN_SCALE,
 } from "../../../server/style-pack";
 
 
@@ -79,7 +80,23 @@ type Placed = {
 type Row = Placed[];
 
 /** Vùng chữ: neo theo dải, và chừa lề phải rộng hơn ở hai dải dưới vì cột nút. */
-function bandStyle(band: BandId): React.CSSProperties {
+function bandStyle(band: BandId, posY?: number | null): React.CSSProperties {
+  // ĐẶT TAY thắng dải: có `posY` thì neo bằng TÂM khối ở đúng phần chiều cao ấy,
+  // bỏ qua dải. Giữ nguyên lề trái/phải của dải để bề rộng dòng không đổi theo
+  // chỗ đứng — kéo lên kéo xuống mà chữ tự bẻ dòng lại thì đọc ra là lỗi.
+  if (posY != null) {
+    const right = band === "top" ? "11%" : "18%";
+    return {
+      top: `${Math.min(0.95, Math.max(0.05, posY)) * 100}%`,
+      transform: "translateY(-50%)",
+      left: LEFT,
+      right,
+    };
+  }
+  return bandOnly(band);
+}
+
+function bandOnly(band: BandId): React.CSSProperties {
   const found = BANDS.find((item) => item.id === band) ?? BANDS[0];
   const right = band === "top" ? "11%" : "18%";
   if (found.edge === "top")
@@ -302,24 +319,15 @@ function Syllable({
    */
   onPick?: (text: string) => void;
 }) {
-  // ĐỔ CHÉO (Chalk) — khớp `word-layout.ts` bên máy chủ: mỗi tiếng trong hàng tụt
-  // dần theo cột (`0,14 cỡ chữ/cột`) + dao động nhẹ, thành cascade chéo thay vì
-  // hàng thẳng. Chỉ Phấn (`behindText` là dấu nhận bộ, cùng cách server gate).
-  // Đơn vị `cqw` = phần trăm bề rộng khung, khớp offset điểm ảnh (theo cỡ khung)
-  // của máy chủ. Cộng VÀO transform của hiệu ứng hiện chữ, không đè lên nó.
+  // KHÔNG đổ chéo từng tiếng: bộ vẽ-tay nghiêng ở tầng CỤM (`captionTilt` xoay cả
+  // khối quanh tâm), nên mỗi tiếng phải nằm ĐÚNG hàng. Bản trước còn tụt dần theo
+  // cột + dao động sin, cộng vào phép xoay ngược chiều thành chân chữ nhấp nhô —
+  // bản gốc Chalk nghiêng cả DÒNG, từng từ vẫn thẳng theo dòng.
   // Font PER-WORD: tiếng nhấn dùng vai `accent`, tiếng thường dùng `voice` (bộ
   // hai-họ như Prism → nền sans + tiếng nhấn serif). Bộ một-họ thì hai vai trùng
   // → về đúng `pack.font` như cũ. Phép ĐO ở `wrapAt` cũng theo font này nên khớp.
   const font = pieceFont(pack, !!word.keyword);
   const reveal = revealStyle(pack, seconds, order, word.size, index, startAt);
-  const diagCqw = pack.behindText
-    ? word.size * (0.14 * index + 0.05 * Math.sin(index * 2.1 + order)) * 100
-    : 0;
-  const base =
-    reveal.transform && reveal.transform !== "none" ? reveal.transform : "";
-  const revealWithDiag: React.CSSProperties = diagCqw
-    ? { ...reveal, transform: `${base} translateY(${diagCqw.toFixed(2)}cqw)`.trim() }
-    : reveal;
   return (
     <span
       onPointerDown={
@@ -392,8 +400,10 @@ function Syllable({
             ...(pack.highlight.box
               ? {
                   backgroundColor: cssColor(pack.highlight.box),
-                  padding: `${pack.box?.padShare ?? 0.12}em ${(pack.box?.padShare ?? 0.12) * 1.4}em`,
-                  borderRadius: 0,
+                  padding: `${pack.box?.padShare ?? 0.1}em ${(pack.box?.padShare ?? 0.1) * 1.6}em`,
+                  // Bo tròn ô karaoke như bản gốc Chalk (ô vuông đọc ra thô); dùng
+                  // `cornerShare` của box nếu bộ khai, không thì bo mềm mặc định.
+                  borderRadius: `${pack.box?.cornerShare ?? 0.18}em`,
                 }
               : null),
           };
@@ -428,7 +438,7 @@ function Syllable({
               color: "transparent",
             }
           : null),
-        ...revealWithDiag,
+        ...reveal,
       }}
     >
       {word.text}
@@ -450,6 +460,8 @@ export function OverlayTextBlock({
   wordStarts,
   span,
   onPickWord,
+  sizeStep,
+  posY,
 }: {
   config: OverlayConfig;
   /** Bộ dáng của dự án — quyết định font, màu, viền, quầng, nhịp */
@@ -471,8 +483,33 @@ export function OverlayTextBlock({
    * hiện xong từ giây 0,4 rồi đứng im.
    */
   span?: number;
+  /**
+   * Hệ số cỡ chữ người dùng đè cho riêng cụm (xem `TEXT_SIZE_STEP`). Nhân lên
+   * trần cỡ của phong cách, KHÔNG thay phép đo: chữ vẫn tự thu cho vừa khung, nên
+   * bậc "to" chỉ nâng trần chứ không thể đẩy chữ tràn mép.
+   */
+  sizeStep?: number;
+  /** Chỗ đứng dọc đè (phần chiều cao khung, đo ở tâm khối). Bỏ trống = theo dải. */
+  posY?: number | null;
 }) {
-  const rows = buildRows(config, pack);
+  /*
+   * ĐÈ CỠ: hạ/nâng trần rồi để phép đo chạy như thường.
+   *
+   * Kẹp sàn `MIN_SCALE`: bộ dáng có `maxScale` đã sát sàn (Phấn 0,09) thì bậc
+   * "nhỏ" không hạ được nữa — nếu không kẹp, `fitGroup` sẽ tự kéo ngược lên và
+   * người dùng bấm một nút không làm gì mà không hiểu vì sao.
+   */
+  const shownPack =
+    sizeStep && sizeStep !== 1
+      ? {
+          ...pack,
+          density: {
+            ...pack.density,
+            maxScale: Math.max(MIN_SCALE, pack.density.maxScale * sizeStep),
+          },
+        }
+      : pack;
+  const rows = buildRows(config, shownPack);
   const totalSyllables = rows.reduce((sum, row) => sum + row.length, 0);
   // Đếm phẳng qua các hàng để tra mốc: `wordStarts` là một mảng theo thứ tự
   // tiếng trong câu, không chia hàng.
@@ -499,7 +536,7 @@ export function OverlayTextBlock({
         className="absolute"
         data-text-block=""
         // Tầng 2 — trên hình dán. Xem ghi chú `zIndex` ở `StyleGraphics`.
-        style={{ ...bandStyle(config.band), zIndex: 2 }}
+        style={{ ...bandStyle(config.band, posY), zIndex: 2 }}
       >
       <div
         className={ring ? "rounded-md ring-2 ring-primary" : undefined}
@@ -508,6 +545,16 @@ export function OverlayTextBlock({
           flexDirection: "column",
           alignItems: items,
           position: "relative",
+          // NGHIÊNG CẢ DÒNG (bộ vẽ-tay như Phấn): xoay nguyên block quanh tâm — mọi
+          // hàng nghiêng CÙNG một góc, chữ trong hàng vẫn thẳng với hàng (không skew
+          // từng chữ), đúng bản gốc Chalk. Bộ đứng thẳng (`captionTilt` trống/0) thì
+          // KHÔNG set transform → khỏi ép lớp GPU thừa.
+          ...(pack.captionTilt
+            ? {
+                transform: `rotate(${pack.captionTilt}deg)`,
+                transformOrigin: "center",
+              }
+            : null),
           // NỀN MỘT DẢI: container co về bề rộng chữ (`fit-content`) rồi tự căn
           // giữa; `fontSize` = cỡ caption (cqw) làm mốc `em`. Nền THẬT là lớp tuyệt
           // đối phía sau (dưới), KHÔNG padding vào đây — thêm padding sẽ ĐẨY chữ,

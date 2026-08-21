@@ -21,11 +21,16 @@ import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
-import { cssColor, packForElement } from "../../../server/style-pack";
+import {
+  cssColor,
+  packForElement,
+  TEXT_SIZE_STEP,
+} from "../../../server/style-pack";
 import { applyFontStyle, findStylePack } from "../../../server/style-pack-catalog";
 
 import { formatTime } from "./editor-data";
 import { findJunction } from "../../../server/junction-kinds";
+import { handmadeTiltAt } from "../../../server/handmade-tilt";
 import { BehindTextPreview } from "./behind-text-preview";
 import { PreviewMusic } from "./preview-music";
 import { SubjectCutout } from "./subject-cutout";
@@ -47,12 +52,6 @@ import { activeScene, sceneCells } from "./scene-layout-geometry";
  */
 const SHOW_STYLE_SWITCH = false;
 
-/**
- * Góc NGHIÊNG ô như ảnh dán tay lệch — cùng chuỗi góc bản xuất (`layout-render.ts`
- * `tiltRad = [-4,3.5,-2.5,3][at%4]`). Xoay vòng theo thứ tự z của ô để hai ô cạnh
- * nhau lệch ngược chiều, ra cảm giác dán tay chứ không thẳng hàng máy.
- */
-const TILT_DEG = [-4, 3.5, -2.5, 3];
 
 export function PreviewPanel({
   editor,
@@ -437,7 +436,7 @@ export function PreviewPanel({
                 // Bo góc bằng `rounded-[3cqw]` như tư liệu chèn — cùng lối làm tròn
                 // ở màn hình, phép kiểm parity soi hình học ô chứ không soi góc.
                 // Ô người trong bố cục NHIỀU ô cũng nghiêng+rung như bản xuất (ô
-                // người ở z thấp nhất → at=0 → góc TILT_DEG[0]). Phủ kín (không mask)
+                // người ở z thấp nhất → at=0 → góc đầu chuỗi). Phủ kín (không mask)
                 // thì KHÔNG nghiêng. Nghiêng ở thẻ ngoài, rung ở thẻ trong (animation
                 // ghi đè transform).
                 <div
@@ -451,7 +450,7 @@ export function PreviewPanel({
                           height: `${cell.height}%`,
                           transform:
                             cell.masked && pageScene
-                              ? `rotate(${TILT_DEG[0]}deg)`
+                              ? `rotate(${handmadeTiltAt(0)}deg)`
                               : undefined,
                         }
                       : undefined
@@ -525,7 +524,7 @@ export function PreviewPanel({
                     height: `${box.height}%`,
                     transform:
                       box.masked && pageScene
-                        ? `rotate(${TILT_DEG[(index + (cell ? 1 : 0)) % 4]}deg)`
+                        ? `rotate(${handmadeTiltAt(index + (cell ? 1 : 0))}deg)`
                         : undefined,
                   }}
                 >
@@ -773,6 +772,16 @@ export function PreviewPanel({
                     // chạy hết trong nửa giây rồi đứng im, không liên quan gì tới
                     // chỗ đó nói nhanh hay chậm.
                     span={element.end - element.start}
+                    // Cỡ/chỗ đứng người dùng đè — PHẢI truyền ở đây nữa, không thì
+                    // khung xem và bản xuất nói hai chuyện khác nhau.
+                    sizeStep={
+                      element.textOptions?.size
+                        ? TEXT_SIZE_STEP[
+                            element.textOptions.size as keyof typeof TEXT_SIZE_STEP
+                          ]
+                        : undefined
+                    }
+                    posY={element.textOptions?.posY ?? null}
                     ring={
                       editor.selection?.kind === "text" &&
                       editor.selection.id === element.id

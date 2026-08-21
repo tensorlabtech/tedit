@@ -1,4 +1,5 @@
 import { findLayout, settleAspect, slotPixels, type LayoutKindId } from "./layout-kinds";
+import { handmadeTiltAt } from "./handmade-tilt";
 import { ffmpegColor, type FrameBlock } from "./style-pack";
 import type { ScheduledScene } from "./timing";
 
@@ -363,6 +364,18 @@ export function layoutPlan(
 
   let sourceIdx = 0;
   used.forEach((id, index) => {
+    /*
+     * KHÔNG áp `LayoutOptions` ở đây, và đó là giới hạn có ý thức của đường vẽ này.
+     *
+     * Chỗ này gom mọi cảnh CÙNG một mã bố cục vào một nhánh lọc dùng chung, nên
+     * hai cảnh cùng mã mà khác tuỳ chọn (một ô vuông, một ô ngang) sẽ không tách
+     * ra được — muốn đúng thì phải gom theo "mã + tuỳ chọn", tức dựng lại cả cách
+     * chia nhánh.
+     *
+     * Không làm vì bản xuất thật đã do Remotion dựng (`renderMedia`); đường ffmpeg
+     * này còn lại cho `dev-render-frame` và phép kiểm hình học. Ghi ra đây để lần
+     * sau ai đọc còn biết nó CỐ Ý thiếu, không phải bị quên.
+     */
     const spec = findLayout(id);
     const scenes = schedule.filter((s) => s.layout === id);
     // CHỈ layout có ô NGƯỜI (`chinh`) mới tiêu thụ một luồng video gốc (`lysrc`);
@@ -538,7 +551,7 @@ export function layoutPlan(
       // (`ow/oh`) để không xén góc.
       const wantTilt = !!slot.mask && page !== null;
       const tiltRad = wantTilt
-        ? (([-4, 3.5, -2.5, 3][at % 4] * Math.PI) / 180).toFixed(4)
+        ? ((handmadeTiltAt(at) * Math.PI) / 180).toFixed(4)
         : "0";
       const endTag = wantTilt ? `[${tag}flat]` : `[${tag}c]`;
       const tilt = wantTilt
