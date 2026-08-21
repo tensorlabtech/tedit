@@ -1,5 +1,15 @@
 import { cn } from "@/lib/utils";
 
+import { LayoutDiagram } from "./layout-diagram";
+
+/** Cùng hình với `LayoutOptions` bên máy chủ; khai lỏng để picker khỏi kéo cả kiểu. */
+type LayoutOptionsLike = {
+  aspect?: string | null;
+  fit?: string | null;
+  place?: string | null;
+  swap?: boolean | null;
+};
+
 /**
  * Một lựa chọn: mã + tên. `imageUrl` để sau thay bằng ảnh xem trước.
  *
@@ -11,6 +21,13 @@ export type PickOption = {
   id: string;
   label: string;
   imageUrl?: string;
+  /**
+   * Vẽ SƠ ĐỒ Ô của một bố cục thay cho ảnh — xem `LayoutDiagram`.
+   *
+   * Có nó thì tên tụt xuống thành chú thích ở chân thẻ: người dùng chọn bằng thứ
+   * họ NHÌN RA, còn chữ chỉ để gọi tên lại về sau.
+   */
+  diagram?: { layout: string; options?: LayoutOptionsLike | null };
   swatch?: { bg: string; border?: string | null };
 };
 
@@ -107,6 +124,12 @@ export function OptionPicker({
               className="absolute inset-0 size-full object-cover"
             />
           )}
+          {option.diagram && (
+            <LayoutDiagram
+              layout={option.diagram.layout}
+              options={option.diagram.options}
+            />
+          )}
           {/* Xem trước look: nền phủ kín + viền vẽ vào trong (gợi mép khung, vd
               viền vàng của Phấn). Đặt DƯỚI chữ nhờ `relative` của span. */}
           {option.swatch && (
@@ -123,10 +146,14 @@ export function OptionPicker({
               style={{ borderColor: option.swatch.border }}
             />
           )}
+          {/* Có SƠ ĐỒ thì tên tụt xuống chân thẻ: đặt giữa như cũ là chữ nằm đè
+              lên đúng cái hình mà nó đang mô tả, và cả hai cùng khó đọc. */}
           <span
             className={cn(
               "relative line-clamp-3 leading-tight",
               variant === "grid" || size === "lg" ? "text-xs" : "text-[10px]",
+              option.diagram &&
+                "absolute inset-x-0 bottom-0 bg-background/75 px-0.5 py-[3px] leading-none",
             )}
             style={
               option.swatch

@@ -172,6 +172,7 @@ export const OPENING_SECONDS = 3.0;
 
 /* ── KIỂM ────────────────────────────────────────────────────────────────── */
 
+import type { LayoutOptions } from "./layout-kinds";
 import type { FrameBlock } from "./style-pack";
 
 /** Một màn trong lịch: khoảng thời gian, bố cục, và có thiết bị nổi hay không. */
@@ -210,6 +211,11 @@ export type ScheduledScene = {
    * phần tử người dùng đặt).
    */
   elementId?: string;
+  /**
+   * Tuỳ chọn CẤU TRÚC ô của cảnh (tỉ lệ ô, phủ-kín/lọt-trọn, đảo trên dưới).
+   * Bỏ trống = dùng nguyên bố cục như bảng khai. Xem `LayoutOptions`.
+   */
+  layoutOptions?: LayoutOptions;
   /**
    * Look Ô (nền/viền/dồn) đã đóng dấu trên element — cảnh MANG look riêng, không
    * đọc bộ dáng toàn-cục. Bỏ trống ở màn toàn-khung lấp trống (không có nền).

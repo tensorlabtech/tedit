@@ -193,7 +193,9 @@ export function InspectorPanel({
         thumbUrl: item.thumbUrl ?? item.url,
         isVideo: item.isVideo,
         label: item.fullName ?? item.label,
+        keepAudio: item.keepAudio,
       }}
+      opts={item.layoutOptions}
       srcStart={item.start}
       srcEnd={item.end}
       outStart={editor.toOutput(item.start)}

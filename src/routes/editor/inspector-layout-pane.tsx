@@ -18,10 +18,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Field, FieldLabel } from "@/components/ui/field";
+import { Switch } from "@/components/ui/switch";
 
 import { findLayout } from "../../../server/layout-kinds";
 import { findStylePack } from "../../../server/style-pack-catalog";
 import { formatTimeFine } from "./editor-data";
+import {
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@/components/ui/toggle-group";
+
 import { OptionPicker } from "./option-picker";
 import type { EditorState } from "./use-editor";
 
@@ -45,6 +51,29 @@ const KHUNG_LABEL: Record<string, string> = {
 const khungLabel = (id: string) => KHUNG_LABEL[id] ?? findLayout(id).label;
 
 /**
+ * HỌ của một bố cục — mấy bố cục chỉ khác nhau ở thứ mà các trục tuỳ chọn đã lo
+ * thì cùng một họ, và picker chỉ bày một đại diện.
+ *
+ * Xếp theo SỐ Ô và VAI của chúng, vì đó là hai thứ trục không đổi được: một ô
+ * người khác hẳn hai ô, và ô người khác hẳn ô tư liệu. Còn tỉ lệ, chỗ đứng, cách
+ * lọt khung thì đổi được ngay dưới thẻ nên không đáng là một lựa chọn riêng.
+ */
+function layoutFamily(id: string): string {
+  const spec = findLayout(id);
+  if (spec.slots.length >= 2) return "hai-o";
+  const only = spec.slots[0];
+  if (!only) return id; // `trang-chu` không có ô nào — để riêng
+  return only.role === "phu" ? "mot-o-tu-lieu" : "mot-o-nguoi";
+}
+
+/** Tên theo HỌ — thẻ trong picker giờ là một họ, không phải một bố cục cụ thể. */
+const FAMILY_LABEL: Record<string, string> = {
+  "mot-o-nguoi": "Một ô",
+  "mot-o-tu-lieu": "Một ô tư liệu",
+  "hai-o": "Hai ô",
+};
+
+/**
  * Bảng sửa MỘT KHUNG — một loại duy nhất cho cả b-roll lẫn ô người.
  *
  * B-roll KHÔNG phải một loại riêng: nó chỉ là một khung CÓ tư liệu. Tư liệu là
@@ -60,6 +89,7 @@ export function LayoutKhungPane({
   isBlur,
   /** Có tư liệu → khung 2 ô (b-roll). `null` → khung 1 ô (người). */
   media,
+  opts,
   srcStart,
   srcEnd,
   outStart,
@@ -73,7 +103,20 @@ export function LayoutKhungPane({
   framePreset?: string | null;
   /** Cảnh đang là KHUNG MỜ (defocus) — để picker tô đúng ô "Khung mờ". */
   isBlur?: boolean;
-  media: { thumbUrl?: string; isVideo?: boolean; label?: string } | null;
+  media: {
+    thumbUrl?: string;
+    isVideo?: boolean;
+    label?: string;
+    /** Đang giữ tiếng clip hay câm; `undefined` khi khung chưa có tư liệu. */
+    keepAudio?: boolean;
+  } | null;
+  /** Tuỳ chọn cấu trúc đang đóng dấu trên khung này; `null` = theo bố cục gốc. */
+  opts?: {
+    aspect?: string | null;
+    fit?: string | null;
+    place?: string | null;
+    swap?: boolean | null;
+  } | null;
   srcStart: number;
   srcEnd: number;
   outStart: number;
@@ -131,8 +174,25 @@ export function LayoutKhungPane({
       string,
       { label: string; items: typeof frameOptions }
     >();
+    /*
+     * MỖI PHONG CÁCH CHỈ BÀY VÀI KHUNG GỐC, không bày hết mọi bố cục.
+     *
+     * Mười hai bố cục vốn là tổ hợp của cùng mấy trục — `o-don` với `o-lech` chỉ
+     * khác chỗ đứng, `o-vuong` chỉ khác tỉ lệ ô, `broll-full` với `broll-fit` chỉ
+     * khác cách ảnh lọt vào ô. Bày cả mười hai là bắt người dùng chọn trong mười
+     * hai cái tên khó đoán để làm việc mà thật ra là ba câu hỏi dễ, và ba câu ấy
+     * giờ đã có sẵn ngay dưới thẻ khung (hình ô · tư liệu trong ô · đảo trên dưới
+     * · chỗ đứng).
+     *
+     * Nên ở đây chỉ giữ MỘT đại diện cho mỗi họ. Chọn khung xong thì tinh chỉnh
+     * bằng các trục — cùng ngần ấy khả năng, ít hơn hẳn thứ phải đọc.
+     */
+    const seenFamily = new Set<string>();
     for (const opt of frameOptions) {
       if (opt.layout === "toan-khung") continue; // toan-khung ra ô CHUNG
+      const family = `${opt.presetId}:${layoutFamily(opt.layout)}`;
+      if (seenFamily.has(family)) continue;
+      seenFamily.add(family);
       const group = byPreset.get(opt.presetId) ?? {
         label: opt.presetLabel,
         items: [],
@@ -277,6 +337,113 @@ export function LayoutKhungPane({
                   riêng ở đây. */}
             </Field>
           )}
+          {/*
+           * BA TRỤC CỦA KHUNG — phần chỉnh được TRONG một bố cục.
+           *
+           * Mười hai bố cục vốn là tổ hợp của đúng mấy trục này (`vuong-ngang` và
+           * `ngang-vuong` chỉ hoán vị trên–dưới, `broll-full` và `broll-fit` chỉ
+           * khác cách vừa khung). Hỏi bằng ba câu dễ thì người dùng trả lời được;
+           * bày mười hai cái tên thì họ phải đoán.
+           *
+           * Đây đều là trục NỘI DUNG — hình dạng ô, ảnh lọt vào ô thế nào, ô nào
+           * trên. Màu/viền/nền vẫn thuộc bộ dáng và KHÔNG mở ra ở đây, vì đó mới
+           * là thứ giữ cho mọi video cùng một phong cách còn giống nhau.
+           */}
+          {is2o && (
+            <>
+              <Field>
+                <FieldLabel>Hình ô</FieldLabel>
+                {/* Các trục là lựa chọn CHỮ nên dùng ToggleGroup, không dùng thẻ
+                    9:16 của picker khung: thẻ ấy tồn tại để chứa SƠ ĐỒ, còn ở đây
+                    nó chỉ là một ô cao trăm pixel đựng hai chữ — tốn hết chiều cao
+                    của bảng, mà bảng thì đang phải chứa bốn trục. */}
+                <ToggleGroup
+                  value={[opts?.aspect ?? "auto"]}
+                  onValueChange={(next) => {
+                    const id = next[0];
+                    if (!id) return;
+                    void editor.setLayoutOptions(elementId, {
+                      ...opts,
+                      aspect: id === "auto" ? null : id,
+                    });
+                  }}
+                >
+                  <ToggleGroupItem value="auto">Theo tư liệu</ToggleGroupItem>
+                  <ToggleGroupItem value="doc">Dọc</ToggleGroupItem>
+                  <ToggleGroupItem value="vuong">Vuông</ToggleGroupItem>
+                  <ToggleGroupItem value="ngang">Ngang</ToggleGroupItem>
+                </ToggleGroup>
+              </Field>
+              <Field>
+                <FieldLabel>Tư liệu trong ô</FieldLabel>
+                <ToggleGroup
+                  value={[opts?.fit ?? "cover"]}
+                  onValueChange={(next) => {
+                    const id = next[0];
+                    if (!id) return;
+                    void editor.setLayoutOptions(elementId, { ...opts, fit: id });
+                  }}
+                >
+                  <ToggleGroupItem value="cover">Phủ kín ô</ToggleGroupItem>
+                  <ToggleGroupItem value="contain">Lọt trọn</ToggleGroupItem>
+                </ToggleGroup>
+              </Field>
+              {/* CHỖ ĐỨNG chỉ có nghĩa khi ô KHÔNG phủ kín khung: ô phủ kín thì
+                  dời lên hay xuống cũng vẫn phủ kín, công tắc thành nút chết. */}
+              {findLayout(layout).slots.some((slot) => slot.areaShare < 1) && (
+                <Field>
+                  <FieldLabel>Chỗ đứng</FieldLabel>
+                  <ToggleGroup
+                    value={[opts?.place ?? "auto"]}
+                    onValueChange={(next) => {
+                      const id = next[0];
+                      if (!id) return;
+                      void editor.setLayoutOptions(elementId, {
+                        ...opts,
+                        place: id === "auto" ? null : id,
+                      });
+                    }}
+                  >
+                    <ToggleGroupItem value="auto">Theo khung</ToggleGroupItem>
+                    <ToggleGroupItem value="tren">Trên</ToggleGroupItem>
+                    <ToggleGroupItem value="giua">Giữa</ToggleGroupItem>
+                    <ToggleGroupItem value="duoi">Dưới</ToggleGroupItem>
+                  </ToggleGroup>
+                </Field>
+              )}
+              {/* Đảo chỗ chỉ có nghĩa khi khung THẬT SỰ có hai ô — bố cục một ô
+                  thì công tắc này không đổi được gì, bày ra là bày một nút chết. */}
+              {findLayout(layout).slots.length === 2 && (
+                <Field orientation="horizontal">
+                  <FieldLabel htmlFor="swap-slots">Đảo trên · dưới</FieldLabel>
+                  <Switch
+                    id="swap-slots"
+                    checked={opts?.swap ?? false}
+                    onCheckedChange={(on) =>
+                      void editor.setLayoutOptions(elementId, {
+                        ...opts,
+                        swap: Boolean(on),
+                      })
+                    }
+                  />
+                </Field>
+              )}
+            </>
+          )}
+          {/* GIỮ TIẾNG — chỉ hiện với tư liệu là VIDEO: ảnh không có tiếng để giữ,
+              bày công tắc chết ở đó chỉ tổ làm người dùng đi tìm xem nó hỏng ở đâu. */}
+          {is2o && media?.isVideo && (
+            <Field orientation="horizontal">
+              <FieldLabel htmlFor="keep-audio">Giữ tiếng tư liệu</FieldLabel>
+              <Switch
+                id="keep-audio"
+                checked={media.keepAudio ?? false}
+                onCheckedChange={(on) =>
+                  void editor.setInsertKeepAudio(elementId, Boolean(on))
+                }
+              />
+            </Field>
+          )}
         </div>
       </CardContent>
 
@@ -312,8 +479,16 @@ export function LayoutKhungPane({
               <OptionPicker
                 variant="grid"
                 options={[
-                  { id: toanKhungId, label: "Toàn khung" },
-                  { id: khungMoId, label: "Khung mờ" },
+                  {
+                    id: toanKhungId,
+                    label: "Toàn khung",
+                    diagram: { layout: "toan-khung" },
+                  },
+                  {
+                    id: khungMoId,
+                    label: "Khung mờ",
+                    diagram: { layout: "toan-khung" },
+                  },
                 ]}
                 value={isBlur ? khungMoId : isToanKhung ? toanKhungId : null}
                 onSelect={onPick}
@@ -324,9 +499,13 @@ export function LayoutKhungPane({
                 <FieldLabel>{group.label}</FieldLabel>
                 <OptionPicker
                   variant="grid"
+                  // SƠ ĐỒ Ô thay cho tên: người dùng chọn bằng hình dạng nhìn ra
+                  // được, tên chỉ còn để gọi lại về sau. Vẽ từ chính `slotPixels`
+                  // nên không có bản thứ hai để lệch với bản dựng.
                   options={group.items.map((opt) => ({
                     id: opt.id,
-                    label: opt.label,
+                    label: FAMILY_LABEL[layoutFamily(opt.layout)] ?? opt.label,
+                    diagram: { layout: opt.layout },
                   }))}
                   value={currentBlockId}
                   onSelect={onPick}

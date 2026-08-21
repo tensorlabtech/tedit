@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { findLayout, type LayoutKindId } from "./layout-kinds";
+import { type LayoutOptions, findLayout, type LayoutKindId } from "./layout-kinds";
 import type { PlacedSegment } from "./layout-schedule";
 import { type KeptRange, mapToOutput } from "./render";
 import type { FrameBlock } from "./style-pack";
@@ -26,6 +26,8 @@ export type PlacedMedia = {
   out: number | null;
   /** Độ dài clip nguồn (giây) — để kẹp in/out + vẽ thanh nguồn ở bảng sửa. */
   duration: number | null;
+  /** Phát tiếng của clip hay để câm — xem ghi chú cột `keep_audio`. */
+  keepAudio: boolean;
 };
 
 type Row = {
@@ -36,6 +38,10 @@ type Row = {
   name: string | null;
   inSec: number | null;
   outSec: number | null;
+  /** Giữ tiếng của clip (1) hay câm (0) — xem ghi chú cột `keep_audio`. */
+  keepAudio: number | null;
+  /** Tuỳ chọn khung đã đóng dấu (JSON `LayoutOptions`); `null` = theo bố cục. */
+  layoutOptsJson: string | null;
   duration: number | null;
   /** Mốc NGUỒN đóng dấu trên element (neo-giây) — ưu tiên hơn mốc TỪ nếu có. */
   elStart: number | null;
@@ -83,6 +89,7 @@ export function buildPlacedSegments(
       `SELECT e.id AS id, e.insert_layout AS layout, e.media_file_id AS mediaId,
               m.stored_path AS path, m.name AS name, e.frame_block AS frameBlockJson,
               e.media_in_sec AS inSec, e.media_out_sec AS outSec, m.duration AS duration,
+              e.keep_audio AS keepAudio, e.layout_opts AS layoutOptsJson,
               e.start_sec AS elStart, e.end_sec AS elEnd,
               w1.start_sec AS wStart, w2.end_sec AS wEnd
          FROM elements e
@@ -110,6 +117,16 @@ export function buildPlacedSegments(
     const frameBlock: FrameBlock | undefined = row.frameBlockJson
       ? (JSON.parse(row.frameBlockJson) as FrameBlock)
       : undefined;
+    // Tuỳ chọn CẤU TRÚC ô của cảnh này. JSON hỏng thì coi như không có: một cảnh
+    // mất tuỳ chọn còn dựng ra hình, còn ném lỗi ở đây là hỏng cả bản dựng.
+    let layoutOptions: LayoutOptions | undefined;
+    if (row.layoutOptsJson) {
+      try {
+        layoutOptions = JSON.parse(row.layoutOptsJson) as LayoutOptions;
+      } catch {
+        layoutOptions = undefined;
+      }
+    }
 
     // CẤU TRÚC lấy từ `insert_layout`, KHÔNG từ media. Tư liệu chỉ LẤP ô phụ của
     // khung 2 ô — thiếu tư liệu thì ô phụ để TRỐNG (placeholder), không phải là
@@ -136,11 +153,20 @@ export function buildPlacedSegments(
           in: row.inSec,
           out: row.outSec,
           duration: row.duration,
+          keepAudio: !!row.keepAudio,
         });
-        segments.push({ start, end, layout, insert: index, elementId: row.id, frameBlock });
+        segments.push({
+          start,
+          end,
+          layout,
+          insert: index,
+          elementId: row.id,
+          frameBlock,
+          layoutOptions,
+        });
       } else {
         // Khung 2 ô CHƯA có tư liệu → placeholder (ô phụ trống, không `insert`).
-        segments.push({ start, end, layout, elementId: row.id, frameBlock });
+        segments.push({ start, end, layout, elementId: row.id, frameBlock, layoutOptions });
       }
     } else {
       const layout =

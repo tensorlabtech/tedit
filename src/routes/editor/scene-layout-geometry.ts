@@ -1,4 +1,4 @@
-import { findLayout, settleAspect, slotPixels } from "../../../server/layout-kinds";
+import { layoutWithOptions, settleAspect, slotPixels } from "../../../server/layout-kinds";
 import { entryOf, PUSH_MAX, RAMP } from "../../../server/layout-render";
 import type { SceneInsert } from "../../../server/scene-schedule";
 import type { ScheduledScene } from "../../../server/timing";
@@ -76,7 +76,7 @@ export function sceneCells(
 ): SceneCells {
   const scene = activeScene(schedule, seconds);
   if (!scene) return { main: null, inserts: [] };
-  const spec = findLayout(scene.layout);
+  const spec = layoutWithOptions(scene.layout, scene.layoutOptions);
   const remain = 1 - ease(scene, seconds);
   const pushGrow =
     scene.push && pushRate > 0

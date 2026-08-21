@@ -10,7 +10,7 @@ import { extname, join } from "node:path";
 
 import { buildPlacedSegments } from "./layout-segments";
 import { scheduleScenes } from "./layout-schedule";
-import { PICKABLE_LAYOUTS } from "./layout-kinds";
+import { PICKABLE_LAYOUTS, type LayoutOptions } from "./layout-kinds";
 import { db } from "./db";
 import { effectPeak, mapToOutput } from "./render";
 import { normalizeJunction } from "./junction-kinds";
@@ -26,6 +26,7 @@ import {
   type EmphasisId,
   type FrameBlock,
   type StylePack,
+  type TextOptions,
 } from "./style-pack";
 import { readStylePack } from "./style-pack-store";
 import { stampBlocksFromPack } from "./stamp-blocks";
@@ -47,6 +48,8 @@ export type RemotionScene = {
   /** Chỉ số tư liệu chèn cho ô phụ; null nếu màn không có b-roll. */
   insert: number | null;
   frameBlock: FrameBlock | null;
+  /** Tuỳ chọn cấu trúc ô của cảnh (tỉ lệ ô, phủ-kín/lọt-trọn, đảo trên dưới). */
+  layoutOptions: LayoutOptions | null;
 };
 
 /** Một cụm phụ đề — đủ để dựng `OverlayTextBlock` (cùng cấu hình preview). */
@@ -63,6 +66,8 @@ export type RemotionCaption = {
   letterCase?: StylePack["letterCase"] | null;
   keyColor?: string | null;
   fontStyle?: string | null;
+  /** Cỡ/chỗ đứng người dùng đè cho riêng cụm — xem `TextOptions`. */
+  textOpts?: TextOptions | null;
   /** Mốc từng tiếng, ĐÃ trừ đầu cụm (OverlayTextBlock đếm giây từ đầu cụm). */
   wordStarts?: number[];
   span: number;
@@ -107,6 +112,8 @@ export type RemotionPayload = {
     in: number | null;
     out: number | null;
     duration: number | null;
+    /** Phát tiếng clip hay câm — xem ghi chú cột `keep_audio`. */
+    keepAudio: boolean;
   }>;
   captions: RemotionCaption[];
   /** Chỗ nối (zoom/nháy/nghiêng) — xung tam giác quanh mỗi vết cắt, dải ĐÃ CẮT. */
@@ -324,6 +331,7 @@ export async function buildRemotionPayload(
         in: item.in ?? null,
         out: item.out ?? null,
         duration: item.duration ?? null,
+        keepAudio: item.keepAudio,
       };
     }),
   );
@@ -361,6 +369,7 @@ export async function buildRemotionPayload(
       letterCase: e.letterCase,
       keyColor: e.keyColor,
       fontStyle: e.fontStyle,
+      textOpts: e.textOpts ?? null,
       // Tương đối theo start GỐC (`e.start`), KHÔNG theo start đã dời — nhờ vậy
       // tiếng đầu (mốc 0) hiện ngay lúc cụm vào (đã sớm `lead`), các tiếng sau
       // cũng sớm đúng `lead`.
@@ -428,6 +437,7 @@ export async function buildRemotionPayload(
       layout: s.layout,
       insert: s.insert ?? null,
       frameBlock: s.frameBlock ?? null,
+      layoutOptions: s.layoutOptions ?? null,
     })),
     inserts,
     captions,

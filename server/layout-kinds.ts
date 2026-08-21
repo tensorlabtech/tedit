@@ -338,6 +338,107 @@ export function findLayout(id: string | null | undefined): LayoutSpec {
   return BY_ID.get(id as LayoutKindId) ?? BY_ID.get("toan-khung")!;
 }
 
+/**
+ * TUỲ CHỌN của một khung — phần người dùng chỉnh được TRONG một bố cục.
+ *
+ * ## Vì sao có tầng này
+ *
+ * Mười hai bố cục trong bảng trên vốn là TỔ HỢP của cùng vài trục, chỉ khác ở
+ * chỗ chúng được viết tay thành mười hai bản riêng: `vuong-ngang` với
+ * `ngang-vuong` chỉ hoán vị trên–dưới; `broll-full` với `broll-fit` chỉ khác
+ * cách vừa khung; `o-don` với `o-vuong` chỉ khác tỉ lệ ô.
+ *
+ * Người dùng phải chọn trong MƯỜI HAI CÁI TÊN khó đoán để làm việc mà thật ra
+ * chỉ là ba câu hỏi dễ. Tách các trục ra thành tuỳ chọn thì cùng ngần ấy khả
+ * năng, nhưng hỏi bằng thứ người ta trả lời được: *ô hình gì · ảnh phủ kín hay
+ * lọt trọn · cái nào nằm trên*.
+ *
+ * ## Vì sao KHÔNG bỏ mười hai id đi
+ *
+ * `elements.insert_layout` của mọi dự án đang chạy giữ những id ấy. Tầng này
+ * CỘNG THÊM chứ không thay: id vẫn là điểm khởi hành (và vẫn là thứ bộ dáng
+ * khai trong `layouts`), tuỳ chọn chỉ đè lên vài thuộc tính. Dự án cũ không có
+ * tuỳ chọn nào thì ra đúng hình cũ.
+ *
+ * Ranh giới cố ý: các trục ở đây đều RỜI RẠC và đều thuộc về NỘI DUNG (hình
+ * dạng ô, cách ảnh lọt vào ô, thứ tự). Màu, viền, nền vẫn thuộc bộ dáng và
+ * không mở ra ở đây — đó là chỗ giữ cho mọi video của một phong cách còn giống
+ * nhau.
+ */
+export type LayoutOptions = {
+  /** Đè tỉ lệ ô TƯ LIỆU (bố cục một ô thì là ô duy nhất). Bỏ trống = theo bố cục. */
+  aspect?: SlotAspect | null;
+  /**
+   * Ô đứng ĐÂU theo chiều dọc. Đây là trục thay cho việc khai riêng `o-don` (ô
+   * trên) và `o-lech` (ô dưới) — hai bố cục chỉ khác nhau đúng con số này.
+   */
+  place?: "tren" | "giua" | "duoi" | null;
+  /** Ảnh phủ kín ô (cắt bớt) hay lọt trọn trong ô (chừa mép). */
+  fit?: "cover" | "contain" | null;
+  /** Bố cục HAI ô: đảo ô trên với ô dưới. */
+  swap?: boolean | null;
+};
+
+/** Ô nào nhận tuỳ chọn tỉ lệ: ô tư liệu nếu có, không thì ô duy nhất. */
+const tunedSlot = (spec: LayoutSpec): SlotRole =>
+  spec.slots.some((slot) => slot.role === "phu") ? "phu" : "chinh";
+
+/**
+ * Bố cục SAU KHI áp tuỳ chọn — thứ mọi đường vẽ nên dùng thay cho `findLayout`.
+ *
+ * Trả về bản SAO: `LAYOUT_SPECS` là bảng dùng chung cho cả tiến trình, sửa tại
+ * chỗ thì một cảnh đổi tỉ lệ ô sẽ lặng lẽ đổi luôn mọi cảnh khác cùng bố cục.
+ */
+export function layoutWithOptions(
+  id: string | null | undefined,
+  options?: LayoutOptions | null,
+): LayoutSpec {
+  const spec = findLayout(id);
+  if (
+    !options ||
+    (options.aspect == null &&
+      options.fit == null &&
+      options.place == null &&
+      !options.swap)
+  )
+    return spec;
+
+  const target = tunedSlot(spec);
+  // Ba chỗ đứng, lấy từ chính các bố cục đang có: `o-don` neo 0,42 (hơi trên
+  // giữa), `o-lech` neo thấp hơn. Giữ nguyên khoảng cách với mép để ô không bao
+  // giờ chạm biên — chạm biên thì nền trang không còn lộ ra, mà nền trang chính
+  // là thứ phân biệt "ô nổi trên trang" với "video phủ kín".
+  const PLACE_Y: Record<"tren" | "giua" | "duoi", number> = {
+    tren: 0.32,
+    giua: 0.5,
+    duoi: 0.68,
+  };
+  let slots = spec.slots.map((slot) =>
+    slot.role === target
+      ? {
+          ...slot,
+          ...(options.aspect != null ? { aspect: options.aspect } : null),
+          ...(options.fit != null ? { fit: options.fit } : null),
+          ...(options.place != null
+            ? { anchor: { ...slot.anchor, y: PLACE_Y[options.place] } }
+            : null),
+        }
+      : slot,
+  );
+
+  // ĐẢO TRÊN–DƯỚI: hoán vị CHỖ ĐỨNG và ĐỘ TO, giữ nguyên vai và tỉ lệ của từng ô.
+  // Đổi cả tỉ lệ theo thì không còn là "đảo chỗ" mà thành một bố cục khác hẳn —
+  // ô vuông của người bỗng thành ô ngang, và người dùng không hiểu vì sao.
+  if (options.swap && slots.length === 2) {
+    const [first, second] = slots;
+    slots = [
+      { ...first, anchor: second.anchor, areaShare: second.areaShare },
+      { ...second, anchor: first.anchor, areaShare: first.areaShare },
+    ];
+  }
+  return { ...spec, slots };
+}
+
 /** Bố cục dựng được với những gì dự án đang có. */
 export function usableLayouts(hasInserts: boolean): LayoutSpec[] {
   return LAYOUT_SPECS.filter((spec) => !spec.needsInsert || hasInserts);

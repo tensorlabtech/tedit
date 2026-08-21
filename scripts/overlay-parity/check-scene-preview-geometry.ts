@@ -75,7 +75,19 @@ function boxNear(a: CellBox, b: CellBox, tol = 0.05) {
 
 // Nguồn dọc 9:16, một tệp tư liệu NGANG — để đo đúng chỗ `settleAspect` phải chốt.
 const SOURCE_ASPECT = 720 / 1280;
-const INSERTS: SceneInsert[] = [{ id: "a", aspect: 1280 / 720, isVideo: true }];
+// Cửa sổ nguồn để TRỐNG: guard đo chỗ đứng của ô, mà lấy đoạn nào của clip thì
+// không đổi một pixel hình học nào.
+const INSERTS: SceneInsert[] = [
+  {
+    id: "a",
+    aspect: 1280 / 720,
+    isVideo: true,
+    in: null,
+    out: null,
+    duration: null,
+    keepAudio: false,
+  },
+];
 
 const SCHEDULE: ScheduledScene[] = [
   { start: 0, end: 3, layout: "o-don", hero: "doi-bo-cuc", heroSeconds: 3 },

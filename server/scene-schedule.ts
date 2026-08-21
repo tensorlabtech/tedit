@@ -39,6 +39,8 @@ export type SceneInsert = {
   in: number | null;
   out: number | null;
   duration: number | null;
+  /** Phát tiếng clip hay câm — xem ghi chú cột `keep_audio`. */
+  keepAudio: boolean;
 };
 
 /** Một bố cục chọn được ở picker — mã + nhãn tiếng Việt. */
@@ -144,6 +146,7 @@ export async function buildSceneSchedule(
         isVideo: VIDEO.test(item.name),
         in: item.in,
         out: item.out,
+        keepAudio: item.keepAudio,
         duration: item.duration ?? info?.duration ?? null,
       };
     }),

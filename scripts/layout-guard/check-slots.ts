@@ -38,6 +38,9 @@ const PACK = {
   scenePush: null,
   subjectEdge: null,
   doodles: null,
+  // Không thẻ b-roll sạch: guard này đo HÌNH HỌC ô, mà thẻ chỉ thêm bóng/bo góc —
+  // bật nó lên là trộn một trục nhìn vào phép đo toạ độ.
+  insetCard: null,
 };
 
 const W = 1080;
