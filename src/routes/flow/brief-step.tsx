@@ -54,6 +54,8 @@ export function BriefStep({
   stylePack,
   onTitle,
   onBrief,
+  directive,
+  onDirective,
   onStylePack,
 }: {
   title: string;
@@ -61,6 +63,9 @@ export function BriefStep({
   stylePack: string | null;
   onTitle: (value: string) => void;
   onBrief: (value: string) => void;
+  /** CHỈ THỊ DỰNG — lái liều lượng; xem `ai-directive.ts` bên máy chủ. */
+  directive: string;
+  onDirective: (value: string) => void;
   onStylePack: (id: StylePackId) => void;
 }) {
   const [hovered, setHovered] = useState<StylePackId | null>(null);
@@ -87,7 +92,7 @@ export function BriefStep({
 
         <label className="grid gap-1.5">
           <span className="text-muted-foreground text-xs uppercase">
-            Video nói về gì
+            Tên riêng · từ dễ nghe nhầm
           </span>
           {/* `field-sizing-content` (design system) tự cao theo nội dung — dán
               nguyên kịch bản vào là ô phình hết màn, nuốt cả nút bên dưới. Chặn
@@ -97,16 +102,42 @@ export function BriefStep({
             rows={5}
             className="max-h-[42vh]"
             placeholder={
-              "Gõ mọi thứ liên quan — càng nhiều máy càng bớt đoán: tên riêng dễ " +
-              "nghe nhầm, nhịp nhanh hay chậm, từ nào đáng nhấn, kịch bản nếu có."
+              "Tên người, tên công ty, tên sản phẩm, từ tiếng Anh xen giữa câu — " +
+              "ví dụ: TensorLab, Tedit, Reels, n8n."
             }
             onBlur={(event) => onBrief(event.target.value)}
           />
           {/* Nói rõ chữ này ĐI ĐÂU. Không nói thì nó trông như một ô ghi chú
               cho vui, và người dùng bỏ trống — mất đúng đòn bẩy rẻ nhất. */}
           <span className="text-muted-foreground text-xs">
-            Máy dùng đoạn này để nghe cho đúng tên riêng, chọn từ nhấn và đặt tư
-            liệu. Bỏ trống cũng chạy, chỉ là máy phải đoán nhiều hơn.
+            Máy nghe lời bạn nói và gõ lại thành chữ. Tên riêng thì nó không có
+            cách nào đoán ra — viết vào đây là hết sai.
+          </span>
+        </label>
+
+        {/*
+          Ô THỨ HAI, và nó cố ý tách khỏi ô trên.
+          Trước đây một ô trống nhận cả bốn việc: tên riêng, nhịp, từ nhấn, kịch
+          bản. Bốn việc đi vào bốn bước khác nhau, hỏi chung một chỗ thì người
+          dùng không biết viết gì và bỏ trống — mất luôn cái rẻ nhất (tên riêng).
+          Ô trên là TỪ VỰNG cho lúc nghe; ô này là LIỀU LƯỢNG cho lúc dựng.
+        */}
+        <label className="grid gap-1.5">
+          <span className="text-muted-foreground text-xs uppercase">
+            Muốn máy dựng thế nào
+          </span>
+          <Textarea
+            defaultValue={directive}
+            rows={2}
+            placeholder={
+              "Ví dụ: b-roll thật dày, che mặt tôi nhiều · nhịp chậm, kể chuyện · " +
+              "cắt gắt kiểu quảng cáo · ít hình thôi, để tôi nói là chính."
+            }
+            onBlur={(event) => onDirective(event.target.value)}
+          />
+          <span className="text-muted-foreground text-xs">
+            Chỉ lái LIỀU LƯỢNG — dày hay thưa, nhanh hay êm. Font, khung và màu vẫn
+            theo phong cách bạn chọn bên dưới.
           </span>
         </label>
 

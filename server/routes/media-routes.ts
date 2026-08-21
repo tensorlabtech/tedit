@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { existsSync } from "node:fs";
 import { join, relative } from "node:path";
 import { buildEnvelope, readEnvelope } from "../audio-envelope";
+import { ensureCutPreview } from "../cut-preview";
 import { db } from "../db";
 import {
   makeFilmstrip,
@@ -37,6 +38,40 @@ app.get("/api/projects/:id/preview", async (request, reply) => {
   // `sendFile` giải đường dẫn theo gốc đã khai cho `@fastify/static` (`DATA_ROOT`)
   // và tự lo `Range` — thứ mà khung xem trước cần để tua mà không tải cả tệp.
   return reply.sendFile(relative(DATA_ROOT, pick));
+});
+
+/**
+ * BẢN XEM TRƯỚC ĐÃ CẮT — hỏi "có sẵn chưa", dựng nếu chưa (xem `cut-preview.ts`).
+ *
+ * Trả kèm `kept` vì màn cắt cần nó để QUY ĐỔI mốc: dải và các khoảng bỏ vẽ theo
+ * trục GỐC, còn tệp này chạy theo trục ĐÃ CẮT. Không có bảng quy đổi thì vạch
+ * chạy lệch hẳn khỏi tiếng.
+ *
+ * `version` là vân tay của chính danh sách khoảng giữ — đổi một mép cắt là đổi
+ * version, nên màn cắt biết ngay bản đang phát đã cũ mà không cần hỏi thêm.
+ */
+app.get("/api/projects/:id/cut-preview", async (request) => {
+  const { id } = request.params as { id: string };
+  const made = await ensureCutPreview(id).catch(() => null);
+  // `null` = chưa bỏ đoạn nào (hoặc chưa có bản xem trước): màn cắt cứ phát tệp
+  // gốc như thường, không có gì để ghép.
+  if (!made) return { ready: false as const };
+  return {
+    ready: true as const,
+    version: made.path.replace(/^.*cut-preview-|\.mp4$/g, ""),
+    kept: made.kept,
+  };
+});
+
+/**
+ * Chính tệp đã ghép. `?v=` chỉ để phá cache trình duyệt khi vân tay đổi — máy chủ
+ * luôn trả bản MỚI NHẤT, vì bản cũ đã bị dọn lúc dựng.
+ */
+app.get("/api/projects/:id/cut-preview/video", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const made = await ensureCutPreview(id).catch(() => null);
+  if (!made) return reply.code(404).send({ error: "Chưa có bản đã cắt" });
+  return reply.sendFile(relative(DATA_ROOT, made.path));
 });
 
 /**

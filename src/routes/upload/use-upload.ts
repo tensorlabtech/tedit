@@ -63,6 +63,8 @@ export function useUpload(openingProjectId?: string) {
    * "Tensolab", còn chặng sửa lời không có gì để mà tin.
    */
   const [profile, setProfileState] = useState("");
+  /** CHỈ THỊ DỰNG — ô thứ hai của bước Đề bài; lái liều lượng lúc dựng. */
+  const [directive, setDirectiveState] = useState("");
   const [title, setTitle] = useState(suggestedTitle());
   /**
    * Quãng lặng dài hơn ngần này giây thì chặng `silence` tự rút lại.
@@ -351,6 +353,7 @@ export function useUpload(openingProjectId?: string) {
         setStylePackState(findStylePack(data.project.style_pack).id);
         titleRef.current = data.project.title;
         setProfileState(data.project.profile ?? "");
+        setDirectiveState(data.project.directive ?? "");
         profileRef.current = data.project.profile ?? "";
         setTranscribedProfile(data.project.profile_at_transcribe ?? null);
         // Mốc mạch cảnh đã chép, do máy chủ đóng — nhờ nó mà lời nhắc "mạch đổi sau
@@ -806,6 +809,23 @@ export function useUpload(openingProjectId?: string) {
   }, []);
 
   /**
+   * Ghi CHỈ THỊ DỰNG. Máy chủ dịch nó thành số ngay trong lượt ghi này, nên bấm
+   * dựng liền sau đó đã ăn theo chỉ thị mới.
+   */
+  const saveDirective = useCallback(async (next: string) => {
+    setDirectiveState(next);
+    const id = projectRef.current;
+    if (!id) return;
+    await api.updateProject(id, { directive: next }).catch(() => {
+      toast.add({
+        title: "Không lưu được chỉ thị dựng",
+        description: "Máy chủ không trả lời — thử lại giúp mình",
+        type: "error",
+      });
+    });
+  }, []);
+
+  /**
    * Ghi nội dung một tư liệu chèn.
    *
    * Xoá trắng cũng là một ý kiến: nó trả tệp về cho máy đọc ở lượt dựng sau.
@@ -1130,6 +1150,8 @@ export function useUpload(openingProjectId?: string) {
     saveDescription,
     profile,
     saveProfile,
+    directive,
+    saveDirective,
     stylePack,
     saveStylePack,
     minSilence,

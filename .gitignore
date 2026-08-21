@@ -63,3 +63,9 @@ public/remotion-preview/
 # Vietnamese NLP python env (underthesea) — cài local mỗi máy, không commit
 scripts/vi-segment/vienv/
 scripts/vi-segment/install.log
+
+# Tệp mẫu của trang đo màn Cắt — copy từ dự án thật, xem scripts/cut-preview/
+scripts/cut-preview/mau.mp4
+scripts/cut-preview/strip.jpg
+scripts/cut-preview/envelope.json
+scripts/cut-preview/daghep.mp4

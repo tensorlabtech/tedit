@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { normalizeJunction } from "../junction-kinds";
 import { pickEffects } from "../ai-effects";
+import { refreshStyleOverrides } from "../ai-directive";
 import { restyleProject } from "../restyle-project";
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
@@ -161,6 +162,8 @@ app.patch("/api/projects/:id", async (request, reply) => {
   const body = (request.body ?? {}) as {
     title?: string;
     profile?: string;
+    /** CHỈ THỊ DỰNG — lái liều lượng, xem `ai-directive.ts`. */
+    directive?: string;
     minSilence?: number;
     wantCaptions?: boolean;
     wantMusic?: boolean;
@@ -187,6 +190,13 @@ app.patch("/api/projects/:id", async (request, reply) => {
     // dài hơn thì phần đuôi bị cắt ÂM THẦM, mà đuôi mới là chỗ đặt từ vựng.
     sets.push("profile=?");
     values.push(body.profile.trim().slice(0, 600));
+  }
+  if (body.directive !== undefined) {
+    // CHỈ THỊ DỰNG. Trần ngắn hơn hẳn `profile` là cố ý: đây là chỗ nói LIỀU
+    // LƯỢNG ("b-roll dày lên", "nhịp chậm"), không phải chỗ dán kịch bản — ô rộng
+    // mời người ta viết dài, mà viết dài vào đây thì phần dựng chẳng dùng được gì.
+    sets.push("directive=?");
+    values.push(body.directive.trim().slice(0, 300));
   }
   if (typeof body.minSilence === "number") {
     // Kẹp trong khoảng có nghĩa: dưới 0 là vô nghĩa, trên 3 giây thì gần như
@@ -244,9 +254,14 @@ app.patch("/api/projects/:id", async (request, reply) => {
   if (found.changes === 0) {
     return reply.code(404).send({ error: "Không có dự án này" });
   }
+  // Chỉ thị đổi thì dịch lại thành số NGAY, không đợi lượt dựng sau: người dùng
+  // gõ "b-roll dày lên" rồi bấm dựng luôn, mà dịch ở bước dựng thì lượt ấy vẫn
+  // chạy bằng số cũ. Best-effort — hỏng thì giữ cụm số đang có.
+  if (body.directive !== undefined) await refreshStyleOverrides(id);
+
   return db
     .prepare(
-      "SELECT id, title, profile, min_silence, want_captions, want_music, insert_source, style_pack, font_style FROM projects WHERE id=?",
+      "SELECT id, title, profile, directive, min_silence, want_captions, want_music, insert_source, style_pack, font_style FROM projects WHERE id=?",
     )
     .get(id);
 });
@@ -501,10 +516,30 @@ app.post("/api/projects/:id/restyle", async (request, reply) => {
   } catch (error) {
     return reply.code(400).send({ error: (error as Error).message });
   }
-  // Re-pick HIỆU ỨNG theo nhịp/effectBias bộ mới — đặt ở ranh giới CÂU như pipeline
-  // (`effects` step). Best-effort: không có model hoặc lỗi thì GIỮ effect cũ, đừng
-  // xoá trơ. Effects chạy SAU khi restyle đã dựng khung → có khung để né.
+  // Việc AI sau restyle CẦN model. Không có khoá thì look/khung/ô-người đã xong
+  // (phần tất định), effect + caption giữ nguyên bản cũ.
   if (hasModel()) {
+    // CAPTION: dựng lại cụm theo bộ mới — re-chunk (font khác → chia lại, hết tràn)
+    // + re-arrange căn lề/nhấn theo `defaults` bộ mới, GIỮ keywords (re-map theo mã
+    // từ). Caption cắm sâu vào pack nên KHÔNG giữ được như content thuần; MẤT chữ
+    // user sửa TAY (hiếm, đã cảnh báo ở dialog). Best-effort: lỗi thì giữ cụm cũ.
+    try {
+      const band =
+        (
+          db.prepare("SELECT subtitle_band FROM projects WHERE id=?").get(id) as
+            | { subtitle_band: string | null }
+            | undefined
+        )?.subtitle_band ?? "bottom";
+      await rechunkCaptions(id, band as Band, readStylePack(id));
+      // Đoạn timeline bám mép cụm → cụm đổi thì phải seed lại theo cụm mới.
+      db.prepare("UPDATE projects SET segments_by_caption=0 WHERE id=?").run(id);
+    } catch {
+      /* re-chunk lỗi thì giữ caption cũ — look/khung đã xong */
+    }
+
+    // Re-pick HIỆU ỨNG theo nhịp/effectBias bộ mới — đặt ở ranh giới CÂU như pipeline
+    // (`effects` step). Best-effort: lỗi thì GIỮ effect cũ, đừng xoá trơ. Chạy SAU
+    // khi restyle đã dựng khung → có khung để né.
     const sentences = db
       .prepare(
         "SELECT start_sec AS start, end_sec AS end FROM sentences WHERE project_id=? AND removed=0 ORDER BY start_sec",

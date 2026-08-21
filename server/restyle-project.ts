@@ -1,5 +1,6 @@
 import { db } from "./db";
 import { findLayout, layoutFitsMedia, type LayoutKindId } from "./layout-kinds";
+import { placeBlurFrames } from "./blur-frames";
 import { placePersonLayouts } from "./place-person-layouts";
 import { blocksFromPack } from "./style-pack";
 import { STYLE_PACKS } from "./style-pack-catalog";
@@ -13,7 +14,8 @@ import { STYLE_PACKS } from "./style-pack-catalog";
  * theo bộ mới — nhưng KHÔNG đụng content:
  *
  *  GIỮ: cắt · chữ caption + cách chia cụm · clip b-roll & vị trí & độ dài · dấu từ nhấn.
- *  DỰNG LẠI: look chữ (`caption_block`) · look khung/nền (`frame_block`) · kiểu khung b-roll.
+ *  DỰNG LẠI: look chữ (`caption_block`) · look khung/nền (`frame_block`) · kiểu khung
+ *  b-roll · ô người · khung mờ (chỉ bộ có defocus).
  *
  * FORCE: kể cả element user đã chỉnh look tay cũng bị ghi đè — đúng ý "toàn diện";
  * an toàn bằng cảnh báo + undo ở phía gọi.
@@ -78,11 +80,28 @@ export function restyleProject(projectId: string, newPackId: string): void {
     // 4. Ô NGƯỜI (o-don, o-vuong…): bộ mới có bộ layout khác (vd Cơ bản không có
     //    ô). Xoá ô cũ rồi re-place theo bộ mới — bộ không có ô thì ô biến mất.
     //    `placePersonLayouts` chỉ chạy khi CHƯA có ô, nên phải xoá trước.
+    //
+    //    Xoá CẢ `toan-khung`, và đó là điểm dễ tưởng thừa nhất ở đây. Toàn-khung là
+    //    lối MẶC ĐỊNH khi cảnh vắng element, nên một element toàn-khung trơn không
+    //    đổi được gì về hình — nó chỉ mang thông tin khi có cờ `blur` (khung mờ),
+    //    mà bước 2 vừa ghi đè `frame_block` bằng look bộ mới nên cờ ấy đã mất. Giữ
+    //    lại thì được đúng hai thứ: một hàng khung "Toàn khung" trơ trong bàn dựng,
+    //    và — nặng hơn — `placePersonLayouts` đếm nó là "đã có ô người" rồi bỏ
+    //    chạy, nên đổi sang bộ CÓ ô người lại không mọc ô nào.
+    //
+    //    `trang-chu` thì giữ: khung không-video là thông tin thật, không bộ dáng
+    //    nào suy lại được từ mặc định.
     db.prepare(
       `DELETE FROM elements
         WHERE project_id=? AND kind='layout' AND media_file_id IS NULL
-          AND insert_layout NOT IN ('toan-khung','trang-chu')`,
+          AND insert_layout <> 'trang-chu'`,
     ).run(projectId);
     placePersonLayouts(projectId);
+
+    // 5. KHUNG MỜ dựng lại theo bộ mới. Bước 2 xoá cờ `blur` của khung mờ cũ (look
+    //    ghi đè), bước 4 dọn xác chúng đi — nên bộ mới CÓ defocus mà không gieo lại
+    //    ở đây thì đổi vibe sang Prism là mất sạch khung mờ. Bộ không có
+    //    `punchDefocus` trả 0, không đụng gì.
+    placeBlurFrames(projectId, pack);
   })();
 }

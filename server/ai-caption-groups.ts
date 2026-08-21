@@ -37,6 +37,22 @@ const RETRIES = 2;
 /** Số câu gọi mô hình song song cùng lúc — cân giữa nhanh và tránh rate-limit. */
 const CONCURRENCY = 5;
 
+/**
+ * Cụm NHẮM tới bao nhiêu tiếng — khác hẳn cái trần `maxWords`.
+ *
+ * Trần một mình không đủ, và đây là chỗ dễ đọc nhầm nhất của cả bước này: bảo mô
+ * hình "tối đa 7 tiếng" thì nó ngắt ít nhất có thể, vì mỗi chỗ ngắt là một cơ hội
+ * sai — kết quả là cụm nào cũng bám sát trần. Đo trên bản chép thật: gần như không
+ * có cụm 3–4 tiếng nào, trong khi phụ đề dọc đọc dễ nhất ở quãng đó.
+ *
+ * Nên NHẮM và TRẦN là hai con số: nhắm ~4 tiếng để phần lớn cụm rơi vào 3–5, trần
+ * giữ nguyên 7 cho những mệnh đề không có chỗ ngắt có nghĩa nào ngắn hơn.
+ *
+ * Suy từ trần thay vì khai riêng ở mỗi bộ dáng: có bản thứ hai là có chỗ để lệch,
+ * mà lệch ở đây thì lặng lẽ — chỉ lộ ra thành "phụ đề dài dòng" chứ không thành lỗi.
+ */
+const targetWords = (maxWords: number) => Math.max(3, Math.round(maxWords * 0.6));
+
 const INSTRUCTIONS = (maxWords: number, maxChars: number) =>
   `Bạn chia MỘT CÂU chép lời tiếng Việt thành các CỤM PHỤ ĐỀ — mỗi cụm là MỘT dòng
 chữ hiện lên màn hình, chạy theo lời nói.
@@ -47,9 +63,13 @@ Trả về "breaks": danh sách SỐ THỨ TỰ của những tiếng KẾT THÚ
 NGAY SAU tiếng đó). Ví dụ breaks=[3,7]: cụm 1 = tiếng 0..3, cụm 2 = tiếng 4..7, cụm
 3 = phần còn lại. Câu ngắn vừa một dòng thì trả breaks=[] (không ngắt).
 
-GIỚI HẠN (bắt buộc):
-- Mỗi cụm TỐI ĐA ${maxWords} tiếng VÀ ${maxChars} ký tự. Đây là giới hạn CỨNG vì chữ
-  in rất to. Mệnh đề dài hơn thì BẮT BUỘC chia thành nhiều cụm.
+ĐỘ DÀI CỤM:
+- NHẮM ${targetWords(maxWords)} tiếng một cụm. Phần lớn cụm nên rơi vào 3-5 tiếng —
+  đó là quãng người xem đọc kịp khi chữ chạy theo lời.
+- TỐI ĐA ${maxWords} tiếng VÀ ${maxChars} ký tự. Đây là trần CỨNG vì chữ in rất to,
+  nhưng nó là chỗ THOÁT cho mệnh đề không có chỗ ngắt có nghĩa nào ngắn hơn — KHÔNG
+  phải độ dài mặc định. Cụm 6-7 tiếng phải là ngoại lệ, không phải thói quen.
+- Câu dài thì chia THÀNH NHIỀU cụm ngắn, đừng dồn vào ít cụm dài.
 
 NGẮT Ở ĐÂU:
 - Ở BIÊN CÓ NGHĨA: hết một ý / một vế / một mệnh đề, chỗ người đọc dừng tự nhiên.
@@ -188,13 +208,19 @@ async function mapWithConcurrency<T, R>(
   return out;
 }
 
-/** Câu cần gọi mô hình? Câu ngắn (≤ trần từ VÀ ký tự) là một cụm, khỏi gọi. */
+/**
+ * Câu cần gọi mô hình?
+ *
+ * Ngưỡng đo theo NHẮM chứ không theo trần, cộng một tiếng đệm. Đo theo trần thì câu
+ * 6-7 tiếng không bao giờ được hỏi, và nó nghiễm nhiên thành MỘT cụm dài — đúng thứ
+ * cần tránh. Câu ngắn hơn ngưỡng vốn đã nằm trong quãng đọc dễ nên hỏi cũng phí.
+ */
 function needsBreaks(
   words: readonly WordText[],
   maxWords: number,
   maxChars: number,
 ): boolean {
-  if (words.length > maxWords) return true;
+  if (words.length > targetWords(maxWords) + 1) return true;
   const chars = words.reduce((sum, w) => sum + w.text.length + 1, 0) - 1;
   return chars > maxChars;
 }

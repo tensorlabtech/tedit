@@ -1,3 +1,4 @@
+import { readStyleOverrides } from "./ai-directive";
 import { db } from "./db";
 import type { StylePack } from "./style-pack";
 import {
@@ -34,5 +35,29 @@ export function readStylePack(projectId: string): StylePack {
   if (!row) return findStylePack(DEFAULT_STYLE_PACK_ID);
   // Mặc định phong cách chữ CẢ VIDEO: đè phần chữ lên bộ đang dùng. Cụm nào tự
   // đặt phong cách chữ riêng thì `packForElement` đè tiếp lên trên bản này.
-  return applyFontStyle(findStylePack(row.style_pack), row.font_style);
+  const pack = applyFontStyle(findStylePack(row.style_pack), row.font_style);
+
+  /*
+   * CHỈ THỊ DỰNG đè lên LIỀU LƯỢNG — xem `ai-directive.ts`.
+   *
+   * Đặt ở đây vì đây là cổng duy nhất đọc bộ dáng của một dự án: đè ở chỗ khác
+   * thì có đường vẽ đọc được chỉ thị, có đường không, và chúng lệch nhau âm thầm.
+   *
+   * Chỉ hai trục nhịp. Font, khung, màu, nền vẫn nguyên của bộ dáng — chỉ thị lái
+   * *bao nhiêu*, không lái *trông thế nào*.
+   */
+  const overrides = readStyleOverrides(projectId);
+  if (!overrides) return pack;
+  return {
+    ...pack,
+    rhythm: {
+      ...pack.rhythm,
+      ...(overrides.brollEverySec != null
+        ? { brollEverySec: overrides.brollEverySec }
+        : null),
+      ...(overrides.junctionShare != null
+        ? { junctionShare: overrides.junctionShare }
+        : null),
+    },
+  };
 }
