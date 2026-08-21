@@ -13,6 +13,7 @@ import { RemotionPreview } from "@/routes/editor/remotion-preview";
 import { RightPanel } from "@/routes/editor/right-panel";
 import { StyleSwitchDialog } from "@/routes/editor/style-switch-dialog";
 import { Timeline } from "@/routes/editor/timeline";
+import { useEditorHotkeys } from "../editor/use-editor-hotkeys";
 import { useEditor, type EditorState } from "@/routes/editor/use-editor";
 import { useEditorGuards } from "@/routes/editor/use-editor-guards";
 import { ExportModal } from "./export-modal";
@@ -38,6 +39,8 @@ export const STUDIO_ACTION_SLOT = "flow-studio-action";
  */
 export function StudioStep({ projectId }: { projectId: string | undefined }) {
   const editor = useEditor(projectId);
+  // ⌘Z hoàn tác. Nhường ô nhập / menu / ô đang kéo — xem `useEditorHotkeys`.
+  useEditorHotkeys({ onUndo: () => void editor.undo() });
   // Player LÀ đồng hồ (thay thẻ <video> cũ). SPACE bật/tắt phát; kéo dải thì dừng.
   const playerRef = useRef<PlayerRef>(null);
   // ĐỔI VIBE: mở hộp chọn bộ dáng. `setStylePack` dựng lại toàn bộ style ở server.
@@ -95,7 +98,7 @@ export function StudioStep({ projectId }: { projectId: string | undefined }) {
   }
 
   return (
-    <div className="grid min-h-0 gap-2 lg:h-full lg:grid-rows-[minmax(0,1fr)_auto]">
+    <div className="relative grid min-h-0 gap-2 lg:h-full lg:grid-rows-[minmax(0,1fr)_auto]">
       {actionSlot &&
         createPortal(
           <ExportAction editor={editor} onOpen={() => setExportOpen(true)} />,
@@ -137,16 +140,6 @@ export function StudioStep({ projectId }: { projectId: string | undefined }) {
             poster={editor.posterUrl}
             preview={null}
           />
-          {restyling && (
-            <div className="absolute inset-0 z-30 grid place-items-center rounded-xl bg-background/75 backdrop-blur-sm">
-              <div className="flex flex-col items-center gap-2">
-                <Spinner />
-                <span className="text-sm text-muted-foreground">
-                  Đang dựng lại phong cách…
-                </span>
-              </div>
-            </div>
-          )}
           <CardContent className="flex min-h-0 flex-1 flex-col">
             <AspectRatio ratio={9 / 16} className="mx-auto min-h-0 flex-1">
               {editor.projectId && (
@@ -174,6 +167,21 @@ export function StudioStep({ projectId }: { projectId: string | undefined }) {
       >
         <Timeline editor={editor} onAudit={onAudit} studio />
       </div>
+
+      {/* Dựng lại phong cách chạy vài giây ở server (rechunk caption + re-pick hiệu
+          ứng). Che TOÀN khu bàn dựng — không chỉ khung xem — vì nếu chỉ che preview
+          thì user vẫn sửa được cột phải / dải trong lúc đó, rồi bản nạp-lại ghi đè
+          mất. Phủ kín = chặn mọi thao tác cho tới khi nạp xong. */}
+      {restyling && (
+        <div className="absolute inset-0 z-40 grid place-items-center rounded-lg bg-background/80 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-2">
+            <Spinner />
+            <span className="text-sm text-muted-foreground">
+              Đang dựng lại phong cách…
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

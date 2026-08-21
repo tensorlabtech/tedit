@@ -1094,6 +1094,14 @@ export function useEditor(projectId: string | undefined) {
                   // Tư liệu mới đè kín khung — dáng an toàn nhất, đổi sau ở khung
                   // bên phải.
                   shape: "full",
+                  // Cửa sổ nguồn để TRỐNG = lấy trọn clip. Máy chủ vừa tạo element
+                  // nên chưa ai gọt mép; `clipDuration` cũng chưa biết ở đây (lượt
+                  // tải lại sau sẽ mang về từ `media_files.duration`).
+                  mediaIn: null,
+                  mediaOut: null,
+                  clipDuration: file?.duration ?? null,
+                  // Câm như mặc định; bật "giữ tiếng" là việc có ý thức của người dùng.
+                  keepAudio: false,
                 },
               ],
             }
@@ -1950,6 +1958,94 @@ export function useEditor(projectId: string | undefined) {
     [projectId],
   );
 
+  /**
+   * GIỮ TIẾNG của clip b-roll — cho tư liệu MANG NỘI DUNG (demo có lời giải thích).
+   *
+   * Cập nhật cục bộ trước rồi mới gọi máy chủ: công tắc phải nhảy theo ngón tay,
+   * còn preview thì dựng lại qua `layoutReload` như mọi thay đổi động tới hình.
+   */
+  /**
+   * Đổi TUỲ CHỌN CẤU TRÚC của một khung (tỉ lệ ô · phủ-kín/lọt-trọn · đảo trên
+   * dưới). `null` là trả khung về đúng bố cục gốc.
+   *
+   * Gộp cả cụm trong một lần gọi thay vì mỗi trục một hàm: ba trục luôn đọc cùng
+   * nhau lúc dựng hình, tách ra là ba đường để chúng lệch pha nhau.
+   */
+  /**
+   * Đổi TUỲ CHỌN CHỮ của một cụm (bậc cỡ · chỗ đứng dọc). `null` = bỏ đè, về
+   * đúng phong cách chữ.
+   *
+   * Cập nhật cục bộ trước rồi mới gọi máy chủ — kéo chữ mà phải đợi mạng thì nó
+   * đi giật theo từng lượt trả lời, không đi theo tay.
+   */
+  const setTextOptions = useCallback(
+    async (
+      elementId: string,
+      options: { size?: string | null; posY?: number | null } | null,
+    ) => {
+      if (!projectId) return;
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              textElements: current.textElements.map((item) =>
+                item.id === elementId ? { ...item, textOptions: options } : item,
+              ),
+            }
+          : current,
+      );
+      await api.updateElement(elementId, { textOptions: options }).catch(boQuaLoi());
+      bumpLayoutReload();
+    },
+    [projectId],
+  );
+
+  const setLayoutOptions = useCallback(
+    async (
+      elementId: string,
+      options: {
+        aspect?: string | null;
+        fit?: string | null;
+        place?: string | null;
+        swap?: boolean | null;
+      } | null,
+    ) => {
+      if (!projectId) return;
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              inserts: current.inserts.map((item) =>
+                item.id === elementId ? { ...item, layoutOptions: options } : item,
+              ),
+            }
+          : current,
+      );
+      await api.updateElement(elementId, { layoutOptions: options }).catch(boQuaLoi());
+      bumpLayoutReload();
+    },
+    [projectId],
+  );
+
+  const setInsertKeepAudio = useCallback(
+    async (elementId: string, keepAudio: boolean) => {
+      if (!projectId) return;
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              inserts: current.inserts.map((item) =>
+                item.id === elementId ? { ...item, keepAudio } : item,
+              ),
+            }
+          : current,
+      );
+      await api.updateElement(elementId, { keepAudio }).catch(boQuaLoi());
+      bumpLayoutReload();
+    },
+    [projectId],
+  );
+
   /** Xoá một segment bố cục → chỗ ấy về TOÀN-KHUNG (mặc định). */
   const deleteSegment = useCallback(async (elementId: string) => {
     await api.deleteElement(elementId).catch(boQuaLoi());
@@ -2589,6 +2685,9 @@ export function useEditor(projectId: string | undefined) {
     pickBehindText,
     setSegmentMedia,
     setInsertTrim,
+    setInsertKeepAudio,
+    setLayoutOptions,
+    setTextOptions,
     deleteSegment,
     convertBrollToPerson,
     effectsStylePack,

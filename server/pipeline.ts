@@ -34,7 +34,7 @@ import { hasModel } from "./llm";
 import { readStylePack } from "./style-pack-store";
 import { stampBlocksFromPack } from "./stamp-blocks";
 import { behindPhrase, HEADLINE_FADE } from "./style-pack";
-import type { CaptionBlock } from "./style-pack";
+import type { CaptionBlock, TextOptions } from "./style-pack";
 import { fromLegacyLayout, type Band } from "./text-layout";
 import { failStrandedSteps, resetSteps, setStep } from "./pipeline-steps";
 import { transcribeAudio } from "./transcribe";
@@ -1100,6 +1100,16 @@ export function resolveElements(
           : null,
       keyColor: (row.key_color as string | null) ?? null,
       fontStyle: (row.font_style as string | null) ?? null,
+      // Cỡ/chỗ đứng người dùng đè cho RIÊNG cụm này. JSON hỏng = coi như không
+      // đè: một cụm mất chỉnh tay còn dựng ra hình, ném lỗi là hỏng cả bản dựng.
+      textOpts: (() => {
+        if (!row.text_opts) return null;
+        try {
+          return JSON.parse(row.text_opts as string) as TextOptions;
+        } catch {
+          return null;
+        }
+      })(),
       // Look chữ ĐÃ ĐÓNG DẤU trên cụm — cụm tự mang, không đọc ngược bộ dáng.
       captionBlock: row.caption_block
         ? (JSON.parse(row.caption_block as string) as CaptionBlock)

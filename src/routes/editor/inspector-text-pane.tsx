@@ -49,6 +49,8 @@ import {
 import { formatTime, type TextElement } from "./editor-data";
 import { BandRow } from "./inspector-text-axis-rows";
 import { TextOverrideRows } from "./inspector-text-override-rows";
+import { MIN_SCALE, TEXT_SIZE_STEP } from "../../../server/style-pack";
+
 import { OptionPicker } from "./option-picker";
 import type { EditorState } from "./use-editor";
 
@@ -111,6 +113,12 @@ export function TextPane({
   const elementPack = applyFontStyle(projectPack, element.fontStyle);
   // Phong cách chữ HIỆU LỰC của cụm — thứ "Áp cho tất cả" phát ra cả video.
   const effectiveFont = element.fontStyle ?? editor.fontStyle;
+  // Bộ dáng đã ở đáy thang cỡ thì bậc "Nhỏ" không hạ được nữa (xem `MIN_SCALE`).
+  const canShrink = elementPack.density.maxScale * TEXT_SIZE_STEP.nho > MIN_SCALE;
+  // Mốc dọc của dải đang chọn — cú nhích ĐẦU TIÊN khởi hành từ đúng chỗ chữ đang
+  // đứng, không nhảy về giữa khung.
+  const bandY =
+    BANDS.find((item) => item.id === element.position)?.at ?? 0.5;
   const effectiveFontLabel = effectiveFont
     ? findStylePack(effectiveFont).label
     : "bộ chính";
@@ -286,6 +294,16 @@ export function TextPane({
             {/* Các trục đổi PER-CỤM: CHỖ ĐẶT, MÀU TỪ NHẤN, và PHONG CÁCH CHỮ.
                 Cỡ chữ/căn ngang do phong cách quyết; còn text-look thì bình đẳng —
                 cụm mượn được của style bất kỳ (trục "Phong cách chữ" dưới). */}
+            {/*
+             * TINH CHỈNH DỌC — chỉ hiện khi cụm đã bị đẩy lệch khỏi dải.
+             *
+             * Ba dải lo 90% ca; 10% còn lại là "xuống thêm chút cho khỏi che tay
+             * đang chỉ". Nhích theo bậc 2% chiều cao: đủ nhỏ để né được đúng chỗ,
+             * đủ thô để hai cụm không bao giờ lệch nhau một cách vô nghĩa.
+             *
+             * Có `posY` thì cụm coi như ĐẶT TAY và bộ dựng không tự dời nó nữa —
+             * xem ghi chú `TextOptions.posY`.
+             */}
             <Field>
               <FieldLabel>Chỗ đặt</FieldLabel>
               <BandRow
@@ -295,6 +313,83 @@ export function TextPane({
                   playPreview();
                 }}
               />
+              <div className="mt-2 flex items-center gap-1.5">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  aria-label="Nhích chữ lên"
+                  onClick={() => {
+                    void editor.setTextOptions(element.id, {
+                      ...element.textOptions,
+                      posY: Math.max(0.05, (element.textOptions?.posY ?? bandY) - 0.02),
+                    });
+                    playPreview();
+                  }}
+                >
+                  <ChevronUpIcon />
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  aria-label="Nhích chữ xuống"
+                  onClick={() => {
+                    void editor.setTextOptions(element.id, {
+                      ...element.textOptions,
+                      posY: Math.min(0.95, (element.textOptions?.posY ?? bandY) + 0.02),
+                    });
+                    playPreview();
+                  }}
+                >
+                  <ChevronDownIcon />
+                </Button>
+                {element.textOptions?.posY != null && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      void editor.setTextOptions(element.id, {
+                        ...element.textOptions,
+                        posY: null,
+                      });
+                      playPreview();
+                    }}
+                  >
+                    Về đúng dải
+                  </Button>
+                )}
+              </div>
+            </Field>
+
+            {/*
+             * CỠ CHỮ — ba bậc đè lên phong cách, không phải số tự do.
+             *
+             * Tự do thì hai cụm cạnh nhau ra hai cỡ và video đọc ra chắp vá; ba
+             * bậc đủ cho việc "cụm này hơi to/nhỏ hơn chút" mà không đủ để hỏng.
+             * Bậc "Nhỏ" TỰ TẮT ở bộ dáng đã chạm sàn `MIN_SCALE` — bày một nút
+             * không làm được gì thì người dùng tưởng app hỏng chứ không tưởng là
+             * đã hết cỡ.
+             */}
+            <Field>
+              <FieldLabel>Cỡ chữ</FieldLabel>
+              <ToggleGroup
+                size="sm"
+                value={[element.textOptions?.size ?? "vua"]}
+                onValueChange={(next) => {
+                  const id = next[0];
+                  if (!id) return;
+                  void editor.setTextOptions(element.id, {
+                    ...element.textOptions,
+                    size: id === "vua" ? null : id,
+                  });
+                  playPreview();
+                }}
+              >
+                <ToggleGroupItem value="nho" disabled={!canShrink}>
+                  Nhỏ
+                </ToggleGroupItem>
+                <ToggleGroupItem value="vua">Vừa</ToggleGroupItem>
+                <ToggleGroupItem value="lon">To</ToggleGroupItem>
+              </ToggleGroup>
             </Field>
 
             {/* Cảnh báo đứng NGAY DƯỚI thứ gây ra nó. */}
@@ -320,10 +415,26 @@ export function TextPane({
                   const keywords = value as string[];
                   editor.updateTextElement(element.id, {
                     keywords,
-                    // CỠ đi thẳng theo việc bấm: có tiếng nhấn → cụm PHÓNG TO tiếng
-                    // đó (keyword-large); bỏ hết → cả cụm ĐỀU cỡ (even). Không còn
-                    // trục "kiểu nhấn" để chọn — bấm là thấy, khỏi nghĩ.
-                    emphasis: keywords.length > 0 ? "keyword-large" : "even",
+                    /*
+                     * Kiểu nhấn chỉ đặt lại ở hai LẦN CHUYỂN, không đặt mỗi lần bấm.
+                     *
+                     * · chưa có tiếng nhấn nào → vừa có tiếng đầu tiên: bật kiểu mặc
+                     *   định (phóng to), đúng như hành vi cũ "bấm là thấy".
+                     * · bỏ hết tiếng nhấn: về đều cỡ — còn giữ "phóng to" thì bộ vẽ
+                     *   không biết phóng cái gì và nó bốc đại tiếng đầu ra to, đọc ra
+                     *   là lỗi.
+                     * · thêm/bớt tiếng khi ĐANG có nhấn: KHÔNG đụng, vì lúc đó người
+                     *   dùng có thể đã tự chọn kiểu ở trục dưới và ghi đè là cướp mất.
+                     *
+                     * Suy từ hai lần chuyển này thay vì lưu thêm một cờ "đã chọn tay":
+                     * cờ nào cũng phải giữ đồng bộ ở mọi đường ghi, mà đường ghi nhiều.
+                     */
+                    emphasis:
+                      keywords.length === 0
+                        ? "even"
+                        : element.keywords.length === 0
+                          ? "keyword-large"
+                          : element.emphasis,
                   });
                   playPreview();
                 }}
@@ -335,6 +446,35 @@ export function TextPane({
                 ))}
               </ToggleGroup>
             </Field>
+
+            {/*
+             * KIỂU NHẤN — chỉ hiện khi cụm ĐÃ có tiếng nhấn, vì không có tiếng nào
+             * được nhấn thì cả ba lựa chọn ra cùng một hình.
+             *
+             * Trục này từng bị gỡ để "bấm là thấy, khỏi nghĩ", và mặc định vẫn giữ
+             * đúng tinh thần ấy: ai không chạm vào thì máy tự suy như cũ. Mở lại vì
+             * cách gộp cũ không tách được hai việc khác nhau — "cho nó vàng lên" và
+             * "cho nó to lên" — nên ai chỉ muốn đổi màu thì đành chịu luôn cỡ.
+             */}
+            {element.keywords.length > 0 && (
+              <Field>
+                <FieldLabel>Kiểu nhấn</FieldLabel>
+                <ToggleGroup
+                  size="sm"
+                  value={[element.emphasis ?? "even"]}
+                  onValueChange={(next) => {
+                    const id = next[0] as EmphasisId | undefined;
+                    if (!id) return;
+                    editor.updateTextElement(element.id, { emphasis: id });
+                    playPreview();
+                  }}
+                >
+                  <ToggleGroupItem value="even">Chỉ đổi màu</ToggleGroupItem>
+                  <ToggleGroupItem value="keyword-large">To hẳn</ToggleGroupItem>
+                  <ToggleGroupItem value="mixed-size">Xen cỡ</ToggleGroupItem>
+                </ToggleGroup>
+              </Field>
+            )}
 
             {/* PHONG CÁCH CHỮ — text-look bình đẳng: mượn của MỌI style, không
                 khoá theo style video. Bày GỌN (thẻ đang chọn + nút Đổi → modal

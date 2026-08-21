@@ -6,10 +6,7 @@ import { REVEALS } from "./insert-reveal";
 import { ffmpeg, run } from "./media-tools";
 import { outDir, workDir } from "./paths";
 import { type StylePack } from "./style-pack";
-import type {
-  CaptionBlock,
-  RevealId,
-} from "./style-pack";
+import type { CaptionBlock, RevealId, TextOptions } from "./style-pack";
 import {
   type AlignId,
   type Band,
@@ -64,6 +61,8 @@ export type RenderElement = {
   keyColor?: string | null;
   /** Cụm này tự đè phong cách chữ; rỗng thì theo mặc định của dự án */
   fontStyle?: string | null;
+  /** Cỡ/chỗ đứng người dùng đè cho riêng cụm — xem `TextOptions`. */
+  textOpts?: TextOptions | null;
   /** Look chữ ĐÃ ĐÓNG DẤU của cụm (`element.caption_block`) — cụm tự mang look. */
   captionBlock?: CaptionBlock | null;
   /** Hình dáng khung tư liệu */

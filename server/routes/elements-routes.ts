@@ -156,6 +156,17 @@ app.patch("/api/elements/:elementId", async (request, reply) => {
     /** LẤY PHẦN clip b-roll: giây in/out TRONG clip nguồn. `null` = cả clip. */
     mediaIn?: number | null;
     mediaOut?: number | null;
+    /** Giữ tiếng clip b-roll (tư liệu MANG NỘI DUNG) hay để câm. */
+    keepAudio?: boolean;
+    /** Tuỳ chọn CHỮ của riêng cụm: bậc cỡ và chỗ đứng dọc. `null` = bỏ đè. */
+    textOptions?: { size?: string | null; posY?: number | null } | null;
+    /** Tuỳ chọn CẤU TRÚC khung: tỉ lệ ô, phủ-kín/lọt-trọn, đảo trên dưới. */
+    layoutOptions?: {
+      aspect?: string | null;
+      fit?: string | null;
+      place?: string | null;
+      swap?: boolean | null;
+    } | null;
     keywords?: string[];
     /** `null` = bỏ đè, quay về theo bộ dáng của dự án */
     letterCase?: string | null;
@@ -283,6 +294,26 @@ app.patch("/api/elements/:elementId", async (request, reply) => {
     ).run(
       body.mediaIn !== undefined ? body.mediaIn : marks.media_in_sec,
       body.mediaOut !== undefined ? body.mediaOut : marks.media_out_sec,
+      elementId,
+    );
+  }
+  if (body.textOptions !== undefined) {
+    db.prepare("UPDATE elements SET text_opts=? WHERE id=?").run(
+      body.textOptions ? JSON.stringify(body.textOptions) : null,
+      elementId,
+    );
+  }
+  if (body.layoutOptions !== undefined) {
+    // `null` = trả khung về đúng bố cục gốc. Lưu cả cụm một lần thay vì từng trục:
+    // ba trục này luôn được đọc cùng nhau, tách cột là ba chỗ để lệch.
+    db.prepare("UPDATE elements SET layout_opts=? WHERE id=?").run(
+      body.layoutOptions ? JSON.stringify(body.layoutOptions) : null,
+      elementId,
+    );
+  }
+  if (body.keepAudio !== undefined) {
+    db.prepare("UPDATE elements SET keep_audio=? WHERE id=?").run(
+      body.keepAudio ? 1 : 0,
       elementId,
     );
   }

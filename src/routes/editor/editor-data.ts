@@ -69,6 +69,13 @@ export type Insert = {
   shape: ShapeId;
   /** Bố cục hiện b-roll — `undefined` là để máy tự chọn (xoay vòng họ hai-ô). */
   insertLayout?: string;
+  /** Tuỳ chọn cấu trúc khung: tỉ lệ ô · phủ-kín/lọt-trọn · đảo trên dưới. */
+  layoutOptions?: {
+    aspect?: string | null;
+    fit?: string | null;
+    place?: string | null;
+    swap?: boolean | null;
+  } | null;
   /** Mã preset đã đóng dấu look Ô — để picker tô đúng khung khi trộn. */
   framePreset?: string | null;
   /** Tên tệp đầy đủ — chỉ để hiện khi trỏ chuột vào, nhãn trên dải đã rút ngắn */
@@ -94,6 +101,8 @@ export type Insert = {
   mediaOut: number | null;
   /** Độ dài clip nguồn (giây) — TRẦN của `mediaOut`; `null` nếu chưa biết. */
   clipDuration: number | null;
+  /** Phát tiếng của clip hay để câm — xem ghi chú cột `keep_audio` bên máy chủ. */
+  keepAudio: boolean;
   /** Tệp lấy từ kho dùng chung — hiện nhãn để phân biệt với tệp tự tải lên */
   fromLibrary?: boolean;
 };
@@ -136,6 +145,8 @@ export type TextElement = {
   emphasis: EmphasisId;
   /** Tiếng được đánh dấu từ khoá — đậm hơn, và là tiếng được phóng to */
   keywords: string[];
+  /** Cỡ/chỗ đứng người dùng đè cho riêng cụm; `null` = theo phong cách chữ. */
+  textOptions?: { size?: string | null; posY?: number | null } | null;
   /**
    * Hai trục cụm này TỰ ĐÈ, `null` là theo bộ dáng của dự án.
    *
@@ -212,8 +223,20 @@ export const CLIPS: Clip[] = [
   { id: "c4", start: 54, end: 88.2, label: "Kết" },
 ];
 
-/** Dữ liệu mẫu cho trang thử — neo vào từ để trống vì không có bản chép lời. */
-const ANCHOR = { fromWordId: "", toWordId: "" };
+/**
+ * Dữ liệu mẫu cho trang thử — neo vào từ để trống vì không có bản chép lời.
+ *
+ * Cửa sổ nguồn để trống luôn: mẫu không có tệp thật nên không có giây nào của clip
+ * để trỏ tới, và `null` chính là "lấy trọn clip" — đúng thứ trang thử cần bày.
+ */
+const ANCHOR = {
+  fromWordId: "",
+  toWordId: "",
+  mediaIn: null,
+  mediaOut: null,
+  clipDuration: null,
+  keepAudio: false,
+};
 
 export const INSERTS: Insert[] = [
   {

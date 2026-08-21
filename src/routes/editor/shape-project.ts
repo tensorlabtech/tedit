@@ -141,6 +141,18 @@ export function shape(data: ApiProject) {
           ? element.letter_case
           : null,
       keyColor: element.key_color ?? null,
+      // JSON hỏng = coi như không đè: cụm về đúng phong cách, vẫn mở được dự án.
+      textOptions: (() => {
+        if (!element.text_opts) return null;
+        try {
+          return JSON.parse(element.text_opts) as {
+            size?: string | null;
+            posY?: number | null;
+          };
+        } catch {
+          return null;
+        }
+      })(),
       fontStyle: element.font_style ?? null,
       // Look chữ ĐÃ ĐÓNG DẤU của cụm — cụm tự mang, khung xem đọc thẳng từ đây.
       captionBlock: element.caption_block
@@ -174,6 +186,7 @@ export function shape(data: ApiProject) {
         toWordId: element.to_word_id ?? "",
         mediaFileId: element.media_file_id ?? undefined,
         // CỬA SỔ nguồn (lấy đoạn nào của clip) + TRẦN là độ dài clip thật.
+        keepAudio: !!element.keep_audio,
         mediaIn: element.media_in_sec ?? null,
         mediaOut: element.media_out_sec ?? null,
         clipDuration: file?.duration ?? null,
@@ -188,6 +201,20 @@ export function shape(data: ApiProject) {
             : "none") as RevealId,
         shape: (element.shape ?? "full") as ShapeId,
         insertLayout: element.insert_layout ?? undefined,
+        // JSON hỏng thì coi như không có tuỳ chọn — khung về đúng bố cục gốc,
+        // vẫn dựng được hình thay vì ném lỗi giữa lúc mở dự án.
+        layoutOptions: (() => {
+          if (!element.layout_opts) return null;
+          try {
+            return JSON.parse(element.layout_opts) as {
+              aspect?: string | null;
+              fit?: string | null;
+              swap?: boolean | null;
+            };
+          } catch {
+            return null;
+          }
+        })(),
         framePreset: element.frame_preset ?? null,
         // Xem trước phải là TỆP THẬT, không phải ô màu có tên: ô màu không cho
         // biết tư liệu có che mặt người nói hay không.

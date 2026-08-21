@@ -49,6 +49,9 @@ export function Timeline({
     return () => observer.disconnect();
   }, []);
 
+  /** Đang có tệp lơ lửng trên dải — chỉ để vẽ viền báo "thả được vào đây". */
+  const [dropping, setDropping] = useState(false);
+
   const center = width / 2;
   const { time, pxPerSecond, selection, seek } = editor;
   const { toOutput, toSource } = editor;
@@ -162,8 +165,37 @@ export function Timeline({
               // trí: thiếu cái đầu thì kéo dải biến thành bôi đen chữ, thiếu cái sau
               // thì trên máy cảm ứng vuốt dải thành cuộn trang và chụm hai ngón
               // thành phóng cả trang.
-              className="relative cursor-grab touch-none overflow-hidden rounded-lg bg-muted/40 select-none active:cursor-grabbing"
+              className={cn(
+                "relative cursor-grab touch-none overflow-hidden rounded-lg bg-muted/40 select-none active:cursor-grabbing",
+                // Thả tệp vào: viền sáng lên cho biết dải NHẬN được, chứ không để
+                // người dùng thả vào chỗ trống rồi tự hỏi vì sao không có gì xảy ra.
+                dropping && "inset-ring-2 inset-ring-primary",
+              )}
               onPointerDown={startScrub}
+              /*
+               * KÉO TỆP TỪ MÁY THẢ THẲNG VÀO DẢI.
+               *
+               * Trước đây thêm tư liệu phải đi qua nút chọn ở bảng bên phải, tức
+               * người dùng đang nhìn vào ĐÚNG chỗ họ muốn đặt hình lại phải rời mắt
+               * sang chỗ khác rồi quay lại tìm. Thả tại chỗ bỏ hẳn quãng đường đó.
+               *
+               * `preventDefault` ở `dragover` là bắt buộc — thiếu nó thì trình duyệt
+               * giữ hành vi mặc định (mở tệp trong tab mới) và cú thả không bao giờ
+               * tới được `drop`.
+               */
+              onDragOver={(event) => {
+                if (!event.dataTransfer.types.includes("Files")) return;
+                event.preventDefault();
+                setDropping(true);
+              }}
+              onDragLeave={() => setDropping(false)}
+              onDrop={(event) => {
+                if (!event.dataTransfer.types.includes("Files")) return;
+                event.preventDefault();
+                setDropping(false);
+                const files = [...event.dataTransfer.files];
+                if (files.length > 0) void editor.addMedia(files);
+              }}
               // Chuột phải mở bảng chọn của RIÊNG dải, không phải bảng của trình
               // duyệt. Ghi lại khối bị nhắm để bảng biết bày mục gì; bấm ra chỗ
               // trống thì `closest` trả rỗng và bảng nói câu hướng dẫn.

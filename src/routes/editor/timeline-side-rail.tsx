@@ -2,6 +2,8 @@ import { MinusIcon, PlusIcon, Undo2Icon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 
+import { modKey } from "./use-editor-hotkeys";
+
 /**
  * Ba nút đứng CẠNH dải: hoàn tác ở trên, phóng to/thu nhỏ ở dưới.
  *
@@ -62,7 +64,13 @@ export function TimelineSideRail({
           // Nhãn đầy đủ nằm trong tooltip. Ở hàng ngang nó là chữ hiện sẵn, rộng
           // tới 231px và ĐỔI mỗi lần người dùng làm gì — nên cả thanh xô sang một
           // cái sau từng thao tác. Vào tooltip thì vẫn đọc được mà không xô gì.
-          aria-label={undoLabel ? `Hoàn tác: ${undoLabel}` : "Chưa có gì để lùi"}
+          // Phím tắt ghi ngay trong nhãn: không ghi ra thì không ai biết nó có,
+          // và người dùng quen ⌘Z sẽ bấm rồi tưởng bàn phím không ăn.
+          aria-label={
+            undoLabel
+              ? `Hoàn tác: ${undoLabel} (${modKey()}Z)`
+              : `Chưa có gì để lùi (${modKey()}Z)`
+          }
           onClick={onUndo}
         >
           <Undo2Icon />
@@ -76,7 +84,7 @@ export function TimelineSideRail({
           size="icon"
           tooltipSide="left"
           disabled={!canZoomIn}
-          aria-label={`Phóng to dải (${Math.round(pxPerSecond)} px/giây)`}
+          aria-label={`Phóng to dải — phím + (${Math.round(pxPerSecond)} px/giây)`}
           onClick={() => onZoom(1)}
         >
           <PlusIcon />
@@ -86,7 +94,7 @@ export function TimelineSideRail({
           size="icon"
           tooltipSide="left"
           disabled={!canZoomOut}
-          aria-label={`Thu nhỏ dải (${Math.round(pxPerSecond)} px/giây)`}
+          aria-label={`Thu nhỏ dải — phím − (${Math.round(pxPerSecond)} px/giây)`}
           onClick={() => onZoom(-1)}
         >
           <MinusIcon />

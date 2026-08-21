@@ -98,6 +98,12 @@ export type ApiElement = {
   position_band: string | null;
   media_file_id: string | null;
   /** CỬA SỔ nguồn của clip b-roll (giây trong tệp): lấy đoạn nào. `null` = chưa cắt. */
+  /** Giữ tiếng clip b-roll (1) hay câm (0). */
+  keep_audio?: number | null;
+  /** Tuỳ chọn cấu trúc khung (JSON `LayoutOptions`). */
+  layout_opts?: string | null;
+  /** Tuỳ chọn chữ của riêng cụm (JSON `TextOptions`). */
+  text_opts?: string | null;
   media_in_sec: number | null;
   media_out_sec: number | null;
   /** Trục CĂN — `null` với phần tử tạo trước khi tách hai trục */
@@ -290,6 +296,8 @@ export type ApiProject = {
     status: string;
     /** Lời dặn của người dùng: video nói về gì, có tên riêng nào */
     profile?: string | null;
+    /** CHỈ THỊ DỰNG — lái liều lượng lúc dựng (dày/thưa, gắt/êm). */
+    directive?: string | null;
     /** Lời dặn tại lúc chép lời — khác `profile` là bản chép đã cũ */
     profile_at_transcribe?: string | null;
     /** Mạch cảnh tại lúc chép lời (id nối bằng dấu phẩy) — khác hiện tại là lời đã cũ */
@@ -512,6 +520,8 @@ export const api = {
     patch: {
       title?: string;
       profile?: string;
+      /** CHỈ THỊ DỰNG — lái liều lượng (dày/thưa, gắt/êm). */
+      directive?: string;
       minSilence?: number;
       wantCaptions?: boolean;
       wantMusic?: boolean;
@@ -528,6 +538,7 @@ export const api = {
       id: string;
       title: string;
       profile: string | null;
+      directive: string | null;
       min_silence: number | null;
       want_captions: number | null;
       want_music: number | null;
@@ -891,6 +902,13 @@ export const api = {
       /** LẤY PHẦN clip b-roll: giây in/out trong clip nguồn. `null` = cả clip. */
       mediaIn?: number | null;
       mediaOut?: number | null;
+      keepAudio?: boolean;
+      textOptions?: { size?: string | null; posY?: number | null } | null;
+      layoutOptions?: {
+        aspect?: string | null;
+        fit?: string | null;
+        swap?: boolean | null;
+      } | null;
       /** Kéo hai đầu khối chữ tự do trên dải */
       start?: number;
       end?: number;
@@ -1246,6 +1264,22 @@ export const api = {
 
   /** Tệp tư liệu để xem trước — phục vụ qua đường tĩnh của máy chủ */
   mediaUrl: (fileId: string) => `${BASE}/api/files/${fileId}/raw`,
+
+  /**
+   * BẢN XEM TRƯỚC ĐÃ CẮT — hỏi máy chủ ghép sẵn các đoạn còn giữ.
+   *
+   * `ready: false` là chưa bỏ đoạn nào (không có gì để ghép) hoặc chưa có bản xem
+   * trước; màn cắt cứ phát tệp gốc như thường.
+   */
+  cutPreview: (projectId: string) =>
+    request<
+      | { ready: false }
+      | { ready: true; version: string; kept: Array<{ start: number; end: number }> }
+    >(`/api/projects/${projectId}/cut-preview`),
+
+  /** Chính tệp đã ghép; `v` chỉ để phá cache trình duyệt khi vân tay đổi. */
+  cutPreviewUrl: (projectId: string, version: string) =>
+    `${BASE}/api/projects/${projectId}/cut-preview/video?v=${version}`,
 
   /** Ảnh dải (filmstrip) của một clip b-roll — để cắt đoạn in/out có thumbnail. */
   fileFilmstripUrl: (fileId: string, version?: number | null) =>

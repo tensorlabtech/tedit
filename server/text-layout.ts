@@ -7,6 +7,7 @@ import {
   type Band,
   type EmphasisId,
   type ShownPack,
+  MIN_SCALE,
 } from "./style-pack";
 
 export type { AlignId, Band, EmphasisId } from "./style-pack";
@@ -111,7 +112,7 @@ export const MAX_LINES = 3;
  * ĐỌC ĐƯỢC chứ không phải chuyện phong cách. Gặp cụm không cỡ nào vừa thì việc
  * phải làm là tách cụm, không phải hạ sàn.
  */
-const MIN_SCALE = 0.09;
+
 
 /**
  * SÀN của bước dòng. Bộ dáng chỉnh `density.lineHeight` trong [1.0, 1.4], không
