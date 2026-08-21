@@ -523,6 +523,12 @@ export type StylePack = {
     opacity: { onDark: number; onLight: number };
   }> | null;
   /**
+   * Nghiêng CẢ CỤM chữ vài độ (âm = dốc lên phải, kiểu dán tay). Chỉ bộ vẽ-tay
+   * (Phấn) dùng — bám bản gốc Chalk xoay cả DÒNG (không skew từng chữ). Bỏ trống /
+   * 0 = đứng thẳng (Prism/Cơ-bản/Nhịp-đen).
+   */
+  captionTilt?: number;
+  /**
    * HÌNH BÁM CHỮ — vòng khoanh, gạch chân. `null` là không có.
    *
    * Khác `graphics` ở một điều quyết định cả cách vẽ: nó **co giãn theo bề rộng
@@ -713,7 +719,14 @@ export type StylePack = {
   rhythm: {
     /** Tỉ lệ chỗ nối đoạn được đánh dấu, 0–1. */
     junctionShare: number;
-    /** Khoảng cách mong muốn giữa hai lần chèn tư liệu, tính bằng giây. */
+    /**
+     * Khoảng cách mong muốn giữa hai lần chèn tư liệu, tính bằng giây.
+     *
+     * Đây là trục MẬT ĐỘ TƯ LIỆU của bộ dáng, và nó điều khiển hai thứ:
+     * Bước đặt b-roll dùng nó để biết cả video nên có bao nhiêu chèn, và báo lệch
+     * khi số tư liệu vượt xa mức ấy. KHÔNG dùng làm khoảng cách tối thiểu: chỗ
+     * khớp nội dung thắng nhịp (xem `HARD_GAP` ở `ai-broll-place.ts`).
+     */
     brollEverySec: number;
     /** Một lần chèn giữ bao lâu, tính bằng giây. */
   };
@@ -795,6 +808,7 @@ export type CaptionBlock = Pick<
   | "highlight"
   | "plate"
   | "wrap"
+  | "captionTilt"
 >;
 
 /** Look của cảnh (người/mở màn): chữ-sau-người, nắn màu. */
@@ -832,6 +846,7 @@ export function blocksFromPack(pack: StylePack): StyleBlocks {
       highlight: pack.highlight,
       plate: pack.plate,
       wrap: pack.wrap,
+      captionTilt: pack.captionTilt,
     },
     scene: { behindText: pack.behindText, grade: pack.grade, title: pack.title },
     junction: { sweep: pack.sweep },
@@ -1975,3 +1990,52 @@ export function subjectCutChain(
       `${source}[${tag}m]alphamerge[${tag}cut]`,
   };
 }
+
+
+/**
+ * TUỲ CHỌN CHỮ của RIÊNG một cụm — người dùng đè lên phong cách chữ.
+ *
+ * ## Vì sao là bậc, không phải số tự do
+ *
+ * Cỡ chữ để tự do thì hai cụm cạnh nhau ra hai cỡ, và video đọc ra là chắp vá —
+ * mà cái người dùng cần chỉ là "cụm này hơi to/nhỏ hơn chút". Ba bậc đủ cho việc
+ * ấy và không đủ để làm hỏng. (Cấp CẢ VIDEO thì ngược lại, ở đó số tự do hợp lý —
+ * đó là `density.maxScale` của phong cách.)
+ *
+ * ## Vì sao vị trí lại là số tự do
+ *
+ * Vì nó là trục NÉ: né mặt, né tay đang chỉ, né vật trong khung. Chỗ cần né nằm
+ * đâu là chuyện của từng khung hình, không quy về ba bậc được. Chỉ mở trục DỌC —
+ * trục ngang để tự do thì cụm này lệch trái, cụm sau lệch phải, đọc ra là lỗi chứ
+ * không ra dụng ý (Submagic khoá hẳn trục ngang, và có lý).
+ */
+export type TextOptions = {
+  /** Bậc cỡ chữ đè lên phong cách. Bỏ trống = theo phong cách. */
+  size?: "nho" | "vua" | "lon" | null;
+  /**
+   * Chỗ đứng theo CHIỀU DỌC, tính bằng phần chiều cao khung (0–1), đo ở TÂM khối
+   * chữ. Bỏ trống = theo dải (`band`) như cũ.
+   *
+   * Có số này thì cụm coi như ĐẶT TAY: bộ dựng không tự đẩy nó xuống nữa khi đặt
+   * khung đè lên (xem `pushCaptionsDown`) — máy tự dời cái người dùng vừa kéo là
+   * cách nhanh nhất để họ tin rằng app hỏng.
+   */
+  posY?: number | null;
+};
+
+/** Hệ số cỡ chữ của từng bậc, nhân lên `density.maxScale` của phong cách. */
+export const TEXT_SIZE_STEP: Record<"nho" | "vua" | "lon", number> = {
+  nho: 0.85,
+  vua: 1,
+  lon: 1.15,
+};
+
+/**
+ * SÀN cỡ chữ — dưới ngưỡng này là cỡ chú thích, tức không còn đọc được khi lướt.
+ *
+ * Ở đây chứ không ở `text-layout.ts` vì cả hai đường vẽ đều cần nó, mà đường của
+ * trình duyệt không nạp được `text-layout` — tệp ấy kéo theo `node:child_process`
+ * (đo chữ bằng ImageMagick), và bundler của Remotion từ chối cả bản dựng vì một
+ * lời import như thế. Tệp này thuần dữ liệu nên cả hai bên cùng đọc được.
+ */
+export const MIN_SCALE = 0.09;

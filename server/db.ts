@@ -395,6 +395,13 @@ for (const [table, column, type] of [
   // Dùng để MỒI cho máy nghe (xem `server/asr-bias.ts`) — sửa trước khi sai
   // rẻ hơn nhiều so với sửa sau.
   ["projects", "profile", "TEXT"],
+  // CHỈ THỊ DỰNG — câu người dùng viết để lái cách máy dựng ("b-roll dày lên",
+  // "nhịp chậm, kể chuyện"). Tách khỏi `profile` vì hai thứ đi vào hai bước khác
+  // nhau: `profile` là từ vựng cho lúc CHÉP LỜI, còn cái này lái lúc DỰNG.
+  ["projects", "directive", "TEXT"],
+  // Kết quả dịch chỉ thị trên thành SỐ (JSON). Lưu lại thay vì hỏi mô hình mỗi
+  // lần đọc bộ dáng: đọc bộ dáng xảy ra hàng chục lần một lượt dựng.
+  ["projects", "style_overrides", "TEXT"],
   // Lời dặn TẠI LÚC chép lời. So với `profile` hiện tại là biết bản chép có còn
   // biết những gì người dùng vừa dặn hay không — mà biết được cả sau khi tải lại
   // trang, chứ không chỉ trong một lượt dựng của màn hình.
@@ -583,6 +590,29 @@ for (const [table, column, type] of [
   ["media_files", "strip_second_width", "REAL"],
   ["media_files", "strip_seconds", "REAL"],
   ["media_files", "strip_native_second_width", "REAL"],
+  // ĐỌC CLIP (`clip-analysis.ts`) — cache để mỗi lần đặt lại b-roll khỏi chạy lại
+  // ffmpeg: phần dùng được sau khi gặm rác hai đầu, và giây của khoảnh khắc đáng
+  // xem nhất (`NULL` = clip đều đều, không có đỉnh nào nổi trội).
+  // GIỮ TIẾNG của clip b-roll. Mặc định 0 (câm) vì phần lớn tư liệu là cảnh minh
+  // hoạ — tiếng nền của nó chồng lên giọng người nói là nhiễu. Bật lên cho tư liệu
+  // MANG NỘI DUNG (demo có lời giải thích, đoạn phỏng vấn) — ở đó tắt tiếng là mất
+  // nửa nội dung.
+  ["elements", "keep_audio", "INTEGER NOT NULL DEFAULT 0"],
+  // TUỲ CHỌN KHUNG (JSON `LayoutOptions`) — tỉ lệ ô, phủ-kín/lọt-trọn, đảo trên
+  // dưới. Đi cùng `insert_layout` (id bố cục) chứ không nằm trong `frame_block`:
+  // block giữ LOOK (nền, viền, nắn màu), còn mấy trục này là CẤU TRÚC ô. `NULL` =
+  // dùng nguyên bố cục như bảng khai — đúng thứ dự án cũ đang có.
+  ["elements", "layout_opts", "TEXT"],
+  // TUỲ CHỌN CHỮ (JSON `TextOptions`) — cỡ đè và chỗ đứng dọc đè, của RIÊNG cụm
+  // này. `NULL` = theo phong cách chữ, đúng thứ mọi dự án cũ đang có.
+  //
+  // Không gộp vào `caption_block`: block giữ LOOK đã đóng dấu (font, màu, viền),
+  // còn hai trục này là ĐÈ CỦA NGƯỜI DÙNG lên look ấy — trộn vào thì lượt đổi
+  // vibe (ghi đè cả block) sẽ xoá luôn chỉnh tay của họ.
+  ["elements", "text_opts", "TEXT"],
+  ["media_files", "usable_in_sec", "REAL"],
+  ["media_files", "usable_out_sec", "REAL"],
+  ["media_files", "peak_sec", "REAL"],
   // ĐẾM SỬA để biết bản XUẤT còn tươi hay đã cũ. `content_rev` tăng mỗi lần sửa
   // gì ĐỘNG TỚI HÌNH (elements/nhạc — do trigger bên dưới bump tự động).
   // `exported_rev` là con số lúc XUẤT gần nhất. Khác nhau = "đã sửa sau khi xuất"
